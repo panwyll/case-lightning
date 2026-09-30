@@ -1,5 +1,5 @@
 {
-  "version": "3ac2146631c1",
+  "version": "6e69de27553d",
   "generatedFrom": "lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)",
   "transactionTypes": [
     {
@@ -1980,6 +1980,16 @@
       "eventuality": true
     },
     {
+      "type": "set_file_delivery",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "file_delivery_set"
+      ],
+      "description": "How files reach this client: a secure link (the default) or attachments, when they ask for that (from an email, approved, or ticked on a reply).",
+      "eventuality": true
+    },
+    {
       "type": "record_client_progress",
       "actor": "person",
       "stages": "any",
@@ -2690,6 +2700,12 @@
     },
     {
       "type": "wait_progress_reported",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "file_delivery_set",
       "category": "lifecycle",
       "decision": false,
       "humanGated": false

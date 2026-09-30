@@ -220,15 +220,29 @@ export class MockIdCheckProvider implements IdCheckProvider {
   }
 }
 
+/** Secure links to files, in memory: each link names its files. */
+export class MockFileShares {
+  readonly name = 'mock-file-shares';
+  shares: Array<{ matterId: string; url: string; files: Array<{ id: string; fileName: string }> }> = [];
+  async create(input: { tenantId: string; matterId: string; files: Array<{ id: string; fileName: string }> }) {
+    const url = `https://app.test/f/share-${this.shares.length + 1}`;
+    this.shares.push({ matterId: input.matterId, url, files: input.files });
+    return { url };
+  }
+  async latest(_t: string, matterId: string) { return [...this.shares].reverse().find((x) => x.matterId === matterId)?.files ?? []; }
+}
+
 export class MockClientComms implements ClientComms {
   readonly name = 'mock-client-comms (stub for WhatsApp/email #5)';
-  sent: Array<{ matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null; attachments?: string[] }> = [];
+  sent: Array<{ matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null; attachments?: string[]; link?: { url: string; files: string[] } | null }> = [];
+  reportLinks: Array<{ url: string; files: string[] } | null> = [];
   reports: Array<{ matterId: string; documentId: string }> = [];
-  async sendStatusUpdate(input: { matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null; attachments?: Array<{ name: string }> }) {
-    this.sent.push({ matterId: input.matterId, template: input.template, context: input.context, override: input.override ?? null, attachments: (input.attachments ?? []).map((a) => a.name) });
+  async sendStatusUpdate(input: { matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null; attachments?: Array<{ name: string }>; link?: { url: string; files: string[] } | null }) {
+    this.sent.push({ matterId: input.matterId, template: input.template, context: input.context, override: input.override ?? null, attachments: (input.attachments ?? []).map((a) => a.name), link: input.link ?? null });
     return { channel: 'mock' as const, messageId: `mock-msg-${this.sent.length}` };
   }
-  async sendReportOnTitle(input: { matterId: string; draftDocument: DocumentRef }) {
+  async sendReportOnTitle(input: { matterId: string; draftDocument: DocumentRef; link?: { url: string; files: string[] } | null }) {
+    this.reportLinks.push(input.link ?? null);
     this.reports.push({ matterId: input.matterId, documentId: input.draftDocument.id });
     return { channel: 'mock', messageId: `mock-report-${this.reports.length}` };
   }
@@ -309,6 +323,7 @@ export function mockPorts(start = new Date('2026-09-14T09:00:00Z')): MockPorts {
     signing: new MockSigning(),
     chaser: new MockChaser(),
     pofForms: new MockProofOfFundsForms(),
+    fileShares: new MockFileShares(),
     noteExtractor: new DeterministicNoteReader(),
     now: () => now,
     newId: () => `evt-${String(++n).padStart(4, '0')}`,

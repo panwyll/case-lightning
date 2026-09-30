@@ -116,6 +116,10 @@ export function senderPolicy(source: NoteSource | undefined, action: NoteAction)
   if (action.command?.type === 'record_survey_plan' && relation !== 'client' && relation !== 'colleague') {
     return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (from ${RELATION_LABEL[relation]}, not the client; not recorded)` }];
   }
+  // How files reach the client is the client's call.
+  if (action.command?.type === 'set_file_delivery' && relation !== 'client' && relation !== 'colleague') {
+    return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (from ${RELATION_LABEL[relation]}, not the client)` }];
+  }
   // A copy of the client's file goes only to the client, on their own asking (or a colleague's).
   if (action.command?.type === 'send_file_copy' && relation !== 'client' && relation !== 'colleague') {
     return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (asked by ${RELATION_LABEL[relation]}, not the client; nothing is sent on their say-so)` }];
@@ -278,6 +282,7 @@ export function commandTitle(c: NoteCommand): string {
     case 'resolve_issue': return `Close: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
     case 'request_from_seller': return `Ask the seller: ${c.about.trim().slice(0, 80) || 'as the client instructed'}`;
     case 'send_file_copy': return `Send the client a copy: ${c.what.trim().slice(0, 80)}`;
+    case 'set_file_delivery': return c.mode === 'attachments' ? 'Client asks for files as attachments instead of a secure link' : 'Client is happy with secure links for files';
     case 'record_availability': return `${AVAILABILITY_PARTY_LABEL[c.party].replace(/^the /, '').replace(/^./, (x) => x.toUpperCase())} away ${dayShort(c.from)} to ${dayShort(c.until)}`;
     case 'record_survey_plan': return c.plan === 'none' ? 'No survey: the client\'s choice' : `Survey booked${c.date ? ` for ${dayShort(c.date)}` : ''}`;
     case 'raise_issue': return `Issue: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
@@ -372,7 +377,8 @@ export function effectText(c: NoteCommand, opts: { withMessages?: boolean } = {}
     case 'set_target_dates': return `Sets the target dates: ${[c.targetExchangeDate ? `exchange ${prettyDate(c.targetExchangeDate)}` : null, c.targetCompletionDate ? `completion ${prettyDate(c.targetCompletionDate)}` : null].filter(Boolean).join(', ')}`;
     case 'record_price_change': return c.toPennies ? `Records the price as ${pounds(c.toPennies)}${c.reductionPennies ? '' : ''} and tells the lender if there is one` : `Records a price reduction of ${pounds(c.reductionPennies ?? 0)} and tells the lender if there is one`;
     case 'resolve_issue': return `Closes the open "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}" issue as ${RESOLUTION_LABEL[c.resolution]?.toLowerCase() ?? c.resolution}`;
-    case 'send_file_copy': return `Attaches ${c.what.trim().slice(0, 80)} to the reply (a task to find it if it is not on the file)`;
+    case 'send_file_copy': return `Sends ${c.what.trim().slice(0, 80)} with the reply (a task to find it if it is not on the file)`;
+    case 'set_file_delivery': return c.mode === 'attachments' ? 'Sends this client\'s files as attachments from now on, not a secure link' : 'Sends this client\'s files as a secure link from now on';
     case 'request_from_seller': return `Proposes this enquiry to the seller's solicitor (editable before it goes): ${c.text.trim().slice(0, 300)}${c.text.trim().length > 300 ? '…' : ''}`;
     case 'record_client_progress': return `Notes against ${WAIT_LABEL[c.waitKey]} that they say: "${c.claim.slice(0, 120)}". It is not chased again before ${c.expectBy ? prettyDate(c.expectBy) : 'three working days from now'}; nothing is cleared until it arrives`;
     case 'resend_to_client': return `Sends the request for ${WAIT_LABEL[c.waitKey]} again, with its links and forms`;
@@ -485,6 +491,7 @@ export function effectChanges(c: NoteCommand, opts: { jeopardy?: (kind: string) 
       return out;
     }
     case 'record_mortgage_withdrawn': return ['The mortgage offer is marked withdrawn', 'You cannot exchange until a new offer arrives and you have checked it', 'The client is chased for the new offer as with the first'];
+    case 'set_file_delivery': return c.mode === 'attachments' ? ['Files go to this client as attachments from now on, not a secure link', 'The files with this reply go as attachments'] : ['Files go to this client as a secure link from now on'];
     case 'record_client_progress': return [`${WAIT_LABEL[c.waitKey].replace(/^your /, 'The client\'s ').replace(/^the /, 'The ')} is marked as on its way`, `The client is not reminded about it before ${c.expectBy ? prettyDate(c.expectBy) : 'three working days from now'}`, 'It still has to arrive before the step is done'];
     case 'resend_to_client': return [`The client is sent the request for ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} again, with its links and forms`];
     case 'set_target_dates': return [c.targetExchangeDate ? `The target exchange date becomes ${prettyDate(c.targetExchangeDate)}` : null, c.targetCompletionDate ? `The target completion date becomes ${prettyDate(c.targetCompletionDate)}` : null, 'Deadlines and warnings are measured against it'].filter((x): x is string => !!x);
@@ -519,6 +526,7 @@ export function commandProblem(c: NoteCommand): string | null {
     return null;
   }
   if (c.type === 'send_file_copy') return c.what?.trim() ? null : 'it does not say which document';
+  if (c.type === 'set_file_delivery') return c.mode === 'attachments' || c.mode === 'link' ? null : `"${String(c.mode)}" is not a way to send files`;
   if (c.type === 'request_from_seller') {
     if (!c.text?.trim() || c.text.trim().length < 20) return 'the request says nothing';
     if (c.text.length > 4000) return 'the request is too long for one enquiry';
@@ -851,13 +859,21 @@ export class DeterministicNoteReader {
 }
 
 /** "Can you send over the searches", "could I have a copy of the TA10", "please forward my survey": the document named. */
-const FILE_ASK = /\b(?:send|forward|email|resend|re-send)(?:\s+(?:me|us|over|through|on|across))*\s+(?:(?:a\s+)?cop(?:y|ies)\s+of\s+)?((?:the|my|our)\s+[a-z0-9' -]{2,40}?)(?=[?.!,]|\s+(?:again|please|over|through|as|to|when|if|so)\b|$)|\b(?:have|get)\s+a\s+copy\s+of\s+((?:the|my|our)\s+[a-z0-9' -]{2,40}?)(?=[?.!,]|$)/i;
+const FILE_ASK = /\b(?:send|forward|email|resend|re-send|attach)(?:\s+(?:me|us|over|through|on|across))*\s+(?:(?:a\s+)?cop(?:y|ies)\s+of\s+)?((?:the|my|our)\s+[a-z0-9' -]{2,40}?)(?=[?.!,]|\s+(?:again|please|over|through|as|to|when|if|so)\b|$)|\b(?:have|get)\s+a\s+copy\s+of\s+((?:the|my|our)\s+[a-z0-9' -]{2,40}?)(?=[?.!,]|$)/i;
+/** "Can you just attach it", "the link won't open", "I never got the code": the client wants files as attachments. */
+const ATTACH_PREF = /\b(just attach|attach (it|them|the \w+)( to (the|an|your) email)?|as an? attachments?|send (it|them) as attachments?|prefer attachments|(can'?t|cannot|can not|couldn'?t|unable to|won'?t let me) (open|use|access|get into) (the|your|that) (secure )?link|(the |your )?(secure )?link (doesn'?t|does not|won'?t|isn'?t|is not) (work|working|open|opening)|(never|didn'?t|did not|haven'?t|have not) (get|got|receive|received) (the|a|any) code|no code (came|arrived))\b/i;
+/** The client asking for files as attachments, as the line that sets it (this reply's files go attached too); null if they do not. */
+export function attachmentPreference(text: string): NoteActionDraft | null {
+  const t = (text.match(SENTENCE) ?? [text]).map((x) => x.trim()).find((x) => ATTACH_PREF.test(x));
+  return t ? { kind: 'client_decision', summary: 'Client asks for files as attachments instead of a secure link', quote: t, confidence: 0.8, command: { type: 'set_file_delivery', mode: 'attachments' } } : null;
+}
 /** A sentence asking for a copy of a document on the file, as the line that sends it (attached to the reply); null if it does not. */
 export function documentAsked(t: string): NoteActionDraft | null {
-  if (/\b(link|form)s?\b/i.test(t)) return null;
   const hit = FILE_ASK.exec(t) ?? LOST_FILE.exec(t);
   if (!hit) return null;
   const what = (hit[1] ?? hit[2]).replace(/\s+(again|please|over|through)$/i, '').trim();
+  // "Resend the ID link", "the forms": a request we send again, not a file on the case.
+  if (/\b(link|form|code)s?\b/i.test(what)) return null;
   return { kind: 'resend', summary: `The client asks for a copy of ${what}`, quote: t, confidence: 0.8, command: { type: 'send_file_copy', what } };
 }
 /** Every document an email asks for, sentence by sentence: read by rule as well as by the AI, so a request is never lost to a reading that missed it. */

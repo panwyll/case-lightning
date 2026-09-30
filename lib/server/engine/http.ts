@@ -205,7 +205,7 @@ export const resolveSchema = z.object({
   /** Escalating: the colleague it goes to (someone who can open the case). */
   escalateTo: z.string().uuid().nullish(),
   /** A proposal approved with its words changed: what actually goes. */
-  edited: z.object({ subject: z.string().max(300).nullish(), body: z.string().max(20000).nullish(), messages: z.array(z.object({ id: z.string().max(60), subject: z.string().max(300).nullish(), body: z.string().max(20000).nullish() })).max(10).nullish() }).nullish(),
+  edited: z.object({ subject: z.string().max(300).nullish(), body: z.string().max(20000).nullish(), messages: z.array(z.object({ id: z.string().max(60), subject: z.string().max(300).nullish(), body: z.string().max(20000).nullish(), asAttachments: z.boolean().optional(), alwaysAttach: z.boolean().optional() })).max(10).nullish() }).nullish(),
   note: z.string().max(4000).nullish(),
   /** Addendum 2: required for option 'verify' on a bank-details decision; the machine validates the method. */
   verification: z.object({ method: z.string().max(60), reference: z.string().max(200).nullish() }).nullish(),

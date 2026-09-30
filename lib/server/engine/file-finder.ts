@@ -54,5 +54,10 @@ export async function fileBytes(tenantId: string, id: string): Promise<{ name: s
     return { name: out.fileName, bytes: out.bytes, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
   }
   const bytes = d.blob ?? (await getBlob(tenantId, id).catch(() => null));
+  // A document we generated as text (a completion statement): as a Word document.
+  if (!bytes && d.content) {
+    const { createMinimalDocx } = await import('../doc-templates');
+    return { name: `${(d.file_name ?? 'Document').replace(/\.[a-z0-9]+$/i, '')}.docx`, bytes: createMinimalDocx(d.content.split('\n')), contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+  }
   return bytes ? { name: d.file_name ?? 'Document', bytes, contentType: d.mime_type ?? 'application/octet-stream' } : null;
 }

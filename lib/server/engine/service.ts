@@ -64,11 +64,13 @@ import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTra
 import { isResolved, openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedsReadyToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
-import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, documentRequests, WAIT_LABEL, type NoteActionDraft } from './notes';
+import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, documentRequests, attachmentPreference, WAIT_LABEL, type NoteActionDraft } from './notes';
 import { replyFacts, templateIssueMessage, templateMessage, templateReply } from './reply';
 import { FOLLOW_UP_PARTY, PARTY_LABEL, whoNeedsToHear } from './recipients';
 
 /** Who the firm acts for on this case, as the drafter is told. */
+/** A file's name as the client sees it: the report on title by what it is, anything else by its name. */
+const fileNameForClient = (doc: DocumentRef | null, id: string): string => (doc?.docType === 'REPORT_ON_TITLE_DRAFT' ? 'Report on title.docx' : (doc?.fileName ?? `Document ${id.slice(0, 8)}`).replace(/\.txt$/i, '.docx'));
 const weActFor = (s: MatterState): string => { const side = profileOf(s.transactionType).side; return side === 'seller' ? 'the seller' : side === 'owner' ? 'the owner (a remortgage or transfer)' : 'the buyer'; };
 /** A party, as the client would read it in a reply. */
 const PARTY_WORDS: Record<MessageParty, string> = { client: 'you', seller_solicitor: "the other side's solicitor", estate_agent: 'the estate agent', lender: 'the lender' };
@@ -292,21 +294,24 @@ export class EngineService {
       // Where things stand, as of now (not as of when the update was proposed), and a note of what it told the client about.
       const reminderHours = this.ports.clientReminderHours ? await this.ports.clientReminderHours(tenantId).catch(() => undefined) : undefined;
       const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now(), { ...this.idProviderOpts(), reminderHours });
-      // A document that goes with it (the completion statement): as a Word document.
+      // Files that go with it: a copy the client asked for, or a document (the completion statement).
+      // As a secure link (the default), or attached for a client who asked for attachments (or on this one email).
       const attachId = (detail as { attachDocumentId?: string }).attachDocumentId;
+      const fileIds = [...((detail as { attachFileIds?: string[] }).attachFileIds ?? []), ...(attachId ? [attachId] : [])];
+      const attached = (detail as { asAttachments?: boolean }).asAttachments === true || (await this.getState(tenantId, matterId)).fileDelivery === 'attachments' || !this.ports.fileShares;
       let attachments: Array<{ name: string; bytes: Buffer; contentType: string }> = [];
-      // Files from the case as they are (a copy the client asked for).
-      const fileIds = (detail as { attachFileIds?: string[] }).attachFileIds ?? [];
-      if (fileIds.length && this.ports.files) for (const id of fileIds) { const f = await this.ports.files.bytes(tenantId, id).catch(() => null); if (f) attachments.push(f); }
-      if (attachId) {
-        const doc = await this.ports.documents.get(tenantId, attachId).catch(() => null);
-        const text = (doc?.extractedFacts as { content?: string } | null)?.content ?? '';
-        if (text) {
-          const { createMinimalDocx } = await import('../doc-templates');
-          attachments = [{ name: `${(doc?.fileName ?? 'document').replace(/\.[a-z0-9]+$/i, '')}.docx`, bytes: createMinimalDocx(text.split('\n')), contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }];
-        }
+      let link: { url: string; files: string[] } | null = null;
+      if (fileIds.length && !attached) {
+        const named = (detail as { attachFileNames?: string[] }).attachFileNames ?? [];
+        const files = await Promise.all(fileIds.map(async (id, i) => ({ id, fileName: named[i] ?? fileNameForClient(await this.ports.documents.get(tenantId, id).catch(() => null), id) })));
+        // A link that cannot be made (the store is down) is no reason not to send: the files go attached.
+        const made = await this.ports.fileShares!.create({ tenantId, matterId, files }).catch((err) => { this.ports.log('secure link could not be made; attaching instead', err); return null; });
+        if (made) link = { url: made.url, files: files.map((f) => f.fileName) };
       }
-      const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text }, override: (detail as { edited?: MessageOverride }).edited ?? null, attachments });
+      if (fileIds.length && !link && this.ports.files) {
+        for (const id of fileIds) { const f = await this.ports.files.bytes(tenantId, id).catch(() => null); if (f) attachments.push(f); }
+      }
+      const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text }, override: (detail as { edited?: MessageOverride }).edited ?? null, attachments, ...(link ? { link } : {}) });
       // A letter about one thing (this survey) remembers it was sent, so a re-read does not send it again.
       const aboutKey = (d as { about?: unknown }).about;
       const about = typeof aboutKey === 'string' ? [aboutKey] : [];
@@ -903,7 +908,9 @@ export class EngineService {
     const read = input.attachments?.length ? drafts.filter((d) => !(d.command?.type === 'raise_issue' && ARRIVAL_ISSUES.has(d.command.kind))) : drafts;
     // A document the client (or a colleague) asks for is read by rule too: the file is attached to the reply even when the AI missed the request.
     const asked = input.kind === 'email' && (input.from?.relation === 'client' || input.from?.relation === 'colleague') && !read.some((d) => d.command?.type === 'send_file_copy') ? documentRequests(input.text) : [];
-    const kept = [...read.filter((d) => !asked.some((a) => a.quote === d.quote && !d.command)), ...asked];
+    // So is a client asking for attachments instead of a secure link.
+    const pref = input.kind === 'email' && (input.from?.relation === 'client' || input.from?.relation === 'colleague') && !read.some((d) => d.command?.type === 'set_file_delivery') && (recorded.state.fileDelivery ?? 'link') === 'link' ? attachmentPreference(input.text) : null;
+    const kept = [...read.filter((d) => !asked.some((a) => a.quote === d.quote && !d.command)), ...asked, ...(pref ? [pref] : [])];
     if (!kept.length && !stranger && !input.surface) return recorded;
     // Whoever wrote gets a reply answering every point, and anyone else who needs to hear gets a message (recipients.ts), all on this one task.
     const messages = input.kind === 'email' && input.from && !input.acknowledgement ? await this.draftMessages(tenantId, matterId, recorded.state, input.text, input.subject ?? null, input.from, kept).catch((err) => { this.ports.log('the messages could not be drafted', err); return []; }) : [];
@@ -933,13 +940,18 @@ export class EngineService {
         for (const f of found) if (!attach.some((a) => a.id === f.id)) attach.push({ id: f.id, fileName: f.fileName, what });
       }
     }
+    // "The link won't open": the files of the last link go again, attached.
+    if (!attach.length && this.ports.fileShares && lines.some((l) => l.command?.type === 'set_file_delivery' && l.command.mode === 'attachments')) {
+      for (const f of await this.ports.fileShares.latest(tenantId, matterId).catch(() => [])) attach.push({ id: f.id, fileName: f.fileName, what: '' });
+    }
     // The reply says who else we are writing to (those ticked when the task opens).
     const others = recipients.filter((x) => x.on && !x.purposes.some((p) => /^Reply to their email/.test(p))).map((x) => PARTY_WORDS[x.to]);
     for (const r of recipients) {
       const replying = r.purposes.some((p) => /^Reply to their email/.test(p));
       if (replying && r.to === 'client') {
         const reply = await this.draftReply(tenantId, matterId, state, text, subject, from, lines, others, { purposes: r.purposes, sentences: r.sentences }, attach);
-        out.push({ id: 'reply', to: r.to, purposes: r.purposes, subject: reply.subject, body: reply.body, drafter: reply.drafter, on: true, ...(attach.length ? { attach } : {}) });
+        const attachedNow = lines.some((l) => l.command?.type === 'set_file_delivery' && l.command.mode === 'attachments') || state.fileDelivery === 'attachments';
+        out.push({ id: 'reply', to: r.to, purposes: r.purposes, subject: reply.subject, body: reply.body, drafter: reply.drafter, on: true, ...(attach.length ? { attach, ...(attachedNow ? { asAttachments: true } : {}) } : {}) });
         continue;
       }
       const re = subject ? (/^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`) : 'Re: your email';
@@ -970,7 +982,7 @@ export class EngineService {
     const asked = lines.filter((l) => l.command?.type === 'send_file_copy').map((l) => (l.command as { what: string }).what);
     const missing = asked.filter((w) => !attach.some((a) => a.what === w));
     const attached = [
-      ...(attach.length ? [`Say that ${attach.map((a) => a.fileName).join(', ')} ${attach.length > 1 ? 'are' : 'is'} attached to this email (it is: never say we will send it separately, later or by another email). Attach nothing else and mention no other document`] : []),
+      ...(attach.length ? [`Say that ${attach.map((a) => a.fileName).join(', ')} ${attach.length > 1 ? 'are' : 'is'} with this email (it is: a secure link or an attachment is added below the message; do not say which, and never say we will send it separately, later or by another email). Mention no other document`] : []),
       ...missing.map((w) => `They asked for ${w}: it is NOT attached. Do not say it is attached, resent or on its way; say we will send it to them as soon as we can`),
     ];
     const firstName = (from.name ?? '').trim().split(/\s+/)[0] || null;
@@ -1193,7 +1205,10 @@ export class EngineService {
     if (state.reportOnTitle.status === 'sent' && state.reportOnTitle.draftId === draftId && state.reportOnTitle.sentAt) return { state, events: [] };
     assertCanSendReport(state, draftId);
     const doc = await this.requireDoc(tenantId, matterId, state.reportOnTitle.draftDocumentId as string);
-    const sent = await this.ports.clientComms.sendReportOnTitle({ tenantId, matterId, draftDocument: doc });
+    // As a secure link, unless this client asked for attachments.
+    const made = state.fileDelivery !== 'attachments' && this.ports.fileShares ? await this.ports.fileShares.create({ tenantId, matterId, files: [{ id: doc.id, fileName: 'Report on title.docx' }] }).catch((err) => { this.ports.log('secure link could not be made; attaching instead', err); return null; }) : null;
+    const link = made ? { url: made.url, files: ['Report on title.docx'] } : null;
+    const sent = await this.ports.clientComms.sendReportOnTitle({ tenantId, matterId, draftDocument: doc, ...(link ? { link } : {}) });
     return this.run(tenantId, matterId, { type: 'record_report_on_title_sent', actor, draftId, channel: sent.channel, messageId: sent.messageId });
   }
 
@@ -1751,7 +1766,7 @@ export class EngineService {
         // a client decision the machine would refuse by hand is refused here too, and is
         // logged rather than silently dropped.
         if (e.type === 'note_actions_applied') {
-          const p = e.payload as { noteId: string; applied: string[]; reply?: { subject: string; body: string } | null; messages?: Array<{ id: string; to: MessageParty; subject: string; body: string; attach?: MessageAttachment[] }> };
+          const p = e.payload as { noteId: string; applied: string[]; reply?: { subject: string; body: string } | null; messages?: Array<{ id: string; to: MessageParty; subject: string; body: string; attach?: MessageAttachment[]; asAttachments?: boolean; alwaysAttach?: boolean }> };
           const fresh = await this.getState(tenantId, matterId);
           const note = fresh.notes[p.noteId];
           for (const id of p.applied) {
@@ -1806,6 +1821,8 @@ export class EngineService {
               } else if (c.type === 'resend_to_client') {
                 // The same request again, with its links and forms: what Chase Now sends.
                 await this.chaseNow(tenantId, matterId, c.waitKey, c.subject || null, e.actor);
+              } else if (c.type === 'set_file_delivery') {
+                await this.run(tenantId, matterId, { type: 'set_file_delivery', actor: e.actor, mode: c.mode, reason: action.quote ?? null, noteId: p.noteId });
               } else if (c.type === 'send_file_copy' && (p.messages ?? []).some((m) => m.to === 'client' && (m.attach ?? []).some((x) => x.what === c.what))) {
                 // Attached to the reply that goes below: nothing to send separately.
               } else if (c.type === 'send_file_copy') {
@@ -1832,10 +1849,14 @@ export class EngineService {
           // Every message, as approved (and edited): the client's through their channel, anyone else's by email from the fee earner.
           // A legacy task approved before messages existed carries `reply` instead.
           const outgoing = p.messages ?? (p.reply?.body?.trim() ? [{ id: 'reply', to: 'client' as const, subject: p.reply.subject, body: p.reply.body }] : []);
+          // "Always send this client attachments", ticked on the reply: set before the files go.
+          if (outgoing.some((m) => 'alwaysAttach' in m && m.alwaysAttach) && (await this.getState(tenantId, matterId)).fileDelivery !== 'attachments') {
+            await this.run(tenantId, matterId, { type: 'set_file_delivery', actor: e.actor, mode: 'attachments', reason: 'Ticked on a reply: send this client attachments', noteId: p.noteId }).catch(() => {});
+          }
           for (const m of outgoing) {
             if (!m.body?.trim()) continue;
             const [action, detail] = m.to === 'client'
-              ? ['client_update' as const, { template: 'email_reply', context: { subject: m.subject }, triggeredByEventId: e.id, edited: { subject: m.subject, body: m.body }, ...('attach' in m && m.attach?.length ? { attachFileIds: m.attach.map((x) => x.id) } : {}) }]
+              ? ['client_update' as const, { template: 'email_reply', context: { subject: m.subject }, triggeredByEventId: e.id, edited: { subject: m.subject, body: m.body }, ...('attach' in m && m.attach?.length ? { attachFileIds: m.attach.map((x) => x.id), attachFileNames: m.attach.map((x) => x.fileName), ...(m.asAttachments ? { asAttachments: true } : {}) } : {}) }]
               : ['chase' as const, { kind: 'party_message', recipientRole: m.to, subject: m.subject, body: m.body, triggeredByEventId: e.id }];
             try { await this.perform(tenantId, matterId, action, detail); } catch (err) { this.ports.log(`the message to ${m.to} could not be sent`, err); await this.recordSendFailure(tenantId, matterId, action, detail, err); }
           }

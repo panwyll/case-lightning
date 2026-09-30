@@ -116,7 +116,7 @@ test('an agent passing on that the lender pulled out cannot mark the mortgage wi
   assert.equal(Object.values(asks.state.notes).at(-1)!.messages?.[0]?.to, 'estate_agent', 'a question gets the agent a reply');
 });
 
-test('a client asking for a document gets it attached to the reply: one email, nothing sent separately', async () => {
+test('a client asking for a document gets it with the reply, as a secure link: one email, nothing sent separately', async () => {
   const h = await withWaits();
   h.ports.files = {
     find: async (_t, _m, what) => (/search/i.test(what) ? [{ id: 'doc-searches', fileName: 'Local search.pdf' }] : []),
@@ -129,7 +129,7 @@ test('a client asking for a document gets it attached to the reply: one email, n
   assert.ok(line, 'read as a request for a document, not a question');
   const reply = note.messages!.find((m) => m.id === 'reply')!;
   assert.deepEqual(reply.attach?.map((a) => a.fileName), ['Local search.pdf'], 'the file is on the reply');
-  assert.match(reply.body, /I attach Local search\.pdf/);
+  assert.match(reply.body, /Please find Local search\.pdf with this email/);
   assert.doesNotMatch(reply.body, /separately/);
   const d = firstDecision(res.state, 'note_actions');
   await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
@@ -138,7 +138,49 @@ test('a client asking for a document gets it attached to the reply: one email, n
   const sent = comms.sent.filter((m) => m.template === 'email_reply' || m.template === 'file_copy');
   assert.equal(sent.length, 1, 'one email');
   assert.equal(sent[0].template, 'email_reply');
-  assert.deepEqual(sent[0].attachments, ['Local search.pdf'], 'with the file attached');
+  assert.deepEqual(sent[0].attachments, [], 'nothing attached');
+  assert.deepEqual(sent[0].link?.files, ['Local search.pdf'], 'the file goes as a secure link');
+});
+
+test('"the link won\'t open, can you just attach it": the last link\'s files go attached, and attachments from then on', async () => {
+  const h = await withWaits();
+  h.ports.files = { find: async (_t, _m, what) => (/search/i.test(what) ? [{ id: 'doc-searches', fileName: 'Local search.pdf' }] : /survey/i.test(what) ? [{ id: 'doc-survey', fileName: 'Survey.pdf' }] : []), bytes: async (_t, id) => ({ name: id === 'doc-survey' ? 'Survey.pdf' : 'Local search.pdf', bytes: Buffer.from('%PDF'), contentType: 'application/pdf' }) };
+  const shares = h.ports.fileShares as unknown as { shares: Array<{ files: Array<{ fileName: string }> }> };
+  const comms = h.ports.clientComms as MockClientComms;
+  const approve = async (text: string) => {
+    const res = await h.svc.recordNote(TENANT, MATTER, { text, kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL'), from: CLIENT, surface: true, subject: 'Files' });
+    const d = Object.values(res.state.decisions).filter((x) => x.kind === 'note_actions' && x.status === 'pending').at(-1)!;
+    await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
+    await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve');
+    return Object.values(res.state.notes).at(-1)!;
+  };
+  await approve('Hi, can you send over the searches?');
+  assert.equal(shares.shares.length, 1, 'first as a link');
+
+  const note = await approve("The link won't open. Can you just attach it?");
+  assert.ok(note.actions.some((a) => a.command?.type === 'set_file_delivery'), 'read as asking for attachments');
+  assert.deepEqual(note.messages!.find((m) => m.id === 'reply')!.attach?.map((a) => a.fileName), ['Local search.pdf'], 'the files of the link that would not open');
+  const again = comms.sent.filter((m) => m.template === 'email_reply').at(-1)!;
+  assert.deepEqual(again.attachments, ['Local search.pdf'], 'attached this time');
+  assert.equal(again.link, null);
+  assert.equal((await h.svc.getState(TENANT, MATTER)).fileDelivery, 'attachments');
+
+  await approve('Could I have a copy of the survey?');
+  const later = comms.sent.filter((m) => m.template === 'email_reply').at(-1)!;
+  assert.deepEqual(later.attachments, ['Survey.pdf'], 'and attached from then on');
+  assert.equal(shares.shares.length, 1, 'no new link');
+});
+
+test('the Secure Link / Attachments choice on a reply, with Always For This Client', async () => {
+  const h = await withWaits();
+  h.ports.files = { find: async () => [{ id: 'doc-searches', fileName: 'Local search.pdf' }], bytes: async () => ({ name: 'Local search.pdf', bytes: Buffer.from('%PDF'), contentType: 'application/pdf' }) };
+  const res = await h.svc.recordNote(TENANT, MATTER, { text: 'Hi, can you send over the searches?', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL'), from: CLIENT, surface: true, subject: 'Searches' });
+  const d = firstDecision(res.state, 'note_actions');
+  await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve', null, null, null, null, { messages: [{ id: 'reply', asAttachments: true, alwaysAttach: true }] } as never);
+  const sent = (h.ports.clientComms as MockClientComms).sent.filter((m) => m.template === 'email_reply').at(-1)!;
+  assert.deepEqual(sent.attachments, ['Local search.pdf']);
+  assert.equal((await h.svc.getState(TENANT, MATTER)).fileDelivery, 'attachments');
 });
 
 test('an issue the client has been emailed about is marked as told, so a later reply does not raise it again', async () => {
@@ -180,9 +222,10 @@ test('"can\'t find my report on title" attaches the report they were sent, never
   await h.svc.sendReportOnTitle(TENANT, MATTER, USER);
   const s = await h.svc.getState(TENANT, MATTER);
   assert.ok(s.reportOnTitle.sentAt || s.reportOnTitle.interimSentAt, 'the report went');
+  assert.deepEqual((h.ports.clientComms as MockClientComms).reportLinks.at(-1)?.files, ['Report on title.docx'], 'as a secure link');
   const later = await ask();
   assert.deepEqual(later.attach?.map((a) => [a.id, a.fileName]), [[s.reportOnTitle.draftDocumentId, 'Report on title.docx']]);
-  assert.match(later.body, /I attach Report on title\.docx/);
+  assert.match(later.body, /Please find Report on title\.docx with this email/);
 });
 
 test('a document request the AI reader missed is still read, and the file still goes attached', async () => {
@@ -233,4 +276,16 @@ test('an email task is named by what the email was read as', async () => {
   assert.equal(replyTitle(CLIENT, [{ kind: 'resend', summary: '', quote: 'can you resend my report on title', command: { type: 'send_file_copy', what: 'my report on title' } }]), "Reply to the client's request for their report on title");
   assert.equal(replyTitle(CLIENT, [{ kind: 'issue', summary: '', quote: 'the seller is pulling out', command: { type: 'raise_issue', kind: 'transaction_at_risk', title: 'Seller threatening to pull out', detail: null, gate: 'exchange' } }]), 'Seller threatening to pull out');
   assert.equal(replyTitle(CLIENT, []), "Reply to the client's email");
+});
+
+test('a secure link that cannot be made does not stop the email: the files go attached', async () => {
+  const h = await withWaits();
+  h.ports.files = { find: async () => [{ id: 'doc-searches', fileName: 'Local search.pdf' }], bytes: async () => ({ name: 'Local search.pdf', bytes: Buffer.from('%PDF'), contentType: 'application/pdf' }) };
+  h.ports.fileShares = { create: async () => { throw new Error('relation "file_share" does not exist'); }, latest: async () => [] };
+  const res = await h.svc.recordNote(TENANT, MATTER, { text: 'Hi, can you send over the searches?', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL'), from: CLIENT, surface: true, subject: 'Searches' });
+  const d = firstDecision(res.state, 'note_actions');
+  await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve');
+  const sent = (h.ports.clientComms as MockClientComms).sent.filter((m) => m.template === 'email_reply').at(-1)!;
+  assert.deepEqual(sent.attachments, ['Local search.pdf']);
 });

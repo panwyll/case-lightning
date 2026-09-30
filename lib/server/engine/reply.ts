@@ -46,7 +46,7 @@ export function templateReply(s: MatterState, now: Date, input: { firstName: str
     const c = a.command;
     if (c?.type === 'record_client_progress') P.push(`Thank you for letting us know about ${WAIT_LABEL[c.waitKey]}. We will look out for it and let you know when it has arrived.`);
     else if (c?.type === 'resend_to_client') P.push(`We have sent the request for ${WAIT_LABEL[c.waitKey]} again, with the links you need.`);
-    else if (c?.type === 'send_file_copy') { const files = (input.attached ?? []).filter((x) => x.what === c.what).map((x) => x.fileName); P.push(files.length ? `I attach ${files.join(', ')}.` : `We will send you ${c.what.trim()} as soon as we can.`); }
+    else if (c?.type === 'send_file_copy') { const files = (input.attached ?? []).filter((x) => x.what === c.what).map((x) => x.fileName); P.push(files.length ? `Please find ${files.join(', ')} with this email.` : `We will send you ${c.what.trim()} as soon as we can.`); }
     else if (a.kind === 'question') P.push(`On your question ("${a.quote.slice(0, 120)}"): we are checking and will come back to you shortly.`);
   }
   for (const a of input.also ?? []) P.push(a);

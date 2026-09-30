@@ -707,6 +707,10 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (p.plan === 'none') closeWait(s, 'survey', null, e);
       break;
     }
+    case 'file_delivery_set': {
+      s.fileDelivery = (e.payload as Payloads['file_delivery_set']).mode;
+      break;
+    }
     case 'wait_progress_reported': {
       const p = e.payload as Payloads['wait_progress_reported'];
       const w = findOpenWait(s, p.waitKey, p.subject);

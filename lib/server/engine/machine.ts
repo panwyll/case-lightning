@@ -158,6 +158,7 @@ type CommandBody =
   | { type: 'record_signing_envelope'; document: SignedDocument; provider: string; envelopeId: string }
   | { type: 'record_availability'; actor: Actor; party: AvailabilityParty; from: string; until: string; note?: string | null }
   | { type: 'record_client_progress'; actor: Actor; waitKey: WaitKey; subject: string; claim: string; expectBy?: string | null; noteId?: string | null }
+  | { type: 'set_file_delivery'; actor: Actor; mode: 'attachments' | 'link'; reason?: string | null; noteId?: string | null }
   | { type: 'open_expectation'; key: ExpectationKey }
   | { type: 'record_title_plan'; documentId: string; facts: TitlePlanFacts }
   | { type: 'record_supporting_document'; documentId: string; facts: SupportingDocFacts }
@@ -280,6 +281,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'change_completion_date',
   'record_availability',
   'record_client_progress',
+  'set_file_delivery',
   'record_survey_plan',
   'set_funding',
   'set_signing_method',
@@ -1483,6 +1485,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const until = cmd.expectBy ?? addWorkingDays(ctx.now, 3).toISOString().slice(0, 10);
       return [{ type: 'wait_progress_reported', actor: cmd.actor, payload: { waitKey: cmd.waitKey, subject: cmd.subject ?? '', claim: cmd.claim.trim().slice(0, 400), until, noteId: cmd.noteId ?? null } }];
     }
+    case 'set_file_delivery': {
+      // How files reach this client: a secure link unless they asked for attachments.
+      if (cmd.mode !== 'attachments' && cmd.mode !== 'link') reject('Files go as a secure link or as attachments.', 400);
+      if ((s.fileDelivery ?? 'link') === cmd.mode) reject(`Files already go to this client ${cmd.mode === 'link' ? 'as a secure link' : 'as attachments'}.`, 409);
+      return [{ type: 'file_delivery_set', actor: cmd.actor, payload: { mode: cmd.mode, reason: cmd.reason?.trim() || null, noteId: cmd.noteId ?? null } }];
+    }
     case 'record_availability': {
       requireEnrolled(s);
       if (!isUserActor(cmd.actor)) reject('Availability is recorded by a person.', 403);
@@ -2435,7 +2443,7 @@ function pendingDecision(s: MatterState, id: string): DecisionState {
 }
 
 /** Events for a human's resolution of a pending decision. */
-function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null, engagement: Engagement | null = null, selection: string[] | null = null, editedIn: { subject?: string | null; body?: string | null; messages?: Array<{ id: string; subject?: string | null; body?: string | null }> | null } | null = null, escalateTo: string | null = null): NewEvent[] {
+function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null, engagement: Engagement | null = null, selection: string[] | null = null, editedIn: { subject?: string | null; body?: string | null; messages?: Array<{ id: string; subject?: string | null; body?: string | null; asAttachments?: boolean; alwaysAttach?: boolean }> | null } | null = null, escalateTo: string | null = null): NewEvent[] {
   const out: NewEvent[] = [];
   const subject = d.subject ?? '';
 
@@ -2492,8 +2500,10 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
     const messages = picked.map((m) => {
       const e = edits.find((x) => x.id === m.id) ?? (m.id === 'reply' && !edits.length ? editedIn : null);
       // A file goes only if the line asking for it was approved too.
-      const attach = (m.attach ?? []).filter((x) => n.actions.some((a) => applied.includes(a.id) && a.command?.type === 'send_file_copy' && a.command.what === x.what));
-      return { id: m.id, to: m.to, subject: (e?.subject ?? '').trim() || m.subject, body: (e?.body ?? '').trim() || m.body, ...(attach.length ? { attach } : {}) };
+      const attach = (m.attach ?? []).filter((x) => n.actions.some((a) => applied.includes(a.id) && ((a.command?.type === 'send_file_copy' && a.command.what === x.what) || (x.what === '' && a.command?.type === 'set_file_delivery'))));
+      const how = e as { asAttachments?: boolean; alwaysAttach?: boolean } | null;
+      const asAttachments = attach.length > 0 && (how?.asAttachments ?? m.asAttachments ?? false);
+      return { id: m.id, to: m.to, subject: (e?.subject ?? '').trim() || m.subject, body: (e?.body ?? '').trim() || m.body, ...(attach.length ? { attach } : {}), ...(asAttachments ? { asAttachments: true } : {}), ...(asAttachments && (how?.alwaysAttach ?? m.alwaysAttach) ? { alwaysAttach: true } : {}) };
     });
     const skipped = n.actions.filter((a) => !applied.includes(a.id)).map((a) => a.id);
     // An email that proposed nothing (Read And Reply, or an acknowledgement): Approve is "dealt with" and applies nothing.

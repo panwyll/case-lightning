@@ -220,6 +220,8 @@ export function productionPorts(): EnginePorts {
       outsideAutomation: runOutsideAutomation,
       messagePreview: previewProposal,
       files: { find: findFiles, bytes: fileBytes },
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      fileShares: new (require('../file-shares') as typeof import('../file-shares')).PgFileShares(),
       entitled: (tenantId: string) => import('../plan').then((m) => m.isEntitled(tenantId)),
       log,
     });

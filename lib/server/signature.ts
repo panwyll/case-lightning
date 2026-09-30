@@ -95,10 +95,12 @@ export function stripSignOff(body: string, names: string[]): string {
 
 const escapeText = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] as string);
 
+/** Web addresses in a message as links (a secure file link must be one click, in every mail app). */
+export const linkify = (escaped: string): string => escaped.replace(/https:\/\/[^\s<"]+/g, (u) => `<a href="${u}">${u}</a>`);
 /** An email body as HTML, signed. */
 export function signedHtml(body: string, sig: Signature | null | undefined): string {
   const text = sig ? stripSignOff(body, sig.names) : body;
-  return `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5">${escapeText(text).replace(/\n/g, '<br>')}</div>${sig ? sig.html : ''}`;
+  return `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5">${linkify(escapeText(text)).replace(/\n/g, '<br>')}</div>${sig ? sig.html : ''}`;
 }
 
 /** The same, as plain text (a text-only channel, and the record of what went). */

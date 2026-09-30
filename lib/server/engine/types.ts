@@ -129,6 +129,7 @@ export const EVENT_TYPES = [
   'note_extracted',
   'note_actions_applied',
   'wait_progress_reported',
+  'file_delivery_set',
   'note_action_refused',
   'escalation_raised',
   'escalation_resolved',
@@ -529,6 +530,7 @@ export type NoteActionKind = (typeof NOTE_ACTION_KINDS)[number];
 export type NoteCommand =
   /** The client asks for a copy of a document ("I can't find my TA10"): found on the case and sent back to them. */
   | { type: 'send_file_copy'; what: string }
+  | { type: 'set_file_delivery'; mode: 'attachments' | 'link' }
   | { type: 'client_decision_recorded'; subject: ClientDecisionSubject; decision: string; note: string; /** further_investigation: which specialists, by name ("damp", "structural engineer"); absent = all. */ scope?: string[] | null }
   /** Someone other than the client reported a client decision: ask the client; it is recorded only when they say so themselves. */
   | { type: 'confirm_with_client'; subject: ClientDecisionSubject; decision: string; saidBy: string; quote: string; detail?: string | null }
@@ -586,7 +588,7 @@ export interface NoteReply { subject: string; body: string; drafter: string }
 export const MESSAGE_PARTIES = ['client', 'seller_solicitor', 'estate_agent', 'lender'] as const;
 export type MessageParty = (typeof MESSAGE_PARTIES)[number];
 /** One message an email's task would send: to whom, why, and the draft (built from the case). `reply` answers the sender. */
-export interface NoteMessage { id: string; to: MessageParty; purposes: string[]; subject: string; body: string; drafter: string; /** Ticked when the task opens (the reply and anything the rules say must go); others are offered unticked. */ on: boolean; /** Files on the case that go with it: a document the client asked for is attached to the reply, not sent separately. `what` is the request in their words. */ attach?: MessageAttachment[] }
+export interface NoteMessage { id: string; to: MessageParty; purposes: string[]; subject: string; body: string; drafter: string; /** Ticked when the task opens (the reply and anything the rules say must go); others are offered unticked. */ on: boolean; /** Files on the case that go with it: a document the client asked for is attached to the reply, not sent separately. `what` is the request in their words. */ attach?: MessageAttachment[]; /** The files go as attachments on this email rather than a secure link. */ asAttachments?: boolean; /** …and for this client from now on. */ alwaysAttach?: boolean }
 export interface MessageAttachment { id: string; fileName: string; what: string }
 
 export interface NoteState {
@@ -961,7 +963,8 @@ export interface Payloads {
   note_recorded: { noteId: string; kind: NoteKind; text: string; durationSeconds: number | null; documentId: string | null; from?: NoteSender | null };
   note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec; /** Read as a pure acknowledgement (both checks): no reply needed. */ acknowledgement?: boolean; reply?: NoteReply | null; messages?: NoteMessage[] };
   wait_progress_reported: { waitKey: WaitKey; subject: string; claim: string; until: string; noteId: string | null };
-  note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null; /** The reply to send with it, as approved (and edited). */ reply?: { subject: string; body: string } | null; /** Every message to send with it, as approved (and edited). */ messages?: Array<{ id: string; to: MessageParty; subject: string; body: string; attach?: MessageAttachment[] }> };
+  file_delivery_set: { mode: 'attachments' | 'link'; reason: string | null; noteId: string | null };
+  note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null; /** The reply to send with it, as approved (and edited). */ reply?: { subject: string; body: string } | null; /** Every message to send with it, as approved (and edited). */ messages?: Array<{ id: string; to: MessageParty; subject: string; body: string; attach?: MessageAttachment[]; asAttachments?: boolean; alwaysAttach?: boolean }> };
   note_action_refused: { noteId: string; actionId: string; reason: string };
   escalation_raised: {
     /** null when a human escalated a decision rather than a timer firing on a wait. */
@@ -1548,6 +1551,8 @@ export interface MatterState {
   sellerForms: { receivedAt: string | null; forms: string[]; documentId: string | null; facts: PropertyFormsFacts | null; documents?: Array<{ documentId: string; forms: string[] }> };
   /** Our client's linked sale or purchase (one client, one chain). */
   relatedMatter: { matterId: string; relation: 'sale' | 'purchase'; linkedAt: string } | null;
+  /** How files reach the client: a secure link (the default), or attachments when they asked for that. */
+  fileDelivery?: 'link' | 'attachments';
   /** The lender's own (Part 2) requirements recorded on this matter; null = the defaults. */
   lenderRequirements: { minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; note: string | null; recordedAt: string } | null;
   /** Documented name changes: [from, to] pairs the cross-checks treat as one person. */
@@ -1726,6 +1731,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     exchange: { conditionsMet: false, exchangedAt: null, completionDate: null },
     sellerForms: { receivedAt: null, forms: [], documentId: null, facts: null },
     relatedMatter: null,
+    fileDelivery: 'link',
     lenderRequirements: null,
     nameAliases: [],
     preCompletion: { insuranceConfirmedAt: null, insurer: null, prioritySearchAt: null, prioritySearchExpiresAt: null, bankruptcySearchAt: null },

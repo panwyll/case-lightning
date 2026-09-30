@@ -147,9 +147,9 @@ export interface MessageOverride { subject?: string | null; body?: string | null
 
 export interface ClientComms {
   readonly name: string;
-  sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: MessageOverride | null; attachments?: Array<{ name: string; bytes: Buffer; contentType: string }> }): Promise<{ channel: 'email' | 'whatsapp' | 'mock'; messageId: string | null; /** where it went, for the case's record */ address?: string | null }>;
+  sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: MessageOverride | null; attachments?: Array<{ name: string; bytes: Buffer; contentType: string }>; /** Files as a secure link (the default for files to a client). */ link?: { url: string; files: string[] } | null }): Promise<{ channel: 'email' | 'whatsapp' | 'mock'; messageId: string | null; /** where it went, for the case's record */ address?: string | null }>;
   /** Only ever called after assertCanSendReport passes — the engine, not the port, guards this. */
-  sendReportOnTitle(input: { tenantId: string; matterId: string; draftDocument: DocumentRef }): Promise<{ channel: string; messageId: string | null }>;
+  sendReportOnTitle(input: { tenantId: string; matterId: string; draftDocument: DocumentRef; link?: { url: string; files: string[] } | null }): Promise<{ channel: string; messageId: string | null }>;
 }
 
 /** Component #5, third-party chases — template-based, timer-triggered, never AI-generated per message in v1. */
@@ -247,6 +247,8 @@ export interface EnginePorts {
   /** Optional: whether the firm is paid up (or in its grace period). A suspended firm's cases are not swept: nothing is chased or sent until they pay. */
   entitled?(tenantId: string): Promise<boolean>;
   /** Optional: a file on the case found by what someone calls it, and its bytes (a client asking for a copy). */
+  /** Secure links to files for a client (migration 116): a link that opens with an emailed code; opens are counted. Absent = files go as attachments. */
+  fileShares?: { create(input: { tenantId: string; matterId: string; files: Array<{ id: string; fileName: string }> }): Promise<{ url: string }>; /** The files of the last link sent on the case (what "the link won't open" is about). */ latest(tenantId: string, matterId: string): Promise<Array<{ id: string; fileName: string }>> } | null;
   files?: { find(tenantId: string, matterId: string, what: string): Promise<Array<{ id: string; fileName: string }>>; bytes(tenantId: string, id: string): Promise<{ name: string; bytes: Buffer; contentType: string } | null> };
   extractor: DocumentExtractor;
   /** Optional: without a classifier, documents must be ingested with an explicit role (the /ingest route). */

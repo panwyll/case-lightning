@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { ENGINE_CSS } from './ui';
 import { KIND_LABEL, OPTION_HELP, OPTION_LABEL, OPTION_LABEL_BY_KIND, STAGE_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Citation, type DecisionDetail, type Engagement, type SourceDoc } from './types';
-import { X, Check, ChevronRight, Paperclip } from '@/app/shared/icons';
+import { X, Check, ChevronRight, Paperclip, Lock } from '@/app/shared/icons';
 
 /**
  * Addendum 3 §3 — the decision panel. A fixed three-part vertical layout:
@@ -108,6 +108,11 @@ const CSS = `
 .dp-msg p.warn{color:#92400e}
 .dp-msg{position:relative}
 .dp-att{display:flex;flex-wrap:wrap;gap:6px}
+.dp-files{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.dp-how{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dp-how > button{display:inline-flex;align-items:center;gap:6px;border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:5px 9px;font:inherit;font-size:12.5px;font-weight:600;color:#475569;cursor:pointer}
+.dp-how > button.on{border-color:#5A27E0;color:#5A27E0;background:#f5f3ff}
+.dp-always{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#334155}
 .dp-att a{display:inline-flex;align-items:center;gap:6px;border:1px solid #e2e8f0;border-radius:8px;padding:5px 9px;font-size:12.5px;font-weight:600;color:#0f172a;text-decoration:none;background:#fff}
 .dp-att a:hover{border-color:#5A27E0;color:#5A27E0}
 .dp-edit{position:absolute;top:10px;right:12px;border:1px solid #c4b5fd;background:#fff;color:#5A27E0;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer}
@@ -220,6 +225,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const [picked, setPicked] = useState<Set<string> | null>(null);
   /** note_actions: each drafted message, as the person edits it. */
   const [drafts, setDrafts] = useState<Record<string, { subject: string; body: string }>>({});
+  /** Per message with files: attach them instead of the secure link, and whether for this client from now on. */
+  const [fileHow, setFileHow] = useState<Record<string, { asAttachments: boolean; alwaysAttach: boolean }>>({});
   const [page, setPage] = useState<number | null>(null);
   const [done, setDone] = useState<string | null>(null);
   // engagement
@@ -434,7 +441,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
     try {
       const engagement: Engagement = { scrolledSource: scrolled, dwellMs: dwell };
       const selection = detail?.noteActions && option === 'approve' ? [...(picked ?? [])] : null;
-      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection, edited: option === 'approve' ? (detail?.noteActions?.messages?.length ? { messages: detail.noteActions.messages.filter((m) => drafts[m.id] && (drafts[m.id].subject.trim() !== m.subject || drafts[m.id].body.trim() !== m.body.trim())).map((m) => ({ id: m.id, subject: drafts[m.id].subject.trim() || null, body: drafts[m.id].body.trim() || null })) } : editedBody()) : null, escalateTo: option === 'escalate' ? escalateTo || null : null }) });
+      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection, edited: option === 'approve' ? (detail?.noteActions?.messages?.length ? { messages: detail.noteActions.messages.filter((m) => (drafts[m.id] && (drafts[m.id].subject.trim() !== m.subject || drafts[m.id].body.trim() !== m.body.trim())) || (fileHow[m.id] && (fileHow[m.id].asAttachments !== !!m.asAttachments || fileHow[m.id].alwaysAttach))).map((m) => ({ id: m.id, subject: drafts[m.id]?.subject.trim() || null, body: drafts[m.id]?.body.trim() || null, ...(fileHow[m.id] ? { asAttachments: fileHow[m.id].asAttachments, alwaysAttach: fileHow[m.id].asAttachments && fileHow[m.id].alwaysAttach } : {}) })) } : editedBody()) : null, escalateTo: option === 'escalate' ? escalateTo || null : null }) });
       setEditing(false);
       setDone(option);
       // The list moves on at once; the panel's own refresh happens behind it.
@@ -636,7 +643,22 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                     <label className="dp-reply-h"><input type="checkbox" checked={on} disabled={busy} onChange={(e) => setPicked((prev) => { const next = new Set(prev ?? []); if (e.target.checked) next.add(m.id); else next.delete(m.id); return next; })} />{m.id === 'reply' ? 'Reply' : 'Email'} To {PARTY_TITLE[m.to] ?? m.to}</label>
                     <input className="eg-in" value={dr.subject} onChange={(e) => set({ subject: e.target.value })} disabled={busy || !on} aria-label="Subject" />
                     <textarea className="eg-in" rows={Math.min(16, Math.max(on ? 5 : 3, dr.body.split('\n').length + 1))} value={dr.body} onChange={(e) => set({ body: e.target.value })} disabled={busy || !on} aria-label="Message" />
-                    {attachments(m.attach?.filter((x) => noteLines.actions.some((a) => a.command === 'send_file_copy' && picked?.has(a.id))))}
+                    {(() => {
+                      const files = m.attach?.filter((x) => noteLines.actions.some((a) => picked?.has(a.id) && ((a.command === 'send_file_copy') || (x.what === '' && a.command === 'set_file_delivery'))));
+                      if (!files?.length) return null;
+                      const how = fileHow[m.id] ?? { asAttachments: !!m.asAttachments, alwaysAttach: false };
+                      const set = (patch: Partial<typeof how>) => setFileHow((cur) => ({ ...cur, [m.id]: { ...how, ...patch } }));
+                      return (
+                        <div className="dp-files">
+                          {attachments(files)}
+                          <div className="dp-how" role="radiogroup" aria-label="How the files go">
+                            <button type="button" role="radio" aria-checked={!how.asAttachments} className={!how.asAttachments ? 'on' : ''} disabled={busy || !on} onClick={() => set({ asAttachments: false, alwaysAttach: false })}><Lock size={16} />Secure Link</button>
+                            <button type="button" role="radio" aria-checked={how.asAttachments} className={how.asAttachments ? 'on' : ''} disabled={busy || !on} onClick={() => set({ asAttachments: true })}><Paperclip size={16} />Attachments</button>
+                            {how.asAttachments && <label className="dp-always"><input type="checkbox" checked={how.alwaysAttach} disabled={busy || !on} onChange={(e) => set({ alwaysAttach: e.target.checked })} />Always For This Client</label>}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}

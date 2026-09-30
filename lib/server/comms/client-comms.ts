@@ -16,7 +16,7 @@
  * layer is unit-tested with fakes.
  */
 import { messageProblem } from './templates';
-import { signedHtml, signedText, type Signature } from '../signature';
+import { linkify, signedHtml, signedText, type Signature } from '../signature';
 import { z } from 'zod/v4';
 import type { ClientComms, DocumentRef, ThirdPartyChaser } from '../engine/ports';
 import type { StructuredLlm } from '../engine/llm';
@@ -91,8 +91,11 @@ export interface CommsDeps {
 }
 
 const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] as string);
-const toHtml = (text: string) => `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5">${escapeHtml(text).replace(/\n/g, '<br>')}</div>`;
+const toHtml = (text: string) => `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5">${linkify(escapeHtml(text)).replace(/\n/g, '<br>')}</div>`;
 /** An email as it goes: signed with the fee earner's signature (Graph sends carry no Outlook signature), or with the plain firm footer when none was built. */
+/** A secure link to files, as it reads in the email: the files by name, the link, and how it opens. */
+export interface FileLink { url: string; files: string[] }
+export const fileLinkBlock = (l: FileLink): string => `${l.files.length === 1 ? l.files[0] : l.files.map((f) => `• ${f}`).join('\n')}\n${l.url}\n(The link asks for a code, which we email to you when you open it.)`;
 const emailHtml = (text: string, info: MatterContactInfo): string => (info.signature ? signedHtml(text, info.signature) : toHtml(withFooter(text, info)));
 const emailText = (text: string, info: MatterContactInfo): string => (info.signature ? signedText(text, info.signature) : withFooter(text, info));
 
@@ -200,7 +203,7 @@ export class ProductionClientComms implements ClientComms {
     return { to: clientLine(info), ...clientAddress(info), subject: r.subject, body: withOverview(r.body, input.context) };
   }
 
-  async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null; attachments?: MailAttachment[] }) {
+  async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null; attachments?: MailAttachment[]; link?: FileLink | null }) {
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const base = forTransaction(CLIENT_UPDATES, input.template, info.transaction);
     if (!base) throw new Error(`Unknown client update template ${input.template}`);
@@ -209,11 +212,12 @@ export class ProductionClientComms implements ClientComms {
     if (r.missing.length) throw new Error(`Template ${t.key} missing ${r.missing.join(', ')}`);
     { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
     // An edited message is sent as the person wrote it; the "where things stand" tail is only added to the template's own words.
-    return this.deliver(input.tenantId, input.matterId, info, t.key, r.subject, input.override?.body?.trim() ? r.body : withOverview(r.body, input.context), input.attachments ?? []);
+    const body = input.override?.body?.trim() ? r.body : withOverview(r.body, input.context);
+    return this.deliver(input.tenantId, input.matterId, info, t.key, r.subject, input.link ? `${body}\n\n${fileLinkBlock(input.link)}` : body, input.attachments ?? []);
   }
 
   /** Only ever reached after the engine's approval invariant (assertCanSendReport). Email only — a report is a document, not a chat message. */
-  async sendReportOnTitle(input: { tenantId: string; matterId: string; draftDocument: DocumentRef }) {
+  async sendReportOnTitle(input: { tenantId: string; matterId: string; draftDocument: DocumentRef; link?: FileLink | null }) {
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const content = (input.draftDocument.extractedFacts as { content?: string } | null)?.content ?? '';
     if (!content) throw new Error('Report draft has no content to send.');
@@ -222,9 +226,12 @@ export class ProductionClientComms implements ClientComms {
     if (!to.length) throw new Error('No client email address on the matter.');
     const subject = `Report on title — ${info.propertyAddress} (${info.matterRef})`;
     // The report goes as the firm's Word document (their letterhead, from Doc Packs); the email is the covering note.
-    const doc = this.deps.renderReport ? await this.deps.renderReport(input.tenantId, input.matterId, content) : null;
+    // As a secure link (the default), or the Word document attached for a client who asked for attachments.
+    const doc = !input.link && this.deps.renderReport ? await this.deps.renderReport(input.tenantId, input.matterId, content) : null;
     const attachments: MailAttachment[] = doc ? [{ name: doc.fileName, bytes: doc.bytes, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }] : [];
-    const body = doc
+    const body = input.link
+      ? `Hello ${info.clientFirstName ?? 'there'},\n\nYour report on title is ready. Read it carefully and let ${info.feeEarnerName ?? 'us'} know if you have any questions before we exchange contracts.\n\n${fileLinkBlock(input.link)}\n\n${info.firmName}`
+      : doc
       ? `Hello ${info.clientFirstName ?? 'there'},\n\nPlease find your report on title attached. Read it carefully and let ${info.feeEarnerName ?? 'us'} know if you have any questions before we exchange contracts.\n\n${info.firmName}`
       : `Hello ${info.clientFirstName ?? 'there'},\n\nPlease find your report on title below. Read it carefully and let ${info.feeEarnerName ?? 'us'} know if you have any questions before we exchange contracts.\n\n${content}\n\n${info.firmName}`;
     let r: { messageId: string | null };

@@ -129,8 +129,8 @@ export interface NoteActionsDetail {
   skipped: string[] | null;
   refused: Array<{ id: string; reason: string }>;
   /** The messages drafted from the case (the reply first, then anyone else who needs to hear), and once resolved, what was sent. */
-  messages?: Array<{ id: string; to: string; purposes: string[]; subject: string; body: string; drafter: string; on: boolean; attach?: MessageFile[] }>;
-  messagesSent?: Array<{ id: string; to: string; subject: string; body: string; attach?: MessageFile[] }> | null;
+  messages?: Array<{ id: string; to: string; purposes: string[]; subject: string; body: string; drafter: string; on: boolean; attach?: MessageFile[]; asAttachments?: boolean }>;
+  messagesSent?: Array<{ id: string; to: string; subject: string; body: string; attach?: MessageFile[]; asAttachments?: boolean }> | null;
 }
 
 export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;
