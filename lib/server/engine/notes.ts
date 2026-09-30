@@ -721,3 +721,32 @@ export class DeterministicNoteReader {
     return out;
   }
 }
+
+// ───────────────────────────── acknowledgements (no reply needed) ─────────────────────────────
+
+/** Words a pure acknowledgement is made of. No word that can be an answer ("ok", "yes", "fine", "sure"): those go to a person. */
+const ACK_WORDS = new Set([
+  'thanks', 'thank', 'thankyou', 'thx', 'ty', 'ta', 'cheers', 'many', 'much', 'very', 'so', 'lots', 'again', 'you', 'all', 'for', 'the', 'your', 'this', 'that', 'it',
+  'received', 'noted', 'got', 'will', 'do', 'appreciated', 'appreciate', 'grateful', 'great', 'brilliant', 'lovely', 'perfect', 'excellent', 'wonderful', 'fab', 'fantastic', 'super', 'amazing', 'awesome', 'nice', 'kind', 'kindly', 'help', 'update', 'info', 'information', 'email', 'message', 'letting', 'me', 'us', 'know',
+  'hi', 'hello', 'hey', 'dear', 'morning', 'afternoon', 'evening', 'good',
+  'regards', 'best', 'wishes', 'warm', 'speak', 'soon', 'have', 'a', 'day', 'weekend', 'and', 'with', 'x', 'xx', 'xxx',
+]);
+
+/**
+ * Whether an email is only an acknowledgement ("Will do, cheers", "Thanks, received"), so nobody needs to
+ * reply. Deliberately strict: every word must be one of ACK_WORDS once the greeting, the sender's own
+ * name and the sign-off are set aside; no question, no number, no "but"/"not", nothing attached, and short.
+ * Anything it cannot be sure of is not an acknowledgement, and goes to a person.
+ */
+export function isAcknowledgement(text: string, senderName?: string | null, attachments = 0): boolean {
+  if (attachments > 0) return false;
+  const raw = text.replace(/^(sent from my .*|get outlook for .*)$/gim, '').trim();
+  if (!raw || raw.length > 160) return false;
+  if (/[?£$€\d]/.test(raw)) return false;
+  const name = new Set((senderName ?? '').toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 1));
+  const words = raw.toLowerCase().replace(/\b(no problems?|no worries)\b/g, ' ').replace(/[’']/g, '').split(/[^a-z]+/).filter(Boolean).filter((w) => !name.has(w));
+  if (!words.length || words.length > 15) return false;
+  if (!words.some((w) => /^(thanks|thank|thankyou|thx|ty|ta|cheers|received|noted|appreciated|grateful|will)$/.test(w))) return false;
+  if (words.includes('will') && !/\bwill do\b/.test(words.join(' '))) return false;
+  return words.every((w) => ACK_WORDS.has(w));
+}

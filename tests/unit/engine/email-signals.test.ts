@@ -422,3 +422,16 @@ test('an email proposing an issue carries that issue\'s severity (the chip is co
   assert.equal(item.severity, 'critical', 'a withdrawn offer is High, not the usual Medium');
   assert.equal(ISSUE_KIND_SPEC.mortgage_at_risk.severity, 'warning');
 });
+
+// ───────────────────────────── acknowledgements: the only email nobody needs to answer ─────────────────────────────
+
+test('a pure acknowledgement needs no reply; anything that could be an answer, a question or news goes to a person', async () => {
+  const { isAcknowledgement } = await import('../../../lib/server/engine/notes');
+  for (const t of ['Will do, cheers', 'Thanks!', 'Great, thank you', 'Received with thanks', 'Noted, many thanks\n\nJo Client', 'Brilliant thanks x', 'Hi, thanks for the update. Kind regards, Jo', 'Cheers, no problem', 'Thank you so much for all your help!\n\nSent from my iPhone']) {
+    assert.equal(isAcknowledgement(t, 'Jo Client'), true, t);
+  }
+  for (const t of ['Ok', 'OK great', 'Yes please', 'Fine by me', 'Sure', 'Thanks, when do we exchange?', 'Thanks - but the survey is not back yet', 'Thanks, attached is the form', "Thanks, I'll send it on the 5th", 'Will do but I am away next week', 'Thanks. The lender has pulled the offer.', 'Thanks, go ahead', 'Thanks, happy to proceed', 'Hello', 'Will call you tomorrow', 'Thanks £500 sent']) {
+    assert.equal(isAcknowledgement(t, 'Jo Client'), false, t);
+  }
+  assert.equal(isAcknowledgement('Thanks!', 'Jo Client', 1), false, 'an email carrying a file is not just an acknowledgement');
+});
