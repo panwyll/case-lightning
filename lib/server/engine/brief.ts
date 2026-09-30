@@ -269,7 +269,7 @@ export function clientStatusAnswer(b: CaseBrief, now: Date = new Date()): Client
     parts.unshift('Contracts are exchanged and we are working towards the agreed completion date.');
     facts.push('exchanged');
   }
-  parts.push('If you would like to talk anything through, just say and your conveyancer will call you.');
+  parts.push('If you would like to talk anything through, just say and we will call you.');
   void now;
   return { canAnswer: true, text: parts.join(' '), facts };
 }

@@ -926,7 +926,7 @@ export class EngineService {
       for (const l of lines) {
         if (l.command?.type !== 'send_file_copy') continue;
         const what = l.command.what;
-        const found = await this.ports.files.find(tenantId, matterId, what).catch(() => []);
+        const found = await this.requestedFiles(tenantId, matterId, state, what);
         for (const f of found) if (!attach.some((a) => a.id === f.id)) attach.push({ id: f.id, fileName: f.fileName, what });
       }
     }
@@ -948,10 +948,28 @@ export class EngineService {
     return out;
   }
 
+  /**
+   * The files a client means when they ask for a document. The report on title is the one they were
+   * sent (the approved draft, which goes again as the Word document); nothing if it has not gone yet.
+   * Anything else is found on the file by what they call it (file-finder.ts).
+   */
+  private async requestedFiles(tenantId: string, matterId: string, state: MatterState, what: string): Promise<Array<{ id: string; fileName: string }>> {
+    if (/report on (the )?title|\brot\b/i.test(what)) {
+      const r = state.reportOnTitle;
+      return r.draftDocumentId && (r.sentAt || r.interimSentAt) ? [{ id: r.draftDocumentId, fileName: 'Report on title.docx' }] : [];
+    }
+    return this.ports.files ? this.ports.files.find(tenantId, matterId, what).catch(() => []) : [];
+  }
+
   /** The reply to a client's email, from the case facts (reply.ts); worded by the drafter when there is one. */
   private async draftReply(tenantId: string, matterId: string, state: MatterState, text: string, subject: string | null, from: NoteSender, lines: NoteActionDraft[], others: string[] = [], also: { purposes: string[]; sentences: string[] } = { purposes: [], sentences: [] }, attach: MessageAttachment[] = []): Promise<NoteReply> {
     const now = this.ports.now();
-    const attached = attach.length ? [`Say that ${attach.map((a) => a.fileName).join(', ')} ${attach.length > 1 ? 'are' : 'is'} attached to this email (it is: never say we will send it separately, later or by another email)`] : [];
+    const asked = lines.filter((l) => l.command?.type === 'send_file_copy').map((l) => (l.command as { what: string }).what);
+    const missing = asked.filter((w) => !attach.some((a) => a.what === w));
+    const attached = [
+      ...(attach.length ? [`Say that ${attach.map((a) => a.fileName).join(', ')} ${attach.length > 1 ? 'are' : 'is'} attached to this email (it is: never say we will send it separately, later or by another email). Attach nothing else and mention no other document`] : []),
+      ...missing.map((w) => `They asked for ${w}: it is NOT attached. Do not say it is attached, resent or on its way; say we will send it to them as soon as we can`),
+    ];
     const firstName = (from.name ?? '').trim().split(/\s+/)[0] || null;
     const re = subject ? (/^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`) : 'Re: your email';
     const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts: replyFacts(state, now), now: now.toISOString(), weActFor: weActFor(state), purposes: [...new Set(['Reply to their email, answering every point they made', ...attached, ...also.purposes, ...others.map((o) => `Tell them we are writing to ${o} today`)])] }) : null;
@@ -1780,7 +1798,7 @@ export class EngineService {
                 // Attached to the reply that goes below: nothing to send separately.
               } else if (c.type === 'send_file_copy') {
                 // The client cannot find a document: it goes back to them, attached, if it is on the file.
-                const found = this.ports.files ? await this.ports.files.find(tenantId, matterId, c.what) : [];
+                const found = await this.requestedFiles(tenantId, matterId, await this.getState(tenantId, matterId), c.what);
                 if (!found.length) {
                   await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'other', title: `The client asked for a copy of ${c.what.trim().slice(0, 60)}: not found on the file`, detail: `Find it and send it to them, or tell them when it will be available. They wrote: "${action.quote ?? c.what}"`, gate: 'none', severity: 'warning' } as never);
                 } else {

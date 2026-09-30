@@ -8,14 +8,15 @@ import { getBlob } from '../blob-store';
 
 const INTERNAL = ['FILE_NOTE', 'EMAIL', 'ESCALATION_DOSSIER', 'DEADLINE_DOSSIER', 'PROPOSAL', 'BANK_DETAILS_NOTE', 'SANDBOX_EMAIL', 'REPORT_ON_TITLE_DRAFT'];
 /** What people call a document, to the words its type or name carries. */
-const ALIASES: Array<[RegExp, string[]]> = [
+/** Each alias: what the words mean, what they map to, and (optionally) a more specific phrase it must not swallow ("report on title" is not the title). */
+const ALIASES: Array<[RegExp, string[], RegExp?]> = [
   [/\bta ?6\b|property information/i, ['TA6', 'property information', 'property_forms']],
   [/\bta ?10\b|fittings/i, ['TA10', 'fittings']],
   [/\bta ?7\b|leasehold information/i, ['TA7', 'leasehold']],
   [/survey|homebuyer|valuation/i, ['survey', 'SURVEY']],
-  [/mortgage offer|offer/i, ['MORTGAGE_OFFER', 'offer']],
-  [/contract/i, ['CONTRACT', 'contract']],
-  [/title|register|official cop/i, ['TITLE', 'OFFICIAL_COPY', 'register']],
+  [/mortgage offer|\boffer\b/i, ['MORTGAGE_OFFER', 'offer']],
+  [/contract/i, ['CONTRACT', 'contract'], /report on (the )?contract/i],
+  [/title|register|official cop/i, ['TITLE', 'OFFICIAL_COPY', 'register'], /report on (the )?title|certificate of title/i],
   [/search|local authority|drainage|environmental/i, ['SEARCH', 'search']],
   [/report on title/i, ['report on title']],
   [/completion statement/i, ['COMPLETION_STATEMENT', 'completion statement']],
@@ -25,7 +26,9 @@ const ALIASES: Array<[RegExp, string[]]> = [
 ];
 
 export async function findFiles(tenantId: string, matterId: string, what: string): Promise<Array<{ id: string; fileName: string }>> {
-  const words = [...new Set([what.trim(), ...ALIASES.filter(([re]) => re.test(what)).flatMap(([, w]) => w)])].filter((w) => w.length >= 2).slice(0, 8);
+  // "my report on title" is looked for as "report on title".
+  const bare = what.trim().replace(/^(the|my|our|a|a copy of( the| my| our)?)\s+/i, '');
+  const words = [...new Set([bare, ...ALIASES.filter(([re, , not]) => re.test(what) && !not?.test(what)).flatMap(([, w]) => w)])].filter((w) => w.length >= 2).slice(0, 8);
   if (!words.length) return [];
   const rows = await query<{ id: string; file_name: string | null; doc_type: string | null; score: number }>(
     `select id, file_name, doc_type,
@@ -42,8 +45,14 @@ export async function findFiles(tenantId: string, matterId: string, what: string
 }
 
 export async function fileBytes(tenantId: string, id: string): Promise<{ name: string; bytes: Buffer; contentType: string } | null> {
-  const d = await queryOne<{ file_name: string | null; mime_type: string | null; blob: Buffer | null }>(`select file_name, mime_type, (select b.bytes from document_blob b where b.document_id = d.id) as blob from document d where d.id = $1 and d.tenant_id = $2`, [id, tenantId]).catch(() => null);
+  const d = await queryOne<{ file_name: string | null; mime_type: string | null; doc_type: string | null; matter_id: string; content: string | null; blob: Buffer | null }>(`select file_name, mime_type, doc_type, matter_id, extracted_facts->>'content' as content, (select b.bytes from document_blob b where b.document_id = d.id) as blob from document d where d.id = $1 and d.tenant_id = $2`, [id, tenantId]).catch(() => null);
   if (!d) return null;
+  // The report on title goes again as it went: the Word document rendered from the approved text.
+  if (d.doc_type === 'REPORT_ON_TITLE_DRAFT' && d.content) {
+    const { renderReportOnTitleDocx } = await import('../doc-templates');
+    const out = await renderReportOnTitleDocx(tenantId, d.matter_id, d.content);
+    return { name: out.fileName, bytes: out.bytes, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+  }
   const bytes = d.blob ?? (await getBlob(tenantId, id).catch(() => null));
   return bytes ? { name: d.file_name ?? 'Document', bytes, contentType: d.mime_type ?? 'application/octet-stream' } : null;
 }

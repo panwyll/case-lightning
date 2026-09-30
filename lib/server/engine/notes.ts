@@ -812,9 +812,9 @@ export class DeterministicNoteReader {
         } else if (wait && PROGRESS.test(t) && !/\?\s*$/.test(t)) {
           out.push({ kind: 'progress', summary: `The client says ${wait.label.replace(/^your /, 'their ')} is done or on its way`, quote: t, confidence: 0.75, command: { type: 'record_client_progress', waitKey: wait.waitKey as WaitKey, subject: wait.subject, claim: t.slice(0, 200), expectBy: null } });
           quoted.add(t);
-        } else if (FILE_ASK.test(t) && !quoted.has(t) && !/\b(link|form)s?\b/i.test(t)) {
-          // "Can you send over the searches?": a document on the file, sent back attached to the reply.
-          const hit = FILE_ASK.exec(t)!;
+        } else if ((FILE_ASK.test(t) || LOST_FILE.test(t)) && !quoted.has(t) && !/\b(link|form)s?\b/i.test(t)) {
+          // "Can you send over the searches?", "can't find my report on title, can you send it": a document on the file, sent back attached to the reply.
+          const hit = FILE_ASK.exec(t) ?? LOST_FILE.exec(t)!;
           const what = (hit[1] ?? hit[2]).replace(/\s+(again|please|over|through)$/i, '').trim();
           out.push({ kind: 'resend', summary: `The client asks for a copy of ${what}`, quote: t, confidence: 0.8, command: { type: 'send_file_copy', what } });
           quoted.add(t);
@@ -830,6 +830,8 @@ export class DeterministicNoteReader {
 
 /** "Can you send over the searches", "could I have a copy of the TA10", "please forward my survey": the document named. */
 const FILE_ASK = /\b(?:send|forward|email|resend|re-send)(?:\s+(?:me|us|over|through|on|across))*\s+(?:(?:a\s+)?cop(?:y|ies)\s+of\s+)?((?:the|my|our)\s+[a-z0-9' -]{2,40}?)(?=[?.!,]|\s+(?:again|please|over|through|as|to|when|if|so)\b|$)|\b(?:have|get)\s+a\s+copy\s+of\s+((?:the|my|our)\s+[a-z0-9' -]{2,40}?)(?=[?.!,]|$)/i;
+/** "Can't find my report on title, do you mind sending it over": the lost document, when they ask for it. */
+const LOST_FILE = /\b(?:can'?t|cannot|can not|couldn'?t)\s+(?:find|locate|see)\s+((?:the|my|our)\s+[a-z0-9' -]{2,40}?)(?=\s*(?:[?.!,;]|\b(?:do|could|can|would|please|anywhere|in my|in the)\b)).*\b(?:send|sending|forward|resend|email)\b/i;
 /** "Can you resend…", "I've lost the link", "send the forms again". */
 const RESEND = /\b(re-?send|send (it|them|that|those|me|us)?\s*(\w+\s){0,4}again|lost (the|my|our)|can'?t find (the|my|our)|(link|form)s? (has|have)? ?(expired|stopped working|doesn'?t work))\b/i;
 /** "I've posted it", "the deposit went today", "uploaded my ID". */

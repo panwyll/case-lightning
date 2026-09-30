@@ -154,3 +154,33 @@ test('an issue the client has been emailed about is marked as told, so a later r
   assert.ok(s.issues[id].clientToldAt);
   assert.match(renderForDrafting(caseBrief(s, new Date())), /withdraw \(holds exchange, critical\)\. ALREADY TOLD THE CLIENT/);
 });
+
+test('"can\'t find my report on title" attaches the report they were sent, never the official copies', async () => {
+  const { titleClear, idClear, resolve } = await import('./helpers');
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  h.ports.noteExtractor = new DeterministicNoteReader();
+  // The file finder would offer the title documents for anything with "title" in it: the report must not come from there.
+  h.ports.files = { find: async () => [{ id: 'oc-1', fileName: 'Official Copy (Register) - TGL1.pdf' }], bytes: async () => ({ name: 'x', bytes: Buffer.from('x'), contentType: 'text/plain' }) };
+  const ask = async () => {
+    const documentId = h.doc(null, 'EMAIL');
+    const res = await h.svc.recordNote(TENANT, MATTER, { text: "can't find my report on title do you mind sending it over?", kind: 'email', actor: USER, documentId, from: CLIENT, surface: true, subject: 'Report' });
+    return Object.values(res.state.notes).at(-1)!.messages!.find((m) => m.id === 'reply')!;
+  };
+  const early = await ask();
+  assert.equal(early.attach, undefined, 'not sent yet: nothing attached');
+  assert.doesNotMatch(early.body, /attach|separately/i);
+
+  await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  await h.svc.draftReportOnTitle(TENANT, MATTER);
+  const rot = firstDecision(await h.svc.getState(TENANT, MATTER), 'report_on_title');
+  await resolve(h, rot.eventId, 'approve');
+  await h.svc.sendReportOnTitle(TENANT, MATTER, USER);
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(s.reportOnTitle.sentAt || s.reportOnTitle.interimSentAt, 'the report went');
+  const later = await ask();
+  assert.deepEqual(later.attach?.map((a) => [a.id, a.fileName]), [[s.reportOnTitle.draftDocumentId, 'Report on title.docx']]);
+  assert.match(later.body, /I attach Report on title\.docx/);
+});
