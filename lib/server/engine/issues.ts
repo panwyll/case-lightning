@@ -17,7 +17,7 @@
  * situation has become a problem for the plan — `overlaps` says what the machine already
  * covers so nothing is double-counted.
  */
-import type { Stage } from './types';
+import type { MessageParty, Stage } from './types';
 
 export const ISSUE_GROUPS = ['title', 'leasehold', 'planning_regs', 'searches', 'enquiries', 'funds_aml', 'mortgage', 'money', 'parties_chain', 'property', 'completion', 'other'] as const;
 export type IssueGroup = (typeof ISSUE_GROUPS)[number];
@@ -169,6 +169,7 @@ export const ISSUE_RESOLUTIONS = [
   'revaluation_upheld',
   'lender_confirmed',
   'chain_ready',
+  'proceeding_confirmed',
   'grant_obtained',
   'attorney_verified',
   'insolvency_cleared',
@@ -277,7 +278,7 @@ const KIND_SPECS_BASE: Array<Omit<IssueKindSpec, 'severity' | 'workstreams' | 't
   // ── completion ──
   { kind: 'completion_failure', group: 'completion', label: 'Completion failure', arisesFrom: 'lender funds late, the CHAPS cut-off missed, chain money not through, keys not released, a removal van on the drive and no money', gate: 'completion', stages: ['pre_completion'], resolutions: ['completed_late', 'funds_in_place', 'other'], note: 'Late-completion interest under the standard conditions; a notice to complete if it slips further.' },
   { kind: 'survey_report_outstanding', group: 'property', label: 'Survey done, report not on file', arisesFrom: 'the client or the agent says the survey has been carried out, but no report has been filed', gate: 'none', stages: PRE, resolutions: ['received', 'accepted_as_is', 'other'], note: 'Raised from an email or a note. The surveyor reports to the client, not to us: ask the client for it. Nothing about the physical condition is recorded until the report itself is on file and read.' },
-  { kind: 'transaction_at_risk', group: 'parties_chain', label: 'Transaction at risk', arisesFrom: 'someone says a party is pulling out, the chain has broken or the sale has fallen through', gate: 'exchange', stages: PRE, resolutions: ['chain_ready', 'dates_replanned', 'accepted_as_is', 'other'], note: 'Raised from an email or a note. Confirm with the solicitors, never on an agent\'s word alone. Abandoning the file is a separate, deliberate step a person takes.' },
+  { kind: 'transaction_at_risk', group: 'parties_chain', label: 'Transaction at risk', arisesFrom: 'someone says a party is pulling out, the chain has broken or the sale has fallen through', gate: 'exchange', stages: PRE, resolutions: ['proceeding_confirmed', 'chain_ready', 'dates_replanned', 'accepted_as_is', 'other'], note: 'Raised from an email or a note. Confirm with the solicitors, never on an agent\'s word alone. Abandoning the file is a separate, deliberate step a person takes.' },
   { kind: 'mortgage_at_risk', group: 'mortgage', label: 'Mortgage at risk', arisesFrom: 'a change in the client\'s circumstances (job, income, credit) or word that the lender is reconsidering', gate: 'exchange', stages: PRE, resolutions: ['lender_confirmed', 'new_lender', 'offer_extended', 'accepted_as_is', 'other'], note: 'Raised from an email or a note. A material change must be reported to the lender before exchange; exchanging on an offer that is about to be withdrawn is the classic disaster.' },
   { kind: 'document_revised', group: 'other', label: 'Revised document', arisesFrom: 'a new version of a document already read on the case (a revised contract, re-issued search, updated replies, an edited file in the case folder) that the system could not simply re-apply because that step had moved on', gate: 'none', stages: PRE, resolutions: ['accepted_as_is', 'evidence_provided', 'other'], note: 'Revisions are normal. The new version is filed, read and compared with the one it replaces; what changed is shown on the Documents tab. A person decides what the change means.' },
   { kind: 'unknown_correspondent', group: 'parties_chain', label: 'Someone not on the file wrote in', arisesFrom: 'an email on the case from an address the case does not know: a spouse, a relative, a new agent, a scammer', gate: 'none', stages: PRE, resolutions: ['evidence_provided', 'accepted_as_is', 'other'], note: 'Never buried: it is put to a person every time. Nothing they say counts as the client\'s until the client confirms it, and bank details from an unknown address are the classic fraud.' },
@@ -408,6 +409,7 @@ export const RESOLUTION_LABEL: Record<IssueResolution, string> = {
   revaluation_upheld: 'valuation challenged and upheld',
   lender_confirmed: 'lender confirmed the offer stands',
   chain_ready: 'chain confirmed ready',
+  proceeding_confirmed: 'the other side confirmed they are proceeding',
   grant_obtained: 'grant of probate obtained',
   attorney_verified: 'attorney\'s authority verified',
   insolvency_cleared: 'insolvency cleared (trustee / discharge / not our client)',
@@ -468,6 +470,7 @@ export const RESOLUTION_TITLE: Record<IssueResolution, string> = {
   revaluation_upheld: 'Valuation Upheld',
   lender_confirmed: 'Lender Confirmed',
   chain_ready: 'Chain Ready',
+  proceeding_confirmed: 'They Are Proceeding',
   grant_obtained: 'Grant Obtained',
   attorney_verified: 'Attorney Verified',
   insolvency_cleared: 'Insolvency Cleared',
@@ -514,6 +517,7 @@ export const RESOLUTION_FIELDS: Record<IssueResolution, ResolutionField[]> = {
   revaluation_upheld: [f('valuation', 'Valuation', 'money')],
   lender_confirmed: [f('documentId', "Lender's Confirmation", 'document', false)],
   chain_ready: [],
+  proceeding_confirmed: [f('documentId', 'Their Confirmation', 'document', false)],
   grant_obtained: [f('documentId', 'Grant', 'document')],
   attorney_verified: [f('documentId', 'Registered LPA', 'document')],
   insolvency_cleared: [f('documentId', 'Evidence', 'document')],
@@ -560,3 +564,96 @@ export const ISSUE_CHIP: Record<IssueKind, string> = {
   transaction_at_risk: 'At Risk', mortgage_at_risk: 'Mortgage At Risk', unknown_correspondent: 'Unknown Sender', document_revised: 'Revised Document',
   document_mismatch: 'Mismatch', file_locked: 'Locked File', send_failed: 'Unsuccessful', other: 'Issue',
 };
+
+/**
+ * What a person does about an issue, from the issue itself (docs/spec/issues.md "Next steps"):
+ * write to someone (drafted from the case, edited, sent, logged on the issue), agree new dates,
+ * mark it negotiating, or say it has fallen through. Every issue has at least one, so the form is
+ * never just an outcome picker.
+ */
+export type IssueStep =
+  | { id: string; kind: 'message'; to: MessageParty; label: string; /** What the message must do (the drafter's brief). */ purpose: string; /** The same, as a sentence, when there is no drafter; `{issue}` is the issue's title. */ sentence: string }
+  | { id: 'dates'; kind: 'dates'; label: string }
+  | { id: 'negotiating'; kind: 'negotiating'; label: string }
+  | { id: 'fatal'; kind: 'fatal'; label: string };
+
+const msg = (to: MessageParty, label: string, purpose: string, sentence: string): IssueStep => ({ id: `msg:${to}:${label.toLowerCase().replace(/[^a-z]+/g, '_')}`, kind: 'message', to, label, purpose, sentence });
+const ASK_OTHER_SIDE = msg('seller_solicitor', 'Write To The Other Side', 'Raise the issue with the other side and ask how and when they will resolve it', 'We write regarding {issue}. Please let us know how and when your client will resolve it.');
+const UPDATE_CLIENT = msg('client', 'Update The Client', 'Tell the client about the issue plainly, what we are doing about it and when they will next hear from us', 'A point has come up on your transaction: {issue}. We are dealing with it and will update you as soon as we have more.');
+const ASK_CLIENT = msg('client', 'Ask The Client', 'Tell the client about the point the buyer\'s side has raised and ask them for what we need to answer it', 'The buyer\'s solicitor has raised a point on your sale: {issue}. Please let us have what you have on this (any documents or information) so we can answer it.');
+const TELL_OTHER_SIDE = msg('seller_solicitor', 'Update The Other Side', 'Tell the other side we are taking our client\'s instructions on the point and will come back to them', 'We write regarding {issue}. We are taking our client\'s instructions and will come back to you.');
+const DATES: IssueStep = { id: 'dates', kind: 'dates', label: 'Agree New Dates' };
+const NEGOTIATING: IssueStep = { id: 'negotiating', kind: 'negotiating', label: 'Mark Negotiating' };
+const FATAL: IssueStep = { id: 'fatal', kind: 'fatal', label: 'It Has Fallen Through' };
+
+const STEPS_BY_KIND: Partial<Record<IssueKind, IssueStep[]>> = {
+  transaction_at_risk: [
+    msg('seller_solicitor', 'Ask The Other Side Where Their Client Stands', "Ask the other side's solicitor to confirm in writing whether their client is still proceeding, and if so on what timescale", 'We have been told your client may not be proceeding. Please confirm in writing whether they are still proceeding and, if so, on what timescale.'),
+    msg('client', 'Update The Client', 'Tell the client what we have been told, that we are confirming it with the other side\'s solicitor today, and that we will come back to them as soon as we hear; ask them not to incur further costs (such as a survey or mortgage fees) until it is clear', 'We have been told the other side may not be proceeding. We are confirming this with their solicitor today and will come back to you as soon as we hear. Please do not incur any further costs until it is clear.'),
+    msg('estate_agent', 'Tell The Agent', 'Tell the estate agent what we have been told and ask what they know of the other party\'s position', 'We have been told the other party may not be proceeding. Please let us know what you know of their position.'),
+    DATES, NEGOTIATING, FATAL,
+  ],
+  mortgage_at_risk: [
+    msg('lender', 'Ask The Lender Or Broker', 'Ask the lender or broker whether the mortgage offer stands, and if not what is needed to reinstate it', 'Please confirm whether the mortgage offer on this purchase still stands and, if not, what is needed.'),
+    msg('client', 'Ask The Client What Has Changed', 'Ask the client what has changed with their mortgage and whether they have another lender or broker in mind', 'We understand there may be a problem with your mortgage. Please let us know what has changed and whether you are looking at another lender.'),
+    DATES, FATAL,
+  ],
+  mortgage_offer_expiring: [
+    msg('lender', 'Ask The Lender For An Extension', 'Ask the lender or broker to extend the mortgage offer beyond the expected completion date', 'The mortgage offer expires before the expected completion date. Please extend it.'),
+    msg('client', 'Tell The Client', 'Tell the client the offer expires before the expected completion date and that we have asked the lender to extend it', 'Your mortgage offer expires before the expected completion date; we have asked the lender to extend it.'),
+    DATES,
+  ],
+  mortgage_offer_expired: [
+    msg('lender', 'Ask The Lender For An Extension', 'Ask the lender or broker to extend or reissue the expired mortgage offer', 'The mortgage offer has expired. Please extend or reissue it.'),
+    msg('client', 'Tell The Client', 'Tell the client the mortgage offer has expired, that we cannot complete on it, and that we have asked the lender to extend or reissue it', 'Your mortgage offer has expired and we cannot complete on it; we have asked the lender to extend or reissue it.'),
+    DATES, FATAL,
+  ],
+  mortgage_offer_expiry_unknown: [
+    msg('lender', 'Ask The Lender For The Expiry', 'Ask the lender or broker for the date the mortgage offer expires', 'Please confirm the date the mortgage offer expires.'),
+  ],
+  seller_delay: [
+    msg('seller_solicitor', 'Ask For Their Timescale', "Ask the other side's solicitor for their client's realistic timescale to exchange and complete", "Please let us know your client's realistic timescale to exchange and complete."),
+    UPDATE_CLIENT, DATES,
+  ],
+  buyer_delay: [
+    msg('seller_solicitor', 'Ask For Their Timescale', "Ask the other side's solicitor for their client's realistic timescale to exchange and complete", "Please let us know your client's realistic timescale to exchange and complete."),
+    UPDATE_CLIENT, DATES,
+  ],
+  chain_dependency: [
+    msg('seller_solicitor', 'Ask Where The Chain Stands', "Ask the other side's solicitor where the rest of the chain stands and when it will be ready to exchange", 'Please let us know where the rest of the chain stands and when it will be ready to exchange.'),
+    UPDATE_CLIENT, DATES, FATAL,
+  ],
+  completion_failure: [
+    msg('seller_solicitor', 'Agree A New Completion Time', "Tell the other side's solicitor completion did not happen as agreed and ask to agree a new completion time", 'Completion has not taken place as agreed. Please contact us to agree a new completion time.'),
+    msg('client', 'Tell The Client', 'Tell the client completion has been delayed, why, and what we are doing to agree a new time', 'Completion has been delayed; we are agreeing a new time with the other side and will confirm it to you.'),
+    DATES,
+  ],
+  redemption_statement_expired: [
+    msg('lender', 'Ask For A Fresh Statement', 'Ask the lender for a fresh redemption statement to the expected completion date', 'Please send a fresh redemption statement to the expected completion date.'),
+  ],
+  lender_funds_delayed: [
+    msg('lender', 'Chase The Lender', 'Ask the lender when the mortgage advance will be released', 'Please confirm when the mortgage advance will be released.'),
+    UPDATE_CLIENT,
+  ],
+  completion_funds_shortfall: [
+    msg('client', 'Ask The Client For The Balance', 'Tell the client the amount still needed to complete and ask them to send it in cleared funds', 'We need the balance of funds to complete. Please send it in cleared funds.'),
+  ],
+};
+const CLIENT_ONLY: ReadonlySet<IssueGroup> = new Set(['funds_aml']);
+const NO_STEPS: ReadonlySet<IssueKind> = new Set(['file_locked', 'unknown_correspondent', 'send_failed', 'document_revised']);
+
+/**
+ * The next steps offered on an issue of this kind. Acting for the buyer, a problem with the property
+ * is the other side's to answer; acting for the seller, it is our client's (we ask them, and tell the
+ * other side we are on it).
+ */
+export function issueSteps(kind: IssueKind, side: 'buyer' | 'seller' = 'buyer'): IssueStep[] {
+  const own = STEPS_BY_KIND[kind];
+  if (own) return own;
+  if (NO_STEPS.has(kind)) return [];
+  const spec = ISSUE_KIND_SPEC[kind];
+  if (!spec) return [];
+  if (CLIENT_ONLY.has(spec.group)) return [UPDATE_CLIENT];
+  if (spec.gate === 'none') return [UPDATE_CLIENT];
+  return side === 'seller' ? [ASK_CLIENT, TELL_OTHER_SIDE, NEGOTIATING] : [ASK_OTHER_SIDE, UPDATE_CLIENT, NEGOTIATING];
+}

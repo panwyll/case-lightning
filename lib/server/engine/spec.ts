@@ -16,7 +16,7 @@ import { USER_COMMANDS, type Command } from './machine';
 import { DECISION_EVENT_TYPES, DECISION_KINDS, EVENT_TYPES, STAGES, SUB_FLOWS, TRANSACTION_TYPES, type DecisionKind, type DecisionOption, type EventType, type Stage, type SubFlow, type TransactionType, type WaitKey } from './types';
 import { TRANSACTION_PROFILES, type TransactionProfile } from './transactions';
 import { TRIGGERS, type TriggerSpec } from './triggers';
-import { ISSUE_GROUPS, ISSUE_GROUP_LABEL, ISSUE_KIND_SPECS, ISSUE_RESOLUTIONS, RESOLUTION_LABEL, RESOLUTION_TITLE, RESOLUTION_FIELDS, RESOLUTION_EFFECT, NOTE_REQUIRED, FORMLESS_KINDS, ISSUE_CHIP, type ResolutionField, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, type IssueKindSpec, type IssueGroup, type IssueResolution } from './issues';
+import { ISSUE_GROUPS, ISSUE_GROUP_LABEL, ISSUE_KIND_SPECS, ISSUE_RESOLUTIONS, RESOLUTION_LABEL, RESOLUTION_TITLE, RESOLUTION_FIELDS, RESOLUTION_EFFECT, NOTE_REQUIRED, FORMLESS_KINDS, ISSUE_CHIP, issueSteps, type IssueStep, type ResolutionField, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, type IssueKindSpec, type IssueGroup, type IssueResolution } from './issues';
 import { MIN_CLASSIFICATION_CONFIDENCE } from './ingest';
 
 export type CommandType = Command['type'];
@@ -113,6 +113,10 @@ export interface MachineSpec {
     staleAfterWorkingDays: number;
     formless: string[];
     chips: Record<string, string>;
+    /** What a person does about each kind (issues.ts `issueSteps`), labels and recipients only. */
+    steps: Record<string, Array<Pick<IssueStep, 'id' | 'kind' | 'label'> & { to?: string }>>;
+    /** The same, acting for the seller. */
+    sellerSteps: Record<string, Array<Pick<IssueStep, 'id' | 'kind' | 'label'> & { to?: string }>>;
   };
 }
 
@@ -377,6 +381,8 @@ const eventCategory = (t: EventType): string => {
   return 'lifecycle';
 };
 
+const stepView = (x: IssueStep) => ({ id: x.id, kind: x.kind, label: x.label, ...(x.kind === 'message' ? { to: x.to } : {}) });
+
 export function machineSpec(): MachineSpec {
   const body: Omit<MachineSpec, 'version'> = {
     generatedFrom: 'lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)',
@@ -420,6 +426,8 @@ export function machineSpec(): MachineSpec {
       staleAfterWorkingDays: DEADLINE_LEAD.stale_issue,
       formless: [...FORMLESS_KINDS],
       chips: ISSUE_CHIP,
+      steps: Object.fromEntries(ISSUE_KIND_SPECS.map((k) => [k.kind, issueSteps(k.kind, 'buyer').map(stepView)])),
+      sellerSteps: Object.fromEntries(ISSUE_KIND_SPECS.map((k) => [k.kind, issueSteps(k.kind, 'seller').map(stepView)])),
     },
   };
   const version = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 12);

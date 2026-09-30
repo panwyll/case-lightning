@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { devDecision, devDocuments, devEmailTask, devEmailThread, devOpenSource, devReset, devResolve, devRun, devUpload, devView, devWork } from '@/lib/server/dev-harness';
+import { devDecision, devDocuments, devEmailTask, devEmailThread, devIssueDraft, devIssueSend, devOpenSource, devReset, devResolve, devRun, devUpload, devView, devWork } from '@/lib/server/dev-harness';
 import { machineSpec } from '@/lib/server/engine/spec';
 
 export const runtime = 'nodejs';
@@ -18,6 +18,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pat
   if (/^matters\/[^/]+\/engine\/events/.test(p)) return NextResponse.json({ events: [] });
   if (/^matters\/[^/]+\/engine\/documents/.test(p)) return NextResponse.json(await devDocuments());
   if (/^matters\/[^/]+\/emails\/thread$/.test(p)) { await wait(500); return NextResponse.json(devEmailThread()); }
+  if (/^matters\/[^/]+\/issues\/[^/]+\/message$/.test(p)) { await wait(600); try { return NextResponse.json(await devIssueDraft(decodeURIComponent(p.split('/')[3]), _req.nextUrl.searchParams.get('step') ?? '')); } catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 }); } }
   if (/^matters\/[^/]+\/engine$/.test(p)) return NextResponse.json(await devView());
   if (p === 'dev/email-task') return NextResponse.json({ eventId: await devEmailTask() });
   if (/^decisions\/[A-Za-z0-9-]{3,40}$/.test(p)) { const d = await devDecision(p.split('/')[1]); return d ? NextResponse.json(d) : NextResponse.json({ error: 'Decision not found.' }, { status: 404 }); }
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (/^decisions\/[A-Za-z0-9-]{3,40}\/open-source$/.test(p)) return NextResponse.json(await devOpenSource(p.split('/')[1]));
     if (/^decisions\/[A-Za-z0-9-]{3,40}\/resolve$/.test(p)) { await wait(700); return NextResponse.json(await devResolve(p.split('/')[1], body)); }
     if (/^matters\/[^/]+\/engine\/upload$/.test(p)) { await wait(1500); return NextResponse.json(await devUpload(body.fileName, body.role ?? 'auto')); }
+    if (/^matters\/[^/]+\/issues\/[^/]+\/message$/.test(p)) { await wait(700); return NextResponse.json(await devIssueSend(decodeURIComponent(p.split('/')[3]), body)); }
     if (/^matters\/[^/]+\/engine$/.test(p)) { await wait(800); return NextResponse.json(await devRun(body)); }
     if (/^admin\/doc-templates\/[^/]+\/generate$/.test(p)) {
       const { EXAMPLE_TEMPLATES, createMinimalDocx, fillTemplate } = await import('@/lib/server/doc-templates');

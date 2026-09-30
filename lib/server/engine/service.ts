@@ -65,8 +65,8 @@ import { isResolved, openIssues, openPofQueries, openWaits, awayOn, awayNow, dee
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, WAIT_LABEL, type NoteActionDraft } from './notes';
-import { replyFacts, templateMessage, templateReply } from './reply';
-import { FOLLOW_UP_PARTY, whoNeedsToHear } from './recipients';
+import { replyFacts, templateIssueMessage, templateMessage, templateReply } from './reply';
+import { FOLLOW_UP_PARTY, PARTY_LABEL, whoNeedsToHear } from './recipients';
 
 /** Who the firm acts for on this case, as the drafter is told. */
 const weActFor = (s: MatterState): string => { const side = profileOf(s.transactionType).side; return side === 'seller' ? 'the seller' : side === 'owner' ? 'the owner (a remortgage or transfer)' : 'the buyer'; };
@@ -80,6 +80,7 @@ import { EXPECTATION_KEYS } from './types';
 import { expectationDue, FORMS_ISSUE_PREFIX } from './machine';
 const ARRIVAL_ISSUES = new Set<string>(['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding']);
 import type { IssueKind } from './issues';
+import { issueSteps } from './issues';
 
 export interface RunResult {
   events: EngineEvent[];
@@ -945,6 +946,40 @@ export class EngineService {
     const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts: replyFacts(state, now), now: now.toISOString(), weActFor: weActFor(state), purposes: [...new Set(['Reply to their email, answering every point they made', ...also.purposes, ...others.map((o) => `Tell them we are writing to ${o} today`)])] }) : null;
     if (drafted?.body) return { subject: re, body: drafted.body, drafter: this.ports.replyDrafter!.name };
     return { subject: re, body: templateReply(state, now, { firstName, others, also: also.sentences, lines: lines.map((l, i) => ({ id: `A${i + 1}`, kind: l.kind, summary: l.summary, quote: l.quote, confidence: l.confidence ?? 0.6, command: l.command ?? null })) }), drafter: 'case-facts' };
+  }
+
+  /** The draft for one of an issue's message steps (issues.ts `issueSteps`), from the case; worded by the drafter when there is one. Nothing is sent. */
+  async draftIssueMessage(tenantId: string, matterId: string, issueId: string, stepId: string): Promise<{ to: MessageParty; subject: string; body: string; drafter: string }> {
+    const state = await this.getState(tenantId, matterId);
+    const issue = state.issues[issueId];
+    if (!issue) throw Object.assign(new Error('Issue not found.'), { status: 404 });
+    const side = profileOf(state.transactionType).side;
+    const step = issueSteps(issue.kind, side === 'seller' ? 'seller' : 'buyer').find((x) => x.id === stepId);
+    if (!step || step.kind !== 'message') throw Object.assign(new Error('That step does not write to anyone.'), { status: 400 });
+    const now = this.ports.now();
+    const rec = await this.caseRecord(tenantId, matterId).catch(() => null);
+    const property = rec?.propertyAddress ?? null;
+    const clientName = (side === 'seller' ? rec?.sellerNames : rec?.buyerNames)?.[0] ?? state.partyNames?.[0] ?? null;
+    const firstName = clientName?.trim().split(/\s+/)[0] || null;
+    const subject = property ?? "Our client's transaction";
+    const about = `THE ISSUE ON THE CASE (DATA): ${issue.title}${issue.detail ? `\n${issue.detail}` : ''}`;
+    const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: about, subject, from: null, firstName, lines: [], facts: replyFacts(state, now), now: now.toISOString(), to: step.to, purposes: [step.purpose], weActFor: weActFor(state) }).catch(() => null) : null;
+    if (drafted?.body) return { to: step.to, subject, body: drafted.body, drafter: this.ports.replyDrafter!.name };
+    return { to: step.to, subject, body: templateIssueMessage(state, step.to, { sentence: step.sentence, issueTitle: issue.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, ''), firstName, property }), drafter: 'case-facts' };
+  }
+
+  /** Send a message about an issue, as the person wrote it, and log it on the issue. A failed send is said to the person there and then (nothing is logged). */
+  async sendIssueMessage(tenantId: string, matterId: string, issueId: string, input: { actor: string; to: MessageParty; subject: string; body: string }): Promise<RunResult> {
+    const state = await this.getState(tenantId, matterId);
+    const issue = state.issues[issueId];
+    if (!issue || (issue.status !== 'open' && issue.status !== 'negotiating')) throw Object.assign(new Error('That issue is not open.'), { status: 400 });
+    if (!input.body.trim()) throw Object.assign(new Error('The message is empty.'), { status: 400 });
+    const trigger = `issue_message:${issueId}:${this.ports.now().toISOString()}`;
+    const [action, detail] = input.to === 'client'
+      ? ['client_update' as const, { template: 'email_reply', context: { subject: input.subject }, triggeredByEventId: trigger, edited: { subject: input.subject, body: input.body } }]
+      : ['chase' as const, { kind: 'party_message', recipientRole: input.to, subject: input.subject, body: input.body, triggeredByEventId: trigger }];
+    await this.perform(tenantId, matterId, action, detail);
+    return this.run(tenantId, matterId, { type: 'update_issue', actor: input.actor, issueId, status: issue.status === 'negotiating' ? 'negotiating' : 'open', note: `Emailed ${PARTY_LABEL[input.to].toLowerCase()}: ${input.subject}` });
   }
 
   // ───────────── decisions (dashboard #6) ─────────────

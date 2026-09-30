@@ -1,6 +1,734 @@
 {
-  "version": "8b0b11e0c1c6",
-  "generatedFrom": "lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts by tests/unit/engine/spec.test.ts)",
+  "version": "3ac2146631c1",
+  "generatedFrom": "lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)",
+  "transactionTypes": [
+    {
+      "type": "freehold_purchase",
+      "label": "Freehold purchase",
+      "side": "buyer",
+      "tenure": "freehold",
+      "hasExchange": true,
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "stageLabels": {
+        "pre_contract": "Searches & enquiries",
+        "contract_review": "Title & report",
+        "pre_exchange": "Pre-exchange"
+      },
+      "stageGates": {
+        "instruction": [
+          "ID / AML check resolved"
+        ],
+        "pre_contract": [
+          "every required search ordered and resolved",
+          "every enquiry replied and resolved",
+          "mortgage offer resolved (lender-funded)"
+        ],
+        "contract_review": [
+          "title resolved",
+          "report on title sent (drafted → approved by a person → sent)",
+          "enquiries raised during review resolved"
+        ],
+        "pre_exchange": [
+          "mortgage offer still current",
+          "no open issue holding exchange",
+          "proof of funds signed off (firm policy)",
+          "client satisfied with the physical condition where a survey is on file",
+          "client's authority to exchange (firm policy)",
+          "exchange conditions met (deposit received)",
+          "contracts exchanged"
+        ],
+        "exchanged": [
+          "completion statement generated"
+        ],
+        "pre_completion": [
+          "transfer deed executed",
+          "co-owners' basis decided and the declaration of trust executed (tenants in common)",
+          "mortgage deed executed and certificate of title sent (lender-funded)",
+          "mortgage advance and the client's balance received",
+          "completion payment authorised against verified seller's-solicitor details",
+          "no bank-details change pending (hard stop)",
+          "completion confirmed"
+        ],
+        "completed": [
+          "SDLT return filed, or recorded as not required",
+          "AP1 submitted"
+        ],
+        "post_completion": [
+          "HMLR requisitions answered",
+          "registration confirmed"
+        ]
+      },
+      "expectedWorkingDays": {
+        "instruction": 5,
+        "pre_contract": 20,
+        "contract_review": 10,
+        "pre_exchange": 10,
+        "exchanged": 5,
+        "pre_completion": 5,
+        "completed": 5,
+        "post_completion": 30
+      },
+      "workstreams": [
+        "id_aml",
+        "source_of_funds",
+        "title",
+        "searches",
+        "enquiries",
+        "mortgage",
+        "survey",
+        "contract",
+        "deposit",
+        "chain",
+        "report_on_title",
+        "co_ownership",
+        "completion",
+        "registration"
+      ],
+      "subflows": [
+        "id_check",
+        "search",
+        "enquiry",
+        "mortgage",
+        "title",
+        "report_on_title",
+        "chase",
+        "proof_of_funds"
+      ],
+      "defaultSearches": [
+        "LLC1",
+        "CON29",
+        "DRAINAGE_WATER",
+        "ENVIRONMENTAL"
+      ],
+      "counterparty": "seller's solicitor",
+      "fundsFrom": [
+        "lender",
+        "client"
+      ],
+      "registration": "ap1",
+      "note": "The buyer-side spine the engine was built on."
+    },
+    {
+      "type": "leasehold_purchase",
+      "label": "Leasehold purchase",
+      "side": "buyer",
+      "tenure": "leasehold",
+      "hasExchange": true,
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "stageLabels": {
+        "pre_contract": "Searches, pack & enquiries",
+        "contract_review": "Lease, title & report",
+        "pre_exchange": "Pre-exchange"
+      },
+      "stageGates": {
+        "instruction": [
+          "ID / AML check resolved"
+        ],
+        "pre_contract": [
+          "every required search ordered and resolved",
+          "every enquiry replied and resolved",
+          "mortgage offer resolved (lender-funded)",
+          "management pack reviewed"
+        ],
+        "contract_review": [
+          "title resolved",
+          "report on title sent (drafted → approved by a person → sent)",
+          "enquiries raised during review resolved"
+        ],
+        "pre_exchange": [
+          "mortgage offer still current",
+          "no open issue holding exchange",
+          "proof of funds signed off (firm policy)",
+          "client satisfied with the physical condition where a survey is on file",
+          "client's authority to exchange (firm policy)",
+          "exchange conditions met (deposit received)",
+          "contracts exchanged"
+        ],
+        "exchanged": [
+          "completion statement generated"
+        ],
+        "pre_completion": [
+          "transfer deed executed",
+          "co-owners' basis decided and the declaration of trust executed (tenants in common)",
+          "mortgage deed executed and certificate of title sent (lender-funded)",
+          "mortgage advance and the client's balance received",
+          "completion payment authorised against verified seller's-solicitor details",
+          "no bank-details change pending (hard stop)",
+          "completion confirmed"
+        ],
+        "completed": [
+          "SDLT return filed, or recorded as not required",
+          "AP1 submitted"
+        ],
+        "post_completion": [
+          "HMLR requisitions answered",
+          "registration confirmed",
+          "notice of assignment served before close"
+        ]
+      },
+      "expectedWorkingDays": {
+        "instruction": 5,
+        "pre_contract": 30,
+        "contract_review": 12,
+        "pre_exchange": 10,
+        "exchanged": 5,
+        "pre_completion": 5,
+        "completed": 5,
+        "post_completion": 30
+      },
+      "workstreams": [
+        "id_aml",
+        "source_of_funds",
+        "title",
+        "searches",
+        "enquiries",
+        "mortgage",
+        "survey",
+        "leasehold",
+        "contract",
+        "deposit",
+        "chain",
+        "report_on_title",
+        "co_ownership",
+        "completion",
+        "registration"
+      ],
+      "subflows": [
+        "id_check",
+        "search",
+        "enquiry",
+        "mortgage",
+        "title",
+        "report_on_title",
+        "chase",
+        "proof_of_funds",
+        "management_pack"
+      ],
+      "defaultSearches": [
+        "LLC1",
+        "CON29",
+        "DRAINAGE_WATER",
+        "ENVIRONMENTAL"
+      ],
+      "counterparty": "seller's solicitor",
+      "fundsFrom": [
+        "lender",
+        "client"
+      ],
+      "registration": "ap1",
+      "note": "Purchase plus the management pack, lease review and the notice of assignment."
+    },
+    {
+      "type": "freehold_sale",
+      "label": "Freehold sale",
+      "side": "seller",
+      "tenure": "freehold",
+      "hasExchange": true,
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "stageLabels": {
+        "pre_contract": "Contract pack",
+        "contract_review": "Enquiries & replies",
+        "pre_exchange": "Pre-exchange",
+        "completed": "Completed — redeem & account",
+        "post_completion": "Discharge & close"
+      },
+      "stageGates": {
+        "instruction": [
+          "ID / AML check resolved"
+        ],
+        "pre_contract": [
+          "property forms in from the client",
+          "title resolved (official copies)",
+          "contract pack sent"
+        ],
+        "contract_review": [
+          "every enquiry from the buyer replied to (passes through while none are outstanding)"
+        ],
+        "pre_exchange": [
+          "redemption statement received (charged property)",
+          "buyer's enquiries all answered",
+          "no open issue holding exchange",
+          "client's authority to exchange (firm policy)",
+          "exchange conditions met",
+          "contracts exchanged"
+        ],
+        "exchanged": [
+          "completion statement generated"
+        ],
+        "pre_completion": [
+          "transfer deed executed by the seller",
+          "completion monies received from the buyer's solicitor",
+          "redemption payment authorised against verified lender details (hard stop)",
+          "completion confirmed"
+        ],
+        "completed": [
+          "mortgage recorded as redeemed",
+          "balance to the client authorised against verified client details"
+        ],
+        "post_completion": [
+          "lender's discharge confirmed (DS1 / e-DS1)",
+          "file closed"
+        ]
+      },
+      "expectedWorkingDays": {
+        "instruction": 5,
+        "pre_contract": 12,
+        "contract_review": 15,
+        "pre_exchange": 10,
+        "exchanged": 5,
+        "pre_completion": 5,
+        "completed": 5,
+        "post_completion": 25
+      },
+      "workstreams": [
+        "id_aml",
+        "property_forms",
+        "title",
+        "enquiries",
+        "redemption",
+        "contract",
+        "chain",
+        "completion",
+        "discharge"
+      ],
+      "subflows": [
+        "id_check",
+        "title",
+        "chase"
+      ],
+      "defaultSearches": [],
+      "counterparty": "buyer's solicitor",
+      "fundsFrom": [
+        "buyer_solicitor"
+      ],
+      "registration": "discharge_only",
+      "note": "Seller side: property forms from the client, contract pack out, the buyer's enquiries answered, the seller's mortgage redeemed and discharged."
+    },
+    {
+      "type": "leasehold_sale",
+      "label": "Leasehold sale",
+      "side": "seller",
+      "tenure": "leasehold",
+      "hasExchange": true,
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "stageLabels": {
+        "pre_contract": "Contract pack & management pack",
+        "contract_review": "Enquiries & replies",
+        "pre_exchange": "Pre-exchange",
+        "completed": "Completed — redeem & account",
+        "post_completion": "Discharge & close"
+      },
+      "stageGates": {
+        "instruction": [
+          "ID / AML check resolved"
+        ],
+        "pre_contract": [
+          "property forms in from the client",
+          "title resolved (official copies)",
+          "management pack reviewed",
+          "contract pack sent"
+        ],
+        "contract_review": [
+          "every enquiry from the buyer replied to (passes through while none are outstanding)"
+        ],
+        "pre_exchange": [
+          "redemption statement received (charged property)",
+          "buyer's enquiries all answered",
+          "no open issue holding exchange",
+          "client's authority to exchange (firm policy)",
+          "exchange conditions met",
+          "contracts exchanged"
+        ],
+        "exchanged": [
+          "completion statement generated"
+        ],
+        "pre_completion": [
+          "transfer deed executed by the seller",
+          "completion monies received from the buyer's solicitor",
+          "redemption payment authorised against verified lender details (hard stop)",
+          "completion confirmed"
+        ],
+        "completed": [
+          "mortgage recorded as redeemed",
+          "balance to the client authorised against verified client details"
+        ],
+        "post_completion": [
+          "lender's discharge confirmed (DS1 / e-DS1)",
+          "file closed"
+        ]
+      },
+      "expectedWorkingDays": {
+        "instruction": 5,
+        "pre_contract": 25,
+        "contract_review": 15,
+        "pre_exchange": 10,
+        "exchanged": 5,
+        "pre_completion": 5,
+        "completed": 5,
+        "post_completion": 25
+      },
+      "workstreams": [
+        "id_aml",
+        "property_forms",
+        "title",
+        "leasehold",
+        "enquiries",
+        "redemption",
+        "contract",
+        "chain",
+        "completion",
+        "discharge"
+      ],
+      "subflows": [
+        "id_check",
+        "title",
+        "chase",
+        "management_pack"
+      ],
+      "defaultSearches": [],
+      "counterparty": "buyer's solicitor",
+      "fundsFrom": [
+        "buyer_solicitor"
+      ],
+      "registration": "discharge_only",
+      "note": "Sale plus obtaining the management pack from the freeholder / agent for the buyer."
+    },
+    {
+      "type": "remortgage",
+      "label": "Remortgage",
+      "side": "owner",
+      "tenure": "any",
+      "hasExchange": false,
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "stageLabels": {
+        "pre_contract": "Investigation",
+        "pre_completion": "Ready to complete",
+        "completed": "Completed",
+        "post_completion": "Registration"
+      },
+      "stageGates": {
+        "instruction": [
+          "ID / AML check resolved"
+        ],
+        "pre_contract": [
+          "title resolved",
+          "lender's searches resolved (if any)",
+          "mortgage offer resolved",
+          "redemption statement received (charged property)",
+          "no open issue holding"
+        ],
+        "pre_completion": [
+          "mortgage deed executed (witnessed)",
+          "certificate of title sent",
+          "advance received from the new lender",
+          "redemption payment authorised against verified lender details (hard stop)",
+          "completion confirmed"
+        ],
+        "completed": [
+          "AP1 submitted"
+        ],
+        "post_completion": [
+          "HMLR requisitions answered",
+          "old lender's discharge confirmed",
+          "registration confirmed"
+        ]
+      },
+      "expectedWorkingDays": {
+        "instruction": 3,
+        "pre_contract": 15,
+        "pre_completion": 8,
+        "completed": 5,
+        "post_completion": 25
+      },
+      "workstreams": [
+        "id_aml",
+        "title",
+        "searches",
+        "mortgage",
+        "redemption",
+        "completion",
+        "registration",
+        "discharge"
+      ],
+      "subflows": [
+        "id_check",
+        "search",
+        "mortgage",
+        "title",
+        "chase"
+      ],
+      "defaultSearches": [],
+      "counterparty": "the lenders",
+      "fundsFrom": [
+        "lender"
+      ],
+      "registration": "ap1",
+      "note": "No exchange: title and offer investigated, the mortgage deed executed, the certificate of title sent, the old lender redeemed from the new advance, the new charge registered and the old one discharged."
+    },
+    {
+      "type": "transfer_of_equity",
+      "label": "Transfer of equity",
+      "side": "owner",
+      "tenure": "any",
+      "hasExchange": false,
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "stageLabels": {
+        "pre_contract": "Investigation & consent",
+        "pre_completion": "Execution",
+        "completed": "Completed",
+        "post_completion": "Registration"
+      },
+      "stageGates": {
+        "instruction": [
+          "ID / AML check resolved (every party)"
+        ],
+        "pre_contract": [
+          "title resolved",
+          "lender's consent received (charged property)",
+          "basis of co-ownership decided by the clients",
+          "no open issue holding"
+        ],
+        "pre_completion": [
+          "transfer deed executed by every party",
+          "declaration of trust executed (tenants in common)",
+          "consideration received from the incoming owner (where any)",
+          "completion confirmed"
+        ],
+        "completed": [
+          "SDLT return filed, or recorded as not required (chargeable consideration)",
+          "AP1 submitted"
+        ],
+        "post_completion": [
+          "HMLR requisitions answered",
+          "registration confirmed"
+        ]
+      },
+      "expectedWorkingDays": {
+        "instruction": 3,
+        "pre_contract": 15,
+        "pre_completion": 8,
+        "completed": 5,
+        "post_completion": 25
+      },
+      "workstreams": [
+        "id_aml",
+        "title",
+        "lender_consent",
+        "co_ownership",
+        "completion",
+        "registration"
+      ],
+      "subflows": [
+        "id_check",
+        "title",
+        "chase"
+      ],
+      "defaultSearches": [],
+      "counterparty": "the other party / their solicitor",
+      "fundsFrom": [
+        "incoming_owner"
+      ],
+      "registration": "ap1",
+      "note": "Ownership changes without a sale: identity of every party, the lender's consent where the property is charged, the basis of co-ownership decided by the clients (a declaration of trust where tenants in common), the transfer deed executed, SDLT where there is consideration, the transfer registered."
+    }
+  ],
+  "shapes": [
+    {
+      "id": "company_buyer",
+      "label": "Company Buyer",
+      "sides": [
+        "buyer"
+      ],
+      "summary": "The buyer is a company: Companies House check, identity of every director and person with significant control, authority to buy, and the company's source of funds.",
+      "issue": "Company buyer: Companies House, directors, PSCs, authority and funds",
+      "gate": "exchange",
+      "fundsFrom": null
+    },
+    {
+      "id": "buy_to_let",
+      "label": "Buy To Let",
+      "sides": [
+        "buyer"
+      ],
+      "summary": "Bought to let: a buy-to-let offer and its rental cover, any sitting tenancy, deposit protection and licensing.",
+      "issue": "Buy to let: offer terms, tenancy, licensing",
+      "gate": "exchange",
+      "fundsFrom": null
+    },
+    {
+      "id": "new_build",
+      "label": "New Build",
+      "sides": [
+        "buyer"
+      ],
+      "summary": "Off plan or newly built: the developer's pack, warranty, planning and roads agreements, exchange to the developer's deadline and completion on notice.",
+      "issue": "New build: developer's pack, warranty, planning and roads, completion on notice",
+      "gate": "exchange",
+      "fundsFrom": null
+    },
+    {
+      "id": "auction",
+      "label": "Auction",
+      "sides": [
+        "buyer",
+        "seller"
+      ],
+      "summary": "Sold at auction: the legal pack is the investigation, the contract binds at the fall of the hammer, and completion follows the conditions of sale (usually 20 working days).",
+      "issue": "Auction: legal pack, conditions of sale, deposit and completion deadline",
+      "gate": "exchange",
+      "fundsFrom": null
+    },
+    {
+      "id": "lifetime_isa",
+      "label": "Lifetime ISA",
+      "sides": [
+        "buyer"
+      ],
+      "summary": "Part of the price comes from a Lifetime ISA: the investor declaration, the eligibility limits and the bonus paid to us by the ISA manager.",
+      "issue": "Lifetime ISA: declarations and the withdrawal from the ISA manager",
+      "gate": "completion",
+      "fundsFrom": "isa_provider"
+    },
+    {
+      "id": "help_to_buy_isa",
+      "label": "Help To Buy ISA",
+      "sides": [
+        "buyer"
+      ],
+      "summary": "A Help to Buy ISA bonus: the client's closing statement, our bonus claim through the scheme portal, and the bonus paid to us before completion.",
+      "issue": "Help to Buy ISA: closing statement and the bonus claim",
+      "gate": "completion",
+      "fundsFrom": "isa_provider"
+    },
+    {
+      "id": "second_charge",
+      "label": "Second Charge / Equity Loan",
+      "sides": [
+        "buyer"
+      ],
+      "summary": "A Help to Buy equity loan, shared-equity or other second lender behind the mortgage: both lenders' consents, the deed of postponement, the second deed.",
+      "issue": "Second charge: consents, postponement and the second deed",
+      "gate": "completion",
+      "fundsFrom": null
+    },
+    {
+      "id": "shared_ownership",
+      "label": "Shared Ownership",
+      "sides": [
+        "buyer"
+      ],
+      "summary": "A housing association shared-ownership lease: the share, the rent on the rest, staircasing, the resale nomination, the lender's mortgagee protection clause.",
+      "issue": "Shared ownership: lease terms, provider approval, rent and staircasing",
+      "gate": "exchange",
+      "fundsFrom": null
+    },
+    {
+      "id": "unrepresented_counterparty",
+      "label": "Unrepresented Other Side",
+      "sides": [
+        "buyer",
+        "seller"
+      ],
+      "summary": "The other party has no solicitor: no undertakings, identity checked against the title, the lender told, no advice to them.",
+      "issue": "Unrepresented other side: identity, no undertakings, lender told",
+      "gate": "exchange",
+      "fundsFrom": null
+    },
+    {
+      "id": "court_order_transfer",
+      "label": "Transfer Under A Court Order",
+      "sides": [
+        "owner"
+      ],
+      "summary": "A transfer of equity on divorce, dissolution or separation under a court order: the order seen, no consideration, the SDLT exemption, the outgoing owner released by the lender.",
+      "issue": "Court order transfer: the order, the lender's release, SDLT exemption",
+      "gate": "completion",
+      "fundsFrom": null
+    },
+    {
+      "id": "right_to_buy",
+      "label": "Right To Buy",
+      "sides": [
+        "buyer",
+        "seller"
+      ],
+      "summary": "Bought from the council or housing association under the Right to Buy: the discount repayment charge for five years and the right of first refusal for ten.",
+      "issue": "Right to Buy: discount repayment and the right of first refusal",
+      "gate": "exchange",
+      "fundsFrom": null
+    },
+    {
+      "id": "flying_freehold",
+      "label": "Flying Freehold",
+      "sides": [
+        "buyer"
+      ],
+      "summary": "Part of the property lies over or under someone else's land: the lender's limit, rights of support and access, an indemnity policy.",
+      "issue": "Flying freehold: extent, rights of support and access, the lender's requirements",
+      "gate": "exchange",
+      "fundsFrom": null
+    },
+    {
+      "id": "commonhold",
+      "label": "Commonhold",
+      "sides": [
+        "buyer",
+        "seller"
+      ],
+      "summary": "A commonhold unit: the commonhold community statement and the association take the place of the lease and the management pack.",
+      "issue": "Commonhold: the community statement, the association and the lender",
+      "gate": "exchange",
+      "fundsFrom": null
+    }
+  ],
   "stages": [
     {
       "id": "instruction",
@@ -115,15 +843,19 @@
     {
       "id": "pre_completion",
       "label": "Pre-completion",
-      "purpose": "Funds requested and received; the completion payment authorised by a person against verified bank details; completion confirmed.",
+      "purpose": "The deeds executed and the certificate of title sent; the advance and the client's balance in; the completion payment authorised by a person against verified bank details; completion confirmed.",
       "gates": [
-        "funds received",
-        "completion payment authorised against verified seller's-solicitor details",
+        "transfer deed executed",
+        "mortgage deed executed and certificate of title sent (lender-funded)",
+        "mortgage advance and the client's balance received",
+        "completion payment authorised against verified bank details by a person",
         "no bank-details change pending (hard stop)",
         "completion confirmed"
       ],
       "gateKeywords": [
-        "funds"
+        "transfer deed",
+        "mortgage advance",
+        "completion payment"
       ],
       "subflows": [],
       "typical": [
@@ -171,12 +903,12 @@
     {
       "id": "registered",
       "label": "Registered",
-      "how": "ap1_confirmed at post_completion"
+      "how": "ap1_confirmed at post_completion (purchase, remortgage, transfer of equity)"
     },
     {
       "id": "closed",
       "label": "Closed",
-      "how": "close_matter after registration with no open issues (leasehold: notice of assignment served)"
+      "how": "close_matter with no open issues: after registration (leasehold purchase: notice of assignment served), or on a sale after redemption is discharged and the balance accounted to the client"
     },
     {
       "id": "abandoned",
@@ -186,7 +918,7 @@
     {
       "id": "manual",
       "label": "Manual handling",
-      "how": "mark_manual_handling, ID rejected, or non-freehold title — automation stops, the log continues"
+      "how": "mark_manual_handling, ID rejected, or a title whose tenure is not the profile's — automation stops, the log continues"
     }
   ],
   "subflows": [
@@ -258,7 +990,8 @@
       "stage": "contract_review",
       "waitKey": null,
       "start": [
-        "title_extracted"
+        "title_extracted",
+        "lease_extracted"
       ],
       "extracted": "title_extracted",
       "cleared": "title_cleared",
@@ -334,7 +1067,9 @@
       "actor": "either",
       "stages": "not_enrolled",
       "emits": [
-        "matter_created"
+        "matter_created",
+        "issue_raised",
+        "id_party_added"
       ],
       "description": "Put a matter under the engine (lender?, required searches, target dates, counterparty type, shadow mode)."
     },
@@ -354,7 +1089,7 @@
       "emits": [
         "id_check_requested"
       ],
-      "description": "Ask the ID provider (or record that the firm did)."
+      "description": "Ask the ID provider (or record that the firm did) — for the first client, or for a named party (co-client, gift donor)."
     },
     {
       "type": "id_check_result",
@@ -409,6 +1144,7 @@
       "type": "raise_enquiry",
       "actor": "either",
       "stages": [
+        "instruction",
         "pre_contract",
         "contract_review",
         "pre_exchange",
@@ -454,6 +1190,26 @@
         "auto_clear_review_raised"
       ],
       "description": "Conditions and expiry extracted, rule-checked."
+    },
+    {
+      "type": "lease_extracted",
+      "actor": "automation",
+      "stages": [
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "lease_extracted",
+        "title_cleared",
+        "title_flagged",
+        "auto_clear_review_raised"
+      ],
+      "description": "The lease read: term, rent and review, service charge, repairs, alienation, use, insurance, notices; its flags go through the title decision."
     },
     {
       "type": "title_extracted",
@@ -516,12 +1272,13 @@
       "type": "draft_report_on_title",
       "actor": "automation",
       "stages": [
+        "pre_contract",
         "contract_review"
       ],
       "emits": [
         "report_on_title_drafted"
       ],
-      "description": "The AI drafts; the draft is a decision."
+      "description": "The AI drafts; the draft is a decision. In pre-contract it is an interim report (searches, enquiries or the offer still to come) and a supplementary one is due before exchange; in contract review it is the full report."
     },
     {
       "type": "set_issue_severity",
@@ -639,7 +1396,8 @@
       "emits": [
         "proof_of_funds_query_answered",
         "proof_of_funds_query_raised",
-        "proof_of_funds_submitted"
+        "proof_of_funds_submitted",
+        "id_party_added"
       ],
       "description": "The client submitted: answers to the queries sent, statements read transaction by transaction, rule flags (declaration and transaction level) each drafting a query, the declaration document, the risk rating, and a decision for the conveyancer."
     },
@@ -833,6 +1591,15 @@
       "description": "Registered (terminal). Refused while a requisition is unanswered."
     },
     {
+      "type": "withdraw_proposal",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "action_rejected"
+      ],
+      "description": "The system takes back a pending proposal that a better one replaced (one batched enquiry instead of twenty)."
+    },
+    {
       "type": "record_chase",
       "actor": "automation",
       "stages": "any",
@@ -840,6 +1607,15 @@
         "chase_sent"
       ],
       "description": "Timer: a template chase was sent (recorded only after the send)."
+    },
+    {
+      "type": "record_acknowledgement",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "acknowledgement_sent"
+      ],
+      "description": "Something arrived from the other side or the client and they were told so (recorded only after the send)."
     },
     {
       "type": "raise_escalation",
@@ -886,6 +1662,16 @@
       ],
       "description": "Abortive: client withdrew, chain collapsed, gazumped… Waits close, timers stop, only corrections may follow.",
       "eventuality": true
+    },
+    {
+      "type": "set_clients",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "clients_updated",
+        "id_party_added"
+      ],
+      "description": "The clients on the case, edited: a client added is identified in their own right; one removed takes an unfinished check with them. Signing and every client email follow the list."
     },
     {
       "type": "set_target_dates",
@@ -1124,6 +1910,487 @@
       ],
       "description": "Readiness milestone: the client's signed contract is on file (advisory).",
       "issue": true
+    },
+    {
+      "type": "set_signing_method",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "signing_method_set"
+      ],
+      "description": "Wet ink or electronic, for one deed on this case: the lender's rules, or the client's circumstances.",
+      "eventuality": true
+    },
+    {
+      "type": "record_signing_pack_sent",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "signing_pack_sent"
+      ],
+      "description": "The client was sent what they must sign and how; the wait on the signed documents starts."
+    },
+    {
+      "type": "record_signing_envelope",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "signing_envelope_sent"
+      ],
+      "description": "A deed went out for electronic signature with the firm's signing provider."
+    },
+    {
+      "type": "resume_automation",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "manual_handling_cleared"
+      ],
+      "description": "A person resumes automation after a pause (a tenure mismatch, unregistered land, a rejected proof of funds), saying why.",
+      "eventuality": true
+    },
+    {
+      "type": "set_funding",
+      "actor": "person",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "funding_changed"
+      ],
+      "description": "The buyer now has a mortgage, or is now buying without one: the mortgage step appears or goes, and nothing waits on an offer for a cash purchase.",
+      "eventuality": true
+    },
+    {
+      "type": "record_survey_plan",
+      "actor": "person",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "survey_plan_recorded"
+      ],
+      "description": "The client's survey plan: not having one (their choice, recorded; they are no longer asked) or booked for a date (not asked again until after it).",
+      "eventuality": true
+    },
+    {
+      "type": "record_client_progress",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "wait_progress_reported"
+      ],
+      "description": "Someone we are waiting on says it is done or on its way (from an email, approved): noted on the wait, which is not chased before the expected date. Nothing is cleared: the thing itself still has to arrive.",
+      "eventuality": true
+    },
+    {
+      "type": "record_availability",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "availability_recorded"
+      ],
+      "description": "Someone on the case is away between two dates: chases to them wait, client updates say so, and target dates are checked against it.",
+      "eventuality": true
+    },
+    {
+      "type": "record_note",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "note_recorded"
+      ],
+      "description": "File a note, a dictated note or a call transcript on the matter. It is evidence from the moment it lands, whatever the reading makes of it."
+    },
+    {
+      "type": "note_action_refused",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "note_action_refused"
+      ],
+      "description": "A line a person approved that the machine then refused (a precondition was never there). Recorded so the note never claims something landed that did not."
+    },
+    {
+      "type": "note_extracted",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "note_extracted"
+      ],
+      "description": "What the note appears to say, as proposals. Each must quote the note verbatim and map to a command the machine already accepts, or it is dropped. Raises one decision for a person; nothing is applied until they approve."
+    },
+    {
+      "type": "request_property_forms",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "property_forms_requested"
+      ],
+      "description": "Sale: ask the client for the TA6 / TA10 (and TA7 on a leasehold); a wait the timers chase.",
+      "types": [
+        "freehold_sale",
+        "leasehold_sale"
+      ]
+    },
+    {
+      "type": "property_forms_received",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "property_forms_received"
+      ],
+      "description": "Sale: the completed forms are in (facts extracted where a document arrived).",
+      "types": [
+        "freehold_sale",
+        "leasehold_sale"
+      ]
+    },
+    {
+      "type": "contract_pack_sent",
+      "actor": "either",
+      "stages": [
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "contract_pack_sent"
+      ],
+      "description": "Sale: draft contract, official copies, plan and forms out to the buyer's solicitor. Needs the forms and the title on file.",
+      "types": [
+        "freehold_sale",
+        "leasehold_sale"
+      ]
+    },
+    {
+      "type": "buyer_enquiries_received",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "buyer_enquiries_received"
+      ],
+      "description": "Sale: the buyer's enquiries on the pack, numbered BE1…; each is a reply we owe (gates contract_review).",
+      "types": [
+        "freehold_sale",
+        "leasehold_sale"
+      ]
+    },
+    {
+      "type": "enquiry_replies_sent",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "enquiry_replies_sent"
+      ],
+      "description": "Sale: replies went out under a person's name.",
+      "types": [
+        "freehold_sale",
+        "leasehold_sale"
+      ]
+    },
+    {
+      "type": "request_redemption_statement",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "redemption_statement_requested"
+      ],
+      "description": "Sale / remortgage with an existing charge: ask the lender for the redemption figure; a wait the timers chase.",
+      "types": [
+        "freehold_sale",
+        "leasehold_sale",
+        "remortgage"
+      ]
+    },
+    {
+      "type": "redemption_statement_received",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "redemption_statement_received"
+      ],
+      "description": "The redemption figure, its validity date and daily interest are on file.",
+      "types": [
+        "freehold_sale",
+        "leasehold_sale",
+        "remortgage"
+      ]
+    },
+    {
+      "type": "mortgage_redeemed",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "mortgage_redeemed"
+      ],
+      "description": "On or after completion, and only after a person authorised the payment to the lender against verified details (hard stop).",
+      "types": [
+        "freehold_sale",
+        "leasehold_sale",
+        "remortgage"
+      ],
+      "hardStop": true
+    },
+    {
+      "type": "discharge_confirmed",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "discharge_confirmed"
+      ],
+      "description": "The lender's DS1 / e-DS1 is through and the charge is off the register.",
+      "types": [
+        "freehold_sale",
+        "leasehold_sale",
+        "remortgage"
+      ]
+    },
+    {
+      "type": "mortgage_deed_executed",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "mortgage_deed_executed"
+      ],
+      "description": "Lender-funded purchase / remortgage: the client signed the mortgage deed, witnessed. An unwitnessed deed is refused (raise a document-execution issue).",
+      "types": [
+        "freehold_purchase",
+        "leasehold_purchase",
+        "remortgage"
+      ]
+    },
+    {
+      "type": "add_party",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "id_party_added"
+      ],
+      "description": "A person to identify in their own right, added after enrolment: a co-client, a gift donor, an attorney, a director / PSC, an executor or trustee. Clients, attorneys, directors and executors hold Instruction and exchange until resolved; donors hold proof-of-funds sign-off."
+    },
+    {
+      "type": "seller_forms_received",
+      "actor": "either",
+      "stages": [
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "seller_forms_received",
+        "issue_raised"
+      ],
+      "description": "The seller's TA6 / TA7 / TA10 read answer by answer; each answer that changes what the file needs (a dispute, works without consent, flooding, knotweed, occupiers, a septic tank, a solar lease) is an issue cited to the page.",
+      "types": [
+        "freehold_purchase",
+        "leasehold_purchase"
+      ]
+    },
+    {
+      "type": "link_related_matter",
+      "actor": "either",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "related_matter_linked",
+        "issue_raised"
+      ],
+      "description": "Our client's linked sale or purchase: a chain_dependency issue holds exchange until the other matter can exchange too; the service checks the other file at exchange and clears the issue."
+    },
+    {
+      "type": "complete_step_manually",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "step_completed_manually"
+      ],
+      "description": "Manual handling: a person marks a step complete by hand (what was done, and any supporting documents); it reads as reviewed and every gate accepts it. Exchange and completion keep their own forms."
+    },
+    {
+      "type": "unlink_related_matter",
+      "actor": "either",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "related_matter_unlinked",
+        "issue_withdrawn"
+      ],
+      "description": "The linked sale or purchase is no longer part of the chain (linked in error, or it fell through): both sides are unlinked and their chain holds withdrawn."
+    },
+    {
+      "type": "record_lender_requirements",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "lender_requirements_recorded"
+      ],
+      "description": "The lender's Part 2 answers that change a rule here: minimum unexpired lease term (the lease review compares), maximum search age at exchange (exchange refuses older searches), whether it accepts a non-family gift, whether it wants an EWS1."
+    },
+    {
+      "type": "client_account_receipt",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "client_account_receipt_recorded",
+        "issue_raised"
+      ],
+      "description": "Money on client account outside the completion flow (our fees, the deposit, an unexpected credit): the sender is checked against everyone the file knows; a stranger raises an AML issue (fees hold nothing; the deposit holds exchange; completion money holds completion)."
+    },
+    {
+      "type": "name_change_evidenced",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "name_change_evidenced"
+      ],
+      "description": "A documented change of name (marriage, deed poll, decree): the two names are one person to the cross-checks from here on."
+    },
+    {
+      "type": "buildings_insurance_confirmed",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "buildings_insurance_confirmed"
+      ],
+      "description": "Buildings insurance in place from exchange on the lender's terms (Lenders' Handbook); required before completion on a lender-funded purchase.",
+      "types": [
+        "freehold_purchase",
+        "leasehold_purchase",
+        "remortgage"
+      ]
+    },
+    {
+      "type": "priority_search_made",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "priority_search_made"
+      ],
+      "description": "The OS1 / OS2 priority search made; completion must fall inside the priority period, and the deadline timer raises it two working days before it expires.",
+      "types": [
+        "freehold_purchase",
+        "leasehold_purchase",
+        "remortgage",
+        "transfer_of_equity"
+      ]
+    },
+    {
+      "type": "bankruptcy_search_clear",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "bankruptcy_search_clear"
+      ],
+      "description": "The K16 bankruptcy search against every borrower recorded as clear (a hit is an issue: bankruptcy_insolvency); required before completion on a lender-funded purchase.",
+      "types": [
+        "freehold_purchase",
+        "leasehold_purchase",
+        "remortgage",
+        "transfer_of_equity"
+      ]
+    },
+    {
+      "type": "certificate_of_title_sent",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "certificate_of_title_sent"
+      ],
+      "description": "The solicitor's certificate to the lender requesting the advance; follows a resolved offer.",
+      "types": [
+        "freehold_purchase",
+        "leasehold_purchase",
+        "remortgage"
+      ]
+    },
+    {
+      "type": "request_lender_consent",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "lender_consent_requested"
+      ],
+      "description": "Transfer of equity on a charged property: the lender's consent to the transfer (or a deed of substituted security); a wait the timers chase.",
+      "types": [
+        "transfer_of_equity"
+      ]
+    },
+    {
+      "type": "lender_consent_received",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "lender_consent_received"
+      ],
+      "description": "Consent and any conditions on file.",
+      "types": [
+        "transfer_of_equity"
+      ]
+    },
+    {
+      "type": "transfer_deed_executed",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "transfer_deed_executed"
+      ],
+      "description": "The TR1 / TP1 signed by every party, witnessed.",
+      "types": [
+        "freehold_purchase",
+        "leasehold_purchase",
+        "transfer_of_equity"
+      ]
+    },
+    {
+      "type": "deed_of_trust_executed",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "deed_of_trust_executed"
+      ],
+      "description": "Co-owners holding as tenants in common: the declaration of trust signed. Needs the ownership_basis client decision first; refused for joint tenants.",
+      "types": [
+        "freehold_purchase",
+        "leasehold_purchase",
+        "transfer_of_equity"
+      ]
+    },
+    {
+      "type": "sdlt_not_required",
+      "actor": "person",
+      "stages": [
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "sdlt_not_required"
+      ],
+      "description": "A person determines no SDLT return is due (e.g. a transfer of equity for no chargeable consideration), with the reason; unblocks AP1.",
+      "types": [
+        "freehold_purchase",
+        "leasehold_purchase",
+        "remortgage",
+        "transfer_of_equity"
+      ]
     }
   ],
   "events": [
@@ -1141,6 +2408,12 @@
     },
     {
       "type": "manual_handling_required",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "id_party_added",
       "category": "lifecycle",
       "decision": false,
       "humanGated": false
@@ -1272,6 +2545,12 @@
       "humanGated": false
     },
     {
+      "type": "lease_extracted",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
       "type": "title_cleared",
       "category": "title",
       "decision": false,
@@ -1386,6 +2665,42 @@
       "humanGated": false
     },
     {
+      "type": "acknowledgement_sent",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "note_recorded",
+      "category": "notes & calls",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "note_extracted",
+      "category": "notes & calls",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "note_actions_applied",
+      "category": "notes & calls",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "wait_progress_reported",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "note_action_refused",
+      "category": "notes & calls",
+      "decision": false,
+      "humanGated": false
+    },
+    {
       "type": "escalation_raised",
       "category": "timers & comms",
       "decision": true,
@@ -1446,6 +2761,42 @@
       "humanGated": false
     },
     {
+      "type": "action_proposed",
+      "category": "lifecycle",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "action_approved",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "action_rejected",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "action_failed",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "action_retried",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "auto_clear_proposed",
+      "category": "decisions",
+      "decision": true,
+      "humanGated": false
+    },
+    {
       "type": "matter_abandoned",
       "category": "eventualities",
       "decision": false,
@@ -1454,6 +2805,30 @@
     {
       "type": "target_dates_changed",
       "category": "eventualities",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "clients_updated",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "contract_filed",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "contract_review_raised",
+      "category": "lifecycle",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "contract_reviewed",
+      "category": "lifecycle",
       "decision": false,
       "humanGated": false
     },
@@ -1654,6 +3029,234 @@
       "category": "case model",
       "decision": false,
       "humanGated": false
+    },
+    {
+      "type": "property_forms_requested",
+      "category": "sale",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "property_forms_received",
+      "category": "sale",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "seller_forms_received",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "related_matter_linked",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "related_matter_unlinked",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "step_completed_manually",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "lender_requirements_recorded",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "name_change_evidenced",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "client_account_receipt_recorded",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "contract_pack_sent",
+      "category": "sale",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "contract_pack_requested",
+      "category": "sale",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "signed_transfer_requested",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "buyer_enquiries_received",
+      "category": "sale",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "enquiry_replies_sent",
+      "category": "sale",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "redemption_statement_requested",
+      "category": "redemption",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "redemption_statement_received",
+      "category": "redemption",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "mortgage_redeemed",
+      "category": "redemption",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "discharge_confirmed",
+      "category": "redemption",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "mortgage_deed_executed",
+      "category": "deeds",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "certificate_of_title_sent",
+      "category": "deeds",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "buildings_insurance_confirmed",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "priority_search_made",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "bankruptcy_search_clear",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "lender_consent_requested",
+      "category": "transfer of equity",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "lender_consent_received",
+      "category": "transfer of equity",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "transfer_deed_executed",
+      "category": "deeds",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "deed_of_trust_executed",
+      "category": "deeds",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "sdlt_not_required",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "availability_recorded",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "expectation_opened",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "title_plan_read",
+      "category": "title",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "supporting_document_read",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "manual_handling_cleared",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "funding_changed",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "survey_plan_recorded",
+      "category": "case model",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "signing_method_set",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "signing_pack_sent",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "signing_envelope_sent",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
     }
   ],
   "decisions": [
@@ -1663,8 +3266,7 @@
       "options": [
         "approve",
         "request_further",
-        "escalate",
-        "reject"
+        "escalate"
       ],
       "source": "ID / AML"
     },
@@ -1725,6 +3327,16 @@
       "source": "Report on title"
     },
     {
+      "kind": "contract",
+      "label": "contract",
+      "options": [
+        "approve",
+        "request_further",
+        "escalate"
+      ],
+      "source": "the chase / deadline dossier"
+    },
+    {
       "kind": "escalation",
       "label": "escalation",
       "options": [
@@ -1768,8 +3380,7 @@
       "options": [
         "approve",
         "request_further",
-        "escalate",
-        "reject"
+        "escalate"
       ],
       "source": "Proof of funds"
     },
@@ -1783,6 +3394,25 @@
         "escalate"
       ],
       "source": "Management pack (leasehold)"
+    },
+    {
+      "kind": "note_actions",
+      "label": "note actions",
+      "options": [
+        "approve",
+        "reject",
+        "escalate"
+      ],
+      "source": "the note or call transcript it was read from"
+    },
+    {
+      "kind": "proposal",
+      "label": "proposal",
+      "options": [
+        "approve",
+        "reject"
+      ],
+      "source": "the chase / deadline dossier"
     }
   ],
   "timers": {
@@ -1849,6 +3479,114 @@
         "reEscalateAfter": 5,
         "recipientRole": "seller_solicitor",
         "template": "chase_management_pack"
+      },
+      {
+        "waitKey": "property_forms",
+        "chaseAfter": 5,
+        "chaseEvery": 3,
+        "escalateAfter": 12,
+        "reEscalateAfter": 5,
+        "recipientRole": "client",
+        "template": "chase_property_forms"
+      },
+      {
+        "waitKey": "redemption",
+        "chaseAfter": 3,
+        "chaseEvery": 3,
+        "escalateAfter": 8,
+        "reEscalateAfter": 3,
+        "recipientRole": "lender",
+        "template": "chase_redemption_statement"
+      },
+      {
+        "waitKey": "signed_documents",
+        "chaseAfter": 4,
+        "chaseEvery": 3,
+        "escalateAfter": 12,
+        "reEscalateAfter": 5,
+        "recipientRole": "client",
+        "template": "chase_signed_documents"
+      },
+      {
+        "waitKey": "mortgage_offer",
+        "chaseAfter": 10,
+        "chaseEvery": 10,
+        "escalateAfter": 25,
+        "reEscalateAfter": 10,
+        "recipientRole": "client",
+        "template": "chase_mortgage_offer"
+      },
+      {
+        "waitKey": "survey",
+        "chaseAfter": 5,
+        "chaseEvery": 7,
+        "escalateAfter": 20,
+        "reEscalateAfter": 10,
+        "recipientRole": "client",
+        "template": "chase_survey"
+      },
+      {
+        "waitKey": "transfer_deed",
+        "chaseAfter": 3,
+        "chaseEvery": 2,
+        "escalateAfter": 8,
+        "reEscalateAfter": 3,
+        "recipientRole": "seller_solicitor",
+        "template": "chase_signed_transfer"
+      },
+      {
+        "waitKey": "contract_pack",
+        "chaseAfter": 5,
+        "chaseEvery": 3,
+        "escalateAfter": 15,
+        "reEscalateAfter": 5,
+        "recipientRole": "seller_solicitor",
+        "template": "chase_contract_pack"
+      },
+      {
+        "waitKey": "lender_consent",
+        "chaseAfter": 5,
+        "chaseEvery": 5,
+        "escalateAfter": 15,
+        "reEscalateAfter": 5,
+        "recipientRole": "lender",
+        "template": "chase_lender_consent"
+      },
+      {
+        "waitKey": "deposit",
+        "chaseAfter": 3,
+        "chaseEvery": 3,
+        "escalateAfter": 8,
+        "reEscalateAfter": 3,
+        "recipientRole": "client",
+        "template": "chase_deposit"
+      },
+      {
+        "waitKey": "client_decision",
+        "chaseAfter": 3,
+        "chaseEvery": 3,
+        "escalateAfter": 8,
+        "reEscalateAfter": 3,
+        "recipientRole": "client",
+        "template": "chase_ownership_basis"
+      },
+      {
+        "waitKey": "insurance",
+        "chaseAfter": 3,
+        "chaseEvery": 2,
+        "escalateAfter": 6,
+        "reEscalateAfter": 2,
+        "recipientRole": "client",
+        "template": "chase_buildings_insurance"
+      },
+      {
+        "waitKey": "discharge",
+        "chaseAfter": 10,
+        "chaseEvery": 10,
+        "escalateAfter": 30,
+        "reEscalateAfter": 10,
+        "recipientRole": "lender",
+        "template": "chase_discharge"
       }
     ],
     "deadlines": [
@@ -1876,6 +3614,16 @@
         "kind": "stale_issue",
         "leadWorkingDays": 10,
         "description": "an open issue with no movement (working days since last touched)"
+      },
+      {
+        "kind": "priority_period_expiry",
+        "leadWorkingDays": 2,
+        "description": "the OS1 priority period ending before completion"
+      },
+      {
+        "kind": "certificate_of_title",
+        "leadWorkingDays": 3,
+        "description": "certificate of title to the lender, 5 working days before completion"
       }
     ]
   },
@@ -1957,8 +3705,8 @@
     },
     {
       "id": "shadow",
-      "title": "Shadow before live",
-      "rule": "A shadow matter or sub-flow is logged, never surfaced, never sent; conclusions are compared with the human record before promotion.",
+      "title": "Propose before trusting",
+      "rule": "Every action the engine takes on its own has a trust level per firm: propose (a person approves each one), assist (the mechanical goes unasked), auto. New firms start at propose for everything.",
       "enforcedBy": [
         "service.ts suppressed()",
         "store.ts surfacedDecisions"
@@ -2196,6 +3944,89 @@
       ]
     },
     {
+      "id": "native.email_filed_to_case",
+      "backend": "native",
+      "source": "user",
+      "feeds": "ingest",
+      "label": "Email filed to a case from the filing queue",
+      "description": "The web app lists inbox mail that is not on a case yet, with deterministic matter suggestions. Filing it links the thread, categorises it in Outlook and saves its attachments into the matter, where the ordinary ingest picks them up. \"Not case email\" only sets the thread aside — nothing is deleted or moved.",
+      "entry": "app/conveyi/email → app/api/v1/matters/[matterId]/link-thread",
+      "implemented": true,
+      "reaches": [
+        "search",
+        "enquiry",
+        "mortgage",
+        "title",
+        "id_check"
+      ]
+    },
+    {
+      "id": "intouch.webhook_case",
+      "backend": "both",
+      "source": "webhook",
+      "feeds": "sync",
+      "label": "Case created / updated in InTouch",
+      "description": "A new instruction becomes a mirrored matter with its parties. A quote is not an instruction and is skipped. The body is a pointer; the case is re-read from InTouch.",
+      "entry": "app/api/v1/integrations/intouch/webhook",
+      "implemented": true,
+      "reaches": [],
+      "notes": "Event names and signature scheme to confirm against the InTouch reference."
+    },
+    {
+      "id": "intouch.identity_check",
+      "backend": "both",
+      "source": "provider",
+      "feeds": "command",
+      "label": "Identity check completed in InTouch",
+      "description": "The structured outcome becomes typed ID facts and goes through the engine's ordinary ID flow — a refer is a decision for a person, never a verdict. An outcome we do not recognise is never read as a pass. The request is recorded first (actor external) because the firm ordered it from InTouch, not from here.",
+      "entry": "lib/server/integrations/intouch/sync.ts",
+      "implemented": true,
+      "reaches": [
+        "request_id_check",
+        "id_check_result"
+      ]
+    },
+    {
+      "id": "intouch.form_completed",
+      "backend": "both",
+      "source": "user",
+      "feeds": "command",
+      "label": "Client completes a property form (TA6/TA7/TA10/TA13)",
+      "description": "The completed form becomes a document and property_forms_received, with the client's own answers quoted as disclosures for the engine to hold. A form that does not belong on this transaction is skipped, not forced.",
+      "entry": "lib/server/integrations/intouch/sync.ts",
+      "implemented": true,
+      "reaches": [
+        "property_forms_received"
+      ]
+    },
+    {
+      "id": "intouch.document_uploaded",
+      "backend": "both",
+      "source": "file",
+      "feeds": "ingest",
+      "label": "Client uploads a document to InTouch",
+      "description": "Mirrored with its bytes and handed to the ordinary ingest; InTouch's category is a routing prior, never an instruction, and the engine's own state still vetoes it.",
+      "entry": "lib/server/integrations/intouch/sync.ts",
+      "implemented": true,
+      "reaches": [
+        "search",
+        "mortgage",
+        "title",
+        "id_check"
+      ]
+    },
+    {
+      "id": "intouch.milestone_out",
+      "backend": "both",
+      "source": "user",
+      "feeds": "comms",
+      "label": "Milestone pushed to the client portal",
+      "description": "The engine's lifecycle becomes a milestone the client and the estate agent see. One way, forwards only, never twice, never for a shadow-mode or unenrolled matter, and off entirely until the firm turns it on.",
+      "entry": "lib/server/integrations/intouch/sync.ts → pushMilestone",
+      "implemented": true,
+      "reaches": []
+    },
+    {
       "id": "leap.webhook_document",
       "backend": "leap",
       "source": "webhook",
@@ -2335,19 +4166,19 @@
       "area": "shape",
       "scenario": "Two or more buyers",
       "handling": "built",
-      "mechanism": "issues carry the party they concern; one ID sub-flow per matter still (design: idChecks keyed by party)"
+      "mechanism": "every client named at enrolment beyond the first gets an ID / AML check of their own (partyChecks); Instruction holds until each is resolved"
     },
     {
       "area": "shape",
       "scenario": "Company buyer / buy-to-let",
-      "handling": "manual",
-      "mechanism": "mark_manual_handling by policy"
+      "handling": "built",
+      "mechanism": "enrolment shapes company_buyer / buy_to_let: a checklist issue from day one holds exchange (Companies House, directors and PSCs, authority, company funds; BTL offer conditions, tenancy, licensing); ID / AML reads as the company and its people"
     },
     {
       "area": "shape",
       "scenario": "Gifted deposit / source of funds",
       "handling": "built",
-      "mechanism": "proof-of-funds form → statements read line by line → flags draft queries → client answers → sign-off decision; sign-off closes source_of_funds issues and tells the lender of a gift"
+      "mechanism": "proof-of-funds form → statements read line by line → flags draft queries → client answers → sign-off decision; a declared gift adds the donor as a party with their own ID / AML check, which holds sign-off; sign-off closes source_of_funds issues and tells the lender of a gift"
     },
     {
       "area": "shape",
@@ -2370,14 +4201,14 @@
     {
       "area": "shape",
       "scenario": "Help to Buy / Lifetime ISA",
-      "handling": "gap",
-      "mechanism": "design: funds_requested fromRole isa_provider"
+      "handling": "built",
+      "mechanism": "enrolment shapes lifetime_isa / help_to_buy_isa: isa_bonus issue holds completion (declarations, limits, the bonus); funds_requested / funds_received fromRole isa_provider; Request The ISA Bonus on the completion lane"
     },
     {
       "area": "shape",
       "scenario": "New build / auction",
-      "handling": "manual",
-      "mechanism": "out of v1 scope"
+      "handling": "built",
+      "mechanism": "enrolment shapes new_build / auction: new_build_pack issue (warranty, planning, roads, CIL, completion on notice, the developer's deadline) or auction_conditions issue (legal pack, special conditions, deposit at the hammer, completion deadline) holds exchange; an auction needs no recorded exchange authority"
     },
     {
       "area": "shape",
@@ -2638,10 +4469,130 @@
       "mechanism": "registration wait timers"
     },
     {
-      "area": "post_completion",
+      "area": "completion",
       "scenario": "OS1 priority expiring",
-      "handling": "gap",
-      "mechanism": "design: priority_search_made(expiresAt)"
+      "handling": "built",
+      "mechanism": "priority_search_made(expiresAt); completion refused after expiry; deadline timer 2 working days before"
+    },
+    {
+      "area": "completion",
+      "scenario": "Bankruptcy search / buildings insurance before completion",
+      "handling": "built",
+      "mechanism": "bankruptcy_search_clear and buildings_insurance_confirmed gate completion_confirmed on a lender-funded purchase"
+    },
+    {
+      "area": "completion",
+      "scenario": "Completion money from an account never seen",
+      "handling": "built",
+      "mechanism": "funds_received.remitter compared with the declarant, the parties and every statement read → aml_kyc_problem holds completion"
+    },
+    {
+      "area": "instruction",
+      "scenario": "Attorney, company officers, executors, occupiers",
+      "handling": "built",
+      "mechanism": "named at enrolment (or add_party): each an ID / AML check of their own holding Instruction and exchange; a checklist issue for the power, the PSC register, the grant, the occupier consents"
+    },
+    {
+      "area": "instruction",
+      "scenario": "CDD older than a year on an open matter",
+      "handling": "built",
+      "mechanism": "timer raises cdd_refresh (holds nothing) — LSAG 6.21"
+    },
+    {
+      "area": "shape",
+      "scenario": "Non-family gift / cash purchase / source of wealth",
+      "handling": "built",
+      "mechanism": "POF_GIFT_NON_FAMILY, POF_CASH_PURCHASE flags; enhanced risk drafts one SOURCE_OF_WEALTH query"
+    },
+    {
+      "area": "shape",
+      "scenario": "Second charge, shared ownership, unrepresented other side, court-order transfer",
+      "handling": "built",
+      "mechanism": "enrolment shapes with a checklist issue holding the gate they threaten"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "The seller's forms read for issues (TA6 / TA7)",
+      "handling": "built",
+      "mechanism": "seller_forms_received (purchase) and property_forms_received with facts (sale): property-forms.ts turns each material answer into a cited issue"
+    },
+    {
+      "area": "shape",
+      "scenario": "Linked sale and purchase (one client, one chain)",
+      "handling": "built",
+      "mechanism": "link_related_matter → chain_dependency holds exchange; the service checks the linked matter at exchange; sale proceeds without a linked sale are flagged on the proof of funds"
+    },
+    {
+      "area": "shape",
+      "scenario": "Lender's Part 2 requirements",
+      "handling": "built",
+      "mechanism": "record_lender_requirements: minimum lease term compared on the lease review, maximum search age enforced at exchange, non-family gifts accepted or flagged"
+    },
+    {
+      "area": "instruction",
+      "scenario": "Two or more declarants on the proof of funds",
+      "handling": "built",
+      "mechanism": "coDeclarants on the form; a co-buyer who neither confirms nor declares is flagged (POF_MISSING_DECLARANT)"
+    },
+    {
+      "area": "instruction",
+      "scenario": "Name change across documents",
+      "handling": "built",
+      "mechanism": "name_change_evidenced: the alias is applied to the cross-checks"
+    },
+    {
+      "area": "post_completion",
+      "scenario": "SDLT: the sum on the declared basis",
+      "handling": "built",
+      "mechanism": "sdlt.ts computes the estimate from the price and the declared basis; on the completion statement and the SDLT deadline"
+    },
+    {
+      "area": "shape",
+      "scenario": "Right to Buy, flying freehold, commonhold",
+      "handling": "built",
+      "mechanism": "enrolment shapes with a checklist issue holding exchange"
+    },
+    {
+      "area": "instruction",
+      "scenario": "Third party pays our fees or the deposit",
+      "handling": "built",
+      "mechanism": "client_account_receipt: a remitter nobody on the file knows raises aml_kyc_problem"
+    },
+    {
+      "area": "post_completion",
+      "scenario": "SDLT: mixed use, linked transactions",
+      "handling": "built",
+      "mechanism": "sdlt.ts: non-residential rates for mixed use; linked consideration sets the rate on the aggregate and apportions"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Lender directory: Part 2 applied from the offer",
+      "handling": "built",
+      "mechanism": "lender_profile (migration 096) matched by lender name when the offer is read → record_lender_requirements"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "TA6 answered \"not known\"",
+      "handling": "built",
+      "mechanism": "each such question is an enquiry proposed (trust level enquiry_draft); approved, it is raised"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "EPC missing on a sale; F / G on a buy-to-let purchase",
+      "handling": "built",
+      "mechanism": "property-forms.ts: document_missing on the sale; buy_to_let_conditions on the purchase (MEES)"
+    },
+    {
+      "area": "contract_review",
+      "scenario": "Unregistered land",
+      "handling": "manual",
+      "mechanism": "title_extracted with unregistered=true → manual_handling_required(unregistered_land)"
+    },
+    {
+      "area": "contract_review",
+      "scenario": "Building Safety Act certificates",
+      "handling": "built",
+      "mechanism": "management pack read for the relevant-building answer and the two certificates; missing ones raise building_safety holding exchange"
     },
     {
       "area": "cross",
@@ -3259,6 +5210,39 @@
         "escalateAfterWorkingDays": 5
       },
       {
+        "kind": "search_out_of_date",
+        "group": "searches",
+        "label": "Search out of date",
+        "arisesFrom": "a search result older than the lender allows (usually six months) before exchange",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "received",
+          "lender_confirmed",
+          "indemnity_policy",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Most lenders will not lend on searches over six months old at exchange; re-order (or update) them, or get the lender's agreement or a no-search indemnity.",
+        "severity": "warning",
+        "workstreams": [
+          "searches"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Re-order or update the search",
+          "Or get the lender's agreement / a no-search indemnity"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 5
+      },
+      {
         "kind": "enquiry_unanswered",
         "group": "enquiries",
         "label": "Enquiry unanswered",
@@ -3532,6 +5516,37 @@
         "escalateAfterWorkingDays": 3
       },
       {
+        "kind": "mortgage_offer_expiry_unknown",
+        "group": "mortgage",
+        "label": "Offer expiry date not known",
+        "arisesFrom": "a mortgage offer read without an expiry date: the expiry warnings cannot run until it is known",
+        "gate": "none",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "expiry_recorded",
+          "other"
+        ],
+        "note": "Most offers run three to six months from issue; the date is on the offer itself or the lender's portal.",
+        "severity": "warning",
+        "workstreams": [
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange",
+          "completion"
+        ],
+        "actions": [
+          "Read the expiry date from the offer or the lender's portal",
+          "Record it"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 3
+      },
+      {
         "kind": "valuation_issue",
         "group": "mortgage",
         "label": "Valuation issue",
@@ -3698,6 +5713,35 @@
         "escalateAfterWorkingDays": 1
       },
       {
+        "kind": "redemption_statement_expired",
+        "group": "money",
+        "label": "Redemption statement out of date",
+        "arisesFrom": "the redemption statement is only good until a date that falls before completion",
+        "gate": "completion",
+        "stages": [
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "received",
+          "other"
+        ],
+        "note": "Redeeming on a stale figure leaves the mortgage undischarged (interest accrues daily); ask the lender for a statement dated for completion.",
+        "severity": "warning",
+        "workstreams": [
+          "redemption"
+        ],
+        "threatens": [
+          "completion"
+        ],
+        "actions": [
+          "Ask the lender for a redemption statement dated for completion"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 3
+      },
+      {
         "kind": "chain_dependency",
         "group": "parties_chain",
         "label": "Chain dependency",
@@ -3731,10 +5775,11 @@
       },
       {
         "kind": "seller_delay",
+        "context": true,
         "group": "parties_chain",
         "label": "Seller delay",
         "arisesFrom": "the seller has not returned the protocol forms, signed the contract, provided documents, or instructed their solicitor on a point",
-        "gate": "exchange",
+        "gate": "none",
         "stages": [
           "pre_contract",
           "contract_review",
@@ -3764,10 +5809,11 @@
       },
       {
         "kind": "buyer_delay",
+        "context": true,
         "group": "parties_chain",
         "label": "Buyer delay",
         "arisesFrom": "our own client: survey not booked, documents not returned, the deposit not sent, the mortgage application not made",
-        "gate": "exchange",
+        "gate": "none",
         "stages": [
           "instruction",
           "pre_contract",
@@ -3791,6 +5837,182 @@
           "Tell the client what is waiting on them and by when"
         ],
         "responsible": "client",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "company_buyer_checks",
+        "group": "funds_aml",
+        "label": "Company buyer checks",
+        "arisesFrom": "the buyer is a company (enrolment shape): Companies House, directors and PSCs, authority to buy, the company's source of funds",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Treat every director and PSC as a client for identity; the company's own money is the source of funds.",
+        "severity": "warning",
+        "workstreams": [
+          "id_aml",
+          "source_of_funds"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Companies House check and filing history",
+          "Identity of every director and PSC",
+          "Board resolution and signatories",
+          "The company's source of funds"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "buy_to_let_conditions",
+        "group": "mortgage",
+        "label": "Buy-to-let conditions",
+        "arisesFrom": "a buy-to-let purchase (enrolment shape): the offer's rental cover and letting conditions, a sitting tenancy, deposit protection, licensing",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "A sitting tenant needs the lender's consent and the tenancy papers before exchange; higher-rate SDLT applies.",
+        "severity": "warning",
+        "workstreams": [
+          "mortgage",
+          "contract"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Confirm the offer is a buy-to-let product and its conditions",
+          "Tenancy, deposit protection and right-to-rent papers for a sitting tenant",
+          "Licensing check with the council",
+          "Higher-rate SDLT on the statement"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "new_build_pack",
+        "group": "property",
+        "label": "New build pack",
+        "arisesFrom": "a new build (enrolment shape): the developer's contract, warranty cover note, planning and building regulations, roads and sewers agreements, CIL, completion on notice",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The developer sets the exchange deadline; the lender will not lend without the warranty.",
+        "severity": "warning",
+        "workstreams": [
+          "contract",
+          "title"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Warranty cover note on file",
+          "Planning, building regulations, roads and sewers agreements, CIL",
+          "Long-stop date and completion-on-notice terms reported to the client and lender",
+          "Exchange by the developer's deadline"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "auction_conditions",
+        "group": "other",
+        "label": "Auction conditions",
+        "arisesFrom": "an auction sale or purchase (enrolment shape): the legal pack, the special conditions, the deposit at the fall of the hammer, the completion deadline",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The hammer is the exchange: everything the buyer needs to know is known before the auction or not at all.",
+        "severity": "warning",
+        "workstreams": [
+          "contract",
+          "searches",
+          "title"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Legal pack reviewed and reported before the auction",
+          "Special conditions, fees and premium explained to the client",
+          "Deposit and completion deadline diarised"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 3
+      },
+      {
+        "kind": "isa_bonus",
+        "group": "money",
+        "label": "ISA bonus",
+        "arisesFrom": "a Lifetime ISA or Help to Buy ISA (enrolment shape): the declarations, the eligibility limits and the bonus paid to us by the ISA manager",
+        "gate": "completion",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The ISA manager pays within 30 days of the declaration; the money is for completion, not the exchange deposit.",
+        "severity": "warning",
+        "workstreams": [
+          "deposit",
+          "completion"
+        ],
+        "threatens": [
+          "completion"
+        ],
+        "actions": [
+          "Eligibility confirmed against the scheme limits",
+          "Investor declaration signed; conveyancer declaration or bonus claim sent",
+          "Bonus received on client account before completion"
+        ],
+        "responsible": "conveyancer",
         "escalateAfterWorkingDays": 5
       },
       {
@@ -4196,6 +6418,173 @@
         "escalateAfterWorkingDays": 1
       },
       {
+        "kind": "survey_report_outstanding",
+        "group": "property",
+        "label": "Survey done, report not on file",
+        "arisesFrom": "the client or the agent says the survey has been carried out, but no report has been filed",
+        "gate": "none",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "received",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Raised from an email or a note. The surveyor reports to the client, not to us: ask the client for it. Nothing about the physical condition is recorded until the report itself is on file and read.",
+        "severity": "info",
+        "workstreams": [
+          "survey"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Ask the client for the report (the surveyor sends it to them, not to us)",
+          "File it when it arrives; it is read automatically",
+          "Record nothing about the physical condition until the report is on file"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "transaction_at_risk",
+        "group": "parties_chain",
+        "label": "Transaction at risk",
+        "arisesFrom": "someone says a party is pulling out, the chain has broken or the sale has fallen through",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "proceeding_confirmed",
+          "chain_ready",
+          "dates_replanned",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Raised from an email or a note. Confirm with the solicitors, never on an agent's word alone. Abandoning the file is a separate, deliberate step a person takes.",
+        "severity": "critical",
+        "workstreams": [
+          "chain"
+        ],
+        "threatens": [
+          "exchange",
+          "completion"
+        ],
+        "actions": [
+          "Confirm the position with the other side's solicitor, not the agent",
+          "Tell the client and record what they want to do",
+          "Stop incurring disbursements until it is clear",
+          "Abandon the file only as a deliberate step"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 2
+      },
+      {
+        "kind": "mortgage_at_risk",
+        "group": "mortgage",
+        "label": "Mortgage at risk",
+        "arisesFrom": "a change in the client's circumstances (job, income, credit) or word that the lender is reconsidering",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "lender_confirmed",
+          "new_lender",
+          "offer_extended",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Raised from an email or a note. A material change must be reported to the lender before exchange; exchanging on an offer that is about to be withdrawn is the classic disaster.",
+        "severity": "warning",
+        "workstreams": [
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Ask the client exactly what changed and when",
+          "Confirm with the broker whether the offer stands",
+          "Report the change to the lender if an offer is issued",
+          "Do not exchange until the lender confirms"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 3
+      },
+      {
+        "kind": "document_revised",
+        "group": "other",
+        "label": "Revised document",
+        "arisesFrom": "a new version of a document already read on the case (a revised contract, re-issued search, updated replies, an edited file in the case folder) that the system could not simply re-apply because that step had moved on",
+        "gate": "none",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "accepted_as_is",
+          "evidence_provided",
+          "other"
+        ],
+        "note": "Revisions are normal. The new version is filed, read and compared with the one it replaces; what changed is shown on the Documents tab. A person decides what the change means.",
+        "severity": "warning",
+        "workstreams": [
+          "contract"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Open the new version and read what changed (Documents: Since The Last Read)",
+          "Decide whether the change affects advice, enquiries or the report",
+          "Tell the client if it does"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 3
+      },
+      {
+        "kind": "unknown_correspondent",
+        "group": "parties_chain",
+        "label": "Someone not on the file wrote in",
+        "arisesFrom": "an email on the case from an address the case does not know: a spouse, a relative, a new agent, a scammer",
+        "gate": "none",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Never buried: it is put to a person every time. Nothing they say counts as the client's until the client confirms it, and bank details from an unknown address are the classic fraud.",
+        "severity": "info",
+        "workstreams": [
+          "id_aml"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Work out who they are and set their role on the case contacts",
+          "Treat nothing they say as the client's until the client confirms it",
+          "Verify by phone before acting on any instruction or bank details from them"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 3
+      },
+      {
         "kind": "survey_further_investigation",
         "group": "property",
         "label": "Further investigation recommended",
@@ -4231,6 +6620,473 @@
         "escalateAfterWorkingDays": 10
       },
       {
+        "kind": "document_mismatch",
+        "group": "other",
+        "label": "Documents disagree",
+        "arisesFrom": "the same fact (price, names, address, title number, lender, completion date) reading differently on two documents or against the case record",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "price_reduced",
+          "buyer_covers_shortfall",
+          "retention_agreed",
+          "works_before_exchange",
+          "indemnity_policy",
+          "regularisation_certificate",
+          "retrospective_consent",
+          "consent_obtained",
+          "specialist_report_clear",
+          "evidence_provided",
+          "deed_or_declaration",
+          "deed_of_variation",
+          "lease_extended",
+          "restriction_complied",
+          "document_reexecuted",
+          "received",
+          "offer_extended",
+          "expiry_recorded",
+          "sent_another_way",
+          "condition_satisfied",
+          "new_lender",
+          "revaluation_upheld",
+          "lender_confirmed",
+          "chain_ready",
+          "proceeding_confirmed",
+          "grant_obtained",
+          "attorney_verified",
+          "insolvency_cleared",
+          "deposit_agreed",
+          "funds_in_place",
+          "completed_late",
+          "dates_replanned",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "A cross-check the register runs after every read; resolves itself when the documents agree again.",
+        "severity": "warning",
+        "workstreams": [
+          "contract"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Open both sources at the cited pages",
+          "Decide which is right and have the other corrected",
+          "Record the outcome"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "second_charge_consent",
+        "group": "mortgage",
+        "label": "Second charge / equity loan",
+        "arisesFrom": "an enrolment shape: a Help to Buy equity loan, a shared-equity or a second lender behind the first charge; the first lender must consent and the second charge is postponed",
+        "gate": "completion",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "lender_confirmed",
+          "evidence_provided",
+          "other"
+        ],
+        "note": "Both lenders' consents, the deed of postponement and the second charge's own deed before completion; report the second loan under the first lender's instructions.",
+        "severity": "warning",
+        "workstreams": [
+          "mortgage",
+          "completion"
+        ],
+        "threatens": [
+          "completion"
+        ],
+        "actions": [
+          "Report the second loan to the first lender",
+          "Obtain both consents and the deed of postponement",
+          "Second charge deed executed"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "shared_ownership_terms",
+        "group": "leasehold",
+        "label": "Shared ownership lease",
+        "arisesFrom": "an enrolment shape: a housing association shared-ownership lease (the share bought, rent on the rest, staircasing, the nomination / pre-emption on sale, the lender's mortgagee protection clause)",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The lease must be the model form with the mortgagee protection clause; the provider's approval of the buyer and of the lender; rent and service charge from completion.",
+        "severity": "warning",
+        "workstreams": [
+          "leasehold",
+          "title"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Check the lease is the model form with the mortgagee protection clause",
+          "Provider's approval of the buyer and the lender",
+          "Advise on rent, staircasing and the resale nomination"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "unrepresented_counterparty",
+        "group": "parties_chain",
+        "label": "Unrepresented other side",
+        "arisesFrom": "an enrolment shape: the buyer or seller on the other side has no solicitor",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "No undertakings can be taken; identify the other party against their title (HMLR PG 67); the lender must be told; no advice may be given to them.",
+        "severity": "warning",
+        "workstreams": [
+          "chain",
+          "id_aml"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Verify the other party against the title",
+          "Tell the lender",
+          "Plan for no undertakings on the day"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "court_order_transfer",
+        "group": "parties_chain",
+        "label": "Transfer under a court order",
+        "arisesFrom": "an enrolment shape: a transfer of equity on divorce, dissolution or separation under a court order",
+        "gate": "completion",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "lender_confirmed",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The sealed order on file; the lender releases the outgoing owner or a remortgage is needed; SDLT exemption recorded with its reason; independent advice for the outgoing owner.",
+        "severity": "warning",
+        "workstreams": [
+          "title",
+          "completion"
+        ],
+        "threatens": [
+          "completion"
+        ],
+        "actions": [
+          "Sealed copy of the order on file",
+          "Lender's release of the outgoing owner, or a remortgage",
+          "sdlt_not_required recorded with the exemption",
+          "Independent advice for the outgoing owner"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "right_to_buy_terms",
+        "group": "title",
+        "label": "Right to Buy discount",
+        "arisesFrom": "an enrolment shape: a property bought under the Right to Buy within the last five years (discount repayment charge) or ten years (right of first refusal to the landlord)",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The discount is repaid on a sale within five years (tapering); within ten years the former landlord must be offered the property first; both appear as a charge and a restriction on the title.",
+        "severity": "warning",
+        "workstreams": [
+          "title",
+          "completion"
+        ],
+        "threatens": [
+          "exchange",
+          "completion"
+        ],
+        "actions": [
+          "Find the discount repayment charge and the pre-emption restriction on the title",
+          "Work out the repayable discount at the completion date",
+          "Offer the property to the former landlord if inside ten years"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "flying_freehold",
+        "group": "title",
+        "label": "Flying freehold",
+        "arisesFrom": "an enrolment shape or the title: part of the property is over or under land in another title",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "indemnity_policy",
+          "deed_or_declaration",
+          "lender_confirmed",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The lender's Part 2 usually sets a maximum proportion and requires mutual rights of support, protection and access, or an indemnity policy.",
+        "severity": "warning",
+        "workstreams": [
+          "title",
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Measure the flying part against the lender's limit",
+          "Check the title for rights of support, protection and access",
+          "Quote an indemnity policy"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "commonhold_terms",
+        "group": "title",
+        "label": "Commonhold",
+        "arisesFrom": "an enrolment shape: a commonhold unit with a commonhold community statement and association",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "lender_confirmed",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Few lenders lend on commonhold; the community statement, the association's accounts and the commonhold assessment take the place of the lease and the pack.",
+        "severity": "warning",
+        "workstreams": [
+          "title",
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Obtain the commonhold community statement and the association's accounts",
+          "Confirm the lender lends on commonhold"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "sdlt_basis",
+        "group": "money",
+        "label": "SDLT basis",
+        "arisesFrom": "the client's declaration at enrolment: first-time buyer relief, the higher rates for an additional property, the non-UK resident surcharge",
+        "gate": "none",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Confirm the basis against the facts before the return; the client signs the return's declaration.",
+        "severity": "info",
+        "workstreams": [
+          "completion"
+        ],
+        "threatens": [
+          "registration"
+        ],
+        "actions": [
+          "Check every buyer against the relief or surcharge conditions",
+          "Confirm the figure with the client before the return"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": null
+      },
+      {
+        "kind": "cdd_refresh",
+        "group": "funds_aml",
+        "label": "CDD refresh due",
+        "arisesFrom": "a client identified more than a year ago on a matter still open (LSAG 6.21 ongoing monitoring)",
+        "gate": "none",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Re-check the electronic verification, confirm the address, refresh sanctions and PEP screening; record it.",
+        "severity": "info",
+        "workstreams": [
+          "id_aml"
+        ],
+        "threatens": [
+          "completion"
+        ],
+        "actions": [
+          "Re-run electronic verification",
+          "Refresh PEP / sanctions screening",
+          "Record the review"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": null
+      },
+      {
+        "kind": "building_safety",
+        "group": "leasehold",
+        "label": "Building Safety Act",
+        "arisesFrom": "the management pack: a relevant building (11 m / 5 storeys) without a leaseholder deed of certificate or landlord's certificate, or with remediation outstanding",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "lender_confirmed",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The lender will need the certificates (and possibly an EWS1) before it lends; the buyer inherits the leaseholder protections only if the certificate chain is intact.",
+        "severity": "warning",
+        "workstreams": [
+          "leasehold",
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Obtain the leaseholder deed of certificate and the landlord's certificate",
+          "Ask the lender what it requires (EWS1, remediation evidence)",
+          "Advise the client on the protections"
+        ],
+        "responsible": "seller_side",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "file_locked",
+        "group": "other",
+        "label": "Password-protected file",
+        "arisesFrom": "a PDF that arrived password-protected (bank statements, ID scans, reports); the password usually comes separately, by email, text or phone",
+        "gate": "none",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "other"
+        ],
+        "note": "Nothing can be read from it until it is unlocked; the unlocked copy is kept, the password is not.",
+        "severity": "warning",
+        "workstreams": [],
+        "threatens": [],
+        "actions": [],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 2
+      },
+      {
+        "kind": "send_failed",
+        "group": "other",
+        "label": "Message could not be sent",
+        "arisesFrom": "an email, WhatsApp message, form or order the engine or a person tried to send and the mailbox or provider refused (an expired Microsoft 365 connection, no address on the case, a provider outage)",
+        "gate": "none",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "sent_another_way",
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Never silent: the failure is a task with the fix and the message to send by hand.",
+        "severity": "warning",
+        "workstreams": [],
+        "threatens": [],
+        "actions": [],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 2
+      },
+      {
         "kind": "other",
         "group": "other",
         "label": "Other",
@@ -4262,11 +7118,14 @@
           "document_reexecuted",
           "received",
           "offer_extended",
+          "expiry_recorded",
+          "sent_another_way",
           "condition_satisfied",
           "new_lender",
           "revaluation_upheld",
           "lender_confirmed",
           "chain_ready",
+          "proceeding_confirmed",
           "grant_obtained",
           "attorney_verified",
           "insolvency_cleared",
@@ -4292,6 +7151,17 @@
       {
         "id": "price_reduced",
         "label": "price reduced",
+        "title": "Price Reduced",
+        "fields": [
+          {
+            "key": "newPrice",
+            "label": "New Price",
+            "type": "money",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": "Updates the price",
         "effects": [
           "records price_changed (new price required, before exchange only)",
           "lender-funded purchase: raises a lender_approval issue holding exchange"
@@ -4300,11 +7170,45 @@
       {
         "id": "buyer_covers_shortfall",
         "label": "buyer makes up the shortfall",
+        "title": "Buyer Covers The Shortfall",
+        "fields": [
+          {
+            "key": "cost",
+            "label": "Shortfall",
+            "type": "money",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "retention_agreed",
         "label": "retention agreed",
+        "title": "Retention Agreed",
+        "fields": [
+          {
+            "key": "cost",
+            "label": "Retention",
+            "type": "money",
+            "required": true
+          },
+          {
+            "key": "releasedWhen",
+            "label": "Released When",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "paidBy",
+            "label": "Paid By",
+            "type": "payer",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": "Adds a task to tell the lender",
         "effects": [
           "lender-funded purchase: raises a lender_approval issue holding exchange"
         ]
@@ -4312,11 +7216,69 @@
       {
         "id": "works_before_exchange",
         "label": "works done by the seller before exchange",
+        "title": "Seller Did The Works",
+        "fields": [
+          {
+            "key": "works",
+            "label": "Works Done",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "documentId",
+            "label": "Evidence",
+            "type": "document",
+            "required": false
+          },
+          {
+            "key": "cost",
+            "label": "Cost",
+            "type": "money",
+            "required": false
+          },
+          {
+            "key": "paidBy",
+            "label": "Paid By",
+            "type": "payer",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "indemnity_policy",
         "label": "indemnity policy obtained",
+        "title": "Indemnity Policy",
+        "fields": [
+          {
+            "key": "insurer",
+            "label": "Insurer",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "cost",
+            "label": "Premium",
+            "type": "money",
+            "required": true
+          },
+          {
+            "key": "paidBy",
+            "label": "Paid By",
+            "type": "payer",
+            "required": true
+          },
+          {
+            "key": "documentId",
+            "label": "Policy",
+            "type": "document",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": "Adds a task to tell the lender",
         "effects": [
           "lender-funded purchase: raises a lender_approval issue holding exchange"
         ]
@@ -4324,71 +7286,335 @@
       {
         "id": "regularisation_certificate",
         "label": "regularisation certificate obtained",
+        "title": "Regularisation Certificate",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Certificate",
+            "type": "document",
+            "required": true
+          },
+          {
+            "key": "cost",
+            "label": "Fee",
+            "type": "money",
+            "required": false
+          },
+          {
+            "key": "paidBy",
+            "label": "Paid By",
+            "type": "payer",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "retrospective_consent",
         "label": "retrospective consent obtained",
+        "title": "Retrospective Consent",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Consent",
+            "type": "document",
+            "required": true
+          },
+          {
+            "key": "cost",
+            "label": "Fee",
+            "type": "money",
+            "required": false
+          },
+          {
+            "key": "paidBy",
+            "label": "Paid By",
+            "type": "payer",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "consent_obtained",
         "label": "consent obtained",
+        "title": "Consent Obtained",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Consent",
+            "type": "document",
+            "required": true
+          },
+          {
+            "key": "cost",
+            "label": "Fee",
+            "type": "money",
+            "required": false
+          },
+          {
+            "key": "paidBy",
+            "label": "Paid By",
+            "type": "payer",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "specialist_report_clear",
         "label": "specialist report satisfactory",
+        "title": "Specialist Report Clear",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Report",
+            "type": "document",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "evidence_provided",
         "label": "evidence / documents provided",
+        "title": "Evidence Provided",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Evidence",
+            "type": "document",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "deed_or_declaration",
         "label": "deed or statutory declaration obtained",
+        "title": "Deed Or Declaration",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Deed Or Declaration",
+            "type": "document",
+            "required": true
+          },
+          {
+            "key": "cost",
+            "label": "Cost",
+            "type": "money",
+            "required": false
+          },
+          {
+            "key": "paidBy",
+            "label": "Paid By",
+            "type": "payer",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "deed_of_variation",
         "label": "deed of variation completed",
+        "title": "Deed Of Variation",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Deed Of Variation",
+            "type": "document",
+            "required": true
+          },
+          {
+            "key": "cost",
+            "label": "Cost",
+            "type": "money",
+            "required": false
+          },
+          {
+            "key": "paidBy",
+            "label": "Paid By",
+            "type": "payer",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "lease_extended",
         "label": "lease extended (or extension assigned)",
+        "title": "Lease Extended",
+        "fields": [
+          {
+            "key": "newTerm",
+            "label": "New Term",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "cost",
+            "label": "Premium",
+            "type": "money",
+            "required": false
+          },
+          {
+            "key": "paidBy",
+            "label": "Paid By",
+            "type": "payer",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "restriction_complied",
         "label": "restriction complied with (certificate / consent)",
+        "title": "Restriction Complied With",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Certificate Or Consent",
+            "type": "document",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "document_reexecuted",
         "label": "document re-executed",
+        "title": "Document Re-Executed",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Re-Executed Document",
+            "type": "document",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "received",
         "label": "received (the awaited thing arrived)",
+        "title": "Received",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "What Arrived",
+            "type": "document",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "offer_extended",
         "label": "offer extended by the lender",
+        "title": "Offer Extended",
+        "fields": [
+          {
+            "key": "newExpiry",
+            "label": "New Expiry",
+            "type": "date",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": "Moves the offer expiry",
+        "effects": []
+      },
+      {
+        "id": "expiry_recorded",
+        "label": "offer expiry date recorded",
+        "title": "Expiry Recorded",
+        "fields": [
+          {
+            "key": "newExpiry",
+            "label": "Expiry Date",
+            "type": "date",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": "Sets the offer expiry",
+        "effects": []
+      },
+      {
+        "id": "sent_another_way",
+        "label": "sent another way (post, by hand or our own mailbox)",
+        "title": "Sent Another Way",
+        "fields": [
+          {
+            "key": "how",
+            "label": "How It Went",
+            "type": "channel",
+            "required": true
+          },
+          {
+            "key": "documentId",
+            "label": "Copy Of What Was Sent",
+            "type": "document",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": "Records it as sent, so the case moves on as if we had sent it",
         "effects": []
       },
       {
         "id": "condition_satisfied",
         "label": "condition satisfied",
+        "title": "Condition Satisfied",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Evidence",
+            "type": "document",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "new_lender",
         "label": "new lender / fresh valuation",
+        "title": "New Lender",
+        "fields": [
+          {
+            "key": "lender",
+            "label": "New Lender",
+            "type": "lender",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": "Sets the current offer aside",
         "effects": [
           "lender-funded purchase: records mortgage_offer_withdrawn (the sub-flow reopens)"
         ]
@@ -4396,64 +7622,2641 @@
       {
         "id": "revaluation_upheld",
         "label": "valuation challenged and upheld",
+        "title": "Valuation Upheld",
+        "fields": [
+          {
+            "key": "valuation",
+            "label": "Valuation",
+            "type": "money",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "lender_confirmed",
         "label": "lender confirmed the offer stands",
+        "title": "Lender Confirmed",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Lender's Confirmation",
+            "type": "document",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "chain_ready",
         "label": "chain confirmed ready",
+        "title": "Chain Ready",
+        "fields": [],
+        "noteRequired": false,
+        "effect": null,
+        "effects": []
+      },
+      {
+        "id": "proceeding_confirmed",
+        "label": "the other side confirmed they are proceeding",
+        "title": "They Are Proceeding",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Their Confirmation",
+            "type": "document",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "grant_obtained",
         "label": "grant of probate obtained",
+        "title": "Grant Obtained",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Grant",
+            "type": "document",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "attorney_verified",
         "label": "attorney's authority verified",
+        "title": "Attorney Verified",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Registered LPA",
+            "type": "document",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "insolvency_cleared",
         "label": "insolvency cleared (trustee / discharge / not our client)",
+        "title": "Insolvency Cleared",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Evidence",
+            "type": "document",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "deposit_agreed",
         "label": "deposit arrangement agreed in the contract",
+        "title": "Deposit Agreed",
+        "fields": [
+          {
+            "key": "deposit",
+            "label": "Deposit Agreed",
+            "type": "money",
+            "required": true
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "funds_in_place",
         "label": "funds in place",
+        "title": "Funds In Place",
+        "fields": [
+          {
+            "key": "documentId",
+            "label": "Evidence",
+            "type": "document",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "completed_late",
         "label": "completed late",
+        "title": "Completed Late",
+        "fields": [],
+        "noteRequired": false,
+        "effect": null,
         "effects": []
       },
       {
         "id": "dates_replanned",
         "label": "target dates re-planned",
+        "title": "Dates Re-Planned",
+        "fields": [
+          {
+            "key": "targetExchangeDate",
+            "label": "Target Exchange",
+            "type": "date",
+            "required": false
+          },
+          {
+            "key": "targetCompletionDate",
+            "label": "Target Completion",
+            "type": "date",
+            "required": false
+          }
+        ],
+        "noteRequired": false,
+        "effect": "Moves the target dates",
         "effects": []
       },
       {
         "id": "accepted_as_is",
         "label": "client accepts as is (advised in writing)",
+        "title": "Accepted As Is",
+        "fields": [
+          {
+            "key": "advised",
+            "label": "Client Advised In Writing",
+            "type": "confirm",
+            "required": true
+          }
+        ],
+        "noteRequired": true,
+        "effect": null,
         "effects": []
       },
       {
         "id": "other",
         "label": "other (see note)",
+        "title": "Other",
+        "fields": [],
+        "noteRequired": true,
+        "effect": null,
         "effects": []
       }
     ],
-    "staleAfterWorkingDays": 10
+    "staleAfterWorkingDays": 10,
+    "formless": [
+      "file_locked"
+    ],
+    "chips": {
+      "company_buyer_checks": "Company Buyer",
+      "buy_to_let_conditions": "Buy To Let",
+      "new_build_pack": "New Build",
+      "auction_conditions": "Auction",
+      "isa_bonus": "ISA Bonus",
+      "second_charge_consent": "Second Charge",
+      "shared_ownership_terms": "Shared Ownership",
+      "unrepresented_counterparty": "Unrepresented",
+      "court_order_transfer": "Court Order",
+      "right_to_buy_terms": "Right To Buy",
+      "flying_freehold": "Flying Freehold",
+      "commonhold_terms": "Commonhold",
+      "sdlt_basis": "SDLT",
+      "cdd_refresh": "CDD Refresh",
+      "building_safety": "Building Safety",
+      "title_defect": "Title",
+      "title_restriction": "Restriction",
+      "missing_easement": "Easement",
+      "restrictive_covenant": "Covenant",
+      "boundary_discrepancy": "Boundary",
+      "missing_consent": "Consent",
+      "lease_defect": "Lease",
+      "short_lease": "Short Lease",
+      "service_charge_issue": "Service Charge",
+      "ground_rent_issue": "Ground Rent",
+      "freeholder_info_outstanding": "Management Pack",
+      "planning_permission_missing": "Planning",
+      "building_regs_missing": "Building Regs",
+      "search_adverse_entry": "Search",
+      "search_delayed": "Search Delayed",
+      "enquiry_unanswered": "Enquiry",
+      "enquiry_unsatisfactory": "Enquiry",
+      "source_of_funds": "Source Of Funds",
+      "aml_kyc_problem": "AML",
+      "mortgage_offer_outstanding": "Mortgage Offer",
+      "mortgage_condition_outstanding": "Mortgage Condition",
+      "mortgage_offer_expiring": "Offer Expiring",
+      "mortgage_offer_expired": "Offer Expired",
+      "mortgage_offer_expiry_unknown": "Offer Expiry",
+      "search_out_of_date": "Search Out Of Date",
+      "redemption_statement_expired": "Redemption Statement",
+      "valuation_issue": "Valuation",
+      "lender_approval": "Tell The Lender",
+      "deposit_issue": "Deposit",
+      "completion_funds_shortfall": "Shortfall",
+      "lender_funds_delayed": "Lender Funds",
+      "chain_dependency": "Chain",
+      "seller_delay": "Seller Delay",
+      "buyer_delay": "Buyer Delay",
+      "third_party_consent": "Consent",
+      "document_execution_problem": "Signing",
+      "occupier_consent": "Occupier",
+      "probate_issue": "Probate",
+      "power_of_attorney_issue": "Attorney",
+      "bankruptcy_insolvency": "Insolvency",
+      "survey_defect": "Survey",
+      "environmental_risk": "Environmental",
+      "third_party_encumbrance": "Encumbrance",
+      "document_missing": "Missing Document",
+      "disclosure_concern": "Disclosure",
+      "completion_failure": "Completion",
+      "survey_further_investigation": "Further Investigation",
+      "survey_report_outstanding": "Survey Report",
+      "transaction_at_risk": "At Risk",
+      "mortgage_at_risk": "Mortgage At Risk",
+      "unknown_correspondent": "Unknown Sender",
+      "document_revised": "Revised Document",
+      "document_mismatch": "Mismatch",
+      "file_locked": "Locked File",
+      "send_failed": "Unsuccessful",
+      "other": "Issue"
+    },
+    "steps": {
+      "title_defect": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "title_restriction": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "missing_easement": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "restrictive_covenant": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "boundary_discrepancy": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "missing_consent": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "lease_defect": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "short_lease": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "service_charge_issue": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "ground_rent_issue": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "freeholder_info_outstanding": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "planning_permission_missing": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "building_regs_missing": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "search_adverse_entry": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "search_delayed": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "search_out_of_date": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "enquiry_unanswered": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "enquiry_unsatisfactory": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "source_of_funds": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "aml_kyc_problem": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "mortgage_offer_outstanding": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "mortgage_condition_outstanding": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "mortgage_offer_expiring": [
+        {
+          "id": "msg:lender:ask_the_lender_for_an_extension",
+          "kind": "message",
+          "label": "Ask The Lender For An Extension",
+          "to": "lender"
+        },
+        {
+          "id": "msg:client:tell_the_client",
+          "kind": "message",
+          "label": "Tell The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        }
+      ],
+      "mortgage_offer_expired": [
+        {
+          "id": "msg:lender:ask_the_lender_for_an_extension",
+          "kind": "message",
+          "label": "Ask The Lender For An Extension",
+          "to": "lender"
+        },
+        {
+          "id": "msg:client:tell_the_client",
+          "kind": "message",
+          "label": "Tell The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        },
+        {
+          "id": "fatal",
+          "kind": "fatal",
+          "label": "It Has Fallen Through"
+        }
+      ],
+      "mortgage_offer_expiry_unknown": [
+        {
+          "id": "msg:lender:ask_the_lender_for_the_expiry",
+          "kind": "message",
+          "label": "Ask The Lender For The Expiry",
+          "to": "lender"
+        }
+      ],
+      "valuation_issue": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "lender_approval": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "deposit_issue": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "completion_funds_shortfall": [
+        {
+          "id": "msg:client:ask_the_client_for_the_balance",
+          "kind": "message",
+          "label": "Ask The Client For The Balance",
+          "to": "client"
+        }
+      ],
+      "lender_funds_delayed": [
+        {
+          "id": "msg:lender:chase_the_lender",
+          "kind": "message",
+          "label": "Chase The Lender",
+          "to": "lender"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "redemption_statement_expired": [
+        {
+          "id": "msg:lender:ask_for_a_fresh_statement",
+          "kind": "message",
+          "label": "Ask For A Fresh Statement",
+          "to": "lender"
+        }
+      ],
+      "chain_dependency": [
+        {
+          "id": "msg:seller_solicitor:ask_where_the_chain_stands",
+          "kind": "message",
+          "label": "Ask Where The Chain Stands",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        },
+        {
+          "id": "fatal",
+          "kind": "fatal",
+          "label": "It Has Fallen Through"
+        }
+      ],
+      "seller_delay": [
+        {
+          "id": "msg:seller_solicitor:ask_for_their_timescale",
+          "kind": "message",
+          "label": "Ask For Their Timescale",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        }
+      ],
+      "buyer_delay": [
+        {
+          "id": "msg:seller_solicitor:ask_for_their_timescale",
+          "kind": "message",
+          "label": "Ask For Their Timescale",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        }
+      ],
+      "company_buyer_checks": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "buy_to_let_conditions": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "new_build_pack": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "auction_conditions": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "isa_bonus": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "third_party_consent": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "document_execution_problem": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "occupier_consent": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "probate_issue": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "power_of_attorney_issue": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "bankruptcy_insolvency": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "survey_defect": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "environmental_risk": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "third_party_encumbrance": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "document_missing": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "disclosure_concern": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "completion_failure": [
+        {
+          "id": "msg:seller_solicitor:agree_a_new_completion_time",
+          "kind": "message",
+          "label": "Agree A New Completion Time",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:tell_the_client",
+          "kind": "message",
+          "label": "Tell The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        }
+      ],
+      "survey_report_outstanding": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "transaction_at_risk": [
+        {
+          "id": "msg:seller_solicitor:ask_the_other_side_where_their_client_stands",
+          "kind": "message",
+          "label": "Ask The Other Side Where Their Client Stands",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:estate_agent:tell_the_agent",
+          "kind": "message",
+          "label": "Tell The Agent",
+          "to": "estate_agent"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        },
+        {
+          "id": "fatal",
+          "kind": "fatal",
+          "label": "It Has Fallen Through"
+        }
+      ],
+      "mortgage_at_risk": [
+        {
+          "id": "msg:lender:ask_the_lender_or_broker",
+          "kind": "message",
+          "label": "Ask The Lender Or Broker",
+          "to": "lender"
+        },
+        {
+          "id": "msg:client:ask_the_client_what_has_changed",
+          "kind": "message",
+          "label": "Ask The Client What Has Changed",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        },
+        {
+          "id": "fatal",
+          "kind": "fatal",
+          "label": "It Has Fallen Through"
+        }
+      ],
+      "document_revised": [],
+      "unknown_correspondent": [],
+      "survey_further_investigation": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "document_mismatch": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "second_charge_consent": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "shared_ownership_terms": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "unrepresented_counterparty": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "court_order_transfer": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "right_to_buy_terms": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "flying_freehold": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "commonhold_terms": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "sdlt_basis": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "cdd_refresh": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "building_safety": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "file_locked": [],
+      "send_failed": [],
+      "other": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ]
+    },
+    "sellerSteps": {
+      "title_defect": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "title_restriction": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "missing_easement": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "restrictive_covenant": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "boundary_discrepancy": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "missing_consent": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "lease_defect": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "short_lease": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "service_charge_issue": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "ground_rent_issue": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "freeholder_info_outstanding": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "planning_permission_missing": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "building_regs_missing": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "search_adverse_entry": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "search_delayed": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "search_out_of_date": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "enquiry_unanswered": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "enquiry_unsatisfactory": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "source_of_funds": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "aml_kyc_problem": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "mortgage_offer_outstanding": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "mortgage_condition_outstanding": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "mortgage_offer_expiring": [
+        {
+          "id": "msg:lender:ask_the_lender_for_an_extension",
+          "kind": "message",
+          "label": "Ask The Lender For An Extension",
+          "to": "lender"
+        },
+        {
+          "id": "msg:client:tell_the_client",
+          "kind": "message",
+          "label": "Tell The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        }
+      ],
+      "mortgage_offer_expired": [
+        {
+          "id": "msg:lender:ask_the_lender_for_an_extension",
+          "kind": "message",
+          "label": "Ask The Lender For An Extension",
+          "to": "lender"
+        },
+        {
+          "id": "msg:client:tell_the_client",
+          "kind": "message",
+          "label": "Tell The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        },
+        {
+          "id": "fatal",
+          "kind": "fatal",
+          "label": "It Has Fallen Through"
+        }
+      ],
+      "mortgage_offer_expiry_unknown": [
+        {
+          "id": "msg:lender:ask_the_lender_for_the_expiry",
+          "kind": "message",
+          "label": "Ask The Lender For The Expiry",
+          "to": "lender"
+        }
+      ],
+      "valuation_issue": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "lender_approval": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "deposit_issue": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "completion_funds_shortfall": [
+        {
+          "id": "msg:client:ask_the_client_for_the_balance",
+          "kind": "message",
+          "label": "Ask The Client For The Balance",
+          "to": "client"
+        }
+      ],
+      "lender_funds_delayed": [
+        {
+          "id": "msg:lender:chase_the_lender",
+          "kind": "message",
+          "label": "Chase The Lender",
+          "to": "lender"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "redemption_statement_expired": [
+        {
+          "id": "msg:lender:ask_for_a_fresh_statement",
+          "kind": "message",
+          "label": "Ask For A Fresh Statement",
+          "to": "lender"
+        }
+      ],
+      "chain_dependency": [
+        {
+          "id": "msg:seller_solicitor:ask_where_the_chain_stands",
+          "kind": "message",
+          "label": "Ask Where The Chain Stands",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        },
+        {
+          "id": "fatal",
+          "kind": "fatal",
+          "label": "It Has Fallen Through"
+        }
+      ],
+      "seller_delay": [
+        {
+          "id": "msg:seller_solicitor:ask_for_their_timescale",
+          "kind": "message",
+          "label": "Ask For Their Timescale",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        }
+      ],
+      "buyer_delay": [
+        {
+          "id": "msg:seller_solicitor:ask_for_their_timescale",
+          "kind": "message",
+          "label": "Ask For Their Timescale",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        }
+      ],
+      "company_buyer_checks": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "buy_to_let_conditions": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "new_build_pack": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "auction_conditions": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "isa_bonus": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "third_party_consent": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "document_execution_problem": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "occupier_consent": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "probate_issue": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "power_of_attorney_issue": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "bankruptcy_insolvency": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "survey_defect": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "environmental_risk": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "third_party_encumbrance": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "document_missing": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "disclosure_concern": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "completion_failure": [
+        {
+          "id": "msg:seller_solicitor:agree_a_new_completion_time",
+          "kind": "message",
+          "label": "Agree A New Completion Time",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:tell_the_client",
+          "kind": "message",
+          "label": "Tell The Client",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        }
+      ],
+      "survey_report_outstanding": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "transaction_at_risk": [
+        {
+          "id": "msg:seller_solicitor:ask_the_other_side_where_their_client_stands",
+          "kind": "message",
+          "label": "Ask The Other Side Where Their Client Stands",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:estate_agent:tell_the_agent",
+          "kind": "message",
+          "label": "Tell The Agent",
+          "to": "estate_agent"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        },
+        {
+          "id": "fatal",
+          "kind": "fatal",
+          "label": "It Has Fallen Through"
+        }
+      ],
+      "mortgage_at_risk": [
+        {
+          "id": "msg:lender:ask_the_lender_or_broker",
+          "kind": "message",
+          "label": "Ask The Lender Or Broker",
+          "to": "lender"
+        },
+        {
+          "id": "msg:client:ask_the_client_what_has_changed",
+          "kind": "message",
+          "label": "Ask The Client What Has Changed",
+          "to": "client"
+        },
+        {
+          "id": "dates",
+          "kind": "dates",
+          "label": "Agree New Dates"
+        },
+        {
+          "id": "fatal",
+          "kind": "fatal",
+          "label": "It Has Fallen Through"
+        }
+      ],
+      "document_revised": [],
+      "unknown_correspondent": [],
+      "survey_further_investigation": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "document_mismatch": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "second_charge_consent": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "shared_ownership_terms": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "unrepresented_counterparty": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "court_order_transfer": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "right_to_buy_terms": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "flying_freehold": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "commonhold_terms": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "sdlt_basis": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "cdd_refresh": [
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        }
+      ],
+      "building_safety": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ],
+      "file_locked": [],
+      "send_failed": [],
+      "other": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
+        }
+      ]
+    }
   }
 }

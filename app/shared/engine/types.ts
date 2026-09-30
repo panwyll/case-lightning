@@ -206,6 +206,8 @@ export interface IssueCatalogue {
   staleAfterWorkingDays: number;
   formless?: string[];
   chips?: Record<string, string>;
+  steps?: Record<string, Array<{ id: string; kind: 'message' | 'dates' | 'negotiating' | 'fatal'; label: string; to?: string }>>;
+  sellerSteps?: IssueCatalogue['steps'];
 }
 
 export type TransactionType = 'freehold_purchase' | 'leasehold_purchase' | 'freehold_sale' | 'leasehold_sale' | 'remortgage' | 'transfer_of_equity';

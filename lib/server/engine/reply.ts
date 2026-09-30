@@ -54,3 +54,11 @@ export function templateMessage(s: MatterState, to: Exclude<import('./types').Me
   if (to === 'seller_solicitor') return `Dear Colleagues,\n\nWe act for the ${side}${where}. ${said}\n\nWe look forward to hearing from you.`;
   return `Hello,\n\nWe act for the ${side}${where}. ${said}`;
 }
+
+/** Without a model: a message about an issue on the case (issues.ts `issueSteps`): the step's sentence, naming the issue where it says `{issue}`. */
+export function templateIssueMessage(s: MatterState, to: import('./types').MessageParty, input: { sentence: string; issueTitle: string; firstName: string | null; property: string | null }): string {
+  const title = input.issueTitle.trim().replace(/\.$/, '');
+  const said = input.sentence.replace('{issue}', /^[A-Z][a-z]/.test(title) ? title.charAt(0).toLowerCase() + title.slice(1) : title);
+  if (to === 'client') return `Hello ${input.firstName ?? 'there'},\n\n${said}`;
+  return templateMessage(s, to, [said], input.property);
+}

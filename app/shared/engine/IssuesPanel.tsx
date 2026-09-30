@@ -6,6 +6,7 @@ import { BusyButton, UploadButton } from './BusyButton';
 import { LenderPicker } from './LenderPicker';
 import { AddressAndSend, addressFor } from './AddressAndSend';
 import { uploadCaseFile } from './uploadCaseFile';
+import { Mail, Calendar, Check } from '@/app/shared/icons';
 import { SEVERITIES, SEVERITY_CSS, SEVERITY_LABEL, type Severity } from './severity';
 import { fmtDay, pretty, type Api, type CaseDocument, type EngineState, type IssueCatalogue, type IssueRow, type ResolutionField } from './types';
 
@@ -57,6 +58,7 @@ const CSS = `
 .is-form{grid-column:1 / -1;display:grid;gap:10px;background:#f8fafc;border:1px solid #e6e8ee;border-radius:10px;padding:12px;margin-top:6px}
 .is-form .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
 .is-form label{display:grid;gap:4px;font-size:11.5px;font-weight:700;color:#475569}
+.is-form label > select{justify-self:start}
 .is-form label.chk{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#0f172a}
 .is-form .ep-input{width:100%;box-sizing:border-box;margin:0}
 .is-form textarea.ep-input{resize:vertical;font:inherit;font-size:13px}
@@ -66,6 +68,20 @@ const CSS = `
 .is-form .fx{font-size:12px;color:#64748b;margin-right:auto}
 .is-form .bad{font-size:12.5px;color:#b91c1c;font-weight:600}
 .is-ctx .is-t{font-weight:600;color:#334155}
+.is-sec{font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.is-steps{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.is-steps .ep-btn{margin:0;display:inline-flex;align-items:center;gap:6px}
+.is-steps .ep-btn.on{border-color:#5A27E0;color:#5A27E0;background:#f5f3ff}
+.is-steps .ep-btn.sent{color:#166534;border-color:#bbf7d0;background:#f0fdf4}
+.is-steps .ep-btn.bad{color:#b91c1c;border-color:#fecaca;margin-left:auto}
+.is-comp{display:grid;gap:8px;background:#fff;border:1px solid #e6e8ee;border-radius:10px;padding:10px 12px}
+.is-comp .to{font-size:12px;color:#475569;font-weight:600}
+.is-comp textarea.ep-input{min-height:170px}
+.is-comp .wait{font-size:12.5px;color:#64748b;padding:8px 0}
+.is-log{display:grid;gap:3px;font-size:12px;color:#475569}
+.is-log div{display:flex;gap:8px}
+.is-log time{color:#94a3b8;flex:none;min-width:48px}
+.is-hr{border:0;border-top:1px solid #e6e8ee;margin:2px 0}
 .is-out{padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
 .is-out.warn{background:#fef3c7;color:#92400e;border-color:#fde68a}
 .is-empty{padding:12px 14px;font-size:12.5px;color:#64748b}
@@ -126,6 +142,9 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   const [showClosed, setShowClosed] = useState(false);
   const [pw, setPw] = useState('');
   const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null);
+  // A next step open on the form: a message being drafted and edited, or new dates.
+  const [step, setStep] = useState<{ id: string; kind: 'message' | 'dates'; to?: string; subject: string; body: string; loading: boolean } | null>(null);
+  const [sentSteps, setSentSteps] = useState<Set<string>>(new Set());
   useEffect(() => { if (!outcome) return; const t = setTimeout(() => setOutcome(null), 8000); return () => clearTimeout(t); }, [outcome]);
 
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -315,11 +334,98 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
     }
   };
 
+  const TO_LABEL: Record<string, string> = { client: 'The Client', seller_solicitor: "The Other Side's Solicitor", estate_agent: 'The Estate Agent', lender: 'The Lender Or Broker' };
+  const openStep = async (i: IssueRow, x: { id: string; kind: string; to?: string }) => {
+    setFormErr(null);
+    if (step?.id === x.id) { setStep(null); return; }
+    if (x.kind === 'negotiating') { setStep(null); openForm(i, 'negotiating'); return; }
+    if (x.kind === 'fatal') { setStep(null); openForm(i, 'fatal'); return; }
+    if (x.kind === 'dates') { setVals((v) => ({ ...v, stepExchange: state.targetExchangeDate?.slice(0, 10) ?? '', stepCompletion: state.targetCompletionDate?.slice(0, 10) ?? '' })); setStep({ id: x.id, kind: 'dates', subject: '', body: '', loading: false }); return; }
+    setStep({ id: x.id, kind: 'message', to: x.to, subject: '', body: '', loading: true });
+    try {
+      const d = await api<{ to: string; subject: string; body: string }>(`/matters/${state.matterId}/issues/${encodeURIComponent(i.id)}/message?step=${encodeURIComponent(x.id)}`);
+      setStep((cur) => (cur?.id === x.id ? { ...cur, to: d.to, subject: d.subject, body: d.body, loading: false } : cur));
+    } catch (e: unknown) {
+      setStep((cur) => (cur?.id === x.id ? { ...cur, loading: false } : cur));
+      setFormErr(e instanceof Error ? e.message : 'The draft could not be written; write it yourself.');
+    }
+  };
+  const sendStep = async (i: IssueRow): Promise<boolean> => {
+    if (!step || step.kind !== 'message') return false;
+    setFormErr(null);
+    try {
+      await api(`/matters/${state.matterId}/issues/${encodeURIComponent(i.id)}/message`, { method: 'POST', body: JSON.stringify({ to: step.to, subject: step.subject, body: step.body }) });
+      const id = step.id;
+      setSentSteps((cur) => new Set(cur).add(`${i.id}:${id}`));
+      setTimeout(() => setStep((cur) => (cur?.id === id ? null : cur)), 900);
+      onChanged?.();
+      return true;
+    } catch (e: unknown) { setFormErr(e instanceof Error ? e.message : 'It did not send.'); return false; }
+  };
+  const saveDates = async (i: IssueRow): Promise<boolean> => {
+    const ex = vals.stepExchange || null, co = vals.stepCompletion || null;
+    const ok = await run({ type: 'set_target_dates', targetExchangeDate: ex, targetCompletionDate: co, reason: clean(i.title).slice(0, 400) });
+    if (!ok) return false;
+    await run({ type: 'update_issue', issueId: i.id, status: i.status, note: `New dates agreed${ex ? `: exchange ${fmtDay(ex)}` : ''}${co ? `${ex ? ',' : ':'} completion ${fmtDay(co)}` : ''}` });
+    setSentSteps((cur) => new Set(cur).add(`${i.id}:dates`));
+    setTimeout(() => setStep(null), 900);
+    onChanged?.();
+    return true;
+  };
+  /** What to do about it: write to someone (drafted from the case), agree new dates, mark it negotiating, or say it has fallen through. */
+  const nextSteps = (i: IssueRow) => {
+    const all = ((/_sale$/.test(state.transactionType ?? '') ? cat?.sellerSteps : cat?.steps)?.[i.kind] ?? []).filter((x) => !(x.kind === 'negotiating' && i.status === 'negotiating'));
+    if (!all.length) return null;
+    const log = (i.history ?? []).slice(1).slice(-4);
+    return (
+      <>
+        <div className="is-sec">Next Steps</div>
+        <div className="is-steps">
+          {all.map((x) => {
+            const sent = sentSteps.has(`${i.id}:${x.id}`);
+            const Icon = x.kind === 'message' ? (sent ? Check : Mail) : x.kind === 'dates' ? (sent ? Check : Calendar) : null;
+            return <button key={x.id} type="button" className={`ep-btn${x.kind === 'fatal' ? ' bad' : ''}${step?.id === x.id ? ' on' : ''}${sent ? ' sent' : ''}`} disabled={busy} onClick={() => void openStep(i, x)}>{Icon && <Icon size={16} />}{x.label}</button>;
+          })}
+        </div>
+        {step?.kind === 'message' && (
+          <div className="is-comp">
+            <div className="to">To {TO_LABEL[step.to ?? ''] ?? 'Them'}</div>
+            {step.loading ? <div className="wait">Drafting from the case…</div> : (
+              <>
+                <input className="ep-input" value={step.subject} onChange={(e) => setStep({ ...step, subject: e.target.value })} aria-label="Subject" />
+                <textarea className="ep-input" rows={8} value={step.body} onChange={(e) => setStep({ ...step, body: e.target.value })} aria-label="Message" />
+                <div className="f">
+                  <button type="button" className="ep-btn" style={{ margin: 0 }} onClick={() => setStep(null)}>Cancel</button>
+                  <BusyButton disabled={busy || !step.subject.trim() || !step.body.trim()} busyLabel="Sending…" doneLabel="Sent" onClick={() => sendStep(i)}>Send</BusyButton>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        {step?.kind === 'dates' && (
+          <div className="is-comp">
+            <div className="g">
+              {!exchanged && <label>Target Exchange<input className="ep-input" type="date" value={vals.stepExchange ?? ''} onChange={(e) => setVals((v) => ({ ...v, stepExchange: e.target.value }))} /></label>}
+              <label>Target Completion<input className="ep-input" type="date" value={vals.stepCompletion ?? ''} onChange={(e) => setVals((v) => ({ ...v, stepCompletion: e.target.value }))} /></label>
+            </div>
+            <div className="f">
+              <button type="button" className="ep-btn" style={{ margin: 0 }} onClick={() => setStep(null)}>Cancel</button>
+              <BusyButton disabled={busy || (!vals.stepExchange && !vals.stepCompletion)} busyLabel="Saving…" doneLabel="Saved" onClick={() => saveDates(i)}>Save Dates</BusyButton>
+            </div>
+          </div>
+        )}
+        {log.length > 0 && <div className="is-log">{log.map((h, n) => <div key={n}><time>{fmtDay(h.at)}</time><span>{h.what.replace(/^(open|negotiating): /, '')}</span></div>)}</div>}
+        <hr className="is-hr" />
+      </>
+    );
+  };
+
   const resolveForm = (i: IssueRow, bare = false) => {
     const res = resById[resolution];
     const options = byKind[i.kind]?.resolutions ?? ['other'];
     return (
       <div className="is-form">
+        {nextSteps(i)}
         <div className="g">
           <label>Outcome<select className="ep-input" value={resolution} onChange={(e) => { setResolution(e.target.value); setVals({}); setFormErr(null); }}>{options.map((r) => <option key={r} value={r}>{resTitle(r)}</option>)}</select></label>
           {fields.map(fieldInput)}

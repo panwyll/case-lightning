@@ -35,6 +35,7 @@ export async function devHarness() {
   await run({ type: 'raise_issue', kind: 'restrictive_covenant', title: 'Covenant against alterations without the developer\'s consent', resolveBy: day(4) });
   await run({ type: 'raise_issue', kind: 'probate_issue', title: 'Grant of probate not yet issued for the late Mr Jones', resolveBy: day(0) });
   await run({ type: 'raise_issue', kind: 'seller_delay', title: 'Seller away until the 14th' });
+  await run({ type: 'raise_issue', kind: 'transaction_at_risk', title: 'The agent says the buyer may be pulling out', detail: 'Agent phoned: the buyer has lost their job and is reconsidering.' });
   return h;
 }
 
@@ -98,6 +99,17 @@ export async function devRun(body: Record<string, unknown>) {
 }
 
 export function devReset() { h = null; }
+
+/** An issue's message step: the draft, then the send (the mock chaser receives it). */
+export async function devIssueDraft(issueId: string, step: string) {
+  const { svc } = await devHarness();
+  return svc.draftIssueMessage(DEV_TENANT, DEV_MATTER, issueId, step);
+}
+export async function devIssueSend(issueId: string, body: { to: never; subject: string; body: string }) {
+  const { svc } = await devHarness();
+  const r = await svc.sendIssueMessage(DEV_TENANT, DEV_MATTER, issueId, { actor: DEV_USER, to: body.to, subject: body.subject, body: body.body });
+  return { events: r.events.length };
+}
 
 /** The fake email the #thread view opens (GET matters/:id/emails/thread). */
 export const DEV_EMAIL_DOC = '44444444-4444-4444-8444-444444444444';
