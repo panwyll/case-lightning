@@ -38,6 +38,8 @@ export interface Candidate {
 
 export interface MessageSignals {
   conversationId?: string;
+  /** A forwarded email (FW:, a forwarded-message block): it shares the thread but answers nothing of ours, so the thread link is not trusted. */
+  forwarded?: boolean;
   fromAddress?: string;
   recipientAddresses: string[];
   subject: string;
@@ -143,6 +145,19 @@ export async function tenantSelfAddresses(tenantId: string): Promise<SelfAddress
   return { emails, domains };
 }
 
+/**
+ * Whether an email is a forward: its subject starts FW / Fwd (or a mail client's own word for it), or its
+ * body carries a forwarded-message block. A forward keeps the original's reply headers and thread, so
+ * without this it looks like a reply on a filed conversation and would be filed on the link alone.
+ * "RE: FW: …" is a reply to a forward, not a forward.
+ */
+export function isForwarded(message: { subject?: string | null; body?: { content?: string } | null; bodyPreview?: string | null; uniqueBody?: { content?: string } | null } | null | undefined): boolean {
+  const subject = String(message?.subject ?? '').trim();
+  if (/^(fw|fwd|wg|tr|rv|vs|doorst)\s*:/i.test(subject)) return true;
+  const body = `${message?.uniqueBody?.content ?? ''}\n${typeof message?.body?.content === 'string' ? message.body.content : ''}\n${message?.bodyPreview ?? ''}`;
+  return /-{2,}\s*Forwarded message\s*-{2,}|Begin forwarded message:|-{2,}\s*Forwarded by\b/i.test(body);
+}
+
 /** Build the structural fingerprint of an incoming message used for matching. */
 export function messageSignals(message: any): MessageSignals {
   const from = message.from?.emailAddress?.address?.toLowerCase();
@@ -154,6 +169,7 @@ export function messageSignals(message: any): MessageSignals {
     .filter(Boolean) as string[];
   return {
     conversationId: message.conversationId,
+    forwarded: isForwarded(message),
     fromAddress: from,
     recipientAddresses: recipients,
     subject: message.subject ?? '',
@@ -235,9 +251,11 @@ export async function linkedFilingHeld(
   tenantId: string,
   linked: Candidate,
   candidates: Candidate[],
-  message: { internetMessageHeaders?: Array<{ name?: string; value?: string }> } | null | undefined,
+  message: { internetMessageHeaders?: Array<{ name?: string; value?: string }>; subject?: string | null; body?: { content?: string } | null; bodyPreview?: string | null } | null | undefined,
   lookup: (internetMessageId: string) => Promise<string | null>
 ): Promise<string | null> {
+  // A forward keeps the original's reply headers, so it would pass the check below: it is caught first.
+  if (isForwarded(message)) return 'it is a forwarded thread, not a reply to anything we sent';
   const other = namesAnotherCase(linked, candidates);
   if (other) return `it names another case (${other.matterRef})`;
   const answers = repliesTo(message);
@@ -421,7 +439,8 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
     const signalsHit: MatchSignal[] = [];
     const mIdents = identsByMatter.get(m.id) ?? [];
 
-    if (linkedSet.has(m.id)) {
+    // A forward shares the thread but is not a reply on it: the case is offered, never trusted on the link.
+    if (linkedSet.has(m.id) && !signals.forwarded) {
       signalsHit.push({ kind: 'LINKED_THREAD', detail: 'On a thread already filed to this case', weight: 1.0 });
     }
     if (m.case_ref_token && tokens.includes(m.case_ref_token.toUpperCase())) {

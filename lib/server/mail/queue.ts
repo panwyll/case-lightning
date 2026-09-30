@@ -13,7 +13,7 @@
  */
 import { query, queryOne } from '../db';
 import { getMessage, listInboxMessages } from '../graph';
-import { matchMessage, type Candidate as MatchCandidate } from '../matching';
+import { isForwarded, matchMessage, type Candidate as MatchCandidate } from '../matching';
 import { checkSender, type SenderCheck, type KnownParties } from './sender-check';
 import { knownParties } from './known-parties';
 import { bulkReason, readablePreview } from './bulk';
@@ -66,11 +66,12 @@ async function alreadyHandled(tenantId: string, conversationIds: string[]): Prom
 export async function enqueueMessage(
   user: QueueUser,
   m: GraphMessage,
-  opts: { candidates?: MatchCandidate[]; sender?: SenderCheck; caseMail?: 'yes' | 'no' | null; caseMailWhat?: string | null; known?: KnownParties } = {}
+  opts: { candidates?: MatchCandidate[]; sender?: SenderCheck; caseMail?: 'yes' | 'no' | null; caseMailWhat?: string | null; known?: KnownParties; /** Why it was not filed on its conversation's link: it is queued even though the conversation is on a case. */ held?: string | null } = {}
 ): Promise<boolean> {
   if (!m?.id) return false;
   const conversationId: string | null = m.conversationId ?? null;
-  if (conversationId && (await alreadyHandled(user.tenantId, [conversationId])).has(conversationId)) return false;
+  // A conversation already on a case is not queued again, unless this message was held back from it (a forward, another case named): then a person decides.
+  if (conversationId && !opts.held && !isForwarded(m as never) && (await alreadyHandled(user.tenantId, [conversationId])).has(conversationId)) return false;
 
   const known = opts.known ?? (await knownParties(user.tenantId));
   const sender = opts.sender ?? senderOf(m, known);
@@ -196,7 +197,7 @@ async function fileMissedReply(user: QueueUser, m: GraphMessage): Promise<boolea
   const { senderOfMessageId } = await import('../graph');
   const held = await linkedFilingHeld(user.tenantId, linked, candidates, full as never, (id) => senderOfMessageId(user.userId, id));
   if (held) {
-    await enqueueMessage(user, full as never, { candidates }).catch(() => false);
+    await enqueueMessage(user, full as never, { candidates, held }).catch(() => false);
     // Recorded, so the next sweep leaves it to the person rather than weighing it again.
     await query(`insert into email_triage (tenant_id, graph_message_id, graph_conversation_id, matched_matter_id, confidence, band, classification, candidates) values ($1,$2,$3,null,0,'WEAK',$4::jsonb,'[]'::jsonb)`, [user.tenantId, m.id, m.conversationId, JSON.stringify({ intent: 'OTHER', needsAttention: true, urgency: 'MEDIUM', reason: `On a filed conversation, but ${held}: left for a person.` })]).catch(() => {});
     return false;

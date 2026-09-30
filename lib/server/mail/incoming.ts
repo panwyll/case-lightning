@@ -77,6 +77,7 @@ export async function processIncomingMessage(user: SessionUser, messageId: strin
       sender: cls.sender,
       caseMail: cls.caseMail ?? null,
       caseMailWhat: cls.caseMailWhat ?? null,
+      held: strayed,
     }).catch((e) => console.error('[graph notification] enqueue failed', (e as Error).message));
   }
 

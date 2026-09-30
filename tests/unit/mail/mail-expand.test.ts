@@ -100,3 +100,18 @@ test('a filed conversation is trusted only for a reply to something we sent: a f
   const theirs = await linkedFilingHeld('t', linked, [linked], reply, async () => 'someone@else.example');
   assert.match(theirs ?? '', /forwarded or re-sent thread/);
 });
+
+// ───────────────────────────── a forwarded thread is not a reply ─────────────────────────────
+
+test('a forwarded thread is never filed on its conversation link, even with the original reply headers', async () => {
+  const { isForwarded, linkedFilingHeld, repliesTo } = await import('../../../lib/server/matching');
+  const headers = [{ name: 'In-Reply-To', value: '<ours-1@firm.example>' }, { name: 'References', value: '<ours-1@firm.example>' }];
+  assert.equal(repliesTo({ internetMessageHeaders: headers }).length, 1, 'a forward keeps the original reply headers');
+  for (const subject of ['FW: 14 Oak Street', 'Fwd: 14 Oak Street', 'fw:14 Oak Street', 'WG: 14 Oak Street']) assert.equal(isForwarded({ subject }), true, subject);
+  assert.equal(isForwarded({ subject: 'Re: 14 Oak Street', body: { content: 'See below\n---------- Forwarded message ---------\nFrom: x' } }), true, 'a forwarded block in the body');
+  assert.equal(isForwarded({ subject: 'Begin', body: { content: 'Begin forwarded message:\n\nFrom: x' } }), true);
+  for (const subject of ['Re: 14 Oak Street', 'RE: FW: 14 Oak Street', 'Forward planning for completion']) assert.equal(isForwarded({ subject }), false, subject);
+  const linked = { matterId: 'm1', matterRef: 'A', propertyAddress: '', score: 1, band: 'AUTO' as const, signals: [] };
+  const held = await linkedFilingHeld('00000000-0000-4000-8000-000000000000', linked, [linked], { subject: 'FW: 14 Oak Street', internetMessageHeaders: headers }, async () => 'alex@firm.example');
+  assert.match(held ?? '', /forwarded thread/);
+});
