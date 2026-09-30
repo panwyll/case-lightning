@@ -1,5 +1,5 @@
 'use client';
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState , type ReactNode } from 'react';
 import { Spin } from './BusyButton';
 import { api } from './api';
 import { ArrowLeft, Paperclip } from '@/app/shared/icons';
@@ -39,7 +39,9 @@ export function emailShownId(
 
 const CSS = `
 .et{height:100%;min-height:0;display:flex;flex-direction:column;background:#f4f5f8;font-size:13.5px;color:#0f172a}
-.et-subj{flex:none;padding:10px 16px;font-weight:800;font-size:14px;background:#fff;border-bottom:1px solid #e6e8ee;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.et-subj{flex:none;display:flex;align-items:center;gap:10px;padding:7px 16px;font-weight:800;font-size:14px;background:#fff;border-bottom:1px solid #e6e8ee}
+.et-subj > span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.et-x{flex:none;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:#64748b}
 .et-scroll{flex:1;min-height:0;overflow:auto;padding:8px 14px 18px;display:flex;flex-direction:column;gap:8px}
 .et-day{align-self:center;margin:10px 0 4px;padding:3px 10px;border-radius:999px;background:#e6e8ee;color:#475467;font-size:11.5px;font-weight:700}
 .et-row{align-self:flex-start;display:flex;flex-direction:column;align-items:flex-start;max-width:min(86%,520px)}
@@ -108,7 +110,7 @@ function Attachments({ items }: { items: ThreadMsg['attachments'] }) {
  * A filed email as the conversation it belongs to: bubbles, ours on the right, theirs on the
  * left, oldest at the top; opens on the email that raised the task. A bubble opens the full email.
  */
-export function EmailThread({ matterId, documentId, onRead }: { matterId: string; documentId: string; onRead?: () => void }) {
+export function EmailThread({ matterId, documentId, onRead, extra }: { matterId: string; documentId: string; onRead?: () => void; /** Shown at the right of the subject line (the open link, the read gate). */ extra?: ReactNode }) {
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -177,7 +179,7 @@ export function EmailThread({ matterId, documentId, onRead }: { matterId: string
   return (
     <div className="et">
       <style>{CSS}</style>
-      <div className="et-subj" title={thread.subject}>{thread.subject}</div>
+      <div className="et-subj"><span title={thread.subject}>{thread.subject}</span>{extra && <span className="et-x">{extra}</span>}</div>
       <div className="et-scroll" ref={scroller} role="log" aria-label="Conversation" onWheel={onRead} onTouchMove={onRead}>
         {thread.messages.map((m, i) => (
           <Fragment key={m.id}>

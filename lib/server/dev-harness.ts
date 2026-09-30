@@ -126,7 +126,7 @@ export function devEmailThread() {
  * lines, reply editor and conversation can be checked. Its source is shown as DEV_EMAIL_DOC's thread.
  */
 const emailTasks = new WeakMap<object, string>();
-const EMAIL_TEXT = "Hi Alex,\n\nSigned contract attached. The TR1 is in the post today, witnessed by our neighbour. Can you resend the property forms link? Is there anything else you need from us before exchange?\n\nJane";
+const EMAIL_TEXT = "Hi Alex,\n\nThe agent says the buyer is threatening to pull out unless we complete by Friday. Can you resend the property forms link? Is that possible?\n\nJane";
 export async function devEmailTask(): Promise<string> {
   const hh = await devHarness();
   const { svc, ports } = hh;
@@ -153,10 +153,10 @@ export async function devDecision(eventId: string) {
   const note = Object.values(state.notes).find((n) => n.decisionEventId === eventId) ?? null;
   const events = await svc.listEvents(DEV_TENANT, DEV_MATTER);
   const applied = events.find((e) => e.type === 'note_actions_applied' && (e.payload as { decisionEventId?: string }).decisionEventId === eventId);
-  const ap = applied?.payload as { applied: string[]; skipped: string[]; reply?: { subject: string; body: string } } | undefined;
+  const ap = applied?.payload as { applied: string[]; skipped: string[]; messages?: Array<{ id: string; to: string; subject: string; body: string }> } | undefined;
   return {
     context: null,
-    noteActions: note ? { title: note.reply ? replyTitle(note.from) : noteTaskTitle(note.actions), noteId: note.id, noteKind: note.kind, actions: note.actions.map((a) => ({ id: a.id, kind: a.kind, summary: a.summary, quote: a.quote, confidence: a.confidence, effect: a.command ? effectText(a.command) : null })), applied: ap?.applied ?? null, skipped: ap?.skipped ?? null, refused: note.refusedActions ?? [], reply: note.reply ?? null, replySent: ap?.reply ?? null } : null,
+    noteActions: note ? { title: note.messages?.length || note.reply ? replyTitle(note.from) : noteTaskTitle(note.actions), noteId: note.id, noteKind: note.kind, actions: note.actions.map((a) => ({ id: a.id, kind: a.kind, summary: a.summary, quote: a.quote, confidence: a.confidence, effect: a.command ? effectText(a.command, { withMessages: !!note.messages?.length }) : null })), applied: ap?.applied ?? null, skipped: ap?.skipped ?? null, refused: note.refusedActions ?? [], messages: note.messages ?? [], messagesSent: ap?.messages ?? null } : null,
     message: null, openQueries: 0,
     decision: { ...d, tenantId: DEV_TENANT, matterId: DEV_MATTER, options: offeredOptions(d.kind, d.options), sourceOpenedByMe: d.openedBy.includes(DEV_USER) },
     matter: { matterRef: 'DEV-001', propertyAddress: '14 Oak Street, Leeds LS1 2AB', shadowMode: false },

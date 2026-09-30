@@ -34,10 +34,12 @@ test('a compound client email: each point a line, questions answered in one draf
   assert.ok(kinds.includes('question'), 'the question is a line of its own, not information');
   assert.ok(kinds.includes('resend'), 'asking for the link again is its own line');
   assert.ok(note.actions.some((a) => a.kind === 'information' && /broker/.test(a.quote)) || !note.actions.some((a) => /broker/.test(a.quote)), 'what is waiting elsewhere is covered by the reply, not an action');
-  assert.ok(note.reply, 'a reply is drafted');
-  assert.equal(note.reply!.subject, 'Re: Update from us');
-  assert.match(note.reply!.body, /^Hello Jo,/);
-  assert.match(note.reply!.body, /When do you think we will exchange\?/, 'the fallback reply names the question it will answer');
+  const reply = note.messages?.find((m) => m.id === 'reply');
+  assert.ok(reply, 'a reply is drafted');
+  assert.equal(reply!.to, 'client');
+  assert.equal(reply!.subject, 'Re: Update from us');
+  assert.match(reply!.body, /^Hello Jo,/);
+  assert.match(reply!.body, /When do you think we will exchange\?/, 'the fallback reply names the question it will answer');
 
   // Approve everything ticked, with the reply edited.
   const d = firstDecision(res.state, 'note_actions');
@@ -68,4 +70,48 @@ test('unticking the reply sends only the lines; a reply alone can be approved', 
   await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
   await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve', null, null, null, ['reply']);
   assert.ok((h.ports.clientComms as MockClientComms).sent.some((m) => m.template === 'email_reply'));
+});
+
+// ───────────────────────────── one task, several people written to ─────────────────────────────
+
+test('"the seller is threatening to pull out": the client is replied to and the other side asked, in one task', async () => {
+  const h = await withWaits();
+  const documentId = h.doc(null, 'EMAIL');
+  const res = await h.svc.recordNote(TENANT, MATTER, { text: 'Hi, the seller is threatening to pull out unless we can complete by Friday. Is that possible?', kind: 'email', actor: USER, documentId, from: CLIENT, surface: true, subject: 'Seller pulling out' });
+  const note = Object.values(res.state.notes)[0];
+  const to = (note.messages ?? []).map((m) => `${m.to}:${m.on}`);
+  assert.deepEqual(to, ['client:true', 'seller_solicitor:true', 'estate_agent:false'], 'the reply and the other side ticked; the agent offered');
+  assert.match(note.messages![1].body, /^Dear Colleagues,/);
+  const d = firstDecision(res.state, 'note_actions');
+  await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve', null, null, null, null, { messages: [{ id: 'msg:seller_solicitor', body: 'Dear Colleagues,\n\nPlease confirm your client\'s position today.' }] });
+  const chaser = h.ports.chaser as unknown as { messages: Array<{ recipientRole: string; body: string }> };
+  assert.equal(chaser.messages.length, 1, 'the other side was written to');
+  assert.equal(chaser.messages[0].recipientRole, 'seller_solicitor');
+  assert.match(chaser.messages[0].body, /confirm your client's position today/, 'as edited');
+  assert.ok((h.ports.clientComms as MockClientComms).sent.some((m) => m.template === 'email_reply'), 'and the client was replied to');
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(Object.values(s.issues).some((i) => i.kind === 'transaction_at_risk'), 'the issue is raised');
+  assert.ok(!Object.values(s.proposals).some((p) => p.action === 'enquiry_draft'), "the issue's own automatic enquiry does not also go: the task's message is the follow-up");
+});
+
+test('a withdrawn offer: the issue, marking the offer withdrawn, the reply, and the lender offered, as separate ticks', async () => {
+  const h = await withWaits();
+  const documentId = h.doc(null, 'EMAIL');
+  const res = await h.svc.recordNote(TENANT, MATTER, { text: 'Hi, my mortgage provider has rescinded their offer. Please advise next steps.', kind: 'email', actor: USER, documentId, from: CLIENT, surface: true, subject: 'Mortgage' });
+  const note = Object.values(res.state.notes)[0];
+  const cmds = note.actions.map((a) => a.command?.type).filter(Boolean);
+  assert.ok(cmds.includes('raise_issue') && cmds.includes('record_mortgage_withdrawn'), `both case changes proposed: ${cmds}`);
+  assert.deepEqual((note.messages ?? []).map((m) => `${m.to}:${m.on}`), ['client:true', 'lender:false']);
+});
+
+test('an agent passing on that the lender pulled out cannot mark the mortgage withdrawn; asking us something gets them a reply', async () => {
+  const h = await withWaits();
+  const documentId = h.doc(null, 'EMAIL');
+  const res = await h.svc.recordNote(TENANT, MATTER, { text: 'Heads up, the buyer says their lender has withdrawn the offer.', kind: 'email', actor: USER, documentId, from: { address: 'sam@agents.example', name: 'Sam Agent', relation: 'agent' }, surface: true, subject: 'FYI' });
+  const note = Object.values(res.state.notes)[0];
+  assert.ok(!note.actions.some((a) => a.command?.type === 'record_mortgage_withdrawn'), 'hearsay does not change the case');
+  assert.equal(note.messages?.length ?? 0, 0, 'news with no question: no reply drafted');
+  const asks = await h.svc.recordNote(TENANT, MATTER, { text: 'Can you confirm when we are likely to exchange?', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL'), from: { address: 'sam@agents.example', name: 'Sam Agent', relation: 'agent' }, surface: true, subject: 'Exchange' });
+  assert.equal(Object.values(asks.state.notes).at(-1)!.messages?.[0]?.to, 'estate_agent', 'a question gets the agent a reply');
 });

@@ -30,7 +30,7 @@ export function replyFacts(s: MatterState, now: Date): string {
 }
 
 /** Without a model: the reply assembled from the same facts, point by point, then where things stand. */
-export function templateReply(s: MatterState, now: Date, input: { firstName: string | null; lines: NoteAction[] }): string {
+export function templateReply(s: MatterState, now: Date, input: { firstName: string | null; lines: NoteAction[]; others?: string[]; /** What the rules add to the reply (recipients.ts): asked here rather than in a second email. */ also?: string[] }): string {
   const P: string[] = [`Hello ${input.firstName ?? 'there'},`, 'Thank you for your email.'];
   for (const a of input.lines) {
     const c = a.command;
@@ -39,7 +39,18 @@ export function templateReply(s: MatterState, now: Date, input: { firstName: str
     else if (c?.type === 'send_file_copy') P.push(`We will send you ${c.what.trim()} separately.`);
     else if (a.kind === 'question') P.push(`On your question ("${a.quote.slice(0, 120)}"): we are checking and will come back to you shortly.`);
   }
+  for (const a of input.also ?? []) P.push(a);
+  if (input.others?.length) P.push(`We are writing to ${input.others.join(' and ')} today and will let you know what they say.`);
   const status = clientStatusAnswer(caseBrief(s, now), now);
   if (status.canAnswer) P.push(status.text);
   return P.join('\n\n');
+}
+
+/** Without a model: a message to someone other than the writer, from its purposes and the case. */
+export function templateMessage(s: MatterState, to: Exclude<import('./types').MessageParty, 'client'>, sentences: string[], property: string | null): string {
+  const where = property ? ` in the matter of ${property}` : '';
+  const side = profileOf(s.transactionType).side === 'seller' ? 'seller' : 'buyer';
+  const said = sentences.join(' ');
+  if (to === 'seller_solicitor') return `Dear Colleagues,\n\nWe act for the ${side}${where}. ${said}\n\nWe look forward to hearing from you.`;
+  return `Hello,\n\nWe act for the ${side}${where}. ${said}`;
 }

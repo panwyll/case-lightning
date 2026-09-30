@@ -123,9 +123,9 @@ export interface NoteActionsDetail {
   applied: string[] | null;
   skipped: string[] | null;
   refused: Array<{ id: string; reason: string }>;
-  /** The reply drafted from the case (to send with the lines), and once resolved, what was sent. */
-  reply?: { subject: string; body: string; drafter: string } | null;
-  replySent?: { subject: string; body: string } | null;
+  /** The messages drafted from the case (the reply first, then anyone else who needs to hear), and once resolved, what was sent. */
+  messages?: Array<{ id: string; to: string; purposes: string[]; subject: string; body: string; drafter: string; on: boolean }>;
+  messagesSent?: Array<{ id: string; to: string; subject: string; body: string }> | null;
 }
 
 export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;

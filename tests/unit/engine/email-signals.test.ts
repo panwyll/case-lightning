@@ -28,7 +28,10 @@ async function email(h: Awaited<ReturnType<typeof enrolled>>, text: string, from
 }
 
 async function approve(h: Awaited<ReturnType<typeof enrolled>>) {
-  const d = firstDecision((await h.svc.getState(TENANT, MATTER)), 'note_actions');
+  // The newest email's task (every outside writer now gets a reply task of their own).
+  const s0 = await h.svc.getState(TENANT, MATTER);
+  const last = Object.values(s0.notes).filter((n) => n.decisionEventId && s0.decisions[n.decisionEventId]?.status === 'pending').at(-1);
+  const d = last ? s0.decisions[last.decisionEventId!] : firstDecision(s0, 'note_actions');
   await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
   await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve');
   return { state: await h.svc.getState(TENANT, MATTER) };
@@ -50,7 +53,10 @@ test('"surveys are all complete" from the client asks for the report, and record
   assert.ok(issue, 'the issue is raised once approved');
   assert.equal(after.state.survey.status, 'not_started');
   // And the issue does what its label promises: the client is asked for the report.
-  assert.ok(h.ports.clientComms.sent.some((m) => m.template === 'request_survey_report'), 'the client was asked for the report');
+  // One email, not two: the reply asks for the report, and the issue's own request does not also go.
+  const reply = h.ports.clientComms.sent.find((m) => m.template === 'email_reply');
+  assert.match(reply?.override?.body ?? '', /send us the survey report/, 'the client was asked for the report, in the reply');
+  assert.ok(!h.ports.clientComms.sent.some((m) => m.template === 'request_survey_report'), 'no second email asking the same');
 });
 
 test('nobody can clear ID, AML, source of funds or a search by saying so', async () => {
@@ -89,9 +95,10 @@ test('"the vendor has pulled out" from the agent is a critical issue for a perso
   const issue = Object.values(after.state.issues).find((i) => i.kind === 'transaction_at_risk')!;
   assert.equal(issue.severity, 'critical');
   assert.equal(after.state.closedAt, null, 'abandoning the file stays a deliberate step');
-  // The seller's solicitor is asked whether their client is proceeding (proposed: enquiry drafts are not automatic in the fixture).
-  const ask = Object.values(after.state.proposals).find((p) => p.action === 'enquiry_draft' && String((p.detail as { subject?: string }).subject ?? '').includes('intends to proceed'));
-  assert.ok(ask, 'an enquiry to the other side is proposed');
+  // The other side's solicitor is asked where their client stands, on the same task (and not twice).
+  const chaser = h.ports.chaser as unknown as { messages: Array<{ recipientRole: string; body: string }> };
+  assert.ok(chaser.messages.some((m) => m.recipientRole === 'seller_solicitor'), 'the other side is written to');
+  assert.ok(!Object.values(after.state.proposals).some((p) => p.action === 'enquiry_draft'), 'the issue\'s own enquiry does not also go');
 });
 
 test('"I have lost my job" is a mortgage-at-risk issue', async () => {
@@ -100,9 +107,9 @@ test('"I have lost my job" is a mortgage-at-risk issue', async () => {
   const kinds = Object.values(res.state.notes)[0].actions.map((a) => (a.command as { kind?: string } | null)?.kind).filter(Boolean);
   assert.ok(kinds.includes('mortgage_at_risk'), kinds.join(','));
   await approve(h);
-  const sent = h.ports.clientComms.sent.find((m) => m.template === 'mortgage_change_query');
-  assert.ok(sent, 'the client is asked what changed');
-  assert.match(String(sent!.context.quote), /lost my job/);
+  const reply = h.ports.clientComms.sent.find((m) => m.template === 'email_reply');
+  assert.match(reply?.override?.body ?? '', /what has changed/, 'the client is asked what changed, in the reply');
+  assert.ok(!h.ports.clientComms.sent.some((m) => m.template === 'mortgage_change_query'), 'not in a second email');
 });
 
 test('a survey that is merely booked, or not done yet, is not "done"', async () => {

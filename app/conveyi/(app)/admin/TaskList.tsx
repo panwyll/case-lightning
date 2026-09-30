@@ -71,7 +71,7 @@ const CSS = `
 .tl-btn.go{background:#5A27E0;color:#fff}
 .tl-btn.go:hover{background:#4c1fc4}
 .tl-btn.on{background:#fff;color:#64748b;border-color:#e2e8f0;padding:6px 8px}
-.tl-item.open{background:#f8f7ff;box-shadow:inset 3px 0 0 #5A27E0;border-top:1px solid #e6e8ee;border-bottom:1px solid #e6e8ee;margin:6px 0}
+.tl-item.open{background:#f8f7ff;box-shadow:inset 3px 0 0 #5A27E0;border-top:1px solid #e6e8ee;border-bottom:1px solid #e6e8ee}
 .tl-item.open .tl-task{border-top:0}
 .tl-item.open + .tl-item .tl-task{border-top:0}
 .tl-item.open .tl-task{padding-top:11px}

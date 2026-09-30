@@ -18,7 +18,7 @@
  */
 import type { DraftCheck, RegisterFact } from './draft-check';
 import type { NoteActionDraft } from './notes';
-import type { PropertyFormsFacts, Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, NoteSender, SignedDocument, SearchFacts, SearchType, SurveyFacts, TitleFacts, TitlePlanFacts, SupportingDocFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
+import type { MessageParty, PropertyFormsFacts, Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, NoteSender, SignedDocument, SearchFacts, SearchType, SurveyFacts, TitleFacts, TitlePlanFacts, SupportingDocFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
 import type { SummaryOverride } from './machine';
 import type { ProofOfFundsFacts, StatementFacts, TransactionReview, PayslipFacts, EvidenceKind } from './proof-of-funds';
 
@@ -90,7 +90,7 @@ export interface AcknowledgementChecker {
 /** Words the reply to an email from the case facts; every point the writer made is answered. */
 export interface EmailReplyDrafter {
   readonly name: string;
-  draft(input: { tenantId: string; matterId: string; email: string; subject: string; from: NoteSender | null; firstName: string | null; lines: Array<{ kind: string; summary: string; quote: string }>; facts: string; now: string }): Promise<{ body: string } | null>;
+  draft(input: { tenantId: string; matterId: string; email: string; subject: string; from: NoteSender | null; firstName: string | null; lines: Array<{ kind: string; summary: string; quote: string }>; facts: string; now: string; /** Who this message goes to, and what it must do. Absent = the reply to the writer. */ to?: MessageParty; purposes?: string[] }): Promise<{ body: string } | null>;
 }
 
 export interface NoteExtractor {
@@ -159,6 +159,8 @@ export interface ThirdPartyChaser {
   /** A first request to another party (the contract pack, a redemption statement, the lender's consent, the agent told of exchange): news or a request, not a chase. */
   sendRequest?(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; template: string; context: Record<string, unknown> }): Promise<{ channel: 'email' | 'mock'; messageId: string | null }>;
   sendEnquiries?(input: { tenantId: string; matterId: string; enquiryId: string; text: string }): Promise<{ channel: 'email' | 'mock'; messageId: string | null } | null>;
+  /** A message a person approved, as written, to a party on the case (from an email's task). */
+  sendMessage?(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'estate_agent' | 'lender'; subject: string; body: string }): Promise<{ channel: 'email' | 'mock'; messageId: string | null }>;
   sendChase(input: {
     tenantId: string;
     matterId: string;

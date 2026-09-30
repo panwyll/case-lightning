@@ -39,7 +39,7 @@ import { deferral, outsideDeferral } from './defer';
 const foldOnto = (state: MatterState, events: EngineEvent[]): MatterState => events.reduce((s, e) => applyEvent(s, e), state);
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type NoteMessage, type MessageParty, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -65,7 +65,11 @@ import { isResolved, openIssues, openPofQueries, openWaits, awayOn, awayNow, dee
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, WAIT_LABEL, type NoteActionDraft } from './notes';
-import { replyFacts, templateReply } from './reply';
+import { replyFacts, templateMessage, templateReply } from './reply';
+import { FOLLOW_UP_PARTY, whoNeedsToHear } from './recipients';
+
+/** A party, as the client would read it in a reply. */
+const PARTY_WORDS: Record<MessageParty, string> = { client: 'you', seller_solicitor: "the other side's solicitor", estate_agent: 'the estate agent', lender: 'the lender' };
 import type { MessageOverride } from './ports';
 import { accessEnquiry, evidenceEnquiry, sortLegalPoints, surveyAdvice, surveyContext, surveyEnquiries, surveyNeedsAdvice, templateAdvice } from './survey-review';
 import type { SurveyFacts } from './types';
@@ -242,6 +246,11 @@ export class EngineService {
       const sent = await this.ports.chaser.sendAcknowledgement({ tenantId, matterId, recipientRole: d.recipientRole as never, what: d.what, forEventType: d.forEventType, override: (detail as { edited?: MessageOverride }).edited ?? null });
       if (!sent) return;
       await this.run(tenantId, matterId, { type: 'record_acknowledgement', ack: { forEventId: d.forEventId, forEventType: d.forEventType, recipientRole: d.recipientRole as never, what: d.what, channel: sent.channel, messageId: sent.messageId } });
+    } else if (action === 'chase' && (detail as { kind?: string }).kind === 'party_message') {
+      // A message a person approved on an email's task, to a party on the case, as they wrote it.
+      const d = detail as { recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; subject: string; body: string };
+      if (!this.ports.chaser.sendMessage) throw new Error('Messages to other parties are not configured on this deployment.');
+      await this.ports.chaser.sendMessage({ tenantId, matterId, recipientRole: d.recipientRole, subject: d.subject, body: d.body });
     } else if (action === 'chase' && (detail as { kind?: string }).kind === 'request') {
       // A first request to another party (not a chase): the template, to the role, once.
       const d = detail as { recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; template: string; context: Record<string, unknown> };
@@ -890,9 +899,9 @@ export class EngineService {
     // made of "attached", an "it has not arrived" issue is not proposed from it.
     const kept = input.attachments?.length ? drafts.filter((d) => !(d.command?.type === 'raise_issue' && ARRIVAL_ISSUES.has(d.command.kind))) : drafts;
     if (!kept.length && !stranger && !input.surface) return recorded;
-    // The client wrote: whatever else is proposed, a reply answering every point is drafted from the case (never an acknowledgement).
-    const reply = input.kind === 'email' && input.from?.relation === 'client' && !input.acknowledgement ? await this.draftReply(tenantId, matterId, recorded.state, input.text, input.subject ?? null, input.from, kept).catch((err) => { this.ports.log('the reply could not be drafted', err); return null; }) : null;
-    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts: kept, extractor: reader.name, surface: !!input.surface || !!reply, ...(input.acknowledgement ? { acknowledgement: true } : {}), ...(reply ? { reply } : {}) });
+    // Whoever wrote gets a reply answering every point, and anyone else who needs to hear gets a message (recipients.ts), all on this one task.
+    const messages = input.kind === 'email' && input.from && !input.acknowledgement ? await this.draftMessages(tenantId, matterId, recorded.state, input.text, input.subject ?? null, input.from, kept).catch((err) => { this.ports.log('the messages could not be drafted', err); return []; }) : [];
+    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts: kept, extractor: reader.name, surface: !!input.surface || messages.length > 0, ...(input.acknowledgement ? { acknowledgement: true } : {}), ...(messages.length ? { messages } : {}) });
   }
 
   /** Whether a wait is the client's to meet (their forms, money, signatures), not a third party's. */
@@ -901,14 +910,39 @@ export class EngineService {
     return ['id_check', 'proof_of_funds', 'property_forms', 'signed_documents', 'deposit', 'client_decision', 'insurance', 'mortgage_offer', 'survey'].includes(key);
   }
 
+  /** Every message an email's task carries: the reply to the writer and a message to each party the rules say must hear (recipients.ts), each drafted from the case. */
+  private async draftMessages(tenantId: string, matterId: string, state: MatterState, text: string, subject: string | null, from: NoteSender, lines: NoteActionDraft[]): Promise<NoteMessage[]> {
+    const out: NoteMessage[] = [];
+    const now = this.ports.now();
+    const facts = replyFacts(state, now);
+    const property = (await this.caseRecord(tenantId, matterId).catch(() => null))?.propertyAddress ?? null;
+    const recipients = whoNeedsToHear(from, lines);
+    // The reply says who else we are writing to (those ticked when the task opens).
+    const others = recipients.filter((x) => x.on && !x.purposes.some((p) => /^Reply to their email/.test(p))).map((x) => PARTY_WORDS[x.to]);
+    for (const r of recipients) {
+      const replying = r.purposes.some((p) => /^Reply to their email/.test(p));
+      if (replying && r.to === 'client') {
+        const reply = await this.draftReply(tenantId, matterId, state, text, subject, from, lines, others, { purposes: r.purposes, sentences: r.sentences });
+        out.push({ id: 'reply', to: r.to, purposes: r.purposes, subject: reply.subject, body: reply.body, drafter: reply.drafter, on: true });
+        continue;
+      }
+      const re = subject ? (/^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`) : 'Re: your email';
+      const title = replying ? re : property ?? "Our client's transaction";
+      const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName: (from.name ?? '').trim().split(/\s+/)[0] || null, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts, now: now.toISOString(), to: r.to, purposes: r.purposes }).catch(() => null) : null;
+      const body = drafted?.body || (r.to === 'client' ? templateReply(state, now, { firstName: null, lines: [] }) : templateMessage(state, r.to, r.sentences, property));
+      out.push({ id: replying ? 'reply' : `msg:${r.to}`, to: r.to, purposes: r.purposes, subject: title, body, drafter: drafted?.body ? this.ports.replyDrafter!.name : 'case-facts', on: r.on });
+    }
+    return out;
+  }
+
   /** The reply to a client's email, from the case facts (reply.ts); worded by the drafter when there is one. */
-  private async draftReply(tenantId: string, matterId: string, state: MatterState, text: string, subject: string | null, from: NoteSender, lines: NoteActionDraft[]): Promise<NoteReply> {
+  private async draftReply(tenantId: string, matterId: string, state: MatterState, text: string, subject: string | null, from: NoteSender, lines: NoteActionDraft[], others: string[] = [], also: { purposes: string[]; sentences: string[] } = { purposes: [], sentences: [] }): Promise<NoteReply> {
     const now = this.ports.now();
     const firstName = (from.name ?? '').trim().split(/\s+/)[0] || null;
     const re = subject ? (/^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`) : 'Re: your email';
-    const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts: replyFacts(state, now), now: now.toISOString() }) : null;
+    const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts: replyFacts(state, now), now: now.toISOString(), purposes: [...new Set(['Reply to their email, answering every point they made', ...also.purposes, ...others.map((o) => `Tell them we are writing to ${o} today`)])] }) : null;
     if (drafted?.body) return { subject: re, body: drafted.body, drafter: this.ports.replyDrafter!.name };
-    return { subject: re, body: templateReply(state, now, { firstName, lines: lines.map((l, i) => ({ id: `A${i + 1}`, kind: l.kind, summary: l.summary, quote: l.quote, confidence: l.confidence ?? 0.6, command: l.command ?? null })) }), drafter: 'case-facts' };
+    return { subject: re, body: templateReply(state, now, { firstName, others, also: also.sentences, lines: lines.map((l, i) => ({ id: `A${i + 1}`, kind: l.kind, summary: l.summary, quote: l.quote, confidence: l.confidence ?? 0.6, command: l.command ?? null })) }), drafter: 'case-facts' };
   }
 
   // ───────────── decisions (dashboard #6) ─────────────
@@ -926,7 +960,7 @@ export class EngineService {
     return { document, result };
   }
 
-  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null, verification?: { method: string; reference?: string | null } | null, engagement?: Engagement | null, selection?: string[] | null, edited?: { subject?: string | null; body?: string | null } | null, escalateTo?: string | null): Promise<RunResult> {
+  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null, verification?: { method: string; reference?: string | null } | null, engagement?: Engagement | null, selection?: string[] | null, edited?: { subject?: string | null; body?: string | null; /** An email's task: each message as the person edited it. */ messages?: Array<{ id: string; subject?: string | null; body?: string | null }> | null } | null, escalateTo?: string | null): Promise<RunResult> {
     return this.run(tenantId, matterId, { type: 'resolve_decision', userId, decisionEventId, option, note: note ?? null, verification: verification ?? null, engagement: engagement ?? null, selection: selection ?? null, edited: edited ?? null, escalateTo: escalateTo ?? null });
   }
 
@@ -1465,7 +1499,9 @@ export class EngineService {
           await this.surveyRecommendations(tenantId, matterId, e.sourceDocumentId ?? e.id, (e.payload as { facts: SurveyFacts }).facts, subflows, { replace: false, triggeredByEventId: e.id });
         }
         // Something said in an email or a note was confirmed by a person: the system now does what the issue's label promised.
-        if (e.type === 'issue_raised') {
+        // Raised from an email task that wrote to the same party: that message carried the follow-up (recipients.ts), so the automatic one does not also go.
+        const covered = e.type === 'issue_raised' && !!e.sourceDocumentId && Object.values((await this.getState(tenantId, matterId)).notes).some((n) => n.documentId === e.sourceDocumentId && (n.messagesSentTo ?? []).includes(FOLLOW_UP_PARTY[(e.payload as { kind: string }).kind] as MessageParty));
+        if (e.type === 'issue_raised' && !covered) {
           const p = e.payload as { issueId: string; kind: string; detail: string | null; title: string };
           if (p.kind === 'survey_report_outstanding') {
             const detail = { template: 'request_survey_report', context: { eventType: e.type }, triggeredByEventId: e.id };
@@ -1631,7 +1667,7 @@ export class EngineService {
         // a client decision the machine would refuse by hand is refused here too, and is
         // logged rather than silently dropped.
         if (e.type === 'note_actions_applied') {
-          const p = e.payload as { noteId: string; applied: string[]; reply?: { subject: string; body: string } | null };
+          const p = e.payload as { noteId: string; applied: string[]; reply?: { subject: string; body: string } | null; messages?: Array<{ id: string; to: MessageParty; subject: string; body: string }> };
           const fresh = await this.getState(tenantId, matterId);
           const note = fresh.notes[p.noteId];
           for (const id of p.applied) {
@@ -1681,6 +1717,8 @@ export class EngineService {
                 }
               } else if (c.type === 'record_client_progress') {
                 await this.run(tenantId, matterId, { type: 'record_client_progress', actor: e.actor, waitKey: c.waitKey, subject: c.subject ?? '', claim: c.claim, expectBy: c.expectBy, noteId: p.noteId });
+              } else if (c.type === 'record_mortgage_withdrawn') {
+                await this.run(tenantId, matterId, { type: 'mortgage_offer_withdrawn', actor: e.actor, reason: c.reason });
               } else if (c.type === 'resend_to_client') {
                 // The same request again, with its links and forms: what Chase Now sends.
                 await this.chaseNow(tenantId, matterId, c.waitKey, c.subject || null, e.actor);
@@ -1704,10 +1742,15 @@ export class EngineService {
               await this.run(tenantId, matterId, { type: 'note_action_refused', noteId: p.noteId, actionId: id, reason }).catch(() => {});
             }
           }
-          // The reply, as approved (and edited): answered from the case, sent to the client in their thread.
-          if (p.reply?.body?.trim()) {
-            const detail = { template: 'email_reply', context: { subject: p.reply.subject }, triggeredByEventId: e.id, edited: { subject: p.reply.subject, body: p.reply.body } };
-            try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('the reply could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+          // Every message, as approved (and edited): the client's through their channel, anyone else's by email from the fee earner.
+          // A legacy task approved before messages existed carries `reply` instead.
+          const outgoing = p.messages ?? (p.reply?.body?.trim() ? [{ id: 'reply', to: 'client' as const, subject: p.reply.subject, body: p.reply.body }] : []);
+          for (const m of outgoing) {
+            if (!m.body?.trim()) continue;
+            const [action, detail] = m.to === 'client'
+              ? ['client_update' as const, { template: 'email_reply', context: { subject: m.subject }, triggeredByEventId: e.id, edited: { subject: m.subject, body: m.body } }]
+              : ['chase' as const, { kind: 'party_message', recipientRole: m.to, subject: m.subject, body: m.body, triggeredByEventId: e.id }];
+            try { await this.perform(tenantId, matterId, action, detail); } catch (err) { this.ports.log(`the message to ${m.to} could not be sent`, err); await this.recordSendFailure(tenantId, matterId, action, detail, err); }
           }
         }
         // A chase to a third party is also news for the client (docs/architecture-review.md
@@ -1777,7 +1820,7 @@ export class EngineService {
     const ROLE: Record<string, string> = { seller_solicitor: "the seller's solicitor", buyer_solicitor: "the buyer's solicitor", lender: 'the lender', estate_agent: 'the estate agent', client: 'the client', search_provider: 'the search provider' };
     const role = typeof detail.recipientRole === 'string' ? ROLE[detail.recipientRole] ?? `the ${detail.recipientRole.replace(/_/g, ' ')}` : 'the client';
     // The title says what did not go; why, and what to do, are the issue's detail.
-    const what = kind === 'proof_of_funds_request' ? 'Proof-of-funds form to the client' : kind === 'id_check_request' ? 'ID check request to the client' : kind === 'request' ? `Request to ${role}` : action === 'chase' ? `Chase to ${role}` : action === 'acknowledgement' ? `Acknowledgement to ${role}` : action === 'search_order' ? 'Search order' : action === 'client_update' ? 'Update to the client' : action.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    const what = kind === 'party_message' ? `Message to ${role}` : kind === 'proof_of_funds_request' ? 'Proof-of-funds form to the client' : kind === 'id_check_request' ? 'ID check request to the client' : kind === 'request' ? `Request to ${role}` : action === 'chase' ? `Chase to ${role}` : action === 'acknowledgement' ? `Acknowledgement to ${role}` : action === 'search_order' ? 'Search order' : action === 'client_update' ? 'Update to the client' : action.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
     const title = `${what} unsuccessful`;
     const proposalId = typeof detail.__proposalEventId === 'string' ? detail.__proposalEventId : null;
     const outside = this.ports.outsideAutomation ?? (<T,>(fn: () => Promise<T>) => fn());

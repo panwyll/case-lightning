@@ -312,7 +312,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
   if (d.kind === 'note_actions') {
     const note = s.notes[cleanSubject ?? ''] ?? Object.values(s.notes).find((x) => x.decisionEventId === d.eventId);
     // A client's email with a drafted reply is the reply: its lines are inside it.
-    const title = note ? (note.kind === 'email' && note.reply ? replyTitle(note.from) : noteTaskTitle(note.actions) ?? (note.kind === 'email' ? (note.acknowledgement ? acknowledgementTitle(note.from, note.text) : nothingToActTitle(note.from)) : null)) : null;
+    const title = note ? (note.kind === 'email' && (note.messages?.length || note.reply) ? replyTitle(note.from) : noteTaskTitle(note.actions) ?? (note.kind === 'email' ? (note.acknowledgement ? acknowledgementTitle(note.from, note.text) : nothingToActTitle(note.from)) : null)) : null;
     if (title) return title;
   }
   return (

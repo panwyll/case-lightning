@@ -382,6 +382,22 @@ export class ProductionChaser implements ThirdPartyChaser {
     return { channel: 'email' as const, messageId: sent.messageId };
   }
 
+  /** A message a person approved on an email's task, sent as they wrote it to a party on the case (checked by the message guard first). */
+  async sendMessage(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'estate_agent' | 'lender'; subject: string; body: string }) {
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const to = info.contacts[input.recipientRole];
+    const label = input.recipientRole === 'seller_solicitor' ? "the other side's solicitor" : input.recipientRole === 'estate_agent' ? 'the estate agent' : 'the lender';
+    if (!to?.email) throw new Error(`There is no email address for ${label} on the case, so this could not be sent. Add them as a contact, then Try Again.`);
+    const r = { subject: input.subject.trim(), body: input.body.trim(), missing: [] as string[] };
+    { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
+    let sent: { messageId: string | null };
+    if (this.deps.mailbox && info.feeEarnerUserId) sent = await this.deps.mailbox.send(info.feeEarnerUserId, to.email, r.subject, emailHtml(r.body, info));
+    else if (this.deps.email) sent = await this.deps.email.send({ to: to.email, subject: r.subject, text: emailText(r.body, info), fromUserId: info.feeEarnerUserId });
+    else throw new Error('No email sender configured.');
+    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to.email, template: 'email_task_message', subject: r.subject, body: r.body, providerRef: sent.messageId, status: 'SENT' });
+    return { channel: 'email' as const, messageId: sent.messageId };
+  }
+
   async sendEnquiries(input: { tenantId: string; matterId: string; enquiryId: string; text: string }) {
     const t = await resolveTemplate(this.deps, input.tenantId, PARTY_NOTICES.enquiries_to_seller_solicitor);
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);

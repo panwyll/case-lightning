@@ -548,6 +548,8 @@ export type NoteCommand =
   | { type: 'record_client_progress'; waitKey: WaitKey; subject: string; claim: string; expectBy: string | null }
   /** They need a form or a link again ("can you resend the ID link"): the request for that wait goes again, with its links. */
   | { type: 'resend_to_client'; waitKey: WaitKey; subject: string }
+  /** The offer is gone (the client or lender says so): the mortgage step reopens and holds exchange until a new offer is in. */
+  | { type: 'record_mortgage_withdrawn'; reason: string }
   | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; /** Overrides the kind's usual severity (a withdrawn offer is High, not the usual Medium). */ severity?: 'info' | 'warning' | 'critical' };
 
 export const SIGNED_DOCUMENTS = ['contract', 'transfer', 'mortgage_deed', 'deed_of_trust'] as const;
@@ -580,6 +582,11 @@ export interface NoteAction {
 export type NoteStatus = 'proposed' | 'applied' | 'discarded' | 'no_actions';
 /** A reply drafted to an email: every point in it answered from the case (the facts it was built from are kept with it). */
 export interface NoteReply { subject: string; body: string; drafter: string }
+/** Who an email's task can write to. `seller_solicitor` is the other side's solicitor, whichever side we act for. */
+export const MESSAGE_PARTIES = ['client', 'seller_solicitor', 'estate_agent', 'lender'] as const;
+export type MessageParty = (typeof MESSAGE_PARTIES)[number];
+/** One message an email's task would send: to whom, why, and the draft (built from the case). `reply` answers the sender. */
+export interface NoteMessage { id: string; to: MessageParty; purposes: string[]; subject: string; body: string; drafter: string; /** Ticked when the task opens (the reply and anything the rules say must go); others are offered unticked. */ on: boolean }
 
 export interface NoteState {
   id: string;
@@ -600,6 +607,10 @@ export interface NoteState {
   acknowledgement?: boolean;
   /** The drafted reply to the writer, built from the case, sent only when a person approves it. */
   reply?: NoteReply | null;
+  /** Every message the task would send: the reply to the writer, and anyone else who needs to hear (recipients.ts). */
+  messages?: NoteMessage[];
+  /** Who the approved task wrote to. */
+  messagesSentTo?: MessageParty[];
   appliedActionIds: string[];
   /** Approved, then refused by the machine when it ran — the note's record stays honest. */
   refusedActions: Array<{ id: string; reason: string }>;
@@ -943,9 +954,9 @@ export interface Payloads {
   chase_sent: ChaseSpec;
   acknowledgement_sent: AcknowledgementSpec;
   note_recorded: { noteId: string; kind: NoteKind; text: string; durationSeconds: number | null; documentId: string | null; from?: NoteSender | null };
-  note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec; /** Read as a pure acknowledgement (both checks): no reply needed. */ acknowledgement?: boolean; reply?: NoteReply | null };
+  note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec; /** Read as a pure acknowledgement (both checks): no reply needed. */ acknowledgement?: boolean; reply?: NoteReply | null; messages?: NoteMessage[] };
   wait_progress_reported: { waitKey: WaitKey; subject: string; claim: string; until: string; noteId: string | null };
-  note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null; /** The reply to send with it, as approved (and edited). */ reply?: { subject: string; body: string } | null };
+  note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null; /** The reply to send with it, as approved (and edited). */ reply?: { subject: string; body: string } | null; /** Every message to send with it, as approved (and edited). */ messages?: Array<{ id: string; to: MessageParty; subject: string; body: string }> };
   note_action_refused: { noteId: string; actionId: string; reason: string };
   escalation_raised: {
     /** null when a human escalated a decision rather than a timer firing on a wait. */

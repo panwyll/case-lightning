@@ -517,9 +517,11 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (n) {
         n.actions = p.actions;
         n.extractor = p.extractor;
-        n.status = (p.actions.some((a) => a.command) || !!p.reply) && p.decision ? 'proposed' : 'no_actions';
+        n.status = (p.actions.some((a) => a.command) || !!p.reply || !!p.messages?.length) && p.decision ? 'proposed' : 'no_actions';
         if (p.decision) n.decisionEventId = e.id;
         if (p.reply) n.reply = p.reply;
+        if (p.messages?.length) n.messages = p.messages;
+        else if (p.reply) n.messages = [{ id: 'reply', to: 'client', purposes: [], subject: p.reply.subject, body: p.reply.body, drafter: p.reply.drafter, on: true }];
         if (p.acknowledgement) n.acknowledgement = true;
       }
       break;
@@ -540,6 +542,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (n) {
         n.appliedActionIds = p.applied;
         n.status = p.applied.length ? 'applied' : 'discarded';
+        if (p.messages?.length) n.messagesSentTo = p.messages.map((m) => m.to);
       }
       resolveDecision(s, p.decisionEventId, p.option, p.note, e);
       break;

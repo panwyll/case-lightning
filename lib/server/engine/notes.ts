@@ -104,6 +104,10 @@ export function senderPolicy(source: NoteSource | undefined, action: NoteAction)
   if (action.command?.type === 'raise_issue' && action.command.kind === 'mortgage_at_risk' && relation === 'lender') {
     return [{ ...action, command: { ...action.command, detail: `Reported by the lender or broker. ${action.command.detail ?? ''}`.trim() } }];
   }
+  // Only the client or the lender marks the offer gone; anyone else saying so is a problem to raise, not a fact to record.
+  if (action.command?.type === 'record_mortgage_withdrawn' && relation !== 'client' && relation !== 'lender' && relation !== 'colleague') {
+    return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (said by ${RELATION_LABEL[relation]}; confirm with the lender or broker first)` }];
+  }
   // Only the client reports their own progress or asks for their own forms again; anyone else's word is context for the reply.
   if ((action.command?.type === 'record_client_progress' || action.command?.type === 'resend_to_client') && relation !== 'client' && relation !== 'colleague') {
     return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (from ${RELATION_LABEL[relation]}, not the client)` }];
@@ -278,6 +282,7 @@ export function commandTitle(c: NoteCommand): string {
     case 'record_survey_plan': return c.plan === 'none' ? 'No survey: the client\'s choice' : `Survey booked${c.date ? ` for ${dayShort(c.date)}` : ''}`;
     case 'raise_issue': return `Issue: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
     case 'record_client_progress': return `The client says ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} is done or on its way`;
+    case 'record_mortgage_withdrawn': return 'Mark the mortgage offer withdrawn';
     case 'resend_to_client': return `Send the client ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} again`;
   }
 }
@@ -336,7 +341,7 @@ export function noteTaskTitle(actions: Array<{ command: NoteCommand | null }>): 
 }
 
 /** What applying this command does, as the person sees it before they tick the line. */
-export function effectText(c: NoteCommand): string {
+export function effectText(c: NoteCommand, opts: { withMessages?: boolean } = {}): string {
   switch (c.type) {
     case 'client_decision_recorded': return `Records the client's decision: ${c.subject.replace(/_/g, ' ')}, ${c.decision.replace(/_/g, ' ')}`;
     case 'confirm_with_client': return `Asks the client to confirm that ${claimText(c.subject, c.decision, c.detail)}; recorded only when they say so`;
@@ -347,9 +352,10 @@ export function effectText(c: NoteCommand): string {
     case 'request_from_seller': return `Proposes this enquiry to the seller's solicitor (editable before it goes): ${c.text.trim().slice(0, 300)}${c.text.trim().length > 300 ? '…' : ''}`;
     case 'record_client_progress': return `Notes against ${WAIT_LABEL[c.waitKey]} that they say: "${c.claim.slice(0, 120)}". It is not chased again before ${c.expectBy ? prettyDate(c.expectBy) : 'three working days from now'}; nothing is cleared until it arrives`;
     case 'resend_to_client': return `Sends the request for ${WAIT_LABEL[c.waitKey]} again, with its links and forms`;
+    case 'record_mortgage_withdrawn': return 'Marks the mortgage offer withdrawn: the mortgage step reopens and holds exchange until a new offer is in (refused after exchange: then it is an issue for a person)';
     case 'record_survey_plan': return c.plan === 'none' ? 'Records that the client has chosen not to have a survey; they are no longer asked about one' : `Records the survey as booked${c.date ? ` for ${prettyDate(c.date)}` : ''}; the client is not asked about it again until after that date`;
     case 'record_availability': return `Notes that ${AVAILABILITY_PARTY_LABEL[c.party]} is away ${prettyDate(c.from)} to ${prettyDate(c.until)}: chases to them wait, updates say so, and target dates are checked against it`;
-    case 'raise_issue': return `Raises the issue "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}"${c.gate === 'none' ? '' : ` (holds ${c.gate})`}${issueConsequence(c.kind) ? ` and ${issueConsequence(c.kind)}` : ''}`;
+    case 'raise_issue': return `Raises the issue "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}"${c.gate === 'none' ? '' : ` (holds ${c.gate})`}${!opts.withMessages && issueConsequence(c.kind) ? ` and ${issueConsequence(c.kind)}` : ''}`;
   }
 }
 
@@ -486,6 +492,7 @@ export function commandProblem(c: NoteCommand): string | null {
     return null;
   }
   if (c.type === 'resend_to_client') return RESENDABLE.includes(c.waitKey) ? null : `"${c.waitKey}" is not something we send the client`;
+  if (c.type === 'record_mortgage_withdrawn') return c.reason?.trim() ? null : 'it does not say why';
   if (c.type === 'raise_issue') {
     if (!ISSUE_KIND_SPEC[c.kind as IssueKind]) return `"${c.kind}" is not an issue kind`;
     if (!c.title?.trim()) return 'the issue has no title';
@@ -531,6 +538,8 @@ interface Rule {
   build: (sentence: string) => NoteActionDraft;
 }
 
+/** "My lender has rescinded the offer": the offer is gone, not merely at risk. */
+export const OFFER_WITHDRAWN = /\b((lender|bank|provider|broker|building society|mortgage company|they|he|she)\s+(has |have |had )?(now )?(rescinded|revoked|withdrawn|withdrew|pulled|cancell?ed|retracted|declined|refused|turned down)\s+(the |their |my |our |its |his |her )?(mortgage )?(offer|mortgage|application|lending|loan)|(has |have |had )(now )?(rescinded|revoked|withdrawn|withdrew|pulled|cancell?ed|retracted)\s+(the |their |my |our |its |his |her )?(mortgage )?offer|(mortgage )?offer\s+(has been |was |is |got |has )?(rescinded|revoked|cancell?ed|retracted|withdrawn|pulled))\b/i;
 const RULES: Rule[] = [
   {
     // "happy with the survey and wants to proceed" — the client's view of the physical condition.
@@ -607,7 +616,7 @@ const RULES: Rule[] = [
   },
   {
     // "my mortgage provider has rescinded their offer" — the offer is gone, not merely at risk: exchange cannot happen on it.
-    test: /\b((lender|bank|provider|broker|building society|mortgage company|they|he|she)\s+(has |have |had )?(now )?(rescinded|revoked|withdrawn|withdrew|pulled|cancell?ed|retracted|declined|refused|turned down)\s+(the |their |my |our |its |his |her )?(mortgage )?(offer|mortgage|application|lending|loan)|(has |have |had )(now )?(rescinded|revoked|withdrawn|withdrew|pulled|cancell?ed|retracted)\s+(the |their |my |our |its |his |her )?(mortgage )?offer|(mortgage )?offer\s+(has been |was |is |got |has )?(rescinded|revoked|cancell?ed|retracted|withdrawn|pulled))\b/i,
+    test: OFFER_WITHDRAWN,
     build: (sentence) => ({
       kind: 'issue',
       summary: 'The mortgage offer has been withdrawn',
@@ -768,6 +777,8 @@ export class DeterministicNoteReader {
       const quoted = new Set(out.map((d) => d.quote.trim()));
       for (const sentence of sentences) {
         const t = sentence.trim();
+        // The offer gone: besides the issue, the case itself is marked (the mortgage step reopens and holds exchange).
+        if (OFFER_WITHDRAWN.test(t)) out.push({ kind: 'issue', summary: 'Mark the mortgage offer withdrawn', quote: t, confidence: 0.8, command: { type: 'record_mortgage_withdrawn', reason: t.slice(0, 300) } });
         const wait = waitIn(t, input.waits ?? []);
         if (wait && RESEND.test(t) && RESENDABLE.includes(wait.waitKey as WaitKey)) {
           out.push({ kind: 'resend', summary: `Send the client ${wait.label.replace(/^your /, 'their ')} again`, quote: t, confidence: 0.8, command: { type: 'resend_to_client', waitKey: wait.waitKey as WaitKey, subject: wait.subject } });

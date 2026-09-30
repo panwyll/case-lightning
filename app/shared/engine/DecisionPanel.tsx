@@ -27,6 +27,8 @@ import { X, Check, ChevronRight } from '@/app/shared/icons';
  */
 
 /** A line's kind, as a tag on it (an email often makes several points). */
+/** Who a message goes to, as a heading. */
+const PARTY_TITLE: Record<string, string> = { client: 'The Client', seller_solicitor: "The Other Side's Solicitor", estate_agent: 'The Estate Agent', lender: 'The Lender Or Broker' };
 const LINE_TAG: Record<string, string> = { question: 'Question', progress: 'Done Or On Its Way', resend: 'Send Again', issue: 'Problem', client_decision: 'Decision', confirm_with_client: 'Check With Client', expectation: 'Expected', information: 'Noted' };
 const CSS = `
 .dp{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(320px,1fr);height:calc(100vh - 56px);margin:-18px -24px -14px;background:#fff;min-height:0}
@@ -131,6 +133,7 @@ const CSS = `
 .dp-lines{display:flex;flex-direction:column;gap:6px;margin-top:14px}
 .dp-line{display:flex;gap:10px;align-items:flex-start;border:1px solid #e6e8ee;border-radius:10px;padding:8px 10px;background:#fff}
 .dp-tag{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;background:#f1f5f9;border-radius:999px;padding:1px 7px;margin-right:6px;vertical-align:1px}
+.dp-reply:not(.on) textarea,.dp-reply:not(.on) input.eg-in{opacity:.55}
 .dp-reply{display:grid;gap:6px;border:1px solid #e6e8ee;border-radius:10px;padding:10px;background:#fff;margin-top:4px}
 .dp-reply.on{border-color:#c4b5fd;background:#faf8ff}
 .dp-reply-h{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;color:#0f172a}
@@ -194,9 +197,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const [activeCite, setActiveCite] = useState<number | null>(null);
   /** note_actions: which lines the person is applying. null until the decision loads. */
   const [picked, setPicked] = useState<Set<string> | null>(null);
-  /** note_actions: the drafted reply, as the person edits it. */
-  const [rSubject, setRSubject] = useState('');
-  const [rBody, setRBody] = useState('');
+  /** note_actions: each drafted message, as the person edits it. */
+  const [drafts, setDrafts] = useState<Record<string, { subject: string; body: string }>>({});
   const [page, setPage] = useState<number | null>(null);
   const [done, setDone] = useState<string | null>(null);
   // engagement
@@ -231,8 +233,9 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   // note does not actually say. Information-only lines are not selectable at all.
   useEffect(() => {
     if (picked || !detail?.noteActions) return;
-    setPicked(new Set([...detail.noteActions.actions.filter((a) => a.effect).map((a) => a.id), ...(detail.noteActions.reply ? ['reply'] : [])]));
-    if (detail.noteActions.reply) { setRSubject(detail.noteActions.reply.subject); setRBody(detail.noteActions.reply.body); }
+    const msgs = detail.noteActions.messages ?? [];
+    setPicked(new Set([...detail.noteActions.actions.filter((a) => a.effect).map((a) => a.id), ...msgs.filter((m) => m.on).map((m) => m.id)]));
+    setDrafts(Object.fromEntries(msgs.map((m) => [m.id, { subject: m.subject, body: m.body }])));
   }, [detail, picked]);
 
   // Dwell: count time while the source section is at least half in view and the tab is visible.
@@ -410,7 +413,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
     try {
       const engagement: Engagement = { scrolledSource: scrolled, dwellMs: dwell };
       const selection = detail?.noteActions && option === 'approve' ? [...(picked ?? [])] : null;
-      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection, edited: option === 'approve' ? (detail?.noteActions?.reply ? (rSubject.trim() !== detail.noteActions.reply.subject || rBody.trim() !== detail.noteActions.reply.body.trim() ? { subject: rSubject.trim() || null, body: rBody.trim() || null } : null) : editedBody()) : null, escalateTo: option === 'escalate' ? escalateTo || null : null }) });
+      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection, edited: option === 'approve' ? (detail?.noteActions?.messages?.length ? { messages: detail.noteActions.messages.filter((m) => drafts[m.id] && (drafts[m.id].subject.trim() !== m.subject || drafts[m.id].body.trim() !== m.body.trim())).map((m) => ({ id: m.id, subject: drafts[m.id].subject.trim() || null, body: drafts[m.id].body.trim() || null })) } : editedBody()) : null, escalateTo: option === 'escalate' ? escalateTo || null : null }) });
       setEditing(false);
       setDone(option);
       // The list moves on at once; the panel's own refresh happens behind it.
@@ -567,7 +570,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                 </details>
               )}
             </>
-          ) : isProposal || (noteLines && (noteLines.actions.length > 0 || noteLines.reply)) ? null : (
+          ) : isProposal || (noteLines && (noteLines.actions.length > 0 || !!noteLines.messages?.length)) ? null : (
             <p className="dp-prose">{[...parsed.intro.slice(1), ...parsed.points.map((p) => `${p.n}. ${p.text}`), ...parsed.rest].join('\n')}</p>
           )}
 
@@ -592,17 +595,22 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                 return (
                   <label key={a.id} className={`dp-line${a.effect ? (on ? ' on' : '') : ' info'}`}>
                     <input type="checkbox" checked={on} disabled={!a.effect || busy} onChange={(e) => setPicked((prev) => { const next = new Set(prev ?? []); if (e.target.checked) next.add(a.id); else next.delete(a.id); return next; })} />
-                    <span style={{ minWidth: 0 }}>{tag && <span className="dp-tag">{tag}</span>}<b>{a.summary}</b><q>{a.quote}</q><span className="eff">{a.effect ?? (noteLines.reply ? (a.kind === 'question' ? 'Answered in the reply.' : 'Covered in the reply.') : 'For information only — nothing would be recorded.')}</span></span>
+                    <span style={{ minWidth: 0 }}>{tag && <span className="dp-tag">{tag}</span>}<b>{a.summary}</b><q>{a.quote}</q><span className="eff">{a.effect ?? (noteLines.messages?.length ? (a.kind === 'question' ? 'Answered in the reply.' : 'Covered in the reply.') : 'For information only — nothing would be recorded.')}</span></span>
                   </label>
                 );
               })}
-              {noteLines.reply && (
-                <div className={`dp-reply${picked?.has('reply') ? ' on' : ''}`}>
-                  <label className="dp-reply-h"><input type="checkbox" checked={!!picked?.has('reply')} disabled={busy} onChange={(e) => setPicked((prev) => { const next = new Set(prev ?? []); if (e.target.checked) next.add('reply'); else next.delete('reply'); return next; })} />Send This Reply</label>
-                  <input className="eg-in" value={rSubject} onChange={(e) => setRSubject(e.target.value)} disabled={busy || !picked?.has('reply')} aria-label="Reply subject" />
-                  <textarea className="eg-in" rows={Math.min(18, Math.max(6, rBody.split('\n').length + 1))} value={rBody} onChange={(e) => setRBody(e.target.value)} disabled={busy || !picked?.has('reply')} aria-label="Reply" />
-                </div>
-              )}
+              {(noteLines.messages ?? []).map((m) => {
+                const on = !!picked?.has(m.id);
+                const dr = drafts[m.id] ?? { subject: m.subject, body: m.body };
+                const set = (patch: Partial<{ subject: string; body: string }>) => setDrafts((cur) => ({ ...cur, [m.id]: { ...dr, ...patch } }));
+                return (
+                  <div key={m.id} className={`dp-reply${on ? ' on' : ''}`}>
+                    <label className="dp-reply-h"><input type="checkbox" checked={on} disabled={busy} onChange={(e) => setPicked((prev) => { const next = new Set(prev ?? []); if (e.target.checked) next.add(m.id); else next.delete(m.id); return next; })} />{m.id === 'reply' ? 'Reply' : 'Email'} To {PARTY_TITLE[m.to] ?? m.to}</label>
+                    <input className="eg-in" value={dr.subject} onChange={(e) => set({ subject: e.target.value })} disabled={busy || !on} aria-label="Subject" />
+                    <textarea className="eg-in" rows={Math.min(16, Math.max(on ? 5 : 3, dr.body.split('\n').length + 1))} value={dr.body} onChange={(e) => set({ body: e.target.value })} disabled={busy || !on} aria-label="Message" />
+                  </div>
+                );
+              })}
             </div>
           )}
           {!pending && !detail.shadowed && noteLines && (
@@ -612,13 +620,13 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                 const landed = !refused && (noteLines.applied ?? []).includes(a.id);
                 return (
                   <div key={a.id} className={`dp-line${refused ? ' refused' : landed ? ' on' : ' info'}`}>
-                    <span style={{ minWidth: 0 }}><b>{landed ? 'Recorded' : refused ? 'Refused' : noteLines.replySent && !a.effect ? (a.kind === 'question' ? 'Answered In The Reply' : 'Covered In The Reply') : 'Not Recorded'} — {a.summary}</b><q>{a.quote}</q>{refused && <span className="eff">The machine would not take it: {refused.reason}</span>}</span>
+                    <span style={{ minWidth: 0 }}><b>{landed ? 'Recorded' : refused ? 'Refused' : noteLines.messagesSent?.length && !a.effect ? (a.kind === 'question' ? 'Answered In The Reply' : 'Covered In The Reply') : 'Not Recorded'} — {a.summary}</b><q>{a.quote}</q>{refused && <span className="eff">The machine would not take it: {refused.reason}</span>}</span>
                   </div>
                 );
               })}
-              {noteLines.replySent && (
-                <div className="dp-reply on"><span className="dp-reply-h">Reply Sent</span><b style={{ fontSize: 13 }}>{noteLines.replySent.subject}</b><pre className="dp-reply-b">{noteLines.replySent.body}</pre></div>
-              )}
+              {(noteLines.messagesSent ?? []).map((m) => (
+                <div key={m.id} className="dp-reply on"><span className="dp-reply-h">Sent To {PARTY_TITLE[m.to] ?? m.to}</span><b style={{ fontSize: 13 }}>{m.subject}</b><pre className="dp-reply-b">{m.body}</pre></div>
+              ))}
             </div>
           )}
         </div>
@@ -665,7 +673,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                   <button
                     key={o}
                     className={`dp-btn${o === 'approve' || o === 'verify' ? ' primary' : ''}${choice === o ? ' on' : ''}`}
-                    disabled={busy || !engaged || (isBank && o === 'verify' && !method) || (!!noteLines && o === 'approve' && !picked?.size && noteLines.actions.some((a) => a.effect)) || (!!noteLines?.reply && o === 'approve' && !!picked?.has('reply') && !rBody.trim())}
+                    disabled={busy || !engaged || (isBank && o === 'verify' && !method) || (!!noteLines && o === 'approve' && !picked?.size && noteLines.actions.some((a) => a.effect)) || (!!noteLines?.messages?.length && o === 'approve' && noteLines.messages.some((m) => picked?.has(m.id) && !(drafts[m.id]?.body ?? m.body).trim()))}
                     title={!engaged ? 'Read the source first' : isBank && o === 'verify' && !method ? 'Choose the verification method first' : noteLines && o === 'approve' && !picked?.size && noteLines.actions.some((a) => a.effect) ? 'Tick at least one line, or reject the reading with a reason' : OPTION_HELP[o] ?? ''}
                     onClick={() => setChoice(o)}
                   >
@@ -688,7 +696,9 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
       {/* ── The source: one document at a time, picked from what the checks cite ── */}
       {d.kind !== 'proposal' && (
       <section className="dp-src" ref={srcRef} aria-label="Source document">
-        <div className="dp-srcbar">
+        {/* An email (with nothing else to pick): its subject line carries the open link and the read gate, so no file name bar. */}
+        {!emailShownId(source, showing, shownOther, focusQuote) && (
+          <div className="dp-srcbar">
           {docIds.length > 1 ? (
             <select className="dp-pick" value={showing ?? ''} onChange={(e) => void showDoc(e.target.value, null)} aria-label="Document">
               {docIds.map((id) => <option key={id} value={id}>{docLabel(id)}</option>)}
@@ -702,8 +712,9 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
             </span>
           )}
         </div>
+        )}
         <div className={`dp-srcbody${shownPdf || emailShownId(source, showing, shownOther, focusQuote) ? ' pdf' : ''}`} onScroll={(e) => { if ((e.currentTarget as HTMLElement).scrollTop > 40) setScrolled(true); }}>
-          {emailShownId(source, showing, shownOther, focusQuote) ? <EmailThread key={showing} matterId={d.matterId} documentId={emailShownId(source, showing, shownOther, focusQuote)!} onRead={() => setScrolled(true)} /> : <>
+          {emailShownId(source, showing, shownOther, focusQuote) ? <EmailThread key={showing} matterId={d.matterId} documentId={emailShownId(source, showing, shownOther, focusQuote)!} onRead={() => setScrolled(true)} extra={<>{docIds.length > 1 && <select className="dp-pick" style={{ width: 150, flex: 'none' }} value={showing ?? ''} onChange={(e) => void showDoc(e.target.value, null)} aria-label="Document">{docIds.map((id) => <option key={id} value={id}>{docLabel(id)}</option>)}</select>}{showing && <a href={`/api/v1/documents/${showing}/raw`} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>Open<ChevronRight size={16} /></a>}{pending && (engaged ? <span style={{ color: '#15803d', display: 'inline-flex' }}><Check size={16} /></span> : <span className="dp-gate"><span className="bar"><i style={{ width: `${Math.min(100, (dwell / UI_DWELL_MS) * 100)}%` }} /></span></span>)}</>} /> : <>
           {!source && <div className="eg-sub">{detail.shadowed ? 'The source is available from the timeline once this case or sub-flow leaves shadow mode.' : 'Loading the source…'}</div>}
           {shownOther && shownOther.content != null && <pre className="dp-pre">{withQuote(shownOther.content).map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <mark key={i} className="on">{p.text}</mark>))}</pre>}
           {shownOther && shownOther.content == null && shownOther.rawUrl && (shownOther.pdf ? <PdfView key={shownOther.id} url={shownOther.rawUrl} page={page} quote={focusQuote} quotes={focusAlts} quoteIndex={focusIndex} onFound={setPdfFound} /> : <iframe key={shownPdfSrc ?? ''} className="dp-frame" title="Document" src={shownPdfSrc ?? shownOther.rawUrl} />)}
