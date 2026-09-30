@@ -213,6 +213,18 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
     } catch { /* a failed reload keeps the list as it was */ }
   }, [who]);
   useEffect(() => { void load(); }, [load]);
+  // The list keeps itself current: every 30 seconds while it is on screen, and on coming back to the tab.
+  // Not while a task is open or being dealt with in place, so nothing moves under someone's hand.
+  const quiet = useRef(true);
+  quiet.current = !open && !unlockingId && approving.size === 0;
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState === 'visible' && quiet.current) { void load(); window.dispatchEvent(new Event('conveyi:counts')); } };
+    const t = setInterval(tick, 30_000);
+    const back = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', back);
+    window.addEventListener('focus', back);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', back); window.removeEventListener('focus', back); };
+  }, [load]);
   // The Refresh beside the heading asks the list to reload in place; it says when it is done.
   useEffect(() => {
     const on = (e: Event) => { void load().finally(() => (e as CustomEvent<{ done?: () => void }>).detail?.done?.()); };

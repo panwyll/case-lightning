@@ -200,6 +200,6 @@ export const PDF_CSS = `
 .pdfv-zoom .pct{min-width:48px;border-left:1px solid #f1f5f9;border-right:1px solid #f1f5f9}
 .pdfv-page{position:relative;background:#fff;box-shadow:0 1px 3px rgba(16,24,40,.12);margin:0 auto}
 .pdfv-page canvas{display:block;width:100%;height:100%}
-.pdfv-hl{position:absolute;background:rgba(255,221,0,.42);mix-blend-mode:multiply;border-radius:1px;pointer-events:none}
+.pdfv-hl{position:absolute;background:rgba(255,255,0,.9);mix-blend-mode:multiply;border-radius:1px;pointer-events:none}
 .pdfv-n{position:absolute;right:6px;bottom:4px;font-size:10px;color:#94a3b8}
 `;

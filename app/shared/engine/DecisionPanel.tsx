@@ -28,7 +28,7 @@ import { X, Check, ChevronRight, Paperclip } from '@/app/shared/icons';
 
 /** A line's kind, as a tag on it (an email often makes several points). */
 /** How long a chosen option counts down on its button before it is recorded (clicking again cancels). */
-const COUNTDOWN_MS = 3000;
+const COUNTDOWN_MS = 2000;
 /** The option, as it is happening. */
 const DOING: Record<string, string> = { approve: 'Approving', reject: 'Declining', escalate: 'Escalating', verify: 'Recording', refer_to_client: 'Referring', request_further: 'Requesting', indemnity: 'Recording' };
 /** Who a message goes to, as a heading. */
@@ -132,8 +132,8 @@ const CSS = `
 .dp-gate .bar{height:4px;width:90px;background:#e2e8f0;border-radius:4px;overflow:hidden}
 .dp-gate .bar i{display:block;height:100%;background:#5A27E0;transition:width .3s}
 .dp-pre{white-space:pre-wrap;font-size:12.5px;line-height:1.55;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin:0}
-.dp-pre mark{background:#fef08a;border-radius:3px;padding:1px 2px;box-shadow:0 0 0 2px #fef08a}
-.dp-pre mark.on{background:#fde047;box-shadow:0 0 0 3px #fde047}
+.dp-pre mark{background:#ffff00;color:inherit;border-radius:2px;padding:1px 2px;box-shadow:0 0 0 2px #ffff00}
+.dp-pre mark.on{background:#ffff00;box-shadow:0 0 0 2px #ffff00,0 0 0 4px #ca8a04}
 .dp-prose{white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:#0f172a;margin:14px 0 0}
 .dp-out{background:#f8fafc;border:1px solid #e6e8ee;border-radius:10px;padding:10px 12px;font-size:13px}
 .dp-out b{font-weight:800}
