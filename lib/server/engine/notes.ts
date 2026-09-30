@@ -319,8 +319,8 @@ export function replyOnlySummary(text: string, from?: NoteSender | null): string
 export const STATUS_ASK = /\b(what'?s (going on|happening|the latest|the status)|whats going on|any (update|news|progress)|an update|where (are|do) (we|things) (stand|at)?|how('?s| is| are) (it|things|everything) (going|progressing|looking)|status( update)?|update me|progress so far|chase (this|things) up)\b/i;
 /**
  * The title of an email's task, from what the email was read as (the way an issue's chip names it):
- * a request for a status update, a document, something again, their news, a problem they report, a
- * question; otherwise just the email.
+ * a problem they report is named as the problem; a request for a status update, a document, something
+ * again, their news or a question is the reply to it; otherwise just the email.
  */
 export function replyTitle(from?: NoteSender | null, actions: Array<{ kind: string; summary: string; quote: string; command: NoteCommand | null }> = []): string {
   const who = whose(from);
@@ -328,7 +328,8 @@ export function replyTitle(from?: NoteSender | null, actions: Array<{ kind: stri
   const cmds = actions.map((a) => a.command).filter((c): c is NoteCommand => !!c);
   const more = (n: number) => (n > 1 ? ` (+${n - 1} more)` : '');
   const issue = cmds.find((c) => c.type === 'raise_issue' || c.type === 'record_mortgage_withdrawn');
-  if (issue) return `Reply to ${who} report: ${issue.type === 'raise_issue' ? issue.title : 'the mortgage offer withdrawn'}${more(cmds.length)}`;
+  // A problem is named as the problem (the reply is one part of dealing with it, not the whole).
+  if (issue) return `${issue.type === 'raise_issue' ? issue.title : 'Mortgage offer withdrawn'}${more(cmds.length)}`;
   const file = cmds.find((c) => c.type === 'send_file_copy');
   if (file && file.type === 'send_file_copy') return `Reply to ${who} request for ${their(file.what)}${more(cmds.length)}`;
   const resend = cmds.find((c) => c.type === 'resend_to_client');

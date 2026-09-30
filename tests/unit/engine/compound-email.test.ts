@@ -231,6 +231,6 @@ test('an email task is named by what the email was read as', async () => {
   assert.equal(replyTitle(CLIENT, [q('Whats going on?', 'Client asks for a general status update on the matter')]), "Reply to the client's request for a status update");
   assert.equal(replyTitle(CLIENT, [q('Any update?')]), "Reply to the client's request for a status update");
   assert.equal(replyTitle(CLIENT, [{ kind: 'resend', summary: '', quote: 'can you resend my report on title', command: { type: 'send_file_copy', what: 'my report on title' } }]), "Reply to the client's request for their report on title");
-  assert.equal(replyTitle(CLIENT, [{ kind: 'issue', summary: '', quote: 'the seller is pulling out', command: { type: 'raise_issue', kind: 'transaction_at_risk', title: 'Seller threatening to pull out', detail: null, gate: 'exchange' } }]), "Reply to the client's report: Seller threatening to pull out");
+  assert.equal(replyTitle(CLIENT, [{ kind: 'issue', summary: '', quote: 'the seller is pulling out', command: { type: 'raise_issue', kind: 'transaction_at_risk', title: 'Seller threatening to pull out', detail: null, gate: 'exchange' } }]), 'Seller threatening to pull out');
   assert.equal(replyTitle(CLIENT, []), "Reply to the client's email");
 });
