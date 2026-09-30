@@ -220,8 +220,12 @@ export function productionPorts(): EnginePorts {
       outsideAutomation: runOutsideAutomation,
       messagePreview: previewProposal,
       files: { find: findFiles, bytes: fileBytes },
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      fileShares: new (require('../file-shares') as typeof import('../file-shares')).PgFileShares(),
+      // Loaded when a link is made, not when the ports are built: at build time it sits in an import
+      // cycle (file-shares → comms/adapters → …), and constructing it then broke every engine route.
+      fileShares: {
+        create: async (input: { tenantId: string; matterId: string; files: Array<{ id: string; fileName: string }> }) => new (await import('../file-shares')).PgFileShares().create(input),
+        latest: async (tenantId: string, matterId: string) => new (await import('../file-shares')).PgFileShares().latest(tenantId, matterId),
+      },
       entitled: (tenantId: string) => import('../plan').then((m) => m.isEntitled(tenantId)),
       log,
     });
