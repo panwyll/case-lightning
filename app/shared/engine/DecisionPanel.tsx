@@ -3,11 +3,12 @@ import { Spin } from './BusyButton';
 import { paths } from '@/lib/paths';
 import { CheckedDraft } from './CheckedDraft';
 import { PdfView, PDF_CSS } from './PdfView';
+import { EmailThread, emailShownId } from './EmailThread';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { ENGINE_CSS } from './ui';
 import { KIND_LABEL, OPTION_HELP, OPTION_LABEL, OPTION_LABEL_BY_KIND, STAGE_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Citation, type DecisionDetail, type Engagement, type SourceDoc } from './types';
-import { X, Check } from '@/app/shared/icons';
+import { X, Check, ChevronRight } from '@/app/shared/icons';
 
 /**
  * Addendum 3 §3 — the decision panel. A fixed three-part vertical layout:
@@ -25,6 +26,8 @@ import { X, Check } from '@/app/shared/icons';
  * decision_source_opened (the source IS shown); a resolved decision is read-only.
  */
 
+/** A line's kind, as a tag on it (an email often makes several points). */
+const LINE_TAG: Record<string, string> = { question: 'Question', progress: 'Done Or On Its Way', resend: 'Send Again', issue: 'Problem', client_decision: 'Decision', confirm_with_client: 'Check With Client', expectation: 'Expected', information: 'Noted' };
 const CSS = `
 .dp{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(320px,1fr);height:calc(100vh - 56px);margin:-18px -24px -14px;background:#fff;min-height:0}
 .dp.solo{grid-template-columns:minmax(0,1fr)}
@@ -127,6 +130,13 @@ const CSS = `
 .dp-shadow{background:#312e81;color:#fff;border-radius:8px;padding:8px 10px;font-size:12.5px}
 .dp-lines{display:flex;flex-direction:column;gap:6px;margin-top:14px}
 .dp-line{display:flex;gap:10px;align-items:flex-start;border:1px solid #e6e8ee;border-radius:10px;padding:8px 10px;background:#fff}
+.dp-tag{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;background:#f1f5f9;border-radius:999px;padding:1px 7px;margin-right:6px;vertical-align:1px}
+.dp-reply{display:grid;gap:6px;border:1px solid #e6e8ee;border-radius:10px;padding:10px;background:#fff;margin-top:4px}
+.dp-reply.on{border-color:#c4b5fd;background:#faf8ff}
+.dp-reply-h{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;color:#0f172a}
+.dp-reply textarea{font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;width:100%;box-sizing:border-box}
+.dp-reply input.eg-in{width:100%;box-sizing:border-box;font-weight:600}
+.dp-reply-b{white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.5;margin:0;color:#334155}
 .dp-line.on{border-color:#c4b5fd;background:#faf8ff}
 .dp-line.info{background:#f8fafc;color:#64748b}
 .dp-line.refused{border-color:#fecaca;background:#fef2f2}
@@ -184,6 +194,9 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const [activeCite, setActiveCite] = useState<number | null>(null);
   /** note_actions: which lines the person is applying. null until the decision loads. */
   const [picked, setPicked] = useState<Set<string> | null>(null);
+  /** note_actions: the drafted reply, as the person edits it. */
+  const [rSubject, setRSubject] = useState('');
+  const [rBody, setRBody] = useState('');
   const [page, setPage] = useState<number | null>(null);
   const [done, setDone] = useState<string | null>(null);
   // engagement
@@ -218,7 +231,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   // note does not actually say. Information-only lines are not selectable at all.
   useEffect(() => {
     if (picked || !detail?.noteActions) return;
-    setPicked(new Set(detail.noteActions.actions.filter((a) => a.effect).map((a) => a.id)));
+    setPicked(new Set([...detail.noteActions.actions.filter((a) => a.effect).map((a) => a.id), ...(detail.noteActions.reply ? ['reply'] : [])]));
+    if (detail.noteActions.reply) { setRSubject(detail.noteActions.reply.subject); setRBody(detail.noteActions.reply.body); }
   }, [detail, picked]);
 
   // Dwell: count time while the source section is at least half in view and the tab is visible.
@@ -396,7 +410,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
     try {
       const engagement: Engagement = { scrolledSource: scrolled, dwellMs: dwell };
       const selection = detail?.noteActions && option === 'approve' ? [...(picked ?? [])] : null;
-      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection, edited: option === 'approve' ? editedBody() : null, escalateTo: option === 'escalate' ? escalateTo || null : null }) });
+      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection, edited: option === 'approve' ? (detail?.noteActions?.reply ? (rSubject.trim() !== detail.noteActions.reply.subject || rBody.trim() !== detail.noteActions.reply.body.trim() ? { subject: rSubject.trim() || null, body: rBody.trim() || null } : null) : editedBody()) : null, escalateTo: option === 'escalate' ? escalateTo || null : null }) });
       setEditing(false);
       setDone(option);
       // The list moves on at once; the panel's own refresh happens behind it.
@@ -553,7 +567,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                 </details>
               )}
             </>
-          ) : isProposal ? null : (
+          ) : isProposal || (noteLines && (noteLines.actions.length > 0 || noteLines.reply)) ? null : (
             <p className="dp-prose">{[...parsed.intro.slice(1), ...parsed.points.map((p) => `${p.n}. ${p.text}`), ...parsed.rest].join('\n')}</p>
           )}
 
@@ -571,16 +585,24 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
           )}
           {pending && noteLines && (
             <div className="dp-lines">
-              <div style={{ fontSize: 12.5, fontWeight: 700 }}>Tick the lines to act on.</div>
+              {noteLines.actions.length > 0 && <div style={{ fontSize: 12.5, fontWeight: 700 }}>What They Said</div>}
               {noteLines.actions.map((a) => {
                 const on = !!picked?.has(a.id);
+                const tag = LINE_TAG[a.kind] ?? null;
                 return (
                   <label key={a.id} className={`dp-line${a.effect ? (on ? ' on' : '') : ' info'}`}>
                     <input type="checkbox" checked={on} disabled={!a.effect || busy} onChange={(e) => setPicked((prev) => { const next = new Set(prev ?? []); if (e.target.checked) next.add(a.id); else next.delete(a.id); return next; })} />
-                    <span style={{ minWidth: 0 }}><b>{a.summary}</b><q>{a.quote}</q><span className="eff">{a.effect ?? 'For information only — nothing would be recorded.'}</span></span>
+                    <span style={{ minWidth: 0 }}>{tag && <span className="dp-tag">{tag}</span>}<b>{a.summary}</b><q>{a.quote}</q><span className="eff">{a.effect ?? (noteLines.reply ? (a.kind === 'question' ? 'Answered in the reply.' : 'Covered in the reply.') : 'For information only — nothing would be recorded.')}</span></span>
                   </label>
                 );
               })}
+              {noteLines.reply && (
+                <div className={`dp-reply${picked?.has('reply') ? ' on' : ''}`}>
+                  <label className="dp-reply-h"><input type="checkbox" checked={!!picked?.has('reply')} disabled={busy} onChange={(e) => setPicked((prev) => { const next = new Set(prev ?? []); if (e.target.checked) next.add('reply'); else next.delete('reply'); return next; })} />Send This Reply</label>
+                  <input className="eg-in" value={rSubject} onChange={(e) => setRSubject(e.target.value)} disabled={busy || !picked?.has('reply')} aria-label="Reply subject" />
+                  <textarea className="eg-in" rows={Math.min(18, Math.max(6, rBody.split('\n').length + 1))} value={rBody} onChange={(e) => setRBody(e.target.value)} disabled={busy || !picked?.has('reply')} aria-label="Reply" />
+                </div>
+              )}
             </div>
           )}
           {!pending && !detail.shadowed && noteLines && (
@@ -590,10 +612,13 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                 const landed = !refused && (noteLines.applied ?? []).includes(a.id);
                 return (
                   <div key={a.id} className={`dp-line${refused ? ' refused' : landed ? ' on' : ' info'}`}>
-                    <span style={{ minWidth: 0 }}><b>{landed ? 'Recorded' : refused ? 'Refused' : 'Not recorded'} — {a.summary}</b><q>{a.quote}</q>{refused && <span className="eff">The machine would not take it: {refused.reason}</span>}</span>
+                    <span style={{ minWidth: 0 }}><b>{landed ? 'Recorded' : refused ? 'Refused' : noteLines.replySent && !a.effect ? (a.kind === 'question' ? 'Answered In The Reply' : 'Covered In The Reply') : 'Not Recorded'} — {a.summary}</b><q>{a.quote}</q>{refused && <span className="eff">The machine would not take it: {refused.reason}</span>}</span>
                   </div>
                 );
               })}
+              {noteLines.replySent && (
+                <div className="dp-reply on"><span className="dp-reply-h">Reply Sent</span><b style={{ fontSize: 13 }}>{noteLines.replySent.subject}</b><pre className="dp-reply-b">{noteLines.replySent.body}</pre></div>
+              )}
             </div>
           )}
         </div>
@@ -614,7 +639,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
               ) : (
                 <><b>{pretty(d.status)}</b>{d.resolvedBy ? ` by ${who(d.resolvedBy)} · ${fmtWhen(d.resolvedAt)}` : ''}</>
               )}
-              {done && <div style={{ marginTop: 6 }}><a href={`${paths.matter(d.matterId)}?tab=timeline`}>Back to the case →</a> · <a href={paths.tasks}>Tasks →</a></div>}
+              {done && <div style={{ marginTop: 6, display: 'flex', gap: 14 }}><a href={`${paths.matter(d.matterId)}?tab=timeline`} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>Back To The Case<ChevronRight size={16} /></a><a href={paths.tasks} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>Tasks<ChevronRight size={16} /></a></div>}
             </div>
           )}
           {pending && (
@@ -640,8 +665,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                   <button
                     key={o}
                     className={`dp-btn${o === 'approve' || o === 'verify' ? ' primary' : ''}${choice === o ? ' on' : ''}`}
-                    disabled={busy || !engaged || (isBank && o === 'verify' && !method) || (!!noteLines && o === 'approve' && !picked?.size)}
-                    title={!engaged ? 'Read the source first' : isBank && o === 'verify' && !method ? 'Choose the verification method first' : noteLines && o === 'approve' && !picked?.size ? 'Tick at least one line, or reject the reading with a reason' : OPTION_HELP[o] ?? ''}
+                    disabled={busy || !engaged || (isBank && o === 'verify' && !method) || (!!noteLines && o === 'approve' && !picked?.size && noteLines.actions.some((a) => a.effect)) || (!!noteLines?.reply && o === 'approve' && !!picked?.has('reply') && !rBody.trim())}
+                    title={!engaged ? 'Read the source first' : isBank && o === 'verify' && !method ? 'Choose the verification method first' : noteLines && o === 'approve' && !picked?.size && noteLines.actions.some((a) => a.effect) ? 'Tick at least one line, or reject the reading with a reason' : OPTION_HELP[o] ?? ''}
                     onClick={() => setChoice(o)}
                   >
                     {optionLabel(o)}
@@ -677,7 +702,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
             </span>
           )}
         </div>
-        <div className={`dp-srcbody${shownPdf ? ' pdf' : ''}`} onScroll={(e) => { if ((e.currentTarget as HTMLElement).scrollTop > 40) setScrolled(true); }}>
+        <div className={`dp-srcbody${shownPdf || emailShownId(source, showing, shownOther, focusQuote) ? ' pdf' : ''}`} onScroll={(e) => { if ((e.currentTarget as HTMLElement).scrollTop > 40) setScrolled(true); }}>
+          {emailShownId(source, showing, shownOther, focusQuote) ? <EmailThread key={showing} matterId={d.matterId} documentId={emailShownId(source, showing, shownOther, focusQuote)!} onRead={() => setScrolled(true)} /> : <>
           {!source && <div className="eg-sub">{detail.shadowed ? 'The source is available from the timeline once this case or sub-flow leaves shadow mode.' : 'Loading the source…'}</div>}
           {shownOther && shownOther.content != null && <pre className="dp-pre">{withQuote(shownOther.content).map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <mark key={i} className="on">{p.text}</mark>))}</pre>}
           {shownOther && shownOther.content == null && shownOther.rawUrl && (shownOther.pdf ? <PdfView key={shownOther.id} url={shownOther.rawUrl} page={page} quote={focusQuote} quotes={focusAlts} quoteIndex={focusIndex} onFound={setPdfFound} /> : <iframe key={shownPdfSrc ?? ''} className="dp-frame" title="Document" src={shownPdfSrc ?? shownOther.rawUrl} />)}
@@ -689,6 +715,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
             </pre>
           )}
           {!shownOther && source && !pdfSrc && !source.draftCheck && !highlighted && (source.webUrl ? <iframe className="dp-frame" title="Source document" src={source.webUrl} /> : <div className="dp-lock">No inline preview is available for this document. Open the file itself.</div>)}
+          </>}
         </div>
       </section>
       )}

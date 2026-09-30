@@ -98,3 +98,81 @@ export async function devRun(body: Record<string, unknown>) {
 }
 
 export function devReset() { h = null; }
+
+/** The fake email the #thread view opens (GET matters/:id/emails/thread). */
+export const DEV_EMAIL_DOC = '44444444-4444-4444-8444-444444444444';
+
+/** A client ↔ us conversation: one message recovered from quoted history, one attachment, the newest raised the task. */
+export function devEmailThread() {
+  const at = (daysAgo: number, h: number, m: number) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); d.setHours(h, m, 0, 0); return d.toISOString(); };
+  const jane = { name: 'Jane Smith', address: 'jane.smith@example.com' };
+  const alex = { name: 'Alex Carter', address: 'alex@yourfirm.co.uk' };
+  const subject = 'Re: 14 Oak Street, Leeds – contract for signature';
+  return {
+    subject: '14 Oak Street, Leeds – contract for signature',
+    messages: [
+      { id: 'quoted-1', documentId: null, from: jane, to: [alex], cc: [], date: at(3, 16, 40), subject: '14 Oak Street, Leeds – contract for signature', body: 'Hi Alex,\n\nThe estate agent says the buyer is ready to go. When do I need to sign the contract, and do I need to come into the office?\n\nThanks,\nJane', attachments: [], mine: false, quoted: true },
+      { id: '44444444-4444-4444-8444-444444444441', documentId: '44444444-4444-4444-8444-444444444441', from: alex, to: [jane], cc: [], date: at(2, 10, 2), subject, body: 'Hi Jane,\n\nNo need to come in. I will send the contract and transfer deed for signature once the buyer\'s solicitors have approved the draft, which they expect to do this week.\n\nKind regards,\nAlex Carter', attachments: [], mine: true, quoted: false },
+      { id: '44444444-4444-4444-8444-444444444442', documentId: '44444444-4444-4444-8444-444444444442', from: jane, to: [alex], cc: [{ name: 'Tom Smith', address: 'tom.smith@example.com' }], date: at(2, 12, 15), subject, body: 'Great, thank you. Tom is copied in as he will need to sign too.', attachments: [], mine: false, quoted: false },
+      { id: '44444444-4444-4444-8444-444444444443', documentId: '44444444-4444-4444-8444-444444444443', from: alex, to: [jane], cc: [{ name: 'Tom Smith', address: 'tom.smith@example.com' }], date: at(1, 9, 30), subject, body: 'Hi Jane and Tom,\n\nThe draft is approved. Please sign the contract where marked, have your signatures witnessed on the TR1, and send both back to me. Do not date either document.\n\nKind regards,\nAlex Carter', attachments: [], mine: true, quoted: false },
+      { id: DEV_EMAIL_DOC, documentId: DEV_EMAIL_DOC, from: jane, to: [alex], cc: [{ name: 'Tom Smith', address: 'tom.smith@example.com' }], date: at(0, 8, 45), subject, body: 'Hi Alex,\n\nSigned contract attached. The TR1 is in the post today, witnessed by our neighbour. Is there anything else you need from us before exchange?\n\nJane', attachments: [{ name: 'Signed contract – 14 Oak Street.pdf', documentId: '55555555-5555-4555-8555-555555555555' }], mine: false, quoted: false },
+    ],
+  };
+}
+
+/**
+ * A client's compound email as a real task on the harness case: read by the engine (the rule-based
+ * reader, the reply built from the case facts) exactly as production would, so the Decision view's
+ * lines, reply editor and conversation can be checked. Its source is shown as DEV_EMAIL_DOC's thread.
+ */
+const emailTasks = new WeakMap<object, string>();
+const EMAIL_TEXT = "Hi Alex,\n\nSigned contract attached. The TR1 is in the post today, witnessed by our neighbour. Can you resend the property forms link? Is there anything else you need from us before exchange?\n\nJane";
+export async function devEmailTask(): Promise<string> {
+  const hh = await devHarness();
+  const { svc, ports } = hh;
+  const known = emailTasks.get(hh);
+  if (known) return known;
+  const { DeterministicNoteReader } = await import('./engine/notes');
+  ports.noteExtractor = new DeterministicNoteReader();
+  const documentId = ports.documents.seed({ tenantId: DEV_TENANT, matterId: DEV_MATTER, docType: 'EMAIL', extractedFacts: { content: EMAIL_TEXT } }).id;
+  const res = await svc.recordNote(DEV_TENANT, DEV_MATTER, { text: EMAIL_TEXT, kind: 'email', actor: DEV_USER, documentId, from: { address: 'jane.smith@example.com', name: 'Jane Smith', relation: 'client' }, surface: true, subject: '14 Oak Street, Leeds – contract for signature' });
+  const id = Object.values(res.state.notes).find((n) => n.documentId === documentId)?.decisionEventId ?? null;
+  if (!id) throw new Error('The harness email raised no task.');
+  emailTasks.set(hh, id);
+  return id;
+}
+
+/** GET decisions/:id for the harness: the same shape the real route returns, for a note decision. */
+export async function devDecision(eventId: string) {
+  const { svc } = await devHarness();
+  const { effectText, noteTaskTitle, replyTitle } = await import('./engine/notes');
+  const { offeredOptions } = await import('./engine/rules');
+  const state = await svc.getState(DEV_TENANT, DEV_MATTER);
+  const d = state.decisions[eventId];
+  if (!d) return null;
+  const note = Object.values(state.notes).find((n) => n.decisionEventId === eventId) ?? null;
+  const events = await svc.listEvents(DEV_TENANT, DEV_MATTER);
+  const applied = events.find((e) => e.type === 'note_actions_applied' && (e.payload as { decisionEventId?: string }).decisionEventId === eventId);
+  const ap = applied?.payload as { applied: string[]; skipped: string[]; reply?: { subject: string; body: string } } | undefined;
+  return {
+    context: null,
+    noteActions: note ? { title: note.reply ? replyTitle(note.from) : noteTaskTitle(note.actions), noteId: note.id, noteKind: note.kind, actions: note.actions.map((a) => ({ id: a.id, kind: a.kind, summary: a.summary, quote: a.quote, confidence: a.confidence, effect: a.command ? effectText(a.command) : null })), applied: ap?.applied ?? null, skipped: ap?.skipped ?? null, refused: note.refusedActions ?? [], reply: note.reply ?? null, replySent: ap?.reply ?? null } : null,
+    message: null, openQueries: 0,
+    decision: { ...d, tenantId: DEV_TENANT, matterId: DEV_MATTER, options: offeredOptions(d.kind, d.options), sourceOpenedByMe: d.openedBy.includes(DEV_USER) },
+    matter: { matterRef: 'DEV-001', propertyAddress: '14 Oak Street, Leeds LS1 2AB', shadowMode: false },
+    raised: null, resolution: applied ? { eventId: applied.id, type: applied.type, by: DEV_USER, at: applied.createdAt, option: 'approve', note: null, engagement: null, verification: null } : null,
+    escalation: null, opens: [], people: {}, shadowed: null,
+    source: d.status === 'pending' ? null : devEmailSource(),
+  };
+}
+const devEmailSource = () => ({ id: DEV_EMAIL_DOC, fileName: 'email-2026-09-30-contract-for-signature.txt', webUrl: null, docType: 'EMAIL', content: `From: Jane Smith <jane.smith@example.com>\nTo: alex@yourfirm.co.uk\nDate: ${new Date().toISOString()}\nSubject: Re: 14 Oak Street, Leeds – contract for signature\n\n${EMAIL_TEXT}`, rawUrl: null });
+export async function devOpenSource(eventId: string) {
+  const { svc } = await devHarness();
+  await svc.openDecisionSource(DEV_TENANT, DEV_MATTER, eventId, DEV_USER).catch(() => {});
+  return { document: devEmailSource(), locator: null };
+}
+export async function devResolve(eventId: string, body: { option: string; note?: string | null; selection?: string[] | null; edited?: { subject?: string | null; body?: string | null } | null }) {
+  const { svc } = await devHarness();
+  await svc.resolveDecision(DEV_TENANT, DEV_MATTER, eventId, DEV_USER, body.option as never, body.note ?? null, null, null, body.selection ?? null, body.edited ?? null);
+  return { ok: true };
+}

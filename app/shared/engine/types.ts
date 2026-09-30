@@ -123,6 +123,9 @@ export interface NoteActionsDetail {
   applied: string[] | null;
   skipped: string[] | null;
   refused: Array<{ id: string; reason: string }>;
+  /** The reply drafted from the case (to send with the lines), and once resolved, what was sent. */
+  reply?: { subject: string; body: string; drafter: string } | null;
+  replySent?: { subject: string; body: string } | null;
 }
 
 export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;
@@ -387,13 +390,13 @@ export const OPTION_HELP: Record<string, string> = {
   indemnity: 'Records that the risk is covered by an indemnity policy rather than resolved.',
 };
 export const OPTION_LABEL: Record<string, string> = {
-  approve: 'Approve — proceed as standard',
-  refer_to_client: 'Refer to client',
-  request_further: 'Request further search / enquiry',
-  escalate: 'Escalate to senior',
+  approve: 'Approve — Proceed As Standard',
+  refer_to_client: 'Refer To Client',
+  request_further: 'Request Further Search / Enquiry',
+  escalate: 'Escalate To Senior',
   reject: 'Reject',
-  verify: 'Verified out-of-band',
-  indemnity: 'Cover with an indemnity policy',
+  verify: 'Verified Out-Of-Band',
+  indemnity: 'Cover With An Indemnity Policy',
 };
 
 export const pretty = (s: string) => s.replace(/_/g, ' ');

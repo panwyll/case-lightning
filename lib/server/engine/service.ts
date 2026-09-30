@@ -39,7 +39,7 @@ import { deferral, outsideDeferral } from './defer';
 const foldOnto = (state: MatterState, events: EngineEvent[]): MatterState => events.reduce((s, e) => applyEvent(s, e), state);
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -64,7 +64,8 @@ import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTra
 import { isResolved, openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedsReadyToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
-import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement } from './notes';
+import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, WAIT_LABEL, type NoteActionDraft } from './notes';
+import { replyFacts, templateReply } from './reply';
 import type { MessageOverride } from './ports';
 import { accessEnquiry, evidenceEnquiry, sortLegalPoints, surveyAdvice, surveyContext, surveyEnquiries, surveyNeedsAdvice, templateAdvice } from './survey-review';
 import type { SurveyFacts } from './types';
@@ -849,7 +850,7 @@ export class EngineService {
   async recordNote(
     tenantId: string,
     matterId: string,
-    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null; from?: NoteSender | null; attachments?: string[]; /** Filed without anyone looking: it always comes to a person. */ surface?: boolean; /** Both checks read it as a pure acknowledgement. */ acknowledgement?: boolean }
+    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null; from?: NoteSender | null; attachments?: string[]; /** Filed without anyone looking: it always comes to a person. */ surface?: boolean; /** Both checks read it as a pure acknowledgement. */ acknowledgement?: boolean; /** The email's subject, for the reply. */ subject?: string | null }
   ): Promise<RunResult> {
     // A decision has to cite something a person can open. A note filed without a document
     // behind it (typed straight into the matter) becomes one — the note IS the evidence.
@@ -879,7 +880,7 @@ export class EngineService {
     if (!noteId || !reader) return recorded;
     const brief = caseBrief(recorded.state, this.ports.now());
     const drafts = await reader
-      .extract({ tenantId, matterId, text: input.text, kind: input.kind, from: input.from ?? null, attachments: input.attachments ?? [], context: await this.replyContext(tenantId, matterId, recorded.state, input.from ?? null).catch(() => undefined), now: this.ports.now().toISOString(), caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
+      .extract({ tenantId, matterId, text: input.text, kind: input.kind, from: input.from ?? null, attachments: input.attachments ?? [], waits: input.from?.relation === 'client' ? openWaits(recorded.state).filter((w) => this.owedByClient(w.key, w.subject)).map((w) => ({ waitKey: w.key, subject: w.subject ?? '', label: WAIT_LABEL[w.key] })) : [], context: await this.replyContext(tenantId, matterId, recorded.state, input.from ?? null).catch(() => undefined), now: this.ports.now().toISOString(), caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
       .catch((err) => {
         this.ports.log('note extraction failed — the note is still on the file', err);
         return [];
@@ -889,7 +890,25 @@ export class EngineService {
     // made of "attached", an "it has not arrived" issue is not proposed from it.
     const kept = input.attachments?.length ? drafts.filter((d) => !(d.command?.type === 'raise_issue' && ARRIVAL_ISSUES.has(d.command.kind))) : drafts;
     if (!kept.length && !stranger && !input.surface) return recorded;
-    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts: kept, extractor: reader.name, surface: !!input.surface, ...(input.acknowledgement ? { acknowledgement: true } : {}) });
+    // The client wrote: whatever else is proposed, a reply answering every point is drafted from the case (never an acknowledgement).
+    const reply = input.kind === 'email' && input.from?.relation === 'client' && !input.acknowledgement ? await this.draftReply(tenantId, matterId, recorded.state, input.text, input.subject ?? null, input.from, kept).catch((err) => { this.ports.log('the reply could not be drafted', err); return null; }) : null;
+    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts: kept, extractor: reader.name, surface: !!input.surface || !!reply, ...(input.acknowledgement ? { acknowledgement: true } : {}), ...(reply ? { reply } : {}) });
+  }
+
+  /** Whether a wait is the client's to meet (their forms, money, signatures), not a third party's. */
+  private owedByClient(key: WaitKey, subject: string | null): boolean {
+    if (key === 'funds') return subject !== 'lender';
+    return ['id_check', 'proof_of_funds', 'property_forms', 'signed_documents', 'deposit', 'client_decision', 'insurance', 'mortgage_offer', 'survey'].includes(key);
+  }
+
+  /** The reply to a client's email, from the case facts (reply.ts); worded by the drafter when there is one. */
+  private async draftReply(tenantId: string, matterId: string, state: MatterState, text: string, subject: string | null, from: NoteSender, lines: NoteActionDraft[]): Promise<NoteReply> {
+    const now = this.ports.now();
+    const firstName = (from.name ?? '').trim().split(/\s+/)[0] || null;
+    const re = subject ? (/^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`) : 'Re: your email';
+    const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts: replyFacts(state, now), now: now.toISOString() }) : null;
+    if (drafted?.body) return { subject: re, body: drafted.body, drafter: this.ports.replyDrafter!.name };
+    return { subject: re, body: templateReply(state, now, { firstName, lines: lines.map((l, i) => ({ id: `A${i + 1}`, kind: l.kind, summary: l.summary, quote: l.quote, confidence: l.confidence ?? 0.6, command: l.command ?? null })) }), drafter: 'case-facts' };
   }
 
   // ───────────── decisions (dashboard #6) ─────────────
@@ -1612,7 +1631,7 @@ export class EngineService {
         // a client decision the machine would refuse by hand is refused here too, and is
         // logged rather than silently dropped.
         if (e.type === 'note_actions_applied') {
-          const p = e.payload as { noteId: string; applied: string[] };
+          const p = e.payload as { noteId: string; applied: string[]; reply?: { subject: string; body: string } | null };
           const fresh = await this.getState(tenantId, matterId);
           const note = fresh.notes[p.noteId];
           for (const id of p.applied) {
@@ -1660,6 +1679,11 @@ export class EngineService {
                 if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'client_instruction', key, detail, `ENQUIRY ON THE CLIENT'S INSTRUCTION\n\nTo: the seller's solicitor\nAbout: ${c.about}\n\n${c.text.trim()}`))) {
                   await this.perform(tenantId, matterId, 'enquiry_draft', detail);
                 }
+              } else if (c.type === 'record_client_progress') {
+                await this.run(tenantId, matterId, { type: 'record_client_progress', actor: e.actor, waitKey: c.waitKey, subject: c.subject ?? '', claim: c.claim, expectBy: c.expectBy, noteId: p.noteId });
+              } else if (c.type === 'resend_to_client') {
+                // The same request again, with its links and forms: what Chase Now sends.
+                await this.chaseNow(tenantId, matterId, c.waitKey, c.subject || null, e.actor);
               } else if (c.type === 'send_file_copy') {
                 // The client cannot find a document: it goes back to them, attached, if it is on the file.
                 const found = this.ports.files ? await this.ports.files.find(tenantId, matterId, c.what) : [];
@@ -1679,6 +1703,11 @@ export class EngineService {
               this.ports.log(`note ${p.noteId} action ${id} could not be applied`, err);
               await this.run(tenantId, matterId, { type: 'note_action_refused', noteId: p.noteId, actionId: id, reason }).catch(() => {});
             }
+          }
+          // The reply, as approved (and edited): answered from the case, sent to the client in their thread.
+          if (p.reply?.body?.trim()) {
+            const detail = { template: 'email_reply', context: { subject: p.reply.subject }, triggeredByEventId: e.id, edited: { subject: p.reply.subject, body: p.reply.body } };
+            try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('the reply could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
           }
         }
         // A chase to a third party is also news for the client (docs/architecture-review.md

@@ -518,7 +518,7 @@ async function raiseArchiveTask(tenantId: string, matterId: string, fileName: st
   await svc.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'file_locked', title, detail: `${fileName}: ${why}.`, gate: 'none' });
 }
 
-export interface FiledAttachment { name: string; outcome: 'read' | 'locked' | 'filed' | 'duplicate' | 'skipped' | 'expanded'; as: string | null; reason: string | null }
+export interface FiledAttachment { name: string; outcome: 'read' | 'locked' | 'filed' | 'duplicate' | 'skipped' | 'expanded'; as: string | null; reason: string | null; /** The file on the case (filed now, or already there). */ documentId?: string | null }
 
 export async function fileEmailAttachments(
   user: { userId: string; tenantId: string },
@@ -592,13 +592,13 @@ export async function fileEmailAttachments(
       const cited = await queryOne<{ n: string; type: string | null; at: string | null }>(`select count(*)::text as n, max(type) as type, max(created_at)::text as at from matter_event where tenant_id = $1 and matter_id = $2 and source_document_id = $3`, [user.tenantId, matterId, exists.id]).catch(() => ({ n: '1', type: null, at: null }));
       if (Number(cited?.n ?? '1') > 0) {
         const readAs = cited?.type ? cited.type.replace(/_(received|extracted|returned)$/, '').replace(/_/g, ' ') : null;
-        files.push({ name: att.name, outcome: 'duplicate', as: readAs, reason: cited?.at ? `read on ${new Date(cited.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}` : null });
+        files.push({ documentId: exists.id, name: att.name, outcome: 'duplicate', as: readAs, reason: cited?.at ? `read on ${new Date(cited.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}` : null });
         continue;
       }
       const report = await ingestFiledDocument(user.tenantId, matterId, exists.id).catch((e) => ({ failed: (e as Error).message }) as const);
-      if (report && 'failed' in report) { files.push({ name: att.name, outcome: 'filed', as: null, reason: `already on the case, and could not be read: ${report.failed}` }); continue; }
+      if (report && 'failed' in report) { files.push({ documentId: exists.id, name: att.name, outcome: 'filed', as: null, reason: `already on the case, and could not be read: ${report.failed}` }); continue; }
       const role = report?.classification?.role ?? null;
-      files.push(report && report.action.kind !== 'skip' ? { name: att.name, outcome: 'read', as: role, reason: null } : { name: att.name, outcome: 'filed', as: role && role !== 'other' ? role : null, reason: `already on the case; ${report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled'}` });
+      files.push(report && report.action.kind !== 'skip' ? { documentId: exists.id, name: att.name, outcome: 'read', as: role, reason: null }   : { documentId: exists.id, name: att.name, outcome: 'filed', as: role && role !== 'other' ? role : null, reason: `already on the case; ${report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled'}` });
       continue;
     }
     const uploaded = folder && driveUser ? await uploadToMatterKb(driveUser, folder, att.name, buffer) : null;
@@ -643,14 +643,14 @@ export async function fileEmailAttachments(
       if (isPdf && (await isLockedPdf(buffer).catch(() => false))) {
         await putBlob(user.tenantId, doc.id, buffer).catch(() => {});
         await recordLockedDocument(user.tenantId, matterId, doc.id, att.name);
-        files.push({ name: att.name, outcome: 'locked', as: null, reason: null });
+        files.push({ documentId: doc?.id ?? null, name: att.name, outcome: 'locked', as: null, reason: null });
       } else {
         const prior = await supersedeAsVersion(user.tenantId, matterId, doc.id, { fileName: att.name });
         const report = await ingestFiledDocument(user.tenantId, matterId, doc.id).catch((e) => { console.error('[files] ingest failed', att.name, (e as Error).message); return { failed: (e as Error).message } as const; });
-        if (report && 'failed' in report) { files.push({ name: att.name, outcome: 'filed', as: null, reason: `could not be read: ${report.failed}` }); continue; }
-        if (prior) { const r = await surfaceRevision(user.tenantId, matterId, att.name, doc.id, prior, report); files.push({ name: att.name, outcome: r.outcome, as: r.as, reason: r.reason }); continue; }
+        if (report && 'failed' in report) { files.push({ documentId: doc?.id ?? null, name: att.name, outcome: 'filed', as: null, reason: `could not be read: ${report.failed}` }); continue; }
+        if (prior) { const r = await surfaceRevision(user.tenantId, matterId, att.name, doc.id, prior, report); files.push({ documentId: doc?.id ?? null, name: att.name, outcome: r.outcome, as: r.as, reason: r.reason }); continue; }
         const role = report?.classification?.role ?? null;
-        files.push(report && report.action.kind !== 'skip' ? { name: att.name, outcome: 'read', as: role, reason: null } : { name: att.name, outcome: 'filed', as: role && role !== 'other' ? role : null, reason: report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled' });
+        files.push(report && report.action.kind !== 'skip' ? { documentId: doc?.id ?? null, name: att.name, outcome: 'read', as: role, reason: null } : { documentId: doc?.id ?? null, name: att.name, outcome: 'filed', as: role && role !== 'other' ? role : null, reason: report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled' });
       }
     }
   }
@@ -817,7 +817,7 @@ export async function fileEmailBodyAsDocument(
   user: { userId: string; tenantId: string },
   matterId: string,
   message: any,
-  attachments: Array<{ name: string; outcome: string; as: string | null }> = [],
+  attachments: Array<{ name: string; outcome: string; as: string | null; documentId?: string | null }> = [],
   /** Filed without anyone looking (a reply on a filed conversation): a person is always asked, even when nothing is proposed. */
   opts: { surface?: boolean } = {}
 ): Promise<{ outcome: 'read' | 'noted' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null; proposals?: number; missing?: string | null }> {
@@ -853,6 +853,17 @@ export async function fileEmailBodyAsDocument(
   const slug = subject.toLowerCase().replace(/^(re|fw|fwd):\s*/i, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'email';
   const doc = await productionPorts().documents.createGenerated({ tenantId: user.tenantId, matterId, docType: 'EMAIL', fileName: `email-${String(when).slice(0, 10)}-${slug}.txt`, content: text, createdBy: user.userId });
   await query(`update document set hash_sha256 = $3, sender_domain = $4 where id = $1 and tenant_id = $2`, [doc.id, user.tenantId, hash, from.split('@')[1] ?? null]).catch(() => {});
+  // The email as a message (docs/spec/ui.md, the conversation view): who wrote to whom, when, in which thread, and which files came with it.
+  const addr = (r: any) => ({ name: r?.emailAddress?.name ?? null, address: r?.emailAddress?.address ?? null });
+  const self = await tenantSelfAddresses(user.tenantId).catch(() => null);
+  const mine = !!self && (self.emails.has(from.toLowerCase()) || self.domains.has(from.toLowerCase().split('@')[1] ?? ''));
+  const meta = {
+    from: { name: fromName || null, address: from }, to: (message?.toRecipients ?? []).map(addr), cc: (message?.ccRecipients ?? []).map(addr),
+    date: when, subject, messageId: message?.id ?? null, internetMessageId: message?.internetMessageId ?? null, conversationId: message?.conversationId ?? null,
+    direction: mine ? 'out' : 'in', fresh: (fresh || body).slice(0, 20_000),
+    attachments: attachments.filter((a) => a.outcome !== 'skipped').map((a) => ({ name: a.name, documentId: a.documentId ?? null })),
+  };
+  await query(`update document set extracted_facts = coalesce(extracted_facts, '{}'::jsonb) || jsonb_build_object('email', $3::jsonb) where id = $1 and tenant_id = $2`, [doc.id, user.tenantId, JSON.stringify(meta)]).catch(() => {});
   // A failure here must surface, not vanish: the caller records it on the case.
   const report = await ingestFiledDocument(user.tenantId, matterId, doc.id);
   const role = report?.classification?.role ?? null;

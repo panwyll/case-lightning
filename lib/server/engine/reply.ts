@@ -1,0 +1,45 @@
+/**
+ * The reply to an email, built from the case (docs/spec/triggers.md). Every point the writer
+ * made is answered from what the engine knows: what is done, what is waiting and on whom, what is
+ * next and when. The model only words it; without one, the reply is assembled from the same facts.
+ * Nothing goes until a person approves it, as drafted or edited.
+ */
+import { caseBrief, clientStatusAnswer, renderForDrafting } from './brief';
+import { CERTIFICATE_OF_TITLE_NOTICE } from './sla';
+import { profileOf } from './transactions';
+import { WAIT_LABEL } from './notes';
+import type { MatterState, NoteAction } from './types';
+
+/** The case as facts for a reply: the drafting brief, plus the timing facts people ask about ("can we complete by Friday?"). */
+export function replyFacts(s: MatterState, now: Date): string {
+  const b = caseBrief(s, now);
+  const L = [renderForDrafting(b)];
+  const side = profileOf(s.transactionType).side;
+  const T: string[] = [];
+  if (!s.exchange.exchangedAt && side !== 'owner') {
+    const before = b.nextActions.filter((a) => /exchange/i.test(a.unblocks ?? '') || !a.unblocks).map((a) => a.what);
+    T.push(`- Not exchanged yet. Completion cannot happen before exchange (they can be on the same day only when everything for both is ready).${before.length ? ` Still to do before exchange: ${before.join('; ')}.` : ''}`);
+  }
+  if (s.hasLender && !s.completion.confirmedAt) T.push(`- The lender needs our certificate of title ${CERTIFICATE_OF_TITLE_NOTICE} working days before completion to release the mortgage money; completion cannot be sooner than that from when everything is ready.`);
+  if (s.exchange.completionDate) T.push(`- The contractual completion date is ${s.exchange.completionDate}.`);
+  else if (s.targetCompletionDate) T.push(`- The target completion date (a plan, not agreed in a contract) is ${s.targetCompletionDate.slice(0, 10)}.`);
+  const reported = s.waits.filter((w) => !w.closedAt && w.reported).map((w) => `${WAIT_LABEL[w.key]}: they said "${w.reported!.claim}" (${w.reported!.at.slice(0, 10)})`);
+  if (reported.length) T.push(`- Reported by the client as done or on its way (not yet arrived): ${reported.join('; ')}.`);
+  if (T.length) L.push(['TIMING (facts; never promise a date these do not support):', ...T].join('\n'));
+  return L.join('\n');
+}
+
+/** Without a model: the reply assembled from the same facts, point by point, then where things stand. */
+export function templateReply(s: MatterState, now: Date, input: { firstName: string | null; lines: NoteAction[] }): string {
+  const P: string[] = [`Hello ${input.firstName ?? 'there'},`, 'Thank you for your email.'];
+  for (const a of input.lines) {
+    const c = a.command;
+    if (c?.type === 'record_client_progress') P.push(`Thank you for letting us know about ${WAIT_LABEL[c.waitKey]}. We will look out for it and let you know when it has arrived.`);
+    else if (c?.type === 'resend_to_client') P.push(`We have sent the request for ${WAIT_LABEL[c.waitKey]} again, with the links you need.`);
+    else if (c?.type === 'send_file_copy') P.push(`We will send you ${c.what.trim()} separately.`);
+    else if (a.kind === 'question') P.push(`On your question ("${a.quote.slice(0, 120)}"): we are checking and will come back to you shortly.`);
+  }
+  const status = clientStatusAnswer(caseBrief(s, now), now);
+  if (status.canAnswer) P.push(status.text);
+  return P.join('\n\n');
+}

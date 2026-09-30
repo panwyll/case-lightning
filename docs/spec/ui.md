@@ -16,4 +16,5 @@
 - **Title Case** on buttons, headers, labels, chips, dropdown options ("Ready To Exchange", "On Track").
 - **No fluff text**: no subtitles, no explanatory sub-lines; the title and the control carry it.
 - **Icons ≥16px, no glyphs** (use `app/shared/icons`).
+- **An email is a conversation**: its source pane shows the thread as chat bubbles (ours right, theirs left, attachments as chips, quoted history recovered); clicking one opens the usual From / To / Cc / Date / Subject view (`EmailThread.tsx`, `email-thread.ts`).
 - **Checked at realistic widths** (1280–1400 desktop, narrow panel) on `/dev/harness` before shipping.

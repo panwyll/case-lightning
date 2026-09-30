@@ -128,6 +128,7 @@ export const EVENT_TYPES = [
   'note_recorded',
   'note_extracted',
   'note_actions_applied',
+  'wait_progress_reported',
   'note_action_refused',
   'escalation_raised',
   'escalation_resolved',
@@ -520,7 +521,8 @@ export interface NoteSender { address: string; name: string | null; relation: Se
 export type NoteKind = (typeof NOTE_KINDS)[number];
 
 /** What an extractor may propose from a note. Anything else is information only. */
-export const NOTE_ACTION_KINDS = ['client_decision', 'confirm_with_client', 'issue', 'expectation', 'information'] as const;
+/** question: answered in the reply; progress: something the writer says is done or on its way; resend: they need a form or link again. */
+export const NOTE_ACTION_KINDS = ['client_decision', 'confirm_with_client', 'issue', 'expectation', 'question', 'progress', 'resend', 'information'] as const;
 export type NoteActionKind = (typeof NOTE_ACTION_KINDS)[number];
 
 /** The command a proposal would run. Deliberately a small, safe set — see notes.ts. */
@@ -542,6 +544,10 @@ export type NoteCommand =
   | { type: 'record_survey_plan'; plan: 'none' | 'booked'; date: string | null; note: string }
   /** Someone is away between two dates. */
   | { type: 'record_availability'; party: AvailabilityParty; from: string; until: string; note: string }
+  /** The writer says something we are waiting on them for is done or on its way ("I've posted the signed contract"): noted on that wait, which pauses its chase until `expectBy`. Never clears anything: the thing itself still has to arrive. */
+  | { type: 'record_client_progress'; waitKey: WaitKey; subject: string; claim: string; expectBy: string | null }
+  /** They need a form or a link again ("can you resend the ID link"): the request for that wait goes again, with its links. */
+  | { type: 'resend_to_client'; waitKey: WaitKey; subject: string }
   | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; /** Overrides the kind's usual severity (a withdrawn offer is High, not the usual Medium). */ severity?: 'info' | 'warning' | 'critical' };
 
 export const SIGNED_DOCUMENTS = ['contract', 'transfer', 'mortgage_deed', 'deed_of_trust'] as const;
@@ -572,6 +578,8 @@ export interface NoteAction {
 }
 
 export type NoteStatus = 'proposed' | 'applied' | 'discarded' | 'no_actions';
+/** A reply drafted to an email: every point in it answered from the case (the facts it was built from are kept with it). */
+export interface NoteReply { subject: string; body: string; drafter: string }
 
 export interface NoteState {
   id: string;
@@ -590,6 +598,8 @@ export interface NoteState {
   status: NoteStatus;
   /** An email read as a pure acknowledgement: nobody needs to reply. */
   acknowledgement?: boolean;
+  /** The drafted reply to the writer, built from the case, sent only when a person approves it. */
+  reply?: NoteReply | null;
   appliedActionIds: string[];
   /** Approved, then refused by the machine when it ran — the note's record stays honest. */
   refusedActions: Array<{ id: string; reason: string }>;
@@ -725,6 +735,8 @@ export interface WaitState {
   /** Who sent the last chase by hand (a name); null when the timer sent it. */
   lastChasedBy?: string | null;
   escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }>;
+  /** The owing party says it is done or on its way: no chase before `until`. */
+  reported?: { claim: string; at: string; until: string } | null;
 }
 
 // ───────────────────────────── Payment verification (addendum 2) ─────────────────────────────
@@ -931,8 +943,9 @@ export interface Payloads {
   chase_sent: ChaseSpec;
   acknowledgement_sent: AcknowledgementSpec;
   note_recorded: { noteId: string; kind: NoteKind; text: string; durationSeconds: number | null; documentId: string | null; from?: NoteSender | null };
-  note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec; /** Read as a pure acknowledgement (both checks): no reply needed. */ acknowledgement?: boolean };
-  note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null };
+  note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec; /** Read as a pure acknowledgement (both checks): no reply needed. */ acknowledgement?: boolean; reply?: NoteReply | null };
+  wait_progress_reported: { waitKey: WaitKey; subject: string; claim: string; until: string; noteId: string | null };
+  note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null; /** The reply to send with it, as approved (and edited). */ reply?: { subject: string; body: string } | null };
   note_action_refused: { noteId: string; actionId: string; reason: string };
   escalation_raised: {
     /** null when a human escalated a decision rather than a timer firing on a wait. */

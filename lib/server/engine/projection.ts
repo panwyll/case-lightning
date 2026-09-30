@@ -517,8 +517,9 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (n) {
         n.actions = p.actions;
         n.extractor = p.extractor;
-        n.status = p.actions.some((a) => a.command) && p.decision ? 'proposed' : 'no_actions';
+        n.status = (p.actions.some((a) => a.command) || !!p.reply) && p.decision ? 'proposed' : 'no_actions';
         if (p.decision) n.decisionEventId = e.id;
+        if (p.reply) n.reply = p.reply;
         if (p.acknowledgement) n.acknowledgement = true;
       }
       break;
@@ -701,6 +702,12 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       s.survey = { ...s.survey, plan: { plan: p.plan, date: p.date, at: e.createdAt } };
       // Not having one is the client's choice, recorded: nothing more to check on.
       if (p.plan === 'none') closeWait(s, 'survey', null, e);
+      break;
+    }
+    case 'wait_progress_reported': {
+      const p = e.payload as Payloads['wait_progress_reported'];
+      const w = findOpenWait(s, p.waitKey, p.subject);
+      if (w) w.reported = { claim: p.claim, at: e.createdAt, until: p.until };
       break;
     }
     case 'availability_recorded': {

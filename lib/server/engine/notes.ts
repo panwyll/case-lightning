@@ -16,7 +16,7 @@
  * The extractor itself is a port. Without a model key the deterministic reader below
  * still catches the unambiguous phrasings, so the feature degrades to "less", not "wrong".
  */
-import { CLIENT_DECISION_OUTCOMES, CLIENT_DECISION_SUBJECTS, AVAILABILITY_PARTIES, type AvailabilityParty, type ClientDecisionSubject, type NoteAction, type NoteActionKind, type NoteCommand, type NoteKind, type NoteSender, type SenderRelation } from './types';
+import { CLIENT_DECISION_OUTCOMES, CLIENT_DECISION_SUBJECTS, AVAILABILITY_PARTIES, WAIT_KEYS, type WaitKey, type AvailabilityParty, type ClientDecisionSubject, type NoteAction, type NoteActionKind, type NoteCommand, type NoteKind, type NoteSender, type SenderRelation } from './types';
 import { ISSUE_RESOLUTIONS, RESOLUTION_LABEL } from './issues';
 import { ISSUE_KIND_SPEC, type IssueGate, type IssueKind } from './issues';
 
@@ -42,6 +42,8 @@ export interface NoteExtractionContext {
   now?: string;
   /** Files that came with the email, and what each was read as: "attached" is about these, not a claim. */
   attachments?: string[];
+  /** What the case is waiting for from the writer, so "that's done" can name it. */
+  waits?: Array<{ waitKey: string; subject: string; label: string }>;
   /** What we last told the client that this may be a reply to (the survey advice). */
   context?: string;
 }
@@ -101,6 +103,10 @@ export function senderPolicy(source: NoteSource | undefined, action: NoteAction)
   // The lender or broker reporting a problem with the offer: the confirmation goes back to them, and the client hears.
   if (action.command?.type === 'raise_issue' && action.command.kind === 'mortgage_at_risk' && relation === 'lender') {
     return [{ ...action, command: { ...action.command, detail: `Reported by the lender or broker. ${action.command.detail ?? ''}`.trim() } }];
+  }
+  // Only the client reports their own progress or asks for their own forms again; anyone else's word is context for the reply.
+  if ((action.command?.type === 'record_client_progress' || action.command?.type === 'resend_to_client') && relation !== 'client' && relation !== 'colleague') {
+    return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (from ${RELATION_LABEL[relation]}, not the client)` }];
   }
   // Whether to have a survey is the client's call: anyone else saying so is put to the client.
   if (action.command?.type === 'record_survey_plan' && relation !== 'client' && relation !== 'colleague') {
@@ -271,6 +277,8 @@ export function commandTitle(c: NoteCommand): string {
     case 'record_availability': return `${AVAILABILITY_PARTY_LABEL[c.party].replace(/^the /, '').replace(/^./, (x) => x.toUpperCase())} away ${dayShort(c.from)} to ${dayShort(c.until)}`;
     case 'record_survey_plan': return c.plan === 'none' ? 'No survey: the client\'s choice' : `Survey booked${c.date ? ` for ${dayShort(c.date)}` : ''}`;
     case 'raise_issue': return `Issue: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
+    case 'record_client_progress': return `The client says ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} is done or on its way`;
+    case 'resend_to_client': return `Send the client ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} again`;
   }
 }
 /**
@@ -295,6 +303,16 @@ const whose = (from?: NoteSender | null): string => {
   const n = from?.name || from?.address || 'the sender';
   return `${n}'s`;
 };
+/** An email whose only job is an answer: the reply drafted from the case is the task. */
+export function replyOnlySummary(text: string, from?: NoteSender | null): string {
+  const who = from ? `${from.name || from.address} (${RELATION_LABEL[from.relation]})` : 'someone';
+  const first = text.split(/\n/).map((l) => l.trim()).filter(Boolean).slice(0, 3).join(' ').slice(0, 300);
+  return [`An email from ${who}${first ? `: “${first}${text.length > first.length ? '…' : ''}”` : ''}.`, '', 'A reply answering it from the case is drafted. Read it, edit it if needed, and approve to send it.'].join('\n');
+}
+/** The task for an email answered by the drafted reply. */
+export function replyTitle(from?: NoteSender | null): string {
+  return `Reply to ${whose(from)} email`;
+}
 /** An acknowledgement's task: confirm nobody needs to reply. */
 export function acknowledgementTitle(from?: NoteSender | null, text = ''): string {
   const words = text.split(/\n/).map((l) => l.trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ').slice(0, 90);
@@ -327,6 +345,8 @@ export function effectText(c: NoteCommand): string {
     case 'resolve_issue': return `Closes the open "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}" issue as ${RESOLUTION_LABEL[c.resolution]?.toLowerCase() ?? c.resolution}`;
     case 'send_file_copy': return `Finds ${c.what.trim().slice(0, 80)} on the case and proposes a reply to the client with it attached (a task if it is not on file)`;
     case 'request_from_seller': return `Proposes this enquiry to the seller's solicitor (editable before it goes): ${c.text.trim().slice(0, 300)}${c.text.trim().length > 300 ? '…' : ''}`;
+    case 'record_client_progress': return `Notes against ${WAIT_LABEL[c.waitKey]} that they say: "${c.claim.slice(0, 120)}". It is not chased again before ${c.expectBy ? prettyDate(c.expectBy) : 'three working days from now'}; nothing is cleared until it arrives`;
+    case 'resend_to_client': return `Sends the request for ${WAIT_LABEL[c.waitKey]} again, with its links and forms`;
     case 'record_survey_plan': return c.plan === 'none' ? 'Records that the client has chosen not to have a survey; they are no longer asked about one' : `Records the survey as booked${c.date ? ` for ${prettyDate(c.date)}` : ''}; the client is not asked about it again until after that date`;
     case 'record_availability': return `Notes that ${AVAILABILITY_PARTY_LABEL[c.party]} is away ${prettyDate(c.from)} to ${prettyDate(c.until)}: chases to them wait, updates say so, and target dates are checked against it`;
     case 'raise_issue': return `Raises the issue "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}"${c.gate === 'none' ? '' : ` (holds ${c.gate})`}${issueConsequence(c.kind) ? ` and ${issueConsequence(c.kind)}` : ''}`;
@@ -410,6 +430,13 @@ export function validateNoteActions(text: string, drafts: NoteActionDraft[], sou
   return { actions, rejected };
 }
 
+/** What the case waits for, in a client's words. */
+export const WAIT_LABEL: Record<WaitKey, string> = {
+  id_check: 'your ID check', search: 'the searches', enquiry: 'replies to our enquiries', funds: 'the completion money', registration: 'the registration', proof_of_funds: 'your proof of funds', management_pack: 'the management pack', property_forms: 'your property forms', redemption: 'the redemption statement', lender_consent: "the lender's consent", discharge: 'the mortgage discharge', contract_pack: 'the contract pack', transfer_deed: 'the signed transfer', signed_documents: 'your signed documents', mortgage_offer: 'your mortgage offer', survey: 'your survey', deposit: 'your deposit', client_decision: 'your decision', insurance: 'your buildings insurance',
+};
+/** What the client is sent and can ask for again: the request goes with its links and forms. */
+export const RESENDABLE: WaitKey[] = ['id_check', 'proof_of_funds', 'property_forms', 'signed_documents', 'funds', 'deposit', 'client_decision', 'insurance'];
+
 /** Why this command could never run. null = it is a command the machine accepts. */
 export function commandProblem(c: NoteCommand): string | null {
   if (c.type === 'client_decision_recorded' || c.type === 'confirm_with_client') {
@@ -452,6 +479,13 @@ export function commandProblem(c: NoteCommand): string | null {
     if (c.until < c.from) return 'the period ends before it starts';
     return null;
   }
+  if (c.type === 'record_client_progress') {
+    if (!(WAIT_KEYS as readonly string[]).includes(c.waitKey)) return `"${c.waitKey}" is not something the case waits for`;
+    if (!c.claim?.trim()) return 'it does not say what was done';
+    if (c.expectBy && !/^\d{4}-\d{2}-\d{2}$/.test(c.expectBy)) return `"${c.expectBy}" is not a date (YYYY-MM-DD)`;
+    return null;
+  }
+  if (c.type === 'resend_to_client') return RESENDABLE.includes(c.waitKey) ? null : `"${c.waitKey}" is not something we send the client`;
   if (c.type === 'raise_issue') {
     if (!ISSUE_KIND_SPEC[c.kind as IssueKind]) return `"${c.kind}" is not an issue kind`;
     if (!c.title?.trim()) return 'the issue has no title';
@@ -729,8 +763,47 @@ export class DeterministicNoteReader {
         break; // one reading per sentence — the most specific rule that fires
       }
     }
+    // An email: every question is a line the reply answers; "done" and "send it again" name what the case waits for.
+    if (input.kind === 'email') {
+      const quoted = new Set(out.map((d) => d.quote.trim()));
+      for (const sentence of sentences) {
+        const t = sentence.trim();
+        const wait = waitIn(t, input.waits ?? []);
+        if (wait && RESEND.test(t) && RESENDABLE.includes(wait.waitKey as WaitKey)) {
+          out.push({ kind: 'resend', summary: `Send the client ${wait.label.replace(/^your /, 'their ')} again`, quote: t, confidence: 0.8, command: { type: 'resend_to_client', waitKey: wait.waitKey as WaitKey, subject: wait.subject } });
+          quoted.add(t);
+        } else if (wait && PROGRESS.test(t) && !/\?\s*$/.test(t)) {
+          out.push({ kind: 'progress', summary: `The client says ${wait.label.replace(/^your /, 'their ')} is done or on its way`, quote: t, confidence: 0.75, command: { type: 'record_client_progress', waitKey: wait.waitKey as WaitKey, subject: wait.subject, claim: t.slice(0, 200), expectBy: null } });
+          quoted.add(t);
+        } else if (/\?\s*$/.test(t) && !quoted.has(t)) {
+          out.push({ kind: 'question', summary: `The client asks: ${t.slice(0, 120)}`, quote: t, confidence: 0.9, command: null });
+          quoted.add(t);
+        }
+      }
+    }
     return out;
   }
+}
+
+/** "Can you resend…", "I've lost the link", "send the forms again". */
+const RESEND = /\b(re-?send|send (it|them|that|those|me|us)?\s*(\w+\s){0,4}again|lost (the|my|our)|can'?t find (the|my|our)|(link|form)s? (has|have)? ?(expired|stopped working|doesn'?t work))\b/i;
+/** "I've posted it", "the deposit went today", "uploaded my ID". */
+const PROGRESS = /\b((i|we)('ve| have)?\s+(just\s+|now\s+|already\s+)?(sent|posted|signed|paid|transferred|uploaded|returned|filled( it| them)? in|completed|done|booked)|(has|have) (been )?(sent|posted|signed|paid|transferred|uploaded|returned|completed|booked)|went (today|yesterday|this morning)|is on its way|are on (their|the) way|in the post)\b/i;
+/** Which open wait a sentence is about, by its words. */
+function waitIn(sentence: string, waits: Array<{ waitKey: string; subject: string; label: string }>): { waitKey: string; subject: string; label: string } | null {
+  const WORDS: Record<string, RegExp> = {
+    id_check: /\b(id|identity|passport|driving licen[cs]e|id check|verification)\b/i,
+    proof_of_funds: /\b(proof of funds|source of funds|bank statements?|funds form)\b/i,
+    property_forms: /\b(property (information )?forms?|ta\s?6|ta\s?7|ta\s?10|fittings|forms)\b/i,
+    signed_documents: /\b(sign(ed|ing)?|contract|transfer|tr1|mortgage deed|deed|signing pack)\b/i,
+    deposit: /\b(deposit)\b/i,
+    funds: /\b(balance|completion (money|funds)|the rest of the money)\b/i,
+    insurance: /\b(insurance)\b/i,
+    mortgage_offer: /\b(mortgage offer|offer)\b/i,
+    survey: /\b(survey)\b/i,
+  };
+  for (const w of waits) if (WORDS[w.waitKey]?.test(sentence)) return w;
+  return null;
 }
 
 // ───────────────────────────── acknowledgements (no reply needed) ─────────────────────────────

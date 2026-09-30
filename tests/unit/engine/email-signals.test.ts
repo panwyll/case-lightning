@@ -409,7 +409,7 @@ test('an email the reader cannot place goes to a person to read and answer, neve
   assert.ok(d, 'a task is raised');
   const { matterWork } = await import('../../../lib/server/engine/work');
   const item = matterWork(s, new Date()).items.find((i) => i.ref.id === d.eventId)!;
-  assert.equal(item.what, "Read and reply to the client's email");
+  assert.equal(item.what, "Reply to the client's email", 'a client asking something gets a drafted reply');
   assert.equal(item.chip, 'Client Email');
 });
 

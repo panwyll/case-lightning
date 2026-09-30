@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { devDocuments, devReset, devRun, devUpload, devView, devWork } from '@/lib/server/dev-harness';
+import { devDecision, devDocuments, devEmailTask, devEmailThread, devOpenSource, devReset, devResolve, devRun, devUpload, devView, devWork } from '@/lib/server/dev-harness';
 import { machineSpec } from '@/lib/server/engine/spec';
 
 export const runtime = 'nodejs';
@@ -17,7 +17,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pat
   if (p === 'engine/spec') return NextResponse.json(machineSpec());
   if (/^matters\/[^/]+\/engine\/events/.test(p)) return NextResponse.json({ events: [] });
   if (/^matters\/[^/]+\/engine\/documents/.test(p)) return NextResponse.json(await devDocuments());
+  if (/^matters\/[^/]+\/emails\/thread$/.test(p)) { await wait(500); return NextResponse.json(devEmailThread()); }
   if (/^matters\/[^/]+\/engine$/.test(p)) return NextResponse.json(await devView());
+  if (p === 'dev/email-task') return NextResponse.json({ eventId: await devEmailTask() });
+  if (/^decisions\/[A-Za-z0-9-]{3,40}$/.test(p)) { const d = await devDecision(p.split('/')[1]); return d ? NextResponse.json(d) : NextResponse.json({ error: 'Decision not found.' }, { status: 404 }); }
   if (p.startsWith('decisions')) return NextResponse.json({ decisions: [] });
   if (p === 'admin/templates') {
     const { messageInfo } = await import('@/lib/server/engine/messages');
@@ -42,6 +45,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   const body = await req.json().catch(() => ({}));
   try {
     if (p === 'reset') { devReset(); return NextResponse.json({ ok: true }); }
+    if (/^decisions\/[A-Za-z0-9-]{3,40}\/open-source$/.test(p)) return NextResponse.json(await devOpenSource(p.split('/')[1]));
+    if (/^decisions\/[A-Za-z0-9-]{3,40}\/resolve$/.test(p)) { await wait(700); return NextResponse.json(await devResolve(p.split('/')[1], body)); }
     if (/^matters\/[^/]+\/engine\/upload$/.test(p)) { await wait(1500); return NextResponse.json(await devUpload(body.fileName, body.role ?? 'auto')); }
     if (/^matters\/[^/]+\/engine$/.test(p)) { await wait(800); return NextResponse.json(await devRun(body)); }
     if (/^admin\/doc-templates\/[^/]+\/generate$/.test(p)) {

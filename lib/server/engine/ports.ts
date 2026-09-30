@@ -87,9 +87,15 @@ export interface AcknowledgementChecker {
   confirm(input: { tenantId: string; matterId: string; text: string; thread?: string; from?: NoteSender | null; caseLine?: string; open?: string[] }): Promise<{ acknowledgement: boolean; reason: string }>;
 }
 
+/** Words the reply to an email from the case facts; every point the writer made is answered. */
+export interface EmailReplyDrafter {
+  readonly name: string;
+  draft(input: { tenantId: string; matterId: string; email: string; subject: string; from: NoteSender | null; firstName: string | null; lines: Array<{ kind: string; summary: string; quote: string }>; facts: string; now: string }): Promise<{ body: string } | null>;
+}
+
 export interface NoteExtractor {
   readonly name: string;
-  extract(input: { tenantId: string; matterId: string; text: string; kind: NoteKind; caseLine?: string; from?: NoteSender | null; now?: string; attachments?: string[]; context?: string }): Promise<NoteActionDraft[]>;
+  extract(input: { tenantId: string; matterId: string; text: string; kind: NoteKind; caseLine?: string; from?: NoteSender | null; now?: string; attachments?: string[]; context?: string; /** What the case is waiting for from the writer, so "that's done" can name it. */ waits?: Array<{ waitKey: string; subject: string; label: string }> }): Promise<NoteActionDraft[]>;
 }
 
 /** Component #3 (reading/summarising). May improve the prose of a decision; may NOT change the verdict or the citations. */
@@ -253,6 +259,8 @@ export interface EnginePorts {
   noteExtractor?: NoteExtractor | null;
   /** Optional: without it no email is ever treated as needing no reply (every one reaches a person). */
   ackChecker?: AcknowledgementChecker | null;
+  /** Optional: without it the reply is assembled from the case facts (reply.ts templateReply). */
+  replyDrafter?: EmailReplyDrafter | null;
   searchProvider: SearchProvider;
   idCheckProvider: IdCheckProvider;
   clientComms: ClientComms;

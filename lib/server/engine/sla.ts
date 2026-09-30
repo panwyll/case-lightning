@@ -88,7 +88,9 @@ export function dueActions(state: MatterState, now: Date, sla: SlaConfig = DEFAU
     const age = workingDaysBetween(new Date(wait.openedAt), now, cal);
 
     // A survey the client has booked is not chased before the date (and a few days for the report).
-    const booked = wait.key === 'survey' && state.survey.plan?.plan === 'booked' && state.survey.plan.date ? new Date(`${state.survey.plan.date}T00:00:00Z`).getTime() + 7 * 86_400_000 > now.getTime() : false;
+    const booked = (wait.key === 'survey' && state.survey.plan?.plan === 'booked' && state.survey.plan.date ? new Date(`${state.survey.plan.date}T00:00:00Z`).getTime() + 7 * 86_400_000 > now.getTime() : false)
+      // They told us it is done or on its way: not chased before it has had time to arrive.
+      || (!!wait.reported && wait.reported.until >= now.toISOString().slice(0, 10));
     // Chase: first at chaseAfter, then every chaseEvery working days since the last chase.
     if (age >= rule.chaseAfter && !booked) {
       const last = wait.chasesSentAt[wait.chasesSentAt.length - 1];
