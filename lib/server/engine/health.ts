@@ -36,6 +36,8 @@ export const HEALTH_BANDS = ['normal', 'attention', 'delayed', 'blocked', 'criti
  */
 /** Dates running out (sla.ts timedIssueActions): early they are ours to act on (With Us); critical, the deal is at risk (Critical). */
 const EXPIRY: ReadonlySet<string> = new Set(['mortgage_offer_expiring', 'mortgage_offer_expiry_unknown', 'redemption_statement_expired', 'search_out_of_date']);
+/** Issues that put the transaction itself in jeopardy: an open one makes the case Critical. */
+export const isJeopardy = (kind: string): boolean => JEOPARDY.has(kind);
 const JEOPARDY: ReadonlySet<string> = new Set(['transaction_at_risk', 'mortgage_offer_expired', 'mortgage_at_risk', 'completion_failure', 'completion_funds_shortfall', 'lender_funds_delayed', 'bankruptcy_insolvency', 'aml_kyc_problem']);
 /** Working days a decision of ours may wait before it is our delay, then a serious one. */
 const OUR_DELAY = { late: 5, severe: 10 };

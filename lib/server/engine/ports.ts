@@ -90,7 +90,7 @@ export interface AcknowledgementChecker {
 /** Words the reply to an email from the case facts; every point the writer made is answered. */
 export interface EmailReplyDrafter {
   readonly name: string;
-  draft(input: { tenantId: string; matterId: string; email: string; subject: string; from: NoteSender | null; firstName: string | null; lines: Array<{ kind: string; summary: string; quote: string }>; facts: string; now: string; /** Who this message goes to, and what it must do. Absent = the reply to the writer. */ to?: MessageParty; purposes?: string[] }): Promise<{ body: string } | null>;
+  draft(input: { tenantId: string; matterId: string; email: string; subject: string; from: NoteSender | null; firstName: string | null; lines: Array<{ kind: string; summary: string; quote: string }>; facts: string; now: string; /** Who this message goes to, and what it must do. Absent = the reply to the writer. */ to?: MessageParty; purposes?: string[]; /** "the buyer (Jo Smith)". */ weActFor?: string }): Promise<{ body: string } | null>;
 }
 
 export interface NoteExtractor {

@@ -133,6 +133,11 @@ const CSS = `
 .dp-lines{display:flex;flex-direction:column;gap:6px;margin-top:14px}
 .dp-line{display:flex;gap:10px;align-items:flex-start;border:1px solid #e6e8ee;border-radius:10px;padding:8px 10px;background:#fff}
 .dp-tag{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;background:#f1f5f9;border-radius:999px;padding:1px 7px;margin-right:6px;vertical-align:1px}
+.dp-changes{margin:4px 0 0;padding-left:16px;font-size:12px;color:#475569;line-height:1.45}
+.dp-changes li{margin:1px 0}
+.dp-said{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:12px;color:#64748b;padding:2px 2px 0}
+.dp-said-h{font-weight:800;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.dp-said q{font-style:italic}
 .dp-reply:not(.on) textarea,.dp-reply:not(.on) input.eg-in{opacity:.55}
 .dp-reply{display:grid;gap:6px;border:1px solid #e6e8ee;border-radius:10px;padding:10px;background:#fff;margin-top:4px}
 .dp-reply.on{border-color:#c4b5fd;background:#faf8ff}
@@ -588,17 +593,24 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
           )}
           {pending && noteLines && (
             <div className="dp-lines">
-              {noteLines.actions.length > 0 && <div style={{ fontSize: 12.5, fontWeight: 700 }}>What They Said</div>}
-              {noteLines.actions.map((a) => {
+              {noteLines.actions.filter((a) => a.effect).map((a) => {
                 const on = !!picked?.has(a.id);
                 const tag = LINE_TAG[a.kind] ?? null;
                 return (
-                  <label key={a.id} className={`dp-line${a.effect ? (on ? ' on' : '') : ' info'}`}>
-                    <input type="checkbox" checked={on} disabled={!a.effect || busy} onChange={(e) => setPicked((prev) => { const next = new Set(prev ?? []); if (e.target.checked) next.add(a.id); else next.delete(a.id); return next; })} />
-                    <span style={{ minWidth: 0 }}>{tag && <span className="dp-tag">{tag}</span>}<b>{a.summary}</b><q>{a.quote}</q><span className="eff">{a.effect ?? (noteLines.messages?.length ? (a.kind === 'question' ? 'Answered in the reply.' : 'Covered in the reply.') : 'For information only — nothing would be recorded.')}</span></span>
+                  <label key={a.id} className={`dp-line${on ? ' on' : ''}`}>
+                    <input type="checkbox" checked={on} disabled={busy} onChange={(e) => setPicked((prev) => { const next = new Set(prev ?? []); if (e.target.checked) next.add(a.id); else next.delete(a.id); return next; })} />
+                    <span style={{ minWidth: 0 }}>{tag && <span className="dp-tag">{tag}</span>}<b>{a.summary}</b><q>{a.quote}</q>
+                      {a.changes?.length ? <ul className="dp-changes">{a.changes.map((c, k) => <li key={k}>{c}</li>)}</ul> : <span className="eff">{a.effect}</span>}
+                    </span>
                   </label>
                 );
               })}
+              {noteLines.actions.some((a) => !a.effect) && (
+                <div className="dp-said">
+                  <span className="dp-said-h">{noteLines.messages?.length ? 'Answered In The Reply' : 'Noted'}</span>
+                  {noteLines.actions.filter((a) => !a.effect).map((a) => <q key={a.id}>{a.quote}</q>)}
+                </div>
+              )}
               {(noteLines.messages ?? []).map((m) => {
                 const on = !!picked?.has(m.id);
                 const dr = drafts[m.id] ?? { subject: m.subject, body: m.body };

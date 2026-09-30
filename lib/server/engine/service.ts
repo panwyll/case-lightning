@@ -68,6 +68,8 @@ import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, WAI
 import { replyFacts, templateMessage, templateReply } from './reply';
 import { FOLLOW_UP_PARTY, whoNeedsToHear } from './recipients';
 
+/** Who the firm acts for on this case, as the drafter is told. */
+const weActFor = (s: MatterState): string => { const side = profileOf(s.transactionType).side; return side === 'seller' ? 'the seller' : side === 'owner' ? 'the owner (a remortgage or transfer)' : 'the buyer'; };
 /** A party, as the client would read it in a reply. */
 const PARTY_WORDS: Record<MessageParty, string> = { client: 'you', seller_solicitor: "the other side's solicitor", estate_agent: 'the estate agent', lender: 'the lender' };
 import type { MessageOverride } from './ports';
@@ -928,7 +930,7 @@ export class EngineService {
       }
       const re = subject ? (/^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`) : 'Re: your email';
       const title = replying ? re : property ?? "Our client's transaction";
-      const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName: (from.name ?? '').trim().split(/\s+/)[0] || null, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts, now: now.toISOString(), to: r.to, purposes: r.purposes }).catch(() => null) : null;
+      const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName: (from.name ?? '').trim().split(/\s+/)[0] || null, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts, now: now.toISOString(), to: r.to, purposes: r.purposes, weActFor: weActFor(state) }).catch(() => null) : null;
       const body = drafted?.body || (r.to === 'client' ? templateReply(state, now, { firstName: null, lines: [] }) : templateMessage(state, r.to, r.sentences, property));
       out.push({ id: replying ? 'reply' : `msg:${r.to}`, to: r.to, purposes: r.purposes, subject: title, body, drafter: drafted?.body ? this.ports.replyDrafter!.name : 'case-facts', on: r.on });
     }
@@ -940,7 +942,7 @@ export class EngineService {
     const now = this.ports.now();
     const firstName = (from.name ?? '').trim().split(/\s+/)[0] || null;
     const re = subject ? (/^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`) : 'Re: your email';
-    const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts: replyFacts(state, now), now: now.toISOString(), purposes: [...new Set(['Reply to their email, answering every point they made', ...also.purposes, ...others.map((o) => `Tell them we are writing to ${o} today`)])] }) : null;
+    const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts: replyFacts(state, now), now: now.toISOString(), weActFor: weActFor(state), purposes: [...new Set(['Reply to their email, answering every point they made', ...also.purposes, ...others.map((o) => `Tell them we are writing to ${o} today`)])] }) : null;
     if (drafted?.body) return { subject: re, body: drafted.body, drafter: this.ports.replyDrafter!.name };
     return { subject: re, body: templateReply(state, now, { firstName, others, also: also.sentences, lines: lines.map((l, i) => ({ id: `A${i + 1}`, kind: l.kind, summary: l.summary, quote: l.quote, confidence: l.confidence ?? 0.6, command: l.command ?? null })) }), drafter: 'case-facts' };
   }

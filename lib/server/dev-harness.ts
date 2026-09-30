@@ -145,7 +145,8 @@ export async function devEmailTask(): Promise<string> {
 /** GET decisions/:id for the harness: the same shape the real route returns, for a note decision. */
 export async function devDecision(eventId: string) {
   const { svc } = await devHarness();
-  const { effectText, noteTaskTitle, replyTitle } = await import('./engine/notes');
+  const { effectText, effectChanges, noteTaskTitle, replyTitle } = await import('./engine/notes');
+  const { isJeopardy } = await import('./engine/health');
   const { offeredOptions } = await import('./engine/rules');
   const state = await svc.getState(DEV_TENANT, DEV_MATTER);
   const d = state.decisions[eventId];
@@ -156,7 +157,7 @@ export async function devDecision(eventId: string) {
   const ap = applied?.payload as { applied: string[]; skipped: string[]; messages?: Array<{ id: string; to: string; subject: string; body: string }> } | undefined;
   return {
     context: null,
-    noteActions: note ? { title: note.messages?.length || note.reply ? replyTitle(note.from) : noteTaskTitle(note.actions), noteId: note.id, noteKind: note.kind, actions: note.actions.map((a) => ({ id: a.id, kind: a.kind, summary: a.summary, quote: a.quote, confidence: a.confidence, effect: a.command ? effectText(a.command, { withMessages: !!note.messages?.length }) : null })), applied: ap?.applied ?? null, skipped: ap?.skipped ?? null, refused: note.refusedActions ?? [], messages: note.messages ?? [], messagesSent: ap?.messages ?? null } : null,
+    noteActions: note ? { title: note.messages?.length || note.reply ? replyTitle(note.from) : noteTaskTitle(note.actions), noteId: note.id, noteKind: note.kind, actions: note.actions.map((a) => ({ id: a.id, kind: a.kind, summary: a.summary, quote: a.quote, confidence: a.confidence, effect: a.command ? effectText(a.command, { withMessages: !!note.messages?.length }) : null, changes: a.command ? effectChanges(a.command, { jeopardy: isJeopardy }) : [] })), applied: ap?.applied ?? null, skipped: ap?.skipped ?? null, refused: note.refusedActions ?? [], messages: note.messages ?? [], messagesSent: ap?.messages ?? null } : null,
     message: null, openQueries: 0,
     decision: { ...d, tenantId: DEV_TENANT, matterId: DEV_MATTER, options: offeredOptions(d.kind, d.options), sourceOpenedByMe: d.openedBy.includes(DEV_USER) },
     matter: { matterRef: 'DEV-001', propertyAddress: '14 Oak Street, Leeds LS1 2AB', shadowMode: false },

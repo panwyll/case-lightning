@@ -482,6 +482,8 @@ const monthName = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { m
  */
 type Built = { checklist: ChecklistItem[]; narrative: Ev[]; files?: TaskContext['files']; passed?: string[]; submitted?: TaskContext['submitted'] };
 function buildChecklist(s: MatterState, d: DecisionState, checks: string[], raised: EngineEvent | null, x: BuildExtras): Built {
+  // An email's task: the email is the conversation beside it, and the lines are the task; no source card, no "read" line.
+  if (d.kind === 'note_actions') return { checklist: [], narrative: [], files: [], passed: [], submitted: null };
   const built = buildChecklistItems(s, d, checks, raised, x);
   if (!Array.isArray(built)) return built;
   // Every other kind: the source document as a card of its own, and who put it in front of the firm.

@@ -1,7 +1,8 @@
-import { effectText, noteTaskTitle, nothingToActTitle, acknowledgementTitle, replyTitle } from '@/lib/server/engine/notes';
+import { effectText, effectChanges, noteTaskTitle, nothingToActTitle, acknowledgementTitle, replyTitle } from '@/lib/server/engine/notes';
 import { getPolicy } from '@/lib/server/policy';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
+import { isJeopardy } from '@/lib/server/engine/health';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { assertMatterAccess } from '@/lib/server/guard';
@@ -77,6 +78,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
           quote: a.quote,
           confidence: a.confidence,
           effect: a.command ? effectText(a.command, { withMessages: !!note?.messages?.length }) : null,
+          changes: a.command ? effectChanges(a.command, { jeopardy: isJeopardy }) : [],
         })),
         applied: applied?.applied ?? null,
         skipped: applied?.skipped ?? null,

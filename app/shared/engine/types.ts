@@ -112,6 +112,8 @@ export interface NoteActionView {
   confidence: number;
   /** null = for information only; nothing would be recorded. */
   effect: string | null;
+  /** What ticking it changes on the case, one change each. */
+  changes?: string[];
 }
 
 export interface NoteActionsDetail {

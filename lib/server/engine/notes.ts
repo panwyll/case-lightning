@@ -443,6 +443,30 @@ export const WAIT_LABEL: Record<WaitKey, string> = {
 /** What the client is sent and can ask for again: the request goes with its links and forms. */
 export const RESENDABLE: WaitKey[] = ['id_check', 'proof_of_funds', 'property_forms', 'signed_documents', 'funds', 'deposit', 'client_decision', 'insurance'];
 
+const SEVERITY_WORD: Record<string, string> = { critical: 'High', warning: 'Medium', info: 'Low' };
+/**
+ * What a line changes on the case if it is ticked, one change per entry: what the person is agreeing to.
+ * The panel lists these under the line (effectText is the one-sentence version).
+ */
+export function effectChanges(c: NoteCommand, opts: { jeopardy?: (kind: string) => boolean } = {}): string[] {
+  switch (c.type) {
+    case 'raise_issue': {
+      const spec = ISSUE_KIND_SPEC[c.kind];
+      const out = [`Opens the issue "${spec?.label ?? c.kind}", severity ${SEVERITY_WORD[c.severity ?? spec?.severity ?? 'warning']}`];
+      if (c.gate !== 'none') out.push(`Holds ${c.gate} until it is resolved`);
+      if (opts.jeopardy?.(c.kind) || (c.severity ?? spec?.severity) === 'critical') out.push('The case shows Critical until it is resolved');
+      if (spec?.actions?.length) out.push(`On the Tasks list to resolve: ${spec.actions[0].replace(/^./, (x) => x.toLowerCase())}`);
+      return out;
+    }
+    case 'record_mortgage_withdrawn': return ['Mortgage offer: marked withdrawn', 'The mortgage step reopens: a new offer has to arrive and be checked', 'Exchange is held until then'];
+    case 'record_client_progress': return [`${WAIT_LABEL[c.waitKey].replace(/^your /, 'The client\'s ').replace(/^the /, 'The ')}: noted as done or on its way`, `No reminder before ${c.expectBy ? prettyDate(c.expectBy) : 'three working days from now'}`, 'Nothing is cleared until it arrives'];
+    case 'resend_to_client': return [`Sends the request for ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} again, with its links and forms`, 'Counts as a reminder'];
+    case 'set_target_dates': return [c.targetExchangeDate ? `Target exchange: ${prettyDate(c.targetExchangeDate)}` : null, c.targetCompletionDate ? `Target completion: ${prettyDate(c.targetCompletionDate)}` : null].filter((x): x is string => !!x);
+    case 'record_price_change': return [c.toPennies ? `Price: ${pounds(c.toPennies)}` : `Price reduced by ${pounds(c.reductionPennies ?? 0)}`, 'The lender is told, if there is one'];
+    default: return [effectText(c)];
+  }
+}
+
 /** Why this command could never run. null = it is a command the machine accepts. */
 export function commandProblem(c: NoteCommand): string | null {
   if (c.type === 'client_decision_recorded' || c.type === 'confirm_with_client') {

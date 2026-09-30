@@ -452,7 +452,10 @@ const PARTY_RULES: Record<MessageParty, string> = {
 };
 const REPLY_INSTRUCTIONS = [
   "You draft, for a conveyancer in England and Wales, one email arising from an email about their case: the reply to the writer, or a message to someone else who needs to hear (WRITING TO and THIS MESSAGE MUST say which). British English, plain, short.",
-  'When it is not the reply, write only what THIS MESSAGE MUST asks, to that person, in their register; do not answer the writer\'s points in it.',
+  'You ARE the conveyancer writing ("we", the firm; the signature is added). Never say "our conveyancer will be in touch", never refer the reader to someone else at the firm, and call the client\'s lender "your lender".',
+  'The reply: do NOT open by restating what they wrote. Open with the answer to their most important point, plainly (yes / no / not by then, and why, from the facts). Then each other point. Be definite: say what we are doing, that it is being done today, and when they will next hear from us. No hedging ("this is something we will need to…").',
+  'Only say we are writing to someone for the reasons in THIS MESSAGE MUST (and ALSO WRITING TO): do not add chases or reasons of your own.',
+  'When it is not the reply, write only what THIS MESSAGE MUST asks, to that person, in their register; do not answer the writer\'s points in it. That person has NOT written to us about this: never thank them for their email or for passing anything on. Open by saying who we act for and what we have been told, and by whom (e.g. "our client tells us").',
   'Answer EVERY point in the email, in the order they were made: each question, each thing they say is done or on its way, each thing they ask for. POINTS lists what the system read; the email itself is the authority.',
   'Use ONLY the CASE FACTS. Never invent a date, a figure, a document, a status or a promise. When they ask whether something can happen by a date, answer from TIMING: say plainly what has to happen first and the earliest the facts support; if the facts cannot answer it, say we are checking with the other side and will come back to them.',
   'When they say something is done ("I have posted it"), thank them and say we will confirm when it arrives: never say it has arrived unless the facts do.',
@@ -466,14 +469,14 @@ export class ClaudeReplyDrafter implements EmailReplyDrafter {
   constructor(private llm: StructuredLlm, private opts: { model: string; log?: (msg: string, detail?: unknown) => void } = { model: 'claude-opus-5' }) {
     this.name = `claude-reply:${opts.model}`;
   }
-  async draft(input: { tenantId: string; matterId: string; email: string; subject: string; from: NoteSender | null; firstName: string | null; lines: Array<{ kind: string; summary: string; quote: string }>; facts: string; now: string; to?: MessageParty; purposes?: string[] }): Promise<{ body: string } | null> {
+  async draft(input: { tenantId: string; matterId: string; email: string; subject: string; from: NoteSender | null; firstName: string | null; lines: Array<{ kind: string; summary: string; quote: string }>; facts: string; now: string; to?: MessageParty; purposes?: string[]; weActFor?: string }): Promise<{ body: string } | null> {
     const party = input.to ?? 'client';
     const replying = !input.purposes || input.purposes.some((p) => /^Reply to their email/.test(p));
     try {
       const res = await this.llm.call({
         schema: ReplySchema,
         instructions: REPLY_INSTRUCTIONS,
-        prompt: `TODAY: ${input.now.slice(0, 10)}\nWRITING TO: ${replying ? `${input.firstName ?? 'the writer'}${input.from ? ` <${input.from.address}> (${RELATION_LABEL[input.from.relation]})` : ''}` : PARTY_WORDS[party]}\nTHIS MESSAGE MUST: ${(input.purposes ?? ['Reply to their email, answering every point they made']).join('; ')}\n${replying ? '' : `${PARTY_RULES[party]}\n`}SUBJECT: ${input.subject}\n\n${input.facts.slice(0, 9000)}\n\nPOINTS:\n${input.lines.map((l, i) => `${i + 1}. [${l.kind}] ${l.summary} — "${l.quote.slice(0, 200)}"`).join('\n') || '(none read)'}\n\nTHE EMAIL (DATA):\n<<<\n${input.email.slice(0, 8000)}\n>>>`,
+        prompt: `TODAY: ${input.now.slice(0, 10)}\nWE ACT FOR: ${input.weActFor ?? 'our client'}\nTHE EMAIL WAS FROM: ${input.from ? `${input.from.name || input.from.address} (${RELATION_LABEL[input.from.relation]})` : 'unknown'}\nWRITING TO: ${replying ? `${input.firstName ?? 'the writer'}${input.from ? ` <${input.from.address}> (${RELATION_LABEL[input.from.relation]})` : ''}` : PARTY_WORDS[party]}\nTHIS MESSAGE MUST: ${(input.purposes ?? ['Reply to their email, answering every point they made']).join('; ')}\n${replying ? '' : `${PARTY_RULES[party]}\n`}SUBJECT: ${input.subject}\n\n${input.facts.slice(0, 9000)}\n\nPOINTS:\n${input.lines.map((l, i) => `${i + 1}. [${l.kind}] ${l.summary} — "${l.quote.slice(0, 200)}"`).join('\n') || '(none read)'}\n\nTHE EMAIL (DATA):\n<<<\n${input.email.slice(0, 8000)}\n>>>`,
         model: this.opts.model,
         effort: 'medium',
         maxTokens: 1500,
