@@ -10,6 +10,7 @@ import { AddressAndSend } from '@/app/shared/engine/AddressAndSend';
 import { STEP_ACTION_LABEL, STEP_UPLOADS, directStep, uploadForStep, type UploadOutcome } from '@/app/shared/engine/stepUploads';
 import { type WorkItem , KIND_LABEL , pretty , chipLabel , quickApprovable } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
+import { SEVERITY_LABEL } from '@/app/shared/engine/severity';
 import { ChevronRight, CheckCircle, Search, X } from '@/app/shared/icons';
 import { Waiting, WORK_CSS } from './EngineWork';
 
@@ -57,6 +58,9 @@ const CSS = `
 .tl-task .what{font-size:13.5px;font-weight:600;line-height:1.35;color:#0f172a}
 .tl-chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;background:#f1f5f9;border-radius:999px;padding:2px 8px;margin-right:8px;vertical-align:1px}
 .tl-chip.prop{color:#5A27E0;background:#f5f3ff}
+.tl-chip.sev-critical{color:#b91c1c;background:#fee2e2}
+.tl-chip.sev-warning{color:#92400e;background:#fef3c7}
+.tl-chip.sev-info{color:#166534;background:#dcfce7}
 .tl-task .sub{font-size:12px;color:#64748b;margin-top:2px}
 .tl-acts{display:flex;align-items:center;gap:6px;justify-content:flex-end}
 .tl-task .age{font-size:12px;color:#94a3b8;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -273,7 +277,7 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
               <div key={key} className={`tl-item${isOpen ? ' open' : ''}`}>
                 <div className="tl-task">
                   <div>
-                    <div className="what">{i.kind && <span className={`tl-chip${i.kind.startsWith('proposal') ? ' prop' : ''}`}>{i.chip ?? chipLabel(i.kind)}</span>}{sentence(i.what)}</div>
+                    <div className="what">{i.kind && <span className={`tl-chip${i.kind.startsWith('proposal') ? ' prop' : ''}${i.severity ? ` sev-${i.severity}` : ''}`} title={i.severity ? `${SEVERITY_LABEL[i.severity]} severity` : undefined}>{i.chip ?? chipLabel(i.kind)}</span>}{sentence(i.what)}</div>
                     {quickErr?.id === i.ref?.id && <div className="sub" style={{ color: '#b91c1c' }}>{quickErr.text}</div>}
                     {stepMsg[key] && <div className={`tl-msg${stepMsg[key].ok ? ' ok' : ''}`}>{stepMsg[key].text}</div>}
                     {(i.unblocks || i.bucket === 'escalate') && <div className="sub">{i.bucket === 'escalate' ? 'Escalated: writing again will not fix it' : (i.ref?.type === 'issue' ? `Stops ${i.unblocks!.toLowerCase()}` : `Unblocks ${i.unblocks!.toLowerCase()}`)}</div>}

@@ -196,7 +196,7 @@ export interface ResolutionField { key: string; label: string; type: 'money' | '
 /** The issue catalogue as /engine/spec publishes it (kinds, groups, resolutions). */
 export interface IssueCatalogue {
   groups: Array<{ id: string; label: string }>;
-  kinds: Array<{ kind: string; group: string; label: string; arisesFrom: string; gate: 'exchange' | 'completion' | 'none'; stages: string[]; resolutions: string[]; note: string; overlaps?: string; context?: boolean; escalateAfterWorkingDays?: number | null; responsible?: string }>;
+  kinds: Array<{ kind: string; group: string; label: string; severity?: 'info' | 'warning' | 'critical'; arisesFrom: string; gate: 'exchange' | 'completion' | 'none'; stages: string[]; resolutions: string[]; note: string; overlaps?: string; context?: boolean; escalateAfterWorkingDays?: number | null; responsible?: string }>;
   resolutions: Array<{ id: string; label: string; title?: string; fields?: ResolutionField[]; noteRequired?: boolean; effect?: string | null; effects: string[] }>;
   staleAfterWorkingDays: number;
   formless?: string[];
@@ -460,6 +460,8 @@ export interface WorkItem {
   kind?: string;
   /** The chip on the list, in words. */
   chip?: string;
+  /** An issue's severity: its chip is red / amber / green. */
+  severity?: 'info' | 'warning' | 'critical';
   slaWorkingDays: number | null;
   chaseInWorkingDays: number | null;
   chasesSent: number;

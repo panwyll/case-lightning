@@ -92,6 +92,8 @@ export interface WorkItem {
   documentId?: string | null;
   /** The chip on the list, in words. */
   chip?: string;
+  /** An issue's severity: colours its chip red / amber / green and sets its urgency. */
+  severity?: 'info' | 'warning' | 'critical';
   /** Where to go: the decision, the issue, the wait or just the case. */
   ref: { type: 'decision' | 'issue' | 'wait' | 'requirement' | 'step' | 'client' | 'case'; id: string };
 }
@@ -388,7 +390,9 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       needsAddress: i.kind === 'send_failed' && /no email address/i.test(i.detail ?? '') ? addressFor(i.title) : null,
       unblocks: i.gate === 'none' ? null : i.gate === 'exchange' ? 'Exchange' : 'Completion',
       actionOwner: spec.responsible === 'mlro' ? 'mlro' : 'conveyancer',
-      urgency: i.severity === 'critical' ? 'critical' : i.gate !== 'none' ? 'blocked' : 'attention',
+      // Severity sets the urgency (red, amber, green); what it holds breaks the tie within amber.
+      severity: i.severity,
+      urgency: i.severity === 'critical' ? 'critical' : i.severity === 'warning' ? (i.gate !== 'none' ? 'blocked' : 'delayed') : 'attention',
       workstream: spec.workstreams[0] ?? null,
       since: i.raisedAt, sinceWorkingDays: wd(i.updatedAt, now, cal), slaWorkingDays: spec.escalateAfterWorkingDays ?? null,
       chaseInWorkingDays: null, chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: i.resolveBy ?? null, chaseDue: false,

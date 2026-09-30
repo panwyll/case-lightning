@@ -1437,14 +1437,14 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         ))}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
           <select className="ep-input" value={bd.payeeKind} onChange={(e) => setBd({ ...bd, payeeKind: e.target.value })}>
-            {['seller_solicitor', 'firm_client_account', 'client', 'lender', 'estate_agent', 'other'].map((k) => <option key={k} value={k}>{pretty(k)}</option>)}
+            {([['seller_solicitor', "Seller's Solicitor"], ['firm_client_account', 'Our Client Account'], ['client', 'Client'], ['lender', 'Lender'], ['estate_agent', 'Estate Agent'], ['other', 'Other']] as const).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
-          <input className="ep-input" placeholder="Who (firm / contact)" value={bd.payeeRef} onChange={(e) => setBd({ ...bd, payeeRef: e.target.value })} style={{ width: 150 }} />
-          <input className="ep-input" placeholder="Account name" value={bd.accountName} onChange={(e) => setBd({ ...bd, accountName: e.target.value })} style={{ width: 160 }} />
-          <input className="ep-input" placeholder="Sort code (6 digits)" value={bd.sortCode} onChange={(e) => setBd({ ...bd, sortCode: e.target.value.replace(/\D/g, '') })} style={{ width: 130 }} maxLength={6} />
-          <input className="ep-input" placeholder="Account no. (8 digits)" value={bd.accountNumber} onChange={(e) => setBd({ ...bd, accountNumber: e.target.value.replace(/\D/g, '') })} style={{ width: 150 }} maxLength={8} />
+          <input className="ep-input" placeholder="Who (Firm / Contact)" value={bd.payeeRef} onChange={(e) => setBd({ ...bd, payeeRef: e.target.value })} style={{ width: 150 }} />
+          <input className="ep-input" placeholder="Account Name" value={bd.accountName} onChange={(e) => setBd({ ...bd, accountName: e.target.value })} style={{ width: 160 }} />
+          <input className="ep-input" placeholder="Sort Code (6 Digits)" value={bd.sortCode} onChange={(e) => setBd({ ...bd, sortCode: e.target.value.replace(/\D/g, '') })} style={{ width: 130 }} maxLength={6} />
+          <input className="ep-input" placeholder="Account No. (8 Digits)" value={bd.accountNumber} onChange={(e) => setBd({ ...bd, accountNumber: e.target.value.replace(/\D/g, '') })} style={{ width: 150 }} maxLength={8} />
           <select className="ep-input" value={bd.sourceChannel} onChange={(e) => setBd({ ...bd, sourceChannel: e.target.value })}>
-            {['email', 'portal', 'phone', 'letter', 'in_person', 'manual', 'provider'].map((k) => <option key={k} value={k}>arrived by {pretty(k)}</option>)}
+            {([['email', 'By Email'], ['portal', 'By Portal'], ['phone', 'By Phone'], ['letter', 'By Letter'], ['in_person', 'In Person'], ['manual', 'Entered By Hand'], ['provider', 'From A Provider']] as const).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
           <button className="ep-btn" style={{ margin: 0 }} disabled={busy || !bd.accountName || bd.sortCode.length !== 6 || bd.accountNumber.length !== 8} onClick={() => { void cmd({ type: 'record_bank_details', payeeKind: bd.payeeKind, payeeRef: bd.payeeRef || null, details: { sortCode: bd.sortCode, accountNumber: bd.accountNumber, accountName: bd.accountName, firmName: bd.firmName || null }, sourceChannel: bd.sourceChannel }); setBd({ ...bd, accountName: '', sortCode: '', accountNumber: '' }); }}>Record Details</button>
         </div>

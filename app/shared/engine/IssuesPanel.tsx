@@ -6,6 +6,7 @@ import { BusyButton, UploadButton } from './BusyButton';
 import { LenderPicker } from './LenderPicker';
 import { AddressAndSend, addressFor } from './AddressAndSend';
 import { uploadCaseFile } from './uploadCaseFile';
+import { SEVERITIES, SEVERITY_CSS, SEVERITY_LABEL, type Severity } from './severity';
 import { fmtDay, pretty, type Api, type CaseDocument, type EngineState, type IssueCatalogue, type IssueRow, type ResolutionField } from './types';
 
 /**
@@ -38,8 +39,8 @@ const CSS = `
 .is-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:11px 14px;border-top:1px solid #f1f5f9;align-items:start}
 .is-row:first-child{border-top:0}
 .is-t{font-size:13.5px;font-weight:700;color:#0f172a;line-height:1.35}
-.is-t .crit{display:inline-block;width:8px;height:8px;border-radius:99px;background:#b91c1c;margin-right:7px;vertical-align:1px}
-.is-s{font-size:12px;color:#64748b;margin-top:3px;display:flex;flex-wrap:wrap;gap:0 6px}
+.is-s{font-size:12px;color:#64748b;margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px}
+.is-s i.sev{font-style:normal}
 .is-s span:not(:last-child)::after{content:'·';margin-left:6px;color:#cbd5e1;font-weight:400}
 .is-s .late{color:#b91c1c;font-weight:700}
 .is-s .soon{color:#b45309;font-weight:700}
@@ -77,12 +78,15 @@ const CSS = `
 .is-dlg label{display:grid;gap:4px;font-size:12px;font-weight:700;color:#475569}
 .is-dlg .ep-input{width:100%;box-sizing:border-box;margin:0}
 .is-dlg textarea.ep-input{resize:vertical;font:inherit;font-size:13px}
-.is-dlg .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.is-dlg .two{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:560px){.is-dlg .two{grid-template-columns:1fr}}
 .is-dlg .f{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
-`;
+` + SEVERITY_CSS;
 
 /** The More menu's actions: each one an inline form (a note, a date, a reason) and one command. */
-type SmallMode = 'note' | 'negotiating' | 'date' | 'ask' | 'release' | 'hold' | 'critical' | 'delete' | 'fatal';
+/** Most severe first. */
+const SEV_RANK: Record<string, number> = { critical: 2, warning: 1, info: 0 };
+type SmallMode = 'note' | 'negotiating' | 'date' | 'ask' | 'release' | 'hold' | 'severity' | 'delete' | 'fatal';
 type FormMode = 'resolve' | 'password' | SmallMode;
 const FORM: Record<SmallMode, { field: string; button: string; done: string; required: boolean }> = {
   note: { field: 'Note', button: 'Add Note', done: 'Added', required: true },
@@ -91,7 +95,7 @@ const FORM: Record<SmallMode, { field: string; button: string; done: string; req
   ask: { field: 'Question For The Other Side', button: 'Raise Enquiry', done: 'Raised', required: true },
   release: { field: 'Why It No Longer Holds The Case', button: 'Release', done: 'Released', required: true },
   hold: { field: 'Why It Holds Exchange', button: 'Hold Exchange', done: 'Holding', required: true },
-  critical: { field: 'Why It Is Critical', button: 'Mark Critical', done: 'Marked', required: true },
+  severity: { field: 'Why', button: 'Change Severity', done: 'Changed', required: true },
   delete: { field: 'Why (Optional)', button: 'Delete Issue', done: 'Deleted', required: false },
   fatal: { field: 'Why The Transaction Cannot Go On', button: 'Abandon The Case', done: 'Abandoned', required: true },
 };
@@ -116,7 +120,8 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   const [formErr, setFormErr] = useState<string | null>(null);
   const [docs, setDocs] = useState<CaseDocument[] | null>(null);
   const [raising, setRaising] = useState(false);
-  const [draft, setDraft] = useState({ kind: 'survey_defect', title: '', detail: '', gate: 'default' as 'default' | 'exchange' | 'completion' | 'none', resolveBy: '' });
+  const [draft, setDraft] = useState({ kind: 'survey_defect', title: '', detail: '', gate: 'default' as 'default' | 'exchange' | 'completion' | 'none', resolveBy: '', severity: 'default' as 'default' | Severity });
+  const [sev, setSev] = useState<Severity>('critical');
   const [newValue, setNewValue] = useState('');
   const [showClosed, setShowClosed] = useState(false);
   const [pw, setPw] = useState('');
@@ -168,7 +173,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   const isContext = (i: IssueRow) => !!byKind[i.kind]?.context || ['seller_delay', 'buyer_delay'].includes(i.kind);
   const all = Object.values(state.issues ?? {}) as IssueRow[];
   // Soonest due first; then newest.
-  const live = all.filter((i) => i.status === 'open' || i.status === 'negotiating').sort((a, b) => (a.resolveBy ?? '9').localeCompare(b.resolveBy ?? '9') || b.raisedAt.localeCompare(a.raisedAt));
+  const live = all.filter((i) => i.status === 'open' || i.status === 'negotiating').sort((a, b) => SEV_RANK[b.severity ?? 'warning'] - SEV_RANK[a.severity ?? 'warning'] || (a.resolveBy ?? '9').localeCompare(b.resolveBy ?? '9') || b.raisedAt.localeCompare(a.raisedAt));
   const open = live.filter((i) => !isContext(i));
   const context = live.filter(isContext);
   const closed = all.filter((i) => i.status === 'resolved' || i.status === 'fatal').sort((a, b) => (b.resolvedAt ?? '').localeCompare(a.resolvedAt ?? ''));
@@ -191,6 +196,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   const openForm = (i: IssueRow, mode: FormMode) => {
     setMenu(null); setFormErr(null); setText(''); setConfirmFatal(false); setPw('');
     if (mode === 'date') setText(i.resolveBy ?? '');
+    if (mode === 'severity') setSev(i.severity === 'critical' ? 'warning' : 'critical');
     if (mode === 'resolve') { setResolution(byKind[i.kind]?.resolutions[0] ?? 'other'); setVals({}); setNote(''); }
     setForm({ id: i.id, mode });
   };
@@ -213,7 +219,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
       : mode === 'ask' ? { type: 'raise_enquiry', subject: t, origin: { issueId: i.id } }
       : mode === 'release' ? { type: 'update_issue', issueId: i.id, status: i.status, gate: 'none', note: t }
       : mode === 'hold' ? { type: 'update_issue', issueId: i.id, status: i.status, gate: 'exchange', note: t }
-      : mode === 'critical' ? { type: 'set_issue_severity', issueId: i.id, severity: 'critical', reason: t }
+      : mode === 'severity' ? { type: 'set_issue_severity', issueId: i.id, severity: sev, reason: t }
       : mode === 'delete' ? { type: 'withdraw_issue', issueId: i.id, reason: t || 'Deleted: not an issue.' }
       : { type: 'mark_issue_fatal', issueId: i.id, reason: t };
     const ok = await run(body);
@@ -265,7 +271,6 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   /** The line under the title: its kind, what it stops, where it stands, and when it is due. */
   const statusLine = (i: IssueRow, ctx: boolean) => {
     const parts: Array<{ text: string; cls?: string }> = [{ text: chip(i) }];
-    if (i.severity === 'critical') parts.push({ text: 'Critical', cls: 'late' });
     if (!ctx && i.gate !== 'none') parts.push({ text: `Stops ${i.gate}`, cls: 'stops' });
     if (i.status === 'negotiating') parts.push({ text: 'In negotiation' });
     if (i.party) parts.push({ text: `Re ${i.party}` });
@@ -274,7 +279,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
       parts.push(d < 0 ? { text: `${-d} day${d === -1 ? '' : 's'} overdue`, cls: 'late' } : d === 0 ? { text: 'Due today', cls: 'soon' } : { text: `Resolve by ${fmtDay(i.resolveBy)}`, cls: d <= 2 ? 'soon' : undefined });
     }
     if (i.enquiryIds?.length) parts.push({ text: `Enquiry ${i.enquiryIds.join(', ')}` });
-    return <div className="is-s">{parts.map((p, n) => <span key={n} className={p.cls}>{p.text}</span>)}</div>;
+    return <div className="is-s">{!ctx && i.severity && <i className={`sev ${i.severity}`} title="Severity">{SEVERITY_LABEL[i.severity]}</i>}{parts.map((p, n) => <span key={n} className={p.cls}>{p.text}</span>)}</div>;
   };
 
   const fieldInput = (f: ResolutionField) => {
@@ -332,9 +337,10 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
 
   const smallForm = (i: IssueRow, mode: SmallMode) => {
     const spec = FORM[mode];
-    const ready = (!spec.required || !!text.trim()) && (mode !== 'fatal' || confirmFatal) && (mode !== 'date' || text !== (i.resolveBy ?? ''));
+    const ready = (!spec.required || !!text.trim()) && (mode !== 'fatal' || confirmFatal) && (mode !== 'date' || text !== (i.resolveBy ?? '')) && (mode !== 'severity' || sev !== i.severity);
     return (
       <div className="is-form">
+        {mode === 'severity' && <label>Severity<select className="ep-input" value={sev} onChange={(e) => setSev(e.target.value as Severity)} style={{ maxWidth: 220 }}>{SEVERITIES.map((x) => <option key={x} value={x}>{SEVERITY_LABEL[x]}{x === i.severity ? ' (Now)' : ''}</option>)}</select></label>}
         <label>{spec.field}{mode === 'date'
           ? <input className="ep-input" type="date" value={text} onChange={(e) => setText(e.target.value)} style={{ maxWidth: 220 }} autoFocus />
           : <textarea className="ep-input" rows={2} value={text} onChange={(e) => setText(e.target.value)} autoFocus />}
@@ -362,7 +368,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
           {!ctx && !exchanged && <button role="menuitem" onClick={() => openForm(i, 'ask')}>Ask The Other Side</button>}
           {!ctx && i.gate !== 'none' && <button role="menuitem" onClick={() => openForm(i, 'release')}>Release The Hold</button>}
           {!ctx && i.gate === 'none' && !exchanged && <button role="menuitem" onClick={() => openForm(i, 'hold')}>Hold Exchange</button>}
-          {!ctx && i.severity !== 'critical' && <button role="menuitem" onClick={() => openForm(i, 'critical')}>Mark Critical</button>}
+          {!ctx && <button role="menuitem" onClick={() => openForm(i, 'severity')}>Change Severity</button>}
           <hr />
           <button role="menuitem" onClick={() => openForm(i, 'delete')}>Delete</button>
           {!ctx && <button role="menuitem" className="bad" onClick={() => openForm(i, 'fatal')}>Abandon The Case</button>}
@@ -379,7 +385,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
     return (
       <div key={i.id} className={`is-row${ctx ? ' is-ctx' : ''}`}>
         <div style={{ minWidth: 0 }}>
-          {!bare && <div className="is-t">{i.severity === 'critical' && <span className="crit" aria-hidden />}{clean(i.title)}</div>}
+          {!bare && <div className="is-t">{clean(i.title)}</div>}
           {!bare && statusLine(i, ctx)}
           {detail && <div className={`is-d${folded ? '' : ' open'}`}>{detail}</div>}
           {detail.length > 180 && <button type="button" className="is-more-d" onClick={() => setUnfold((cur) => { const n = new Set(cur); if (n.has(i.id)) n.delete(i.id); else n.add(i.id); return n; })}>{folded ? 'Read More' : 'Show Less'}</button>}
@@ -422,17 +428,17 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   const canDate = !!state.exchange?.exchangedAt && !state.completion?.confirmedAt;
   const special = withdrawing || draft.kind === PRICE || draft.kind === DATE;
   const specialReady = draft.kind === PRICE ? /\d/.test(newValue) : draft.kind === DATE ? /^\d{4}-\d{2}-\d{2}$/.test(newValue) : true;
-  const pickKind = (kind: string) => { const k = byKind[kind]; setDraft((d) => ({ ...d, kind, gate: 'default', resolveBy: k && !k.context ? inWorkingDays(k.escalateAfterWorkingDays ?? 10) : '' })); };
+  const pickKind = (kind: string) => { const k = byKind[kind]; setDraft((d) => ({ ...d, kind, gate: 'default', severity: 'default', resolveBy: k && !k.context ? inWorkingDays(k.escalateAfterWorkingDays ?? 10) : '' })); };
   const raise = async (): Promise<boolean> => {
     const why = [draft.title.trim(), draft.detail.trim()].filter(Boolean).join(': ');
     const body = draft.kind === PRICE ? { type: 'record_price_change', toPennies: pennies(newValue), reason: why }
       : draft.kind === DATE ? { type: 'change_completion_date', completionDate: newValue, reason: why }
       : withdrawing ? { type: 'mortgage_offer_withdrawn', reason: why }
-      : { type: 'raise_issue', kind: draft.kind, title: draft.title.trim(), detail: draft.detail.trim() || null, gate: sel?.context ? 'none' : draft.gate === 'default' ? null : draft.gate, resolveBy: sel?.context ? null : draft.resolveBy || null };
+      : { type: 'raise_issue', kind: draft.kind, title: draft.title.trim(), detail: draft.detail.trim() || null, severity: draft.severity === 'default' ? null : draft.severity, gate: sel?.context ? 'none' : draft.gate === 'default' ? null : draft.gate, resolveBy: sel?.context ? null : draft.resolveBy || null };
     const ok = await run(body);
     if (ok) {
       onChanged?.();
-      setTimeout(() => { setRaising(false); setNewValue(''); setDraft((d) => ({ kind: special ? 'survey_defect' : d.kind, title: '', detail: '', gate: 'default', resolveBy: '' })); }, 900);
+      setTimeout(() => { setRaising(false); setNewValue(''); setDraft((d) => ({ kind: special ? 'survey_defect' : d.kind, title: '', detail: '', gate: 'default', resolveBy: '', severity: 'default' })); }, 900);
     }
     return ok;
   };
@@ -504,6 +510,12 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
                   </select>
                 </label>
                 <label>Resolve By<input className="ep-input" type="date" min={todayIso()} value={draft.resolveBy} onChange={(e) => setDraft({ ...draft, resolveBy: e.target.value })} /></label>
+                <label>Severity
+                  <select className="ep-input" value={draft.severity} onChange={(e) => setDraft({ ...draft, severity: e.target.value as typeof draft.severity })}>
+                    <option value="default">{sel?.severity ? `${SEVERITY_LABEL[sel.severity]} (Usual)` : 'The Usual'}</option>
+                    {SEVERITIES.map((x) => <option key={x} value={x}>{SEVERITY_LABEL[x]}</option>)}
+                  </select>
+                </label>
               </div>
             )}
             {formErr && <div style={{ fontSize: 12.5, color: '#b91c1c', fontWeight: 600 }}>{formErr}</div>}
