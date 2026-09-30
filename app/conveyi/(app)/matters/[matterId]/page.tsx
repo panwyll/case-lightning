@@ -41,13 +41,14 @@ interface Detail {
 type Model = CaseModel & { profile?: { label: string; side: string }; health?: { band: HealthBand; headline?: string | null }; hud?: CaseHudData; work?: WorkItem[] };
 
 const CSS = `
-.mx-head{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}
+.mx-head{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
 .mx-title{font-size:21px;font-weight:800;margin:0;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
 .mx-back{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;color:#334155;cursor:pointer;flex:none}
 .mx-back:hover{background:#f1f5f9}
 .mx-sub{color:#64748b;font-size:13px;margin:3px 0 0}
 .mx-ctl{display:flex;gap:8px;align-items:center;margin-left:auto}
 .mx-sel{padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;background:#fff;color:#0f172a;font-family:inherit}
+.mx-house-on-dark{display:inline-flex;background:#fff;border-radius:999px;padding:2px}
 .mx-health{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;border-radius:999px;padding:4px 11px 4px 6px}
 .mx-top{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
 .mx-card{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:14px 16px}
@@ -207,7 +208,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
               {view?.matter?.sandbox && <button className="mx-sel" style={{ cursor: 'pointer' }} onClick={() => { if (window.confirm('Retire this sandbox case? It leaves every list; its log stays.')) void api(`/engine/scenarios/${matterId}`, { method: 'DELETE' }).then(() => { window.location.href = '/conveyi/engine/scenarios'; }); }}>Retire Sandbox Case</button>}
               {/* The edge cases: raise an issue on the case, or take it over by hand. */}
               {enrolled && <CaseQuickActions api={api} matterId={matterId} onChanged={() => void eng.load()} />}
-              {band && <span className="mx-health" style={{ background: BAND[band].bg, color: BAND[band].fg }}><House band={band} size={18} />{HEALTH_LABEL[band]}</span>}
+              {band && <span className="mx-health" style={{ background: BAND[band].bg, color: BAND[band].fg }}>{BAND[band].fg === '#fff' ? <span className="mx-house-on-dark"><House band={band} size={18} /></span> : <House band={band} size={18} />}{HEALTH_LABEL[band]}</span>}
               <select className="mx-sel" value={row.assignedTo ?? ''} onChange={(e) => void setOwner(e.target.value || null)} aria-label="Handler">
                 <option value="">Unassigned</option>
                 {team.map((u) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
@@ -222,7 +223,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             </div>
           )}
 
-          <div className="eg-tabs">
+          <div className="eg-tabs" style={{ marginTop: 0 }}>
             <button className={`eg-tab${tab === 'overview' ? ' on' : ''}`} onClick={() => setTab('overview')}>Overview</button>
             <button className={`eg-tab${tab === 'tasks' ? ' on' : ''}`} onClick={() => setTab('tasks')} disabled={!enrolled}>Tasks{pending + openIssues ? ` (${pending + openIssues})` : ''}</button>
             <button className={`eg-tab${tab === 'documents' ? ' on' : ''}`} onClick={() => setTab('documents')} disabled={!enrolled}>Documents{view?.documentCount ? ` (${view.documentCount})` : ''}</button>
