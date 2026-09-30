@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PasswordInput } from './PasswordInput';
-import { BusyButton, UploadButton } from './BusyButton';
+import { BusyButton } from './BusyButton';
+import { FilePick } from './FilePick';
 import { LenderPicker } from './LenderPicker';
 import { AddressAndSend, addressFor } from './AddressAndSend';
 import { uploadCaseFile } from './uploadCaseFile';
@@ -313,21 +314,11 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
       case 'payer': return <label key={f.key}>{label}<select className="ep-input" value={v} onChange={(e) => set(e.target.value)}><option value="">Choose…</option>{PAYERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>;
       case 'confirm': return <label key={f.key} className="chk" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={v === 'yes'} onChange={(e) => set(e.target.checked ? 'yes' : '')} />{f.label}</label>;
       case 'document': return (
-        <label key={f.key} style={{ gridColumn: '1 / -1' }}>{label}
-          <span className="doc">
-            <select className="ep-input" value={v} onChange={(e) => set(e.target.value)}>
-              <option value="">{docs === null ? 'Loading the case files…' : docs.length ? 'Choose a file on the case…' : 'No files on the case yet'}</option>
-              {(docs ?? []).map((d) => <option key={d.id} value={d.id}>{d.fileName ?? d.docType ?? 'File'} · {fmtDay(d.createdAt)}</option>)}
-            </select>
-            <UploadButton label="Upload" multiple={false} className="ep-btn" onFiles={async ([file]) => {
-              try {
-                const r = await uploadCaseFile<{ documentId: string }>(api, state.matterId, file, { role: 'evidence' });
-                setDocs((cur) => [{ id: r.documentId, fileName: file.name, docType: null, webUrl: null, createdAt: new Date().toISOString() }, ...(cur ?? [])]);
-                set(r.documentId);
-                return true;
-              } catch (e: unknown) { setFormErr(e instanceof Error ? e.message : 'The upload failed.'); return false; }
-            }} />
-          </span>
+        <label key={f.key} style={{ gridColumn: '1 / -1' }} onClick={(e) => e.preventDefault()}>{label}
+          <FilePick docs={docs} value={v} onChange={set} since={form ? (state.issues as Record<string, IssueRow>)[form.id]?.raisedAt ?? null : null} upload={async (file) => {
+            const r = await uploadCaseFile<{ documentId: string }>(api, state.matterId, file, { role: 'evidence' });
+            return { id: r.documentId, fileName: file.name, docType: null, webUrl: null, createdAt: new Date().toISOString() };
+          }} />
         </label>
       );
       default: return <label key={f.key}>{label}<input className="ep-input" value={v} onChange={(e) => set(e.target.value)} /></label>;

@@ -1,4 +1,5 @@
 'use client';
+import { FilePick } from './FilePick';
 import { Spin } from './BusyButton';
 import { useMemo, useState } from 'react';
 import type { CaseDocument, CompletionContract, TaskContextView } from './types';
@@ -26,16 +27,6 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
   const [party, setParty] = useState({ who: '', channel: 'email', at: new Date().toISOString().slice(0, 10) });
   const [note, setNote] = useState('');
   const [added, setAdded] = useState<CaseDocument[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [uploadErr, setUploadErr] = useState<string | null>(null);
-  const onFile = async (f: File | undefined) => {
-    if (!f || !upload) return;
-    setUploading(true); setUploadErr(null);
-    try { const d = await upload(f); setAdded((a) => [d, ...a.filter((x) => x.id !== d.id)]); setDocumentId(d.id); setRead(true); }
-    catch (e: unknown) { setUploadErr(e instanceof Error ? e.message : 'Could not upload.'); }
-    finally { setUploading(false); }
-  };
-
   const roles = (contract.documentRoles ?? []).map((r) => r.toLowerCase());
   const fits = (d: CaseDocument) => !roles.length || roles.includes((d.docType ?? '').toLowerCase());
   const sorted = useMemo(() => [...added, ...(docs ?? []).filter((d) => !added.some((a) => a.id === d.id))].sort((a, b) => Number(fits(b)) - Number(fits(a)) || b.createdAt.localeCompare(a.createdAt)), [docs, added]);
@@ -81,21 +72,11 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
       {context && <><TaskContextFacts ctx={context} /><TaskContextBody ctx={context} headline={false} /><div className="cs-sep" /></>}
       {(contract.documentRequired || contract.documentLabel) && row(contract.documentLabel ?? 'Document', (
         <div>
-          <select className="ep-input" value={documentId} onChange={(e) => { setDocumentId(e.target.value); setRead(false); }} style={{ maxWidth: 420 }} title={roles.length ? `Filed as ${roles.join(', ')}` : 'Any document on the case'}>
-            <option value="">{docs === null ? 'Loading…' : contract.documentRequired ? 'Choose…' : 'None'}</option>
-            {sorted.map((d) => <option key={d.id} value={d.id} disabled={!fits(d)}>{d.fileName ?? d.id}{d.docType ? ` · ${d.docType}` : ''}{fits(d) ? '' : ' (wrong kind)'}</option>)}
-          </select>
-          {upload && (
-            <label className="cs-up">
-              <input type="file" accept="application/pdf,image/*" hidden onChange={(e) => void onFile(e.target.files?.[0])} disabled={uploading} />
-              <span className="ep-btn">{uploading ? <Spin>Uploading…</Spin> : 'Upload a Scan'}</span>
-              {uploadErr && <span className="cs-err">{uploadErr}</span>}
-            </label>
-          )}
+          <FilePick docs={roles.length && docs ? docs.filter(fits) : docs} value={documentId} onChange={(id) => { setDocumentId(id); setRead(!!added.find((a) => a.id === id)); }} fits={roles.length ? fits : undefined} upload={upload ? async (f) => { const d = await upload(f); setAdded((a) => [d, ...a.filter((x) => x.id !== d.id)]); return d; } : undefined} />
           {chosen && (
             <label className="cs-read">
               <input type="checkbox" checked={read} onChange={(e) => setRead(e.target.checked)} />
-              <a href={chosen.webUrl ?? `/api/v1/documents/${chosen.id}/raw`} target="_blank" rel="noreferrer">Open</a> and read before recording
+              I have opened and read it
             </label>
           )}
         </div>
