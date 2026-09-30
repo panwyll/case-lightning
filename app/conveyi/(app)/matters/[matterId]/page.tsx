@@ -198,7 +198,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 {view?.state.manualHandling.required && <span className="eg-chip bad">manual handling</span>}
                 {view?.matter?.sandbox && <span className="eg-chip" style={{ background: '#f3efff', color: '#5A27E0', border: '1px solid #c7b8f5' }} title={view.matter.sandboxStep ? `Scenario ${view.matter.sandboxScenario ?? ''} · ${view.matter.sandboxStep}` : undefined}>Sandbox</span>}
               </h1>
-              <p className="mx-sub">{[row.matterRef, model?.profile?.label, clients, view?.lifecycle?.label].filter(Boolean).join(' · ')}</p>
               {stepMsg && <p className="mx-sub" style={{ color: '#5A27E0', fontWeight: 600 }}>{stepMsg}</p>}
             </div>
             <div className="mx-ctl">
@@ -250,6 +249,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             <div className="mx-card">
               <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '-4px 0 4px' }}><CaseDetailsEdit matterId={matterId} api={api} matter={m} side={side} onSaved={() => { setDetailsVer((v) => v + 1); refresh(); }} /></div>
               <div className="mx-kv">
+                <Field k="Reference" v={row.matterRef ?? ''} />
                 <Field k="Property" v={row.propertyAddress ?? String(m.property_address ?? '')} />
                 <Field k={side === 'seller' ? 'Seller' : side === 'buyer' ? 'Buyer' : 'Client'} v={clients} />
               </div>

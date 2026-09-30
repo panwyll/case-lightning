@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { AlertTriangle, Hand } from '@/app/shared/icons';
 import { BusyButton } from './BusyButton';
 import { IssuesPanel } from './IssuesPanel';
@@ -16,6 +15,7 @@ const CSS = `
 .cqa-b{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid #e2e8f0;background:#fff;border-radius:8px;color:#475569;cursor:pointer;padding:0}
 .cqa-b:hover{border-color:#5A27E0;color:#5A27E0}
 .cqa-b.on{border-color:#f59e0b;color:#b45309;background:#fffbeb}
+.cqa-tip{position:absolute;top:40px;z-index:60;background:#0f172a;color:#fff;font-size:12px;font-weight:600;line-height:1.3;padding:6px 9px;border-radius:7px;white-space:nowrap;pointer-events:none;box-shadow:0 8px 24px rgba(15,23,42,.25)}
 .cqa-pop{position:absolute;top:36px;right:0;z-index:50;width:320px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.14);padding:12px;display:grid;gap:8px;text-align:left}
 .cqa-pop b{font-size:13px;color:#0f172a}
 .cqa-pop textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:inherit;font-size:13px;resize:vertical}
@@ -42,9 +42,10 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
   }, [open]);
   const cmd = async (body: Record<string, unknown>) => { await api(`/matters/${matterId}/engine`, { method: 'POST', body: JSON.stringify(body) }); await load(); onChanged?.(); return true; };
   const manual = !!state?.manualHandling?.required;
-  // What each button does, shown on hover or focus (the tooltip style of the rest of the case).
-  const [tip, setTip] = useState<{ which: 'issue' | 'manual'; x: number; y: number } | null>(null);
-  const showTip = (which: 'issue' | 'manual') => (e: { currentTarget: HTMLElement }) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ which, x: Math.max(8, window.innerWidth - r.right), y: r.bottom + 6 }); };
+  // The button's name, shown on hover or focus.
+  const [tip, setTip] = useState<{ which: 'issue' | 'manual' } | null>(null);
+  // Placed in the icons' own box, right under the icon it names: nothing about the page can move it.
+  const showTip = (which: 'issue' | 'manual') => () => setTip({ which });
   const TIPS = { issue: 'Raise Issue', manual: manual ? 'Resume Automation' : 'Take Over Manually' };
   // The warning before taking a case over, until the person says not to show it again (this browser only).
   const WARN_KEY = 'conveyi:manual-warning-hidden';
@@ -61,7 +62,7 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
       <style>{WORK_CSS + CSS}</style>
       {!done && <button type="button" className="cqa-b" aria-label="Raise Issue" {...hover('issue')} onClick={() => { setTip(null); setErr(null); setOpen(open === 'issue' ? null : 'issue'); }}><AlertTriangle size={16} /></button>}
       {!done && <button type="button" className={`cqa-b${manual ? ' on' : ''}`} aria-label={manual ? 'Resume Automation' : 'Take Over Manually'} {...hover('manual')} onClick={() => { setTip(null); setErr(null); setReason(''); try { setWarnHidden(localStorage.getItem(WARN_KEY) === '1'); } catch { /* storage blocked */ } setOpen(open === 'manual' ? null : 'manual'); }}><Hand size={16} /></button>}
-      {tip && !open && createPortal(<div className="ep-tip" role="tooltip" style={{ left: tip.x, top: tip.y }}>{TIPS[tip.which]}</div>, document.body)}
+      {tip && !open && <span className="cqa-tip" role="tooltip" style={tip.which === 'issue' ? { right: 38 } : { right: 0 }}>{TIPS[tip.which]}</span>}
       {open === 'issue' && state && (
         <IssuesPanel api={api} state={state} busy={false} raiseOnly onCancel={() => setOpen(null)} onChanged={() => { void load(); onChanged?.(); }} cmd={async (body) => { try { return await cmd(body); } catch (e: unknown) { throw e instanceof Error ? e : new Error('It did not save.'); } }} />
       )}
