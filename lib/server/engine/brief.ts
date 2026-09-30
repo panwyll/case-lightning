@@ -168,7 +168,7 @@ export function renderForDrafting(b: CaseBrief): string {
   const L: string[] = [];
   L.push(`CASE STATE (from the conveyancing engine — these are facts, use them instead of guessing):`);
   L.push(`- ${b.transactionLabel}, ${b.lifecycleLabel.toLowerCase()}, day ${b.dayOfCase}.`);
-  L.push(`- Workstreams: ${b.workstreams.filter((w) => w.status !== 'not_applicable').map((w) => `${w.label} ${w.status.replace(/_/g, ' ')}`).join('; ')}.`);
+  L.push(`- Workstreams: ${b.workstreams.filter((w) => w.status !== 'not_applicable').map((w) => `${w.label} ${w.status === 'under_review' ? 'with us to check' : w.status.replace(/_/g, ' ')}`).join('; ')}.`);
   if (b.waiting.length) {
     L.push(`- Outstanding with others:`);
     for (const w of b.waiting) {
@@ -181,9 +181,9 @@ export function renderForDrafting(b: CaseBrief): string {
   }
   if (b.issues.length) {
     L.push(`- Open issues:`);
-    for (const i of b.issues) L.push(`    · ${i.id} ${i.label}: ${i.title} (${i.gate === 'none' ? 'holds nothing' : `holds ${i.gate}`}, ${i.severity}).${i.clientToldAt ? ` ALREADY TOLD THE CLIENT on ${i.clientToldAt.slice(0, 16).replace('T', ' ')}: do not raise it again unless their email asks about it.` : ''}`);
+    for (const i of b.issues) L.push(`    · ${i.id} ${i.label}: ${i.title} (${i.gate === 'none' ? 'holds nothing' : `holds ${i.gate}`}, ${i.severity}).${i.clientToldAt ? ` ALREADY TOLD THE CLIENT on ${i.clientToldAt.slice(0, 16).replace('T', ' ')}: do not explain it again as news; if they ask for an update or about it, one line that it is still open and what we are doing.` : ''}`);
   }
-  if (b.decisionsPending.length) L.push(`- Waiting on a decision from us: ${b.decisionsPending.map((d) => d.kind.replace(/_/g, ' ')).join(', ')}.`);
+  if (b.decisionsPending.length) L.push(`- Internal (never tell the client) — waiting on a decision from us: ${b.decisionsPending.map((d) => d.kind.replace(/_/g, ' ')).join(', ')}.`);
   const m = b.milestones;
   const dates = [m.exchangedAt && `exchanged ${m.exchangedAt.slice(0, 10)}`, m.completionDate && `completion ${m.completionDate}`, !m.exchangedAt && m.targetExchangeDate && `target exchange ${m.targetExchangeDate}`, m.reportOnTitleSentAt && `report on title sent ${m.reportOnTitleSentAt.slice(0, 10)}`].filter(Boolean);
   if (dates.length) L.push(`- Dates: ${dates.join('; ')}.`);

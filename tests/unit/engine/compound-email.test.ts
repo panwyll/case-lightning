@@ -206,3 +206,21 @@ test('a drafted reply that promises a resend without the file attached is replac
   assert.doesNotMatch(reply.body, /resend/i);
   assert.match(reply.body, /as soon as we can/);
 });
+
+test('a status reply knows what the client told us that is not yet recorded, and a reported risk holds exchange', async () => {
+  const { replyFacts } = await import('../../../lib/server/engine/reply');
+  const h = await withWaits();
+  h.ports.noteExtractor = { name: 'reader', extract: async ({ text }) => /rescinded/.test(text)
+    ? [{ kind: 'issue', summary: 'Client reports the lender rescinded the offer', quote: 'my lender has rescinded my mortgage offer', confidence: 0.9, command: { type: 'raise_issue', kind: 'mortgage_at_risk', title: 'Mortgage offer rescinded', detail: null, gate: 'none' } }]
+    : [{ kind: 'issue', summary: 'Seller threatening to pull out', quote: 'the seller is pulling out', confidence: 0.9, command: { type: 'raise_issue', kind: 'transaction_at_risk', title: 'Seller threatening to pull out', detail: null, gate: 'none' } }] };
+  const r1 = await h.svc.recordNote(TENANT, MATTER, { text: 'Hi, my lender has rescinded my mortgage offer', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL'), from: CLIENT, surface: true, subject: 'Mortgage' });
+  // Not yet approved: the reply still knows.
+  assert.match(replyFacts(r1.state, new Date()), /REPORTED BY THE CLIENT[\s\S]*rescinded my mortgage offer/);
+
+  const r2 = await h.svc.recordNote(TENANT, MATTER, { text: 'Hi, the seller is pulling out', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL'), from: CLIENT, surface: true, subject: 'Seller' });
+  const d = Object.values(r2.state.decisions).filter((x) => x.kind === 'note_actions' && x.status === 'pending').at(-1)!;
+  await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve');
+  const risk = Object.values((await h.svc.getState(TENANT, MATTER)).issues).find((i) => i.kind === 'transaction_at_risk')!;
+  assert.equal(risk.gate, 'exchange', 'the reader said it holds nothing; the kind says it holds exchange');
+});

@@ -80,7 +80,7 @@ import { EXPECTATION_KEYS } from './types';
 import { expectationDue, FORMS_ISSUE_PREFIX } from './machine';
 const ARRIVAL_ISSUES = new Set<string>(['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding']);
 import type { IssueKind } from './issues';
-import { issueSteps } from './issues';
+import { issueSteps, ISSUE_KIND_SPEC } from './issues';
 
 export interface RunResult {
   events: EngineEvent[];
@@ -1813,7 +1813,8 @@ export class EngineService {
                   }
                 }
               } else {
-                await this.run(tenantId, matterId, { type: 'raise_issue', actor: e.actor, kind: c.kind, title: c.title, detail: c.detail, gate: c.gate, documentId: note.documentId, ...(c.severity ? { severity: c.severity } : {}) });
+                // A note's reading may not make a problem hold less than its kind does ("the seller is pulling out" holds exchange, whatever the reader said).
+                await this.run(tenantId, matterId, { type: 'raise_issue', actor: e.actor, kind: c.kind, title: c.title, detail: c.detail, gate: c.gate === 'none' && ISSUE_KIND_SPEC[c.kind]?.gate !== 'none' ? null : c.gate, documentId: note.documentId, ...(c.severity ? { severity: c.severity } : {}) });
               }
             } catch (err) {
               const reason = err instanceof Error ? err.message : String(err);

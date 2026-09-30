@@ -26,6 +26,16 @@ export function replyFacts(s: MatterState, now: Date): string {
   const reported = s.waits.filter((w) => !w.closedAt && w.reported).map((w) => `${WAIT_LABEL[w.key]}: they said "${w.reported!.claim}" (${w.reported!.at.slice(0, 10)})`);
   if (reported.length) T.push(`- Reported by the client as done or on its way (not yet arrived): ${reported.join('; ')}.`);
   if (T.length) L.push(['TIMING (facts; never promise a date these do not support):', ...T].join('\n'));
+  // What the client has told us that nobody has recorded yet: a reply must not contradict it (a withdrawn offer is not "under review").
+  const openKinds = new Set(Object.values(s.issues).filter((i) => i.status === 'open' || i.status === 'negotiating').map((i) => i.kind));
+  const seen = new Set<string>();
+  const told = Object.values(s.notes).filter((n) => n.status === 'proposed' && n.from?.relation === 'client').flatMap((n) => n.actions
+    .filter((a) => a.command && (a.command.type === 'raise_issue' || a.command.type === 'record_mortgage_withdrawn'))
+    // Already on the file as an issue of that kind, or said twice: once is enough.
+    .filter((a) => !(a.command!.type === 'raise_issue' && openKinds.has(a.command!.kind)))
+    .filter((a) => { const k = a.quote.toLowerCase().replace(/[^a-z]+/g, ' ').trim(); if (seen.has(k)) return false; seen.add(k); return true; })
+    .map((a) => `- "${a.quote.slice(0, 160)}" (${n.at.slice(0, 10)}): ${a.summary}`));
+  if (told.length) L.push(['REPORTED BY THE CLIENT, NOT YET CONFIRMED ON THE FILE (take it as what they told us; never contradict it, never say the opposite is the case):', ...told].join('\n'));
   return L.join('\n');
 }
 
