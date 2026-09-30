@@ -125,3 +125,18 @@ test('a failed send the system made itself can be tried again from its issue', a
   s = await h.svc.getState(T, M);
   assert.equal(s.issues[issue!.id].status, 'resolved');
 });
+
+test('a failed send finished another way (posted) is recorded as sent: the case moves on as if we had sent it', async () => {
+  const { harness: mk, TENANT: T, MATTER: M, USER: U } = await import('./helpers');
+  const h = mk();
+  await h.svc.run(T, M, { type: 'enrol', actor: U, hasLender: false, requiredSearches: [] });
+  h.ports.clientComms.sendStatusUpdate = async () => { throw new Error('Graph account not connected for this user'); };
+  await h.svc.run(T, M, { type: 'raise_enquiry', actor: U, subject: 'Please confirm the boundary.', origin: { purpose: 'general' } });
+  let s = await h.svc.getState(T, M);
+  const issue = Object.values(s.issues).find((i) => i.kind === 'send_failed' && i.status === 'open')!;
+  const before = s.clientUpdatesSent;
+  await h.svc.run(T, M, { type: 'resolve_issue', actor: U, issueId: issue.id, resolution: 'sent_another_way', details: { how: 'post' }, note: null } as never);
+  s = await h.svc.getState(T, M);
+  assert.equal(s.issues[issue.id].status, 'resolved');
+  assert.equal(s.clientUpdatesSent, before + 1, 'the client update counts as sent (by post)');
+});

@@ -163,6 +163,7 @@ export const ISSUE_RESOLUTIONS = [
   'received',
   'offer_extended',
   'expiry_recorded',
+  'sent_another_way',
   'condition_satisfied',
   'new_lender',
   'revaluation_upheld',
@@ -293,7 +294,7 @@ const KIND_SPECS_BASE: Array<Omit<IssueKindSpec, 'severity' | 'workstreams' | 't
   { kind: 'cdd_refresh', group: 'funds_aml', label: 'CDD refresh due', arisesFrom: 'a client identified more than a year ago on a matter still open (LSAG 6.21 ongoing monitoring)', gate: 'none', stages: ['instruction', ...PRE, ...POST_EX], resolutions: ['evidence_provided', 'accepted_as_is', 'other'], note: 'Re-check the electronic verification, confirm the address, refresh sanctions and PEP screening; record it.' },
   { kind: 'building_safety', group: 'leasehold', label: 'Building Safety Act', arisesFrom: 'the management pack: a relevant building (11 m / 5 storeys) without a leaseholder deed of certificate or landlord\'s certificate, or with remediation outstanding', gate: 'exchange', stages: ['pre_contract', 'contract_review', 'pre_exchange'], resolutions: ['evidence_provided', 'lender_confirmed', 'accepted_as_is', 'other'], note: 'The lender will need the certificates (and possibly an EWS1) before it lends; the buyer inherits the leaseholder protections only if the certificate chain is intact.' },
   { kind: 'file_locked', group: 'other', label: 'Password-protected file', arisesFrom: 'a PDF that arrived password-protected (bank statements, ID scans, reports); the password usually comes separately, by email, text or phone', gate: 'none', stages: ['instruction', ...PRE, ...POST_EX], resolutions: ['evidence_provided', 'other'], note: 'Nothing can be read from it until it is unlocked; the unlocked copy is kept, the password is not.' },
-  { kind: 'send_failed', group: 'other', label: 'Message could not be sent', arisesFrom: 'an email, WhatsApp message, form or order the engine or a person tried to send and the mailbox or provider refused (an expired Microsoft 365 connection, no address on the case, a provider outage)', gate: 'none', stages: ['instruction', ...PRE, ...POST_EX], resolutions: ['evidence_provided', 'accepted_as_is', 'other'], note: 'Never silent: the failure is a task with the fix and the message to send by hand.' },
+  { kind: 'send_failed', group: 'other', label: 'Message could not be sent', arisesFrom: 'an email, WhatsApp message, form or order the engine or a person tried to send and the mailbox or provider refused (an expired Microsoft 365 connection, no address on the case, a provider outage)', gate: 'none', stages: ['instruction', ...PRE, ...POST_EX], resolutions: ['sent_another_way', 'evidence_provided', 'accepted_as_is', 'other'], note: 'Never silent: the failure is a task with the fix and the message to send by hand.' },
   { kind: 'other', group: 'other', label: 'Other', arisesFrom: 'anything else the handler needs the matter to wait for', gate: 'exchange', stages: ['instruction', ...PRE, ...POST_EX], resolutions: [...ISSUE_RESOLUTIONS], note: '' },
 ];
 
@@ -393,6 +394,7 @@ export const RESOLUTION_LABEL: Record<IssueResolution, string> = {
   consent_obtained: 'consent obtained',
   specialist_report_clear: 'specialist report satisfactory',
   evidence_provided: 'evidence / documents provided',
+  sent_another_way: 'sent another way (post, by hand or our own mailbox)',
   deed_or_declaration: 'deed or statutory declaration obtained',
   deed_of_variation: 'deed of variation completed',
   lease_extended: 'lease extended (or extension assigned)',
@@ -452,6 +454,7 @@ export const RESOLUTION_TITLE: Record<IssueResolution, string> = {
   consent_obtained: 'Consent Obtained',
   specialist_report_clear: 'Specialist Report Clear',
   evidence_provided: 'Evidence Provided',
+  sent_another_way: 'Sent Another Way',
   deed_or_declaration: 'Deed Or Declaration',
   deed_of_variation: 'Deed Of Variation',
   lease_extended: 'Lease Extended',
@@ -482,7 +485,7 @@ export const RESOLUTION_TITLE: Record<IssueResolution, string> = {
  * the issue's cost and the price; `paidBy` is who paid; everything else is kept on the event.
  * A `document` is a file on the case (picked, or uploaded there and then).
  */
-export type ResolutionFieldType = 'money' | 'date' | 'text' | 'lender' | 'document' | 'confirm' | 'payer';
+export type ResolutionFieldType = 'money' | 'date' | 'text' | 'lender' | 'document' | 'confirm' | 'payer' | 'channel';
 export interface ResolutionField { key: string; label: string; type: ResolutionFieldType; required: boolean }
 const f = (key: string, label: string, type: ResolutionFieldType, required = true): ResolutionField => ({ key, label, type, required });
 const PAYER = f('paidBy', 'Paid By', 'payer');
@@ -505,6 +508,7 @@ export const RESOLUTION_FIELDS: Record<IssueResolution, ResolutionField[]> = {
   received: [f('documentId', 'What Arrived', 'document', false)],
   offer_extended: [f('newExpiry', 'New Expiry', 'date')],
   expiry_recorded: [f('newExpiry', 'Expiry Date', 'date')],
+  sent_another_way: [f('how', 'How It Went', 'channel'), f('documentId', 'Copy Of What Was Sent', 'document', false)],
   condition_satisfied: [f('documentId', 'Evidence', 'document', false)],
   new_lender: [f('lender', 'New Lender', 'lender')],
   revaluation_upheld: [f('valuation', 'Valuation', 'money')],
@@ -521,7 +525,7 @@ export const RESOLUTION_FIELDS: Record<IssueResolution, ResolutionField[]> = {
   other: [],
 };
 /** Kinds closed by their own action (Try Again, the password), not by the resolve form. */
-export const FORMLESS_KINDS: ReadonlySet<IssueKind> = new Set(['send_failed', 'file_locked']);
+export const FORMLESS_KINDS: ReadonlySet<IssueKind> = new Set(['file_locked']);
 /** Outcomes whose note is required (the only record of what happened). */
 export const NOTE_REQUIRED: ReadonlySet<IssueResolution> = new Set(['other', 'accepted_as_is']);
 /** What recording the outcome does to the rest of the case, in a few words. */
@@ -532,6 +536,7 @@ export const RESOLUTION_EFFECT: Partial<Record<IssueResolution, string>> = {
   new_lender: 'Sets the current offer aside',
   offer_extended: 'Moves the offer expiry',
   expiry_recorded: 'Sets the offer expiry',
+  sent_another_way: 'Records it as sent, so the case moves on as if we had sent it',
   dates_replanned: 'Moves the target dates',
 };
 /** The working days an issue of this kind is given to be sorted, when nobody sets a date. */

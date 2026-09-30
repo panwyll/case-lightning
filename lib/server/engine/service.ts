@@ -39,7 +39,7 @@ import { deferral, outsideDeferral } from './defer';
 const foldOnto = (state: MatterState, events: EngineEvent[]): MatterState => events.reduce((s, e) => applyEvent(s, e), state);
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type NoteMessage, type MessageParty, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type NoteMessage, type MessageParty, type ManualChannel, MANUAL_CHANNELS, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -1501,6 +1501,12 @@ export class EngineService {
           await this.surveyRecommendations(tenantId, matterId, e.sourceDocumentId ?? e.id, (e.payload as { facts: SurveyFacts }).facts, subflows, { replace: false, triggeredByEventId: e.id });
         }
         // Something said in an email or a note was confirmed by a person: the system now does what the issue's label promised.
+        // An unsuccessful send finished by hand (posted, handed over, sent from their own mailbox): recorded as sent, so the case moves on.
+        if (e.type === 'issue_resolved' && (e.payload as { resolution?: string }).resolution === 'sent_another_way') {
+          const p = e.payload as { issueId: string; details?: Record<string, unknown> | null };
+          const i = (await this.getState(tenantId, matterId)).issues[p.issueId];
+          if (i?.kind === 'send_failed') await this.recordSentAnotherWay(tenantId, matterId, i.detail ?? '', String(p.details?.how ?? 'other'), e.actor).catch((err) => this.ports.log('the send done by hand could not be recorded', err));
+        }
         // Raised from an email task that wrote to the same party: that message carried the follow-up (recipients.ts), so the automatic one does not also go.
         const covered = e.type === 'issue_raised' && !!e.sourceDocumentId && Object.values((await this.getState(tenantId, matterId)).notes).some((n) => n.documentId === e.sourceDocumentId && (n.messagesSentTo ?? []).includes(FOLLOW_UP_PARTY[(e.payload as { kind: string }).kind] as MessageParty));
         if (e.type === 'issue_raised' && !covered) {
@@ -1872,9 +1878,42 @@ export class EngineService {
     const result = await this.run(tenantId, matterId, { type: 'record_action_retried', actor: userId, proposalEventId, action: pr.action });
     const fresh = await this.getState(tenantId, matterId);
     for (const i of Object.values(fresh.issues).filter((x) => x.kind === 'send_failed' && x.status === 'open' && (x.detail ?? '').includes(`[proposal:${proposalEventId}]`))) {
-      await this.run(tenantId, matterId, { type: 'resolve_issue', actor: userId, issueId: i.id, resolution: 'evidence_provided', note: 'Sent on retry.' }).catch(() => {});
+      await this.run(tenantId, matterId, { type: 'resolve_issue', actor: userId, issueId: i.id, resolution: 'other', note: 'Sent on retry.' }).catch(() => {});
     }
     return result;
+  }
+
+  /**
+   * A send that failed, done another way by a person (Sent Another Way on its task): the same record the
+   * send would have made, with how it went, so everything that hangs off it happens (the signing wait opens,
+   * the chase counts, the request is on file). What was being sent is read from the task (a proposal, or the
+   * packed send). Anything with no record of its own (a message to a party) needs nothing more.
+   */
+  private async recordSentAnotherWay(tenantId: string, matterId: string, issueDetail: string, how: string, actor: string): Promise<void> {
+    const s = await this.getState(tenantId, matterId);
+    const channel = (MANUAL_CHANNELS as readonly string[]).includes(how) ? (how as ManualChannel) : 'other';
+    let action: string | null = null;
+    let detail: Record<string, unknown> = {};
+    const proposalId = issueDetail.match(/\[proposal:([0-9a-f-]{36})\]/)?.[1];
+    const packed = issueDetail.match(/\[retry:([A-Za-z0-9_-]+)\]/)?.[1];
+    if (proposalId && s.proposals[proposalId]) { action = s.proposals[proposalId].action; detail = (s.proposals[proposalId].detail ?? {}) as Record<string, unknown>; }
+    else if (packed) { const x = JSON.parse(Buffer.from(packed, 'base64url').toString('utf8')) as { action: string; detail: Record<string, unknown> }; action = x.action; detail = x.detail; }
+    if (!action) return;
+    const kind = typeof detail.kind === 'string' ? detail.kind : null;
+    if (action === 'client_update' && kind === 'signing_pack') {
+      const docs = ((detail.documents as SignedDocument[] | undefined) ?? deedsToSign(s)).filter((d) => !deedSigned(s, d));
+      if (docs.length) await this.run(tenantId, matterId, { type: 'record_signing_pack_sent', documents: docs, methods: Object.fromEntries(docs.map((d) => [d, 'wet'])), attached: [], channel, messageId: null });
+    } else if (action === 'client_update' && kind === 'id_check_request') {
+      await this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: `manual (${channel.replace(/_/g, ' ')})` });
+    } else if (action === 'client_update') {
+      const template = typeof detail.template === 'string' ? detail.template : kind ?? 'client_update';
+      await this.run(tenantId, matterId, { type: 'record_client_update', update: { template, recipientRole: 'client', channel, messageId: null, triggeredByEventId: typeof detail.triggeredByEventId === 'string' ? detail.triggeredByEventId : null } });
+    } else if (action === 'chase' && typeof detail.waitKey === 'string') {
+      await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: detail.waitKey as WaitKey, subject: String(detail.subject ?? ''), recipientRole: detail.recipientRole as never, template: String(detail.template ?? 'chase'), channel, messageId: null } });
+    } else if (action === 'acknowledgement' && typeof detail.forEventId === 'string') {
+      await this.run(tenantId, matterId, { type: 'record_acknowledgement', ack: { forEventId: detail.forEventId, forEventType: detail.forEventType as never, recipientRole: detail.recipientRole as never, what: String(detail.what ?? ''), channel, messageId: null } });
+    }
+    if (proposalId && s.proposals[proposalId]?.status === 'failed') await this.run(tenantId, matterId, { type: 'record_action_retried', actor, proposalEventId: proposalId, action: s.proposals[proposalId].action }).catch(() => {});
   }
 
   /** Try a failed send again from its task, whether it came from an approved proposal or from the system acting itself. */
@@ -1892,7 +1931,7 @@ export class EngineService {
     } catch (err) {
       throw Object.assign(new Error(explainSendError(err).reason), { status: 502 });
     }
-    return this.run(tenantId, matterId, { type: 'resolve_issue', actor: userId, issueId, resolution: 'evidence_provided', note: 'Sent on retry.' });
+    return this.run(tenantId, matterId, { type: 'resolve_issue', actor: userId, issueId, resolution: 'other', note: 'Sent on retry.' });
   }
 
   /** Send the client the proof-of-funds form again: the same link, the same round. For "they never got it". */

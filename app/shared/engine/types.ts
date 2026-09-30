@@ -196,7 +196,7 @@ export interface IssueRow {
   details?: Record<string, string | number | boolean | null> | null;
   evidenceDocumentId?: string | null;
 }
-export interface ResolutionField { key: string; label: string; type: 'money' | 'date' | 'text' | 'lender' | 'document' | 'confirm' | 'payer'; required: boolean }
+export interface ResolutionField { key: string; label: string; type: 'money' | 'date' | 'text' | 'lender' | 'document' | 'confirm' | 'payer' | 'channel'; required: boolean }
 
 /** The issue catalogue as /engine/spec publishes it (kinds, groups, resolutions). */
 export interface IssueCatalogue {

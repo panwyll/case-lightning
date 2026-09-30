@@ -810,12 +810,16 @@ export const maskAccount = (d: BankDetails): string => `${d.sortCode.replace(/(\
 
 // ───────────────────────────── Payloads ─────────────────────────────
 
+/** A send a person made themselves when ours failed (Sent Another Way). */
+export const MANUAL_CHANNELS = ['post', 'by_hand', 'own_email', 'other'] as const;
+export type ManualChannel = (typeof MANUAL_CHANNELS)[number];
+
 export interface ChaseSpec {
   waitKey: WaitKey;
   subject: string;
   recipientRole: 'seller_solicitor' | 'search_provider' | 'lender' | 'client' | 'id_provider' | 'hmlr';
   template: string;
-  channel: 'email' | 'whatsapp' | 'portal' | 'mock';
+  channel: 'email' | 'whatsapp' | 'portal' | 'mock' | ManualChannel;
   messageId?: string | null;
   /** Stamped by the machine on chases to the counterparty solicitor. */
   counterpartyType?: CounterpartyType | null;
@@ -835,7 +839,7 @@ export interface AcknowledgementSpec {
   recipientRole: 'seller_solicitor' | 'client';
   /** What we received, in the recipient's words: "your replies to enquiries". */
   what: string;
-  channel: 'email' | 'whatsapp' | 'portal' | 'mock';
+  channel: 'email' | 'whatsapp' | 'portal' | 'mock' | ManualChannel;
   messageId?: string | null;
 }
 
@@ -843,7 +847,7 @@ export interface ClientUpdateSpec {
   template: string;
   /** Who heard: the client unless said otherwise (the agent hears that we chased, too). */
   recipientRole?: 'client' | 'estate_agent' | 'lender';
-  channel: 'email' | 'whatsapp' | 'mock';
+  channel: 'email' | 'whatsapp' | 'mock' | ManualChannel;
   messageId?: string | null;
   triggeredByEventId?: string | null;
   /** The waits this update told the client about (`key:subject`), so the next update does not repeat them for a few days. */

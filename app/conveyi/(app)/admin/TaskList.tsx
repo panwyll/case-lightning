@@ -314,8 +314,8 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
                       {i.needsAddress
                         ? <AddressAndSend api={api} matterId={i.matterId} issueId={i.ref.id} need={i.needsAddress} buttonClass="tl-btn go" inputClass="tl-in" onError={(text) => setQuickErr({ id: i.ref.id, text })} onDone={() => { markDone(i.ref.id); void load(); window.dispatchEvent(new Event('conveyi:counts')); }} />
                         : i.kind === 'issue:send_failed:retry' && <BusyButton className="tl-btn go" busyLabel="Sending…" doneLabel="Sent" onClick={() => retry(i.matterId, i.ref.id)}>Try Again</BusyButton>}
-                      {(isIssue && i.kind === 'issue') || isDeadline
-                        ? <button type="button" className={`tl-btn${isOpen ? ' on' : isIssue ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isIssue ? 'Resolve' : 'Review'} onClick={() => { setOpen(isOpen ? null : key); if (isOpen) void load(); }}>{isOpen ? null : isIssue ? 'Resolve ' : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
+                      {(isIssue && (i.kind === 'issue' || i.kind?.startsWith('issue:send_failed'))) || isDeadline
+                        ? <button type="button" className={`tl-btn${isOpen ? ' on' : isIssue && i.kind === 'issue' ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : i.kind?.startsWith('issue:send_failed') ? 'Sent Another Way' : isIssue ? 'Resolve' : 'Review'} onClick={() => { setOpen(isOpen ? null : key); if (isOpen) void load(); }}>{isOpen ? null : i.kind?.startsWith('issue:send_failed') ? 'Sent Another Way ' : isIssue ? 'Resolve ' : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                         : isIssue ? null
                         : <a className="tl-btn" href={paths.matter(i.matterId)}>Open Case <ChevronRight size={14} /></a>}
                     </>}
