@@ -9,6 +9,7 @@
     "start": "next start",
     "migrate": "tsx scripts/migrate.ts",
     "test:unit": "node --import tsx --test tests/unit/*/*.test.ts",
+    "smoke": "bash scripts/smoke.sh",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:integration": "node --import tsx --test tests/integration/*.test.ts",
     "engine:demo": "tsx scripts/engine-demo.ts",
