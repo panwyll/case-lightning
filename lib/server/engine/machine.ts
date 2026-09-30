@@ -2484,7 +2484,9 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
     const edits = editedIn?.messages ?? [];
     const messages = picked.map((m) => {
       const e = edits.find((x) => x.id === m.id) ?? (m.id === 'reply' && !edits.length ? editedIn : null);
-      return { id: m.id, to: m.to, subject: (e?.subject ?? '').trim() || m.subject, body: (e?.body ?? '').trim() || m.body };
+      // A file goes only if the line asking for it was approved too.
+      const attach = (m.attach ?? []).filter((x) => n.actions.some((a) => applied.includes(a.id) && a.command?.type === 'send_file_copy' && a.command.what === x.what));
+      return { id: m.id, to: m.to, subject: (e?.subject ?? '').trim() || m.subject, body: (e?.body ?? '').trim() || m.body, ...(attach.length ? { attach } : {}) };
     });
     const skipped = n.actions.filter((a) => !applied.includes(a.id)).map((a) => a.id);
     // An email that proposed nothing (Read And Reply, or an acknowledgement): Approve is "dealt with" and applies nothing.

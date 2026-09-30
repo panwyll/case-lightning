@@ -586,7 +586,8 @@ export interface NoteReply { subject: string; body: string; drafter: string }
 export const MESSAGE_PARTIES = ['client', 'seller_solicitor', 'estate_agent', 'lender'] as const;
 export type MessageParty = (typeof MESSAGE_PARTIES)[number];
 /** One message an email's task would send: to whom, why, and the draft (built from the case). `reply` answers the sender. */
-export interface NoteMessage { id: string; to: MessageParty; purposes: string[]; subject: string; body: string; drafter: string; /** Ticked when the task opens (the reply and anything the rules say must go); others are offered unticked. */ on: boolean }
+export interface NoteMessage { id: string; to: MessageParty; purposes: string[]; subject: string; body: string; drafter: string; /** Ticked when the task opens (the reply and anything the rules say must go); others are offered unticked. */ on: boolean; /** Files on the case that go with it: a document the client asked for is attached to the reply, not sent separately. `what` is the request in their words. */ attach?: MessageAttachment[] }
+export interface MessageAttachment { id: string; fileName: string; what: string }
 
 export interface NoteState {
   id: string;
@@ -960,7 +961,7 @@ export interface Payloads {
   note_recorded: { noteId: string; kind: NoteKind; text: string; durationSeconds: number | null; documentId: string | null; from?: NoteSender | null };
   note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec; /** Read as a pure acknowledgement (both checks): no reply needed. */ acknowledgement?: boolean; reply?: NoteReply | null; messages?: NoteMessage[] };
   wait_progress_reported: { waitKey: WaitKey; subject: string; claim: string; until: string; noteId: string | null };
-  note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null; /** The reply to send with it, as approved (and edited). */ reply?: { subject: string; body: string } | null; /** Every message to send with it, as approved (and edited). */ messages?: Array<{ id: string; to: MessageParty; subject: string; body: string }> };
+  note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null; /** The reply to send with it, as approved (and edited). */ reply?: { subject: string; body: string } | null; /** Every message to send with it, as approved (and edited). */ messages?: Array<{ id: string; to: MessageParty; subject: string; body: string; attach?: MessageAttachment[] }> };
   note_action_refused: { noteId: string; actionId: string; reason: string };
   escalation_raised: {
     /** null when a human escalated a decision rather than a timer firing on a wait. */
@@ -1454,6 +1455,8 @@ export interface IssueState {
   /** The issue whose investigation discovered this one. */
   causedBy: string | null;
   history: Array<{ at: string; by: Actor; what: string }>;
+  /** When the client was last told about it (an email about it, or the reply that raised it); cleared when it gets worse. A reply does not raise it again unless they ask. */
+  clientToldAt?: string | null;
   /** The date it should be sorted by (YYYY-MM-DD): set at raise from the kind's window (before the gate's target date), and movable. Past it, the issue is late. */
   resolveBy?: string | null;
   /** What the outcome recorded (the resolve form's fields), and the file that evidences it. */

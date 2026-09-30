@@ -806,6 +806,8 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
         severity: p.severity ?? 'warning',
         causedBy: p.causedBy ?? null,
         resolveBy: p.resolveBy ?? defaultResolveBy(s, p.kind, p.gate, e.createdAt),
+        // Raised from an email whose approved reply went to the client: they were told in that reply.
+        clientToldAt: p.sourceDocumentId && Object.values(s.notes).some((n) => n.documentId === p.sourceDocumentId && (n.messagesSentTo ?? []).includes('client')) ? e.createdAt : null,
         history: [{ at: e.createdAt, by: e.actor, what: `raised (${p.kind.replace(/_/g, ' ')}, ${p.severity ?? 'warning'}, holds ${p.gate === 'none' ? 'nothing' : p.gate}${p.party ? `, re ${p.party}` : ''}${p.causedBy ? `, discovered while dealing with ${p.causedBy}` : ''})` }],
       };
       break;
@@ -818,6 +820,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (p.gate) i.gate = p.gate;
       if (p.party !== undefined) i.party = p.party;
       if (p.resolveBy) i.resolveBy = p.resolveBy;
+      if (p.note && /^Emailed the client\b/.test(p.note)) i.clientToldAt = e.createdAt;
       i.updatedAt = e.createdAt;
       i.history.push({ at: e.createdAt, by: e.actor, what: `${p.status}${p.gate ? ` (now holds ${p.gate === 'none' ? 'nothing' : p.gate})` : ''}${p.resolveBy ? ` (resolve by ${p.resolveBy})` : ''}${p.note ? `: ${p.note}` : ''}` });
       break;
@@ -967,6 +970,9 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['issue_severity_changed'];
       const i = s.issues[p.issueId];
       if (!i) break;
+      // Worse than when the client was told: it is news again.
+      const rank = { info: 0, warning: 1, critical: 2 } as const;
+      if (rank[p.severity] > rank[i.severity]) i.clientToldAt = null;
       i.severity = p.severity;
       // Not "movement": the stale clock measures people's and third parties' activity, not the timer's.
       i.history.push({ at: e.createdAt, by: e.actor, what: `severity → ${p.severity}: ${p.reason}` });

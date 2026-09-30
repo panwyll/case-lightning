@@ -77,8 +77,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
           summary: a.summary,
           quote: a.quote,
           confidence: a.confidence,
-          effect: a.command ? effectText(a.command, { withMessages: !!note?.messages?.length }) : null,
-          changes: a.command ? effectChanges(a.command, { jeopardy: isJeopardy }) : [],
+          command: a.command?.type ?? null,
+          ...(() => {
+            // A document the client asked for that is attached to the reply: that is what ticking it does.
+            const c = a.command;
+            const files = c?.type === 'send_file_copy' ? (note?.messages ?? []).filter((m) => m.to === 'client').flatMap((m) => m.attach ?? []).filter((x) => x.what === c.what).map((x) => x.fileName) : [];
+            if (files.length) return { effect: `Attaches ${files.join(', ')} to the reply`, changes: [] as string[] };
+            return { effect: a.command ? effectText(a.command, { withMessages: !!note?.messages?.length }) : null, changes: a.command ? effectChanges(a.command, { jeopardy: isJeopardy }) : [] };
+          })(),
         })),
         applied: applied?.applied ?? null,
         skipped: applied?.skipped ?? null,

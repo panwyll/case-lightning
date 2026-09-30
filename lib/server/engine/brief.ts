@@ -84,7 +84,7 @@ export interface CaseBrief {
   /** Who is away when, from what they told us. */
   away: Array<{ who: string; from: string; until: string }>;
   /** Open issues — the legal problems. NEVER shown to a client by the automated channel. */
-  issues: Array<{ id: string; kind: string; label: string; title: string; gate: string; severity: string }>;
+  issues: Array<{ id: string; kind: string; label: string; title: string; gate: string; severity: string; clientToldAt?: string | null }>;
   /** Context on the file: who is running late (seller, chain, our client). Said in answers to "any update?". */
   context: Array<{ kind: string; label: string; title: string }>;
   decisionsPending: Array<{ kind: string; subject: string | null }>;
@@ -143,7 +143,7 @@ export function caseBrief(s: MatterState, now: Date = new Date(), cal: WorkingCa
     waiting,
     away: activeAvailability(s, now).map((w) => ({ who: w.party === 'client' ? 'you' : w.party === 'seller_side' ? "the seller's side" : w.party === 'agent' ? 'the estate agent' : 'your lender', from: w.from, until: w.until })),
     context: openIssues(s).filter((i) => ISSUE_KIND_SPEC[i.kind]?.context).map((i) => ({ kind: i.kind, label: ISSUE_KIND_SPEC[i.kind]?.label ?? i.kind, title: i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim() })),
-    issues: openIssues(s).filter((i) => !ISSUE_KIND_SPEC[i.kind]?.context).map((i) => ({ id: i.id, kind: i.kind, label: ISSUE_KIND_SPEC[i.kind]?.label ?? i.kind, title: i.title, gate: i.gate, severity: i.severity })),
+    issues: openIssues(s).filter((i) => !ISSUE_KIND_SPEC[i.kind]?.context).map((i) => ({ id: i.id, kind: i.kind, label: ISSUE_KIND_SPEC[i.kind]?.label ?? i.kind, title: i.title, gate: i.gate, severity: i.severity, clientToldAt: i.clientToldAt ?? null })),
     decisionsPending: pendingDecisions(s).filter((d) => d.kind !== 'auto_clear').map((d) => ({ kind: d.kind, subject: d.subject })),
     nextActions: nextActions(s, now).slice(0, 6).map((a) => ({ what: a.what, who: a.who, unblocks: a.unblocks })),
     milestones: {
@@ -181,7 +181,7 @@ export function renderForDrafting(b: CaseBrief): string {
   }
   if (b.issues.length) {
     L.push(`- Open issues:`);
-    for (const i of b.issues) L.push(`    · ${i.id} ${i.label}: ${i.title} (${i.gate === 'none' ? 'holds nothing' : `holds ${i.gate}`}, ${i.severity}).`);
+    for (const i of b.issues) L.push(`    · ${i.id} ${i.label}: ${i.title} (${i.gate === 'none' ? 'holds nothing' : `holds ${i.gate}`}, ${i.severity}).${i.clientToldAt ? ` ALREADY TOLD THE CLIENT on ${i.clientToldAt.slice(0, 16).replace('T', ' ')}: do not raise it again unless their email asks about it.` : ''}`);
   }
   if (b.decisionsPending.length) L.push(`- Waiting on a decision from us: ${b.decisionsPending.map((d) => d.kind.replace(/_/g, ' ')).join(', ')}.`);
   const m = b.milestones;

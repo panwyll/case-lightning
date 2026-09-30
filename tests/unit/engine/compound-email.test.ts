@@ -115,3 +115,42 @@ test('an agent passing on that the lender pulled out cannot mark the mortgage wi
   const asks = await h.svc.recordNote(TENANT, MATTER, { text: 'Can you confirm when we are likely to exchange?', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL'), from: { address: 'sam@agents.example', name: 'Sam Agent', relation: 'agent' }, surface: true, subject: 'Exchange' });
   assert.equal(Object.values(asks.state.notes).at(-1)!.messages?.[0]?.to, 'estate_agent', 'a question gets the agent a reply');
 });
+
+test('a client asking for a document gets it attached to the reply: one email, nothing sent separately', async () => {
+  const h = await withWaits();
+  h.ports.files = {
+    find: async (_t, _m, what) => (/search/i.test(what) ? [{ id: 'doc-searches', fileName: 'Local search.pdf' }] : []),
+    bytes: async (_t, id) => (id === 'doc-searches' ? { name: 'Local search.pdf', bytes: Buffer.from('%PDF'), contentType: 'application/pdf' } : null),
+  };
+  const documentId = h.doc(null, 'EMAIL');
+  const res = await h.svc.recordNote(TENANT, MATTER, { text: "Hi, can you send over the searches? Can't find in my inbox", kind: 'email', actor: USER, documentId, from: CLIENT, surface: true, subject: 'Searches' });
+  const note = Object.values(res.state.notes)[0];
+  const line = note.actions.find((a) => a.command?.type === 'send_file_copy');
+  assert.ok(line, 'read as a request for a document, not a question');
+  const reply = note.messages!.find((m) => m.id === 'reply')!;
+  assert.deepEqual(reply.attach?.map((a) => a.fileName), ['Local search.pdf'], 'the file is on the reply');
+  assert.match(reply.body, /I attach Local search\.pdf/);
+  assert.doesNotMatch(reply.body, /separately/);
+  const d = firstDecision(res.state, 'note_actions');
+  await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve');
+  const comms = h.ports.clientComms as MockClientComms;
+  const sent = comms.sent.filter((m) => m.template === 'email_reply' || m.template === 'file_copy');
+  assert.equal(sent.length, 1, 'one email');
+  assert.equal(sent[0].template, 'email_reply');
+  assert.deepEqual(sent[0].attachments, ['Local search.pdf'], 'with the file attached');
+});
+
+test('an issue the client has been emailed about is marked as told, so a later reply does not raise it again', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [] });
+  await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'transaction_at_risk', title: 'The seller is threatening to withdraw' });
+  const id = Object.values((await h.svc.getState(TENANT, MATTER)).issues)[0].id;
+  const { caseBrief, renderForDrafting } = await import('../../../lib/server/engine/brief');
+  const before = renderForDrafting(caseBrief(await h.svc.getState(TENANT, MATTER), new Date()));
+  assert.doesNotMatch(before, /ALREADY TOLD THE CLIENT/);
+  await h.svc.sendIssueMessage(TENANT, MATTER, id, { actor: USER, to: 'client', subject: 'Your purchase', body: 'Hello Jo,\n\nThe seller has said they may withdraw.' });
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(s.issues[id].clientToldAt);
+  assert.match(renderForDrafting(caseBrief(s, new Date())), /withdraw \(holds exchange, critical\)\. ALREADY TOLD THE CLIENT/);
+});

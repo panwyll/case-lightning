@@ -114,8 +114,11 @@ export interface NoteActionView {
   effect: string | null;
   /** What ticking it changes on the case, one change each. */
   changes?: string[];
+  /** The command it would run (send_file_copy, raise_issue…). */
+  command?: string | null;
 }
 
+export interface MessageFile { id: string; fileName: string; what: string }
 export interface NoteActionsDetail {
   title?: string | null;
   noteId: string;
@@ -126,8 +129,8 @@ export interface NoteActionsDetail {
   skipped: string[] | null;
   refused: Array<{ id: string; reason: string }>;
   /** The messages drafted from the case (the reply first, then anyone else who needs to hear), and once resolved, what was sent. */
-  messages?: Array<{ id: string; to: string; purposes: string[]; subject: string; body: string; drafter: string; on: boolean }>;
-  messagesSent?: Array<{ id: string; to: string; subject: string; body: string }> | null;
+  messages?: Array<{ id: string; to: string; purposes: string[]; subject: string; body: string; drafter: string; on: boolean; attach?: MessageFile[] }>;
+  messagesSent?: Array<{ id: string; to: string; subject: string; body: string; attach?: MessageFile[] }> | null;
 }
 
 export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;

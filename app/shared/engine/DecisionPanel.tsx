@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { ENGINE_CSS } from './ui';
 import { KIND_LABEL, OPTION_HELP, OPTION_LABEL, OPTION_LABEL_BY_KIND, STAGE_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Citation, type DecisionDetail, type Engagement, type SourceDoc } from './types';
-import { X, Check, ChevronRight } from '@/app/shared/icons';
+import { X, Check, ChevronRight, Paperclip } from '@/app/shared/icons';
 
 /**
  * Addendum 3 §3 — the decision panel. A fixed three-part vertical layout:
@@ -33,6 +33,8 @@ const COUNTDOWN_MS = 3000;
 const DOING: Record<string, string> = { approve: 'Approving', reject: 'Declining', escalate: 'Escalating', verify: 'Recording', refer_to_client: 'Referring', request_further: 'Requesting', indemnity: 'Recording' };
 /** Who a message goes to, as a heading. */
 const PARTY_TITLE: Record<string, string> = { client: 'The Client', seller_solicitor: "The Other Side's Solicitor", estate_agent: 'The Estate Agent', lender: 'The Lender Or Broker' };
+/** Files that go with a message, each opening the file. */
+const attachments = (files?: Array<{ id: string; fileName: string }> | null) => files?.length ? <div className="dp-att">{files.map((f) => <a key={f.id} href={`/api/v1/documents/${f.id}/raw`} target="_blank" rel="noreferrer"><Paperclip size={16} />{f.fileName}</a>)}</div> : null;
 const LINE_TAG: Record<string, string> = { question: 'Question', progress: 'Done Or On Its Way', resend: 'Send Again', issue: 'Problem', client_decision: 'Decision', confirm_with_client: 'Check With Client', expectation: 'Expected', information: 'Noted' };
 const CSS = `
 .dp{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(320px,1fr);height:calc(100vh - 56px);margin:-18px -24px -14px;background:#fff;min-height:0}
@@ -105,6 +107,9 @@ const CSS = `
 .dp-msg p{margin:6px 0 0;font-size:13px;color:#475569}
 .dp-msg p.warn{color:#92400e}
 .dp-msg{position:relative}
+.dp-att{display:flex;flex-wrap:wrap;gap:6px}
+.dp-att a{display:inline-flex;align-items:center;gap:6px;border:1px solid #e2e8f0;border-radius:8px;padding:5px 9px;font-size:12.5px;font-weight:600;color:#0f172a;text-decoration:none;background:#fff}
+.dp-att a:hover{border-color:#5A27E0;color:#5A27E0}
 .dp-edit{position:absolute;top:10px;right:12px;border:1px solid #c4b5fd;background:#fff;color:#5A27E0;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer}
 .dp-ed{display:block;width:100%;margin-top:8px;border:1px solid #c4b5fd;border-radius:8px;padding:8px 10px;font:inherit;font-size:13.5px;line-height:1.55;color:#0f172a;background:#fcfbff;resize:vertical;box-sizing:border-box}
 .dp-ed.s{font-weight:700}
@@ -611,7 +616,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
             <div className="dp-lines">
               {noteLines.actions.filter((a) => a.effect).map((a) => {
                 const on = !!picked?.has(a.id);
-                const tag = LINE_TAG[a.kind] ?? null;
+                const tag = a.command === 'send_file_copy' ? 'Document Request' : LINE_TAG[a.kind] ?? null;
                 return (
                   <label key={a.id} className={`dp-line${on ? ' on' : ''}`}>
                     <input type="checkbox" checked={on} disabled={busy} onChange={(e) => setPicked((prev) => { const next = new Set(prev ?? []); if (e.target.checked) next.add(a.id); else next.delete(a.id); return next; })} />
@@ -631,6 +636,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                     <label className="dp-reply-h"><input type="checkbox" checked={on} disabled={busy} onChange={(e) => setPicked((prev) => { const next = new Set(prev ?? []); if (e.target.checked) next.add(m.id); else next.delete(m.id); return next; })} />{m.id === 'reply' ? 'Reply' : 'Email'} To {PARTY_TITLE[m.to] ?? m.to}</label>
                     <input className="eg-in" value={dr.subject} onChange={(e) => set({ subject: e.target.value })} disabled={busy || !on} aria-label="Subject" />
                     <textarea className="eg-in" rows={Math.min(16, Math.max(on ? 5 : 3, dr.body.split('\n').length + 1))} value={dr.body} onChange={(e) => set({ body: e.target.value })} disabled={busy || !on} aria-label="Message" />
+                    {attachments(m.attach?.filter((x) => noteLines.actions.some((a) => a.command === 'send_file_copy' && picked?.has(a.id))))}
                   </div>
                 );
               })}
@@ -648,7 +654,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                 );
               })}
               {(noteLines.messagesSent ?? []).map((m) => (
-                <div key={m.id} className="dp-reply on"><span className="dp-reply-h">Sent To {PARTY_TITLE[m.to] ?? m.to}</span><b style={{ fontSize: 13 }}>{m.subject}</b><pre className="dp-reply-b">{m.body}</pre></div>
+                <div key={m.id} className="dp-reply on"><span className="dp-reply-h">Sent To {PARTY_TITLE[m.to] ?? m.to}</span><b style={{ fontSize: 13 }}>{m.subject}</b><pre className="dp-reply-b">{m.body}</pre>{attachments(m.attach)}</div>
               ))}
             </div>
           )}

@@ -30,13 +30,13 @@ export function replyFacts(s: MatterState, now: Date): string {
 }
 
 /** Without a model: the reply assembled from the same facts, point by point, then where things stand. */
-export function templateReply(s: MatterState, now: Date, input: { firstName: string | null; lines: NoteAction[]; others?: string[]; /** What the rules add to the reply (recipients.ts): asked here rather than in a second email. */ also?: string[] }): string {
+export function templateReply(s: MatterState, now: Date, input: { firstName: string | null; lines: NoteAction[]; others?: string[]; /** What the rules add to the reply (recipients.ts): asked here rather than in a second email. */ also?: string[]; /** Files attached to the reply (a document they asked for). */ attached?: Array<{ fileName: string; what: string }> }): string {
   const P: string[] = [`Hello ${input.firstName ?? 'there'},`, 'Thank you for your email.'];
   for (const a of input.lines) {
     const c = a.command;
     if (c?.type === 'record_client_progress') P.push(`Thank you for letting us know about ${WAIT_LABEL[c.waitKey]}. We will look out for it and let you know when it has arrived.`);
     else if (c?.type === 'resend_to_client') P.push(`We have sent the request for ${WAIT_LABEL[c.waitKey]} again, with the links you need.`);
-    else if (c?.type === 'send_file_copy') P.push(`We will send you ${c.what.trim()} separately.`);
+    else if (c?.type === 'send_file_copy') { const files = (input.attached ?? []).filter((x) => x.what === c.what).map((x) => x.fileName); P.push(files.length ? `I attach ${files.join(', ')}.` : `We will send you ${c.what.trim()} separately.`); }
     else if (a.kind === 'question') P.push(`On your question ("${a.quote.slice(0, 120)}"): we are checking and will come back to you shortly.`);
   }
   for (const a of input.also ?? []) P.push(a);

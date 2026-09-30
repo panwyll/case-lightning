@@ -39,7 +39,7 @@ import { deferral, outsideDeferral } from './defer';
 const foldOnto = (state: MatterState, events: EngineEvent[]): MatterState => events.reduce((s, e) => applyEvent(s, e), state);
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type NoteMessage, type MessageParty, type ManualChannel, MANUAL_CHANNELS, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type NoteMessage, type MessageParty, type MessageAttachment, type ManualChannel, MANUAL_CHANNELS, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -920,13 +920,23 @@ export class EngineService {
     const facts = replyFacts(state, now);
     const property = (await this.caseRecord(tenantId, matterId).catch(() => null))?.propertyAddress ?? null;
     const recipients = whoNeedsToHear(from, lines);
+    // A document the client asked for goes back attached to the reply, when it is on the file.
+    const attach: MessageAttachment[] = [];
+    if (this.ports.files && (from.relation === 'client' || from.relation === 'colleague')) {
+      for (const l of lines) {
+        if (l.command?.type !== 'send_file_copy') continue;
+        const what = l.command.what;
+        const found = await this.ports.files.find(tenantId, matterId, what).catch(() => []);
+        for (const f of found) if (!attach.some((a) => a.id === f.id)) attach.push({ id: f.id, fileName: f.fileName, what });
+      }
+    }
     // The reply says who else we are writing to (those ticked when the task opens).
     const others = recipients.filter((x) => x.on && !x.purposes.some((p) => /^Reply to their email/.test(p))).map((x) => PARTY_WORDS[x.to]);
     for (const r of recipients) {
       const replying = r.purposes.some((p) => /^Reply to their email/.test(p));
       if (replying && r.to === 'client') {
-        const reply = await this.draftReply(tenantId, matterId, state, text, subject, from, lines, others, { purposes: r.purposes, sentences: r.sentences });
-        out.push({ id: 'reply', to: r.to, purposes: r.purposes, subject: reply.subject, body: reply.body, drafter: reply.drafter, on: true });
+        const reply = await this.draftReply(tenantId, matterId, state, text, subject, from, lines, others, { purposes: r.purposes, sentences: r.sentences }, attach);
+        out.push({ id: 'reply', to: r.to, purposes: r.purposes, subject: reply.subject, body: reply.body, drafter: reply.drafter, on: true, ...(attach.length ? { attach } : {}) });
         continue;
       }
       const re = subject ? (/^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`) : 'Re: your email';
@@ -939,13 +949,14 @@ export class EngineService {
   }
 
   /** The reply to a client's email, from the case facts (reply.ts); worded by the drafter when there is one. */
-  private async draftReply(tenantId: string, matterId: string, state: MatterState, text: string, subject: string | null, from: NoteSender, lines: NoteActionDraft[], others: string[] = [], also: { purposes: string[]; sentences: string[] } = { purposes: [], sentences: [] }): Promise<NoteReply> {
+  private async draftReply(tenantId: string, matterId: string, state: MatterState, text: string, subject: string | null, from: NoteSender, lines: NoteActionDraft[], others: string[] = [], also: { purposes: string[]; sentences: string[] } = { purposes: [], sentences: [] }, attach: MessageAttachment[] = []): Promise<NoteReply> {
     const now = this.ports.now();
+    const attached = attach.length ? [`Say that ${attach.map((a) => a.fileName).join(', ')} ${attach.length > 1 ? 'are' : 'is'} attached to this email (it is: never say we will send it separately, later or by another email)`] : [];
     const firstName = (from.name ?? '').trim().split(/\s+/)[0] || null;
     const re = subject ? (/^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`) : 'Re: your email';
-    const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts: replyFacts(state, now), now: now.toISOString(), weActFor: weActFor(state), purposes: [...new Set(['Reply to their email, answering every point they made', ...also.purposes, ...others.map((o) => `Tell them we are writing to ${o} today`)])] }) : null;
+    const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts: replyFacts(state, now), now: now.toISOString(), weActFor: weActFor(state), purposes: [...new Set(['Reply to their email, answering every point they made', ...attached, ...also.purposes, ...others.map((o) => `Tell them we are writing to ${o} today`)])] }) : null;
     if (drafted?.body) return { subject: re, body: drafted.body, drafter: this.ports.replyDrafter!.name };
-    return { subject: re, body: templateReply(state, now, { firstName, others, also: also.sentences, lines: lines.map((l, i) => ({ id: `A${i + 1}`, kind: l.kind, summary: l.summary, quote: l.quote, confidence: l.confidence ?? 0.6, command: l.command ?? null })) }), drafter: 'case-facts' };
+    return { subject: re, body: templateReply(state, now, { firstName, others, also: also.sentences, attached: attach, lines: lines.map((l, i) => ({ id: `A${i + 1}`, kind: l.kind, summary: l.summary, quote: l.quote, confidence: l.confidence ?? 0.6, command: l.command ?? null })) }), drafter: 'case-facts' };
   }
 
   /** The draft for one of an issue's message steps (issues.ts `issueSteps`), from the case; worded by the drafter when there is one. Nothing is sent. */
@@ -1710,7 +1721,7 @@ export class EngineService {
         // a client decision the machine would refuse by hand is refused here too, and is
         // logged rather than silently dropped.
         if (e.type === 'note_actions_applied') {
-          const p = e.payload as { noteId: string; applied: string[]; reply?: { subject: string; body: string } | null; messages?: Array<{ id: string; to: MessageParty; subject: string; body: string }> };
+          const p = e.payload as { noteId: string; applied: string[]; reply?: { subject: string; body: string } | null; messages?: Array<{ id: string; to: MessageParty; subject: string; body: string; attach?: MessageAttachment[] }> };
           const fresh = await this.getState(tenantId, matterId);
           const note = fresh.notes[p.noteId];
           for (const id of p.applied) {
@@ -1765,6 +1776,8 @@ export class EngineService {
               } else if (c.type === 'resend_to_client') {
                 // The same request again, with its links and forms: what Chase Now sends.
                 await this.chaseNow(tenantId, matterId, c.waitKey, c.subject || null, e.actor);
+              } else if (c.type === 'send_file_copy' && (p.messages ?? []).some((m) => m.to === 'client' && (m.attach ?? []).some((x) => x.what === c.what))) {
+                // Attached to the reply that goes below: nothing to send separately.
               } else if (c.type === 'send_file_copy') {
                 // The client cannot find a document: it goes back to them, attached, if it is on the file.
                 const found = this.ports.files ? await this.ports.files.find(tenantId, matterId, c.what) : [];
@@ -1791,7 +1804,7 @@ export class EngineService {
           for (const m of outgoing) {
             if (!m.body?.trim()) continue;
             const [action, detail] = m.to === 'client'
-              ? ['client_update' as const, { template: 'email_reply', context: { subject: m.subject }, triggeredByEventId: e.id, edited: { subject: m.subject, body: m.body } }]
+              ? ['client_update' as const, { template: 'email_reply', context: { subject: m.subject }, triggeredByEventId: e.id, edited: { subject: m.subject, body: m.body }, ...('attach' in m && m.attach?.length ? { attachFileIds: m.attach.map((x) => x.id) } : {}) }]
               : ['chase' as const, { kind: 'party_message', recipientRole: m.to, subject: m.subject, body: m.body, triggeredByEventId: e.id }];
             try { await this.perform(tenantId, matterId, action, detail); } catch (err) { this.ports.log(`the message to ${m.to} could not be sent`, err); await this.recordSendFailure(tenantId, matterId, action, detail, err); }
           }
