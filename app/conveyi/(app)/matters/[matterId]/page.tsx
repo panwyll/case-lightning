@@ -249,7 +249,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             <div className="mx-card">
               <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '-4px 0 4px' }}><CaseDetailsEdit matterId={matterId} api={api} matter={m} side={side} onSaved={() => { setDetailsVer((v) => v + 1); refresh(); }} /></div>
               <div className="mx-kv">
-                <Field k="Reference" v={row.matterRef ?? ''} />
                 <Field k="Property" v={row.propertyAddress ?? String(m.property_address ?? '')} />
                 <Field k={side === 'seller' ? 'Seller' : side === 'buyer' ? 'Buyer' : 'Client'} v={clients} />
               </div>
