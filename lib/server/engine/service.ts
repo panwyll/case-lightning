@@ -64,7 +64,7 @@ import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTra
 import { isResolved, openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedsReadyToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
-import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
+import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement } from './notes';
 import type { MessageOverride } from './ports';
 import { accessEnquiry, evidenceEnquiry, sortLegalPoints, surveyAdvice, surveyContext, surveyEnquiries, surveyNeedsAdvice, templateAdvice } from './survey-review';
 import type { SurveyFacts } from './types';
@@ -849,7 +849,7 @@ export class EngineService {
   async recordNote(
     tenantId: string,
     matterId: string,
-    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null; from?: NoteSender | null; attachments?: string[]; /** Filed without anyone looking: it always comes to a person. */ surface?: boolean }
+    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null; from?: NoteSender | null; attachments?: string[]; /** Filed without anyone looking: it always comes to a person. */ surface?: boolean; /** Both checks read it as a pure acknowledgement. */ acknowledgement?: boolean }
   ): Promise<RunResult> {
     // A decision has to cite something a person can open. A note filed without a document
     // behind it (typed straight into the matter) becomes one — the note IS the evidence.
@@ -889,7 +889,7 @@ export class EngineService {
     // made of "attached", an "it has not arrived" issue is not proposed from it.
     const kept = input.attachments?.length ? drafts.filter((d) => !(d.command?.type === 'raise_issue' && ARRIVAL_ISSUES.has(d.command.kind))) : drafts;
     if (!kept.length && !stranger && !input.surface) return recorded;
-    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts: kept, extractor: reader.name, surface: !!input.surface });
+    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts: kept, extractor: reader.name, surface: !!input.surface, ...(input.acknowledgement ? { acknowledgement: true } : {}) });
   }
 
   // ───────────── decisions (dashboard #6) ─────────────
@@ -1287,6 +1287,25 @@ export class EngineService {
   }
 
   /** What a client's email may be answering: the survey letter, while they have not said how to proceed. */
+  /**
+   * Whether an email needs no reply: the codified rule (notes.ts isAcknowledgement) first, then the AI
+   * reads it against the conversation and what the case is waiting for. Both must agree; no checker, or a
+   * failed one, means it is not an acknowledgement. `quiet` is whether the firm lets it go without a
+   * person (the email_no_reply trust level, per sender); at Propose it still reaches someone, as one click.
+   */
+  async acknowledgementCheck(tenantId: string, matterId: string, input: { text: string; thread?: string; from: NoteSender | null; attachments?: number }): Promise<{ acknowledgement: boolean; quiet: boolean; reason: string | null }> {
+    if (!isAcknowledgement(input.text, input.from?.name ?? null, input.attachments ?? 0)) return { acknowledgement: false, quiet: false, reason: null };
+    const checker = this.ports.ackChecker;
+    if (!checker) return { acknowledgement: false, quiet: false, reason: 'No second check is available.' };
+    const state = await this.getState(tenantId, matterId);
+    const brief = caseBrief(state, this.ports.now());
+    const open = [...openWaits(state).map((w) => `${w.key.replace(/_/g, ' ')}${w.subject ? ` (${w.subject})` : ''}, asked ${w.openedAt.slice(0, 10)}`), ...openIssues(state).map((i) => `issue: ${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '')}`)];
+    const r = await checker.confirm({ tenantId, matterId, text: input.text, thread: input.thread, from: input.from, caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}`, open }).catch(() => ({ acknowledgement: false, reason: 'The check could not run.' }));
+    if (!r.acknowledgement) return { acknowledgement: false, quiet: false, reason: r.reason };
+    const level = levelFor(await this.levels(tenantId), 'email_no_reply', input.from?.relation ?? null);
+    return { acknowledgement: true, quiet: actsUnasked(level, 'email_no_reply'), reason: r.reason };
+  }
+
   private async replyContext(tenantId: string, matterId: string, state: MatterState, from: NoteSender | null): Promise<string | undefined> {
     if (!from || from.relation !== 'client' || !state.survey.reports.length) return undefined;
     if (state.survey.status === 'client_satisfied' || state.survey.status === 'client_withdrawing') return undefined;

@@ -588,6 +588,8 @@ export interface NoteState {
   extractor: string | null;
   decisionEventId: string | null;
   status: NoteStatus;
+  /** An email read as a pure acknowledgement: nobody needs to reply. */
+  acknowledgement?: boolean;
   appliedActionIds: string[];
   /** Approved, then refused by the machine when it ran — the note's record stays honest. */
   refusedActions: Array<{ id: string; reason: string }>;
@@ -929,7 +931,7 @@ export interface Payloads {
   chase_sent: ChaseSpec;
   acknowledgement_sent: AcknowledgementSpec;
   note_recorded: { noteId: string; kind: NoteKind; text: string; durationSeconds: number | null; documentId: string | null; from?: NoteSender | null };
-  note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec };
+  note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec; /** Read as a pure acknowledgement (both checks): no reply needed. */ acknowledgement?: boolean };
   note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null };
   note_action_refused: { noteId: string; actionId: string; reason: string };
   escalation_raised: {
@@ -1195,7 +1197,7 @@ export type SubFlow = (typeof SUB_FLOWS)[number];
  *
  * Promotion is earned per action, from the proposals a firm has approved unchanged.
  */
-export const ENGINE_ACTIONS = ['acknowledgement', 'chase', 'client_update', 'search_order', 'auto_clear', 'enquiry_draft'] as const;
+export const ENGINE_ACTIONS = ['acknowledgement', 'chase', 'client_update', 'search_order', 'auto_clear', 'enquiry_draft', 'email_no_reply'] as const;
 export type EngineAction = (typeof ENGINE_ACTIONS)[number];
 export const ENGINE_ACTION_LABEL: Record<EngineAction, string> = {
   acknowledgement: 'Acknowledgements',
@@ -1204,6 +1206,7 @@ export const ENGINE_ACTION_LABEL: Record<EngineAction, string> = {
   search_order: 'Search orders',
   auto_clear: 'Auto-clears',
   enquiry_draft: 'Enquiries drafted from the forms',
+  email_no_reply: 'Acknowledgements needing no reply',
 };
 /**
  * The subjects a level can be set on within each action: who is written to, which search,
@@ -1267,12 +1270,18 @@ export const ENGINE_ACTION_SUBJECTS: Record<EngineAction, ReadonlyArray<{ key: s
   enquiry_draft: [
     { key: 'ta6', label: 'From the seller\'s TA6 / TA7 answers' },
   ],
+  email_no_reply: [
+    { key: 'client', label: 'From the client' },
+    { key: 'other_side', label: "From the other side" },
+    { key: 'agent', label: 'From the estate agent' },
+    { key: 'lender', label: 'From the lender or broker' },
+  ],
 };
 export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;
 export type TrustLevel = (typeof TRUST_LEVELS)[number];
 /** Keys are an action (`chase`) or an action and subject (`chase:lender`). */
 export type LevelConfig = Record<string, TrustLevel>;
-export const DEFAULT_LEVELS: LevelConfig = { acknowledgement: 'propose', chase: 'propose', client_update: 'propose', search_order: 'propose', auto_clear: 'propose', enquiry_draft: 'propose' };
+export const DEFAULT_LEVELS: LevelConfig = { acknowledgement: 'propose', chase: 'propose', client_update: 'propose', search_order: 'propose', auto_clear: 'propose', enquiry_draft: 'propose', email_no_reply: 'propose' };
 export const levelKey = (action: EngineAction, subject?: string | null): string => (subject ? `${action}:${subject}` : action);
 /** The level in force for an action on a subject: the subject's own, else the action's, else propose. */
 export function levelFor(cfg: LevelConfig | null | undefined, action: EngineAction, subject?: string | null): TrustLevel {
@@ -1280,7 +1289,7 @@ export function levelFor(cfg: LevelConfig | null | undefined, action: EngineActi
   return (subject ? c[levelKey(action, subject)] : undefined) ?? c[action] ?? 'propose';
 }
 /** What ASSIST does unasked. Everything else at assist is proposed. */
-export const ASSIST_ACTS: Record<EngineAction, boolean> = { acknowledgement: true, chase: true, search_order: true, client_update: false, auto_clear: true, enquiry_draft: false };
+export const ASSIST_ACTS: Record<EngineAction, boolean> = { acknowledgement: true, chase: true, search_order: true, client_update: false, auto_clear: true, enquiry_draft: false, email_no_reply: false };
 /** Whether an action at a level goes ahead without a person. */
 export const actsUnasked = (level: TrustLevel, action: EngineAction): boolean => level === 'auto' || (level === 'assist' && ASSIST_ACTS[action]);
 

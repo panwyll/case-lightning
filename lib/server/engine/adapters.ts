@@ -32,7 +32,7 @@ import { EngineService } from './service';
 import { PgEventStore } from './store';
 import { claudeLlm, type EngineDocumentInput } from './llm';
 import { ClaudeExtractor, type DocumentBytesLoader, type DocumentFactsWriter } from './extraction';
-import { ClaudeSummariser, ClaudeReportDrafter, ClaudeProofOfFundsSummariser, ClaudeNoteReader, ClaudeSurveyAdviser, ClaudeEnquiryWriter } from './ai';
+import { ClaudeSummariser, ClaudeReportDrafter, ClaudeProofOfFundsSummariser, ClaudeNoteReader, ClaudeSurveyAdviser, ClaudeEnquiryWriter, ClaudeAckChecker } from './ai';
 import { PgProofOfFundsForms } from './pof-store';
 import { infotrackConfigured, infotrackProviders } from '../integrations/infotrack-adapters';
 import { chaser as productionChaser, clientComms as productionClientComms, commsConfigured } from '../comms/adapters';
@@ -101,12 +101,12 @@ function chooseExtractor(): { extractor: EnginePorts['extractor']; classifier: D
 }
 
 /** Real AI layer (#3) when a Claude key is present (or forced), otherwise the deterministic templates. */
-function chooseAi(log: (msg: string, detail?: unknown) => void): { summariser: EnginePorts['summariser']; reportDrafter: EnginePorts['reportDrafter']; pofSummariser: EnginePorts['pofSummariser']; noteExtractor: EnginePorts['noteExtractor']; surveyAdviser: EnginePorts['surveyAdviser']; enquiryWriter: EnginePorts['enquiryWriter'] } {
+function chooseAi(log: (msg: string, detail?: unknown) => void): { summariser: EnginePorts['summariser']; reportDrafter: EnginePorts['reportDrafter']; pofSummariser: EnginePorts['pofSummariser']; noteExtractor: EnginePorts['noteExtractor']; surveyAdviser: EnginePorts['surveyAdviser']; enquiryWriter: EnginePorts['enquiryWriter']; ackChecker: EnginePorts['ackChecker'] } {
   const useClaude = config.engineAi === 'claude' || (config.engineAi === 'auto' && !!config.anthropicApiKey);
   // The deterministic reader is the floor, not a stub: with no key it still lifts the
   // handful of unmistakable lines out of a note, and with a key it catches the failures.
   const floor = new DeterministicNoteReader();
-  if (!useClaude) return { summariser: new TemplateSummariser(), reportDrafter: new TemplateReportDrafter(), pofSummariser: null, noteExtractor: floor, surveyAdviser: null, enquiryWriter: null };
+  if (!useClaude) return { summariser: new TemplateSummariser(), reportDrafter: new TemplateReportDrafter(), pofSummariser: null, noteExtractor: floor, surveyAdviser: null, enquiryWriter: null, ackChecker: null };
   const llm = claudeLlm();
   return {
     summariser: new ClaudeSummariser(llm, documentBytesLoader(), { model: config.engineDraftModel, effort: 'medium', log }),
@@ -115,6 +115,7 @@ function chooseAi(log: (msg: string, detail?: unknown) => void): { summariser: E
     noteExtractor: new ClaudeNoteReader(llm, { model: config.engineDraftModel, effort: 'medium', log, fallback: floor }),
     surveyAdviser: new ClaudeSurveyAdviser(llm, { model: config.engineDraftModel, log }),
     enquiryWriter: new ClaudeEnquiryWriter(llm, { model: config.engineDraftModel, log }),
+    ackChecker: new ClaudeAckChecker(llm, { model: config.engineDraftModel, log }),
   };
 }
 
@@ -168,7 +169,7 @@ export function productionPorts(): EnginePorts {
       if (detail instanceof Error) recordError({ source: 'engine', message: `${msg}: ${detail.message}`, detail: stackTop(detail.stack) });
     };
     const { extractor, classifier } = chooseExtractor();
-    const { summariser, reportDrafter, pofSummariser, noteExtractor, surveyAdviser, enquiryWriter } = chooseAi(log);
+    const { summariser, reportDrafter, pofSummariser, noteExtractor, surveyAdviser, enquiryWriter, ackChecker } = chooseAi(log);
     const { searchProvider, idCheckProvider } = chooseIntegrations();
     const { clientComms, chaser } = chooseComms();
     // The backend (CaseLightning's own tables, or LEAP) supplies the document store and
@@ -190,6 +191,7 @@ export function productionPorts(): EnginePorts {
       noteExtractor,
       surveyAdviser,
       enquiryWriter,
+      ackChecker,
       pofForms: new PgProofOfFundsForms(),
       reportDrafter,
       searchProvider,

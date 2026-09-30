@@ -283,12 +283,23 @@ export function nothingToActSummary(text: string, from?: NoteSender | null): str
   const first = text.split(/\n/).map((l) => l.trim()).filter(Boolean).slice(0, 3).join(' ').slice(0, 300);
   return [`An email from ${who}. The system could not be sure what it needs, so it is for you to read and answer.`, '', first ? `It begins: “${first}${text.length > first.length ? '…' : ''}”` : '', '', 'Approve once it is dealt with (answered, or nothing is needed). If the case should change, reject and say what, or raise it from the case.'].filter((l, i, a) => l || a[i - 1]).join('\n');
 }
+/** An acknowledgement put before a person (the no-reply action at Propose): one click confirms nobody needs to reply. */
+export function acknowledgementSummary(text: string, from?: NoteSender | null): string {
+  const who = from ? `${from.name || from.address} (${RELATION_LABEL[from.relation]})` : 'someone';
+  const first = text.split(/\n/).map((l) => l.trim()).filter(Boolean).slice(0, 2).join(' ').slice(0, 200);
+  return [`An acknowledgement from ${who}: “${first}”. Read against the conversation, nothing in it needs a reply or changes the case.`, '', 'Approve to confirm no reply is needed. Reject if it does, and say what.'].join('\n');
+}
 /** Whose email it is, for the task: "the client's", "Jo Smith's". */
 const whose = (from?: NoteSender | null): string => {
   if (from?.relation && from.relation !== 'unknown' && from.relation !== 'colleague') return RELATION_LABEL[from.relation].replace(/^the lender or broker$/, 'the lender').replace(/$/, "'s");
   const n = from?.name || from?.address || 'the sender';
   return `${n}'s`;
 };
+/** An acknowledgement's task: confirm nobody needs to reply. */
+export function acknowledgementTitle(from?: NoteSender | null, text = ''): string {
+  const words = text.split(/\n/).map((l) => l.trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ').slice(0, 90);
+  return `Confirm no reply is needed to ${whose(from)} acknowledgement${words ? `: “${words}”` : ''}`;
+}
 /** A read-and-reply task: what the person does with an email nothing was proposed from. */
 export function nothingToActTitle(from?: NoteSender | null): string {
   return `Read and reply to ${whose(from)} email`;

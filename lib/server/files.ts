@@ -26,7 +26,7 @@ import { emitMatterEvent } from './events';
 import { ingestFiledDocument } from './engine/ingest-hook';
 import { tenantSelfAddresses } from './matching';
 import type { NoteSender, SenderRelation } from './engine/types';
-import { bankDetailsIn, isAcknowledgement } from './engine/notes';
+import { bankDetailsIn } from './engine/notes';
 
 const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
 
@@ -870,9 +870,10 @@ export async function fileEmailBodyAsDocument(
     const sender: NoteSender = { address: from, name: fromName || null, relation: await senderRelation(user.tenantId, matterId, from) };
     // Anyone outside the firm who writes on a case gets an answer: when the reader finds nothing it is sure of, a person reads it.
     // The one exception is a pure acknowledgement ("Will do, cheers"), recognised strictly (isAcknowledgement): it is filed, and nobody needs to reply.
-    const ack = isAcknowledgement(fresh.length >= 2 ? fresh : body, fromName || null, attachments.filter((a) => a.outcome !== 'skipped').length);
-    const toPerson = !ack && (!!opts.surface || recognised || sender.relation !== 'colleague');
-    const res = await engine().recordNote(user.tenantId, matterId, { text: (fresh.length >= 2 ? fresh : body).slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender, surface: toPerson, attachments: attachments.map((a) => `${a.name}${a.as ? ` (read as ${a.as.replace(/_/g, ' ')})` : a.outcome === 'duplicate' ? ' (already on the case)' : ''}`) });
+    // Only when the codified rule AND the AI (reading the conversation) agree; and at Propose (the default) it still reaches a person, as one click.
+    const ack = sender.relation === 'colleague' ? { acknowledgement: false, quiet: false } : await engine().acknowledgementCheck(user.tenantId, matterId, { text: fresh.length >= 2 ? fresh : body, thread: body, from: sender, attachments: attachments.filter((a) => a.outcome !== 'skipped').length }).catch(() => ({ acknowledgement: false, quiet: false }));
+    const toPerson = !ack.quiet && (!!opts.surface || recognised || sender.relation !== 'colleague' || ack.acknowledgement);
+    const res = await engine().recordNote(user.tenantId, matterId, { text: (fresh.length >= 2 ? fresh : body).slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender, surface: toPerson, acknowledgement: ack.acknowledgement, attachments: attachments.map((a) => `${a.name}${a.as ? ` (read as ${a.as.replace(/_/g, ' ')})` : a.outcome === 'duplicate' ? ' (already on the case)' : ''}`) });
     const note = Object.values(res.state.notes).find((n) => n.documentId === doc.id);
     let proposals = note?.actions.filter((a) => a.command).length ?? 0;
     // Bank details in an email are the fraud case: they go straight to the hard-stop bank-details

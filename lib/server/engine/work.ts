@@ -20,7 +20,7 @@
  *   actionOwner         — who is expected to do the thing (may be outside the firm).
  *   responsibilityOwner — the fee-earner accountable for it happening. Never null.
  */
-import { emailChip, noteTaskTitle, nothingToActTitle } from './notes';
+import { acknowledgementTitle, emailChip, noteTaskTitle, nothingToActTitle } from './notes';
 import { profileOf } from './transactions';
 import { DEFAULT_SLA, dueActions, type SlaConfig } from './sla';
 import { ISSUE_KIND_SPEC } from './issues';
@@ -236,6 +236,8 @@ export function decisionTask(s: MatterState, d: DecisionState): { kind: string; 
   }
   if (d.kind === 'note_actions') {
     const note = Object.values(s.notes).find((n) => n.decisionEventId === d.eventId);
+    // An acknowledgement both checks agreed on: one click confirms no reply is needed.
+    if (note?.kind === 'email' && note.acknowledgement && !note.actions.some((a) => a.command)) return { kind: 'note_actions:ack', chip: emailChip(note.from) };
     if (note?.kind === 'email') return { kind: 'note_actions:email', chip: emailChip(note.from) };
   }
   return { kind: d.kind, chip: DECISION_CHIP[d.kind] ?? d.kind.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) };
@@ -309,7 +311,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
   // A note's task says what it would put on the case, not "Note actions — N-012".
   if (d.kind === 'note_actions') {
     const note = s.notes[cleanSubject ?? ''] ?? Object.values(s.notes).find((x) => x.decisionEventId === d.eventId);
-    const title = note ? noteTaskTitle(note.actions) ?? (note.kind === 'email' ? nothingToActTitle(note.from) : null) : null;
+    const title = note ? noteTaskTitle(note.actions) ?? (note.kind === 'email' ? (note.acknowledgement ? acknowledgementTitle(note.from, note.text) : nothingToActTitle(note.from)) : null) : null;
     if (title) return title;
   }
   return (

@@ -19,7 +19,7 @@
 import { applyEvent } from './projection';
 import { assertCompletion, CompletionError, type Completion } from './completion';
 import type { DeadlineKind } from './sla';
-import { validateNoteActions, summariseNoteActions, nothingToActSummary, type NoteActionDraft } from './notes';
+import { validateNoteActions, summariseNoteActions, nothingToActSummary, acknowledgementSummary, type NoteActionDraft } from './notes';
 import { investigationGroups, investigationTitle } from './survey-review';
 import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, RESOLUTION_FIELDS, RESOLUTION_TITLE, FORMLESS_KINDS, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -141,7 +141,7 @@ type CommandBody =
   | { type: 'open_decision_source'; userId: string; decisionEventId: string; documentId: string }
   | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null; selection?: string[] | null; edited?: { subject?: string | null; body?: string | null } | null; /** Escalating: the person it goes to (required). */ escalateTo?: string | null }
   | { type: 'record_note'; actor: Actor; kind: NoteKind; text: string; noteId?: string | null; documentId?: string | null; durationSeconds?: number | null; from?: NoteSender | null }
-  | { type: 'note_extracted'; noteId: string; drafts: NoteActionDraft[]; extractor: string; /** Filed without anyone looking (a reply on a filed conversation): put before a person even when nothing is proposed. */ surface?: boolean }
+  | { type: 'note_extracted'; noteId: string; drafts: NoteActionDraft[]; extractor: string; /** Filed without anyone looking (a reply on a filed conversation): put before a person even when nothing is proposed. */ surface?: boolean; /** Both checks read it as a pure acknowledgement. */ acknowledgement?: boolean }
   | { type: 'note_action_refused'; noteId: string; actionId: string; reason: string }
   | { type: 'record_suppressed'; action: SuppressedAction; reason: 'shadow_mode' | 'subflow_shadow'; subFlow: SubFlow | null; detail: Record<string, unknown> }
   | { type: 'set_shadow_mode'; actor: Actor; shadowMode: boolean; reason?: string | null }
@@ -1125,7 +1125,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!offeredOptions(d.kind, d.options).includes(cmd.option)) reject(`"${cmd.option}" is not an option for this decision (${offeredOptions(d.kind, d.options).join(', ')}).`, 400);
       requireSurfaced(s, d, ctx);
       // A proposal or a held clear is the system's own text: the message shown is the whole of it, there is no document to open first.
-      if (d.kind !== 'proposal' && d.kind !== 'auto_clear' && !d.openedBy.includes(cmd.userId)) reject('Open the source document before resolving this decision.', 412);
+      // An acknowledgement's few words are the task's own title: seeing the task is reading it.
+      const ackOnly = d.kind === 'note_actions' && Object.values(s.notes).some((n) => n.decisionEventId === d.eventId && n.acknowledgement && !n.actions.some((a) => a.command));
+      if (d.kind !== 'proposal' && d.kind !== 'auto_clear' && !ackOnly && !d.openedBy.includes(cmd.userId)) reject('Open the source document before resolving this decision.', 412);
       // Addendum 3 §3: anything other than approving/verifying needs a reason, stored on the resolving event.
       if (cmd.option !== 'approve' && cmd.option !== 'verify' && !(cmd.note ?? '').trim()) reject(`Give a reason for choosing "${optionLabel(cmd.option)}".`, 400);
       // An escalation goes to a named person: it lands on their Tasks list.
@@ -2243,16 +2245,16 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if ((actionable.length || surfaceEmpty) && note.documentId) {
         const decision: DecisionSpec = {
           kind: 'note_actions',
-          summary: surfaceEmpty ? nothingToActSummary(note.text, note.from) : summariseNoteActions({ kind: note.kind, text: note.text, actions, from: note.from }),
+          summary: surfaceEmpty ? (cmd.acknowledgement ? acknowledgementSummary(note.text, note.from) : nothingToActSummary(note.text, note.from)) : summariseNoteActions({ kind: note.kind, text: note.text, actions, from: note.from }),
           sourceDocumentId: note.documentId,
           citations: [{ documentId: note.documentId, label: `${note.kind === 'call' ? 'Call note' : note.kind === 'email' ? 'Email' : 'Note'} ${note.id}` }],
           options: OPTIONS_FOR.note_actions,
           summarisedBy: cmd.extractor,
         };
         assertDecisionSpec(decision);
-        events.push({ type: 'note_extracted', actor: AI, payload: { noteId: note.id, actions, extractor: cmd.extractor, decision }, sourceDocumentId: note.documentId });
+        events.push({ type: 'note_extracted', actor: AI, payload: { noteId: note.id, actions, extractor: cmd.extractor, decision, ...(cmd.acknowledgement ? { acknowledgement: true } : {}) }, sourceDocumentId: note.documentId });
       } else {
-        events.push({ type: 'note_extracted', actor: AI, payload: { noteId: note.id, actions, extractor: cmd.extractor }, sourceDocumentId: note.documentId });
+        events.push({ type: 'note_extracted', actor: AI, payload: { noteId: note.id, actions, extractor: cmd.extractor, ...(cmd.acknowledgement ? { acknowledgement: true } : {}) }, sourceDocumentId: note.documentId });
       }
       return events;
     }
@@ -2463,7 +2465,8 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
     const chosen = new Set(selection && selection.length ? selection : n.actions.filter((a) => a.command).map((a) => a.id));
     const applied = option === 'approve' ? n.actions.filter((a) => a.command && chosen.has(a.id)).map((a) => a.id) : [];
     const skipped = n.actions.filter((a) => !applied.includes(a.id)).map((a) => a.id);
-    if (option === 'approve' && !applied.length) reject('Nothing was selected to apply. Reject the note\'s reading instead, with a reason.', 400);
+    // An email that proposed nothing (Read And Reply, or an acknowledgement): Approve is "dealt with" and applies nothing.
+    if (option === 'approve' && !applied.length && n.actions.some((a) => a.command)) reject('Nothing was selected to apply. Reject the note\'s reading instead, with a reason.', 400);
     return [{ type: 'note_actions_applied', actor: userId, payload: { noteId: n.id, decisionEventId: d.eventId, applied, skipped, option, note }, sourceDocumentId: d.sourceDocumentId }];
   }
 

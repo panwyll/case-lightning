@@ -127,7 +127,7 @@ export interface NoteActionsDetail {
 
 export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;
 export type TrustLevel = (typeof TRUST_LEVELS)[number];
-export const ENGINE_ACTION_LABEL: Record<string, string> = { acknowledgement: 'Acknowledge what arrives', chase: 'Chase the other side', client_update: 'Update the client', search_order: 'Order searches', auto_clear: 'Clear a document the rules pass', enquiry_draft: "Draft enquiries from the seller's forms" };
+export const ENGINE_ACTION_LABEL: Record<string, string> = { acknowledgement: 'Acknowledge what arrives', chase: 'Chase the other side', client_update: 'Update the client', search_order: 'Order searches', auto_clear: 'Clear a document the rules pass', enquiry_draft: "Draft enquiries from the seller's forms", email_no_reply: 'Let acknowledgements go without a reply' };
 export const SUB_FLOWS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'chase'] as const;
 export const SUBFLOW_LABEL: Record<string, string> = { id_check: 'ID / AML', search: 'Searches', enquiry: 'Enquiries', mortgage: 'Mortgage offer', title: 'Title', report_on_title: 'Report on title', chase: 'Chasing & escalation' };
 
@@ -334,7 +334,7 @@ export const chipLabel = (kind: string): string => (kind === 'auto_clear' ? 'Aut
  * Not what needs reading first: a document that arrived, or words a model wrote (enquiries, survey advice).
  */
 const NEEDS_READING = new Set(['proposal:enquiry_draft', 'proposal:survey_advice']);
-export const quickApprovable = (kind: string | null | undefined): boolean => !!kind && kind.startsWith('proposal:') && !NEEDS_READING.has(kind);
+export const quickApprovable = (kind: string | null | undefined): boolean => !!kind && ((kind.startsWith('proposal:') && !NEEDS_READING.has(kind)) || kind === 'note_actions:ack');
 
 export const KIND_LABEL: Record<string, string> = {
   issue: 'Issue',

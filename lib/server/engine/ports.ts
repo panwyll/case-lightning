@@ -78,6 +78,15 @@ export interface DocumentExtractor {
  * proposes case actions. Everything it returns is validated against the note's own words
  * and the machine's command set before anyone sees it, and applied only on approval.
  */
+/**
+ * The second check on an email the codified rule read as a pure acknowledgement: with the whole
+ * conversation and what the case is waiting for, is it really one? Anything short of certain is false.
+ */
+export interface AcknowledgementChecker {
+  readonly name: string;
+  confirm(input: { tenantId: string; matterId: string; text: string; thread?: string; from?: NoteSender | null; caseLine?: string; open?: string[] }): Promise<{ acknowledgement: boolean; reason: string }>;
+}
+
 export interface NoteExtractor {
   readonly name: string;
   extract(input: { tenantId: string; matterId: string; text: string; kind: NoteKind; caseLine?: string; from?: NoteSender | null; now?: string; attachments?: string[]; context?: string }): Promise<NoteActionDraft[]>;
@@ -242,6 +251,8 @@ export interface EnginePorts {
   reportDrafter: ReportDrafter;
   /** Optional: without it a note is filed as evidence and nothing is proposed from it. */
   noteExtractor?: NoteExtractor | null;
+  /** Optional: without it no email is ever treated as needing no reply (every one reaches a person). */
+  ackChecker?: AcknowledgementChecker | null;
   searchProvider: SearchProvider;
   idCheckProvider: IdCheckProvider;
   clientComms: ClientComms;

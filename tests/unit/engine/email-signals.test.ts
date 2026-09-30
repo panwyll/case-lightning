@@ -435,3 +435,51 @@ test('a pure acknowledgement needs no reply; anything that could be an answer, a
   }
   assert.equal(isAcknowledgement('Thanks!', 'Jo Client', 1), false, 'an email carrying a file is not just an acknowledgement');
 });
+
+// ───────────────────────────── acknowledgements: two checks, then the firm's trust level ─────────────────────────────
+
+async function ackCase(verdict: boolean | null) {
+  const h = await enrolled();
+  const seen: string[] = [];
+  h.ports.ackChecker = verdict === null ? null : { name: 'fake', confirm: async (i) => { seen.push(i.text); return { acknowledgement: verdict, reason: verdict ? 'Plain thanks for the update.' : 'It answers our question.' }; } };
+  return { h, seen };
+}
+
+test('an acknowledgement both checks agree on still reaches a person at Propose, as one click with its words in the title', async () => {
+  const { h, seen } = await ackCase(true);
+  const r = await h.svc.acknowledgementCheck(TENANT, MATTER, { text: 'Will do, cheers', thread: 'Will do, cheers\n> Please send your ID', from: CLIENT });
+  assert.deepEqual([r.acknowledgement, r.quiet], [true, false]);
+  assert.equal(seen.length, 1, 'the AI read the conversation');
+  const documentId = h.doc(null, 'EMAIL');
+  await h.svc.recordNote(TENANT, MATTER, { text: 'Will do, cheers', kind: 'email', actor: USER, documentId, from: CLIENT, surface: true, acknowledgement: true });
+  const s = await h.svc.getState(TENANT, MATTER);
+  const { matterWork } = await import('../../../lib/server/engine/work');
+  const item = matterWork(s, new Date()).items.find((i) => i.kind === 'note_actions:ack')!;
+  assert.equal(item.what, "Confirm no reply is needed to the client's acknowledgement: “Will do, cheers”");
+  // One click, without opening the email: its words are the title.
+  await h.svc.resolveDecision(TENANT, MATTER, item.ref.id, USER, 'approve');
+  assert.equal((await h.svc.getState(TENANT, MATTER)).decisions[item.ref.id].status, 'actioned');
+});
+
+test('at Auto an agreed acknowledgement is filed without a task; the AI saying no, or no AI, always reaches a person', async () => {
+  const { h } = await ackCase(true);
+  await h.store.setLevel(TENANT, 'email_no_reply:client', 'auto');
+  assert.equal((await h.svc.acknowledgementCheck(TENANT, MATTER, { text: 'Thanks, received', from: CLIENT })).quiet, true);
+  const no = await ackCase(false);
+  assert.deepEqual(await no.h.svc.acknowledgementCheck(TENANT, MATTER, { text: 'Thanks, received', from: CLIENT }).then((r) => [r.acknowledgement, r.quiet]), [false, false]);
+  const none = await ackCase(null);
+  assert.equal((await none.h.svc.acknowledgementCheck(TENANT, MATTER, { text: 'Thanks, received', from: CLIENT })).acknowledgement, false, 'no second check, no ignoring');
+  const strict = await ackCase(true);
+  assert.equal((await strict.h.svc.acknowledgementCheck(TENANT, MATTER, { text: 'Ok', from: CLIENT })).acknowledgement, false);
+  assert.equal(strict.seen.length, 0, 'the codified rule decides first: the AI is never asked to wave through an "ok"');
+});
+
+test('a Read And Reply task can be approved as dealt with (a person can always let a client email go)', async () => {
+  const h = await enrolled();
+  const documentId = h.doc(null, 'EMAIL');
+  await h.svc.recordNote(TENANT, MATTER, { text: 'Hello, quick question about the garden fence, can you call me?', kind: 'email', actor: USER, documentId, from: CLIENT, surface: true });
+  const d = firstDecision(await h.svc.getState(TENANT, MATTER), 'note_actions');
+  await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve');
+  assert.equal((await h.svc.getState(TENANT, MATTER)).decisions[d.eventId].status, 'actioned');
+});

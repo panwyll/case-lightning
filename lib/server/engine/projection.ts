@@ -519,6 +519,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
         n.extractor = p.extractor;
         n.status = p.actions.some((a) => a.command) && p.decision ? 'proposed' : 'no_actions';
         if (p.decision) n.decisionEventId = e.id;
+        if (p.acknowledgement) n.acknowledgement = true;
       }
       break;
     }
