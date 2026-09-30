@@ -344,6 +344,10 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   for (const d of surfaced.filter((x) => x.kind !== 'auto_clear' || !!s.pendingAutoClears[x.eventId])) {
     const age = wd(d.createdAt, now, cal);
     const what = decisionSentence(s, d);
+    // A note proposing issues carries the most severe of them: its chip is coloured like the issue it would raise.
+    const note = d.kind === 'note_actions' ? Object.values(s.notes).find((n) => n.decisionEventId === d.eventId) : undefined;
+    const proposedSev = (note?.actions ?? []).map((a) => a.command).filter((c): c is Extract<NonNullable<typeof c>, { type: 'raise_issue' }> => c?.type === 'raise_issue').map((c) => c.severity ?? ISSUE_KIND_SPEC[c.kind]?.severity ?? 'warning');
+    const severity = proposedSev.includes('critical') ? 'critical' as const : proposedSev.includes('warning') ? 'warning' as const : proposedSev.length ? 'info' as const : undefined;
     out.push({
       ...base,
       id: `${d.kind === 'escalation' ? 'escalate' : 'do'}:decision:${d.eventId}`,
@@ -355,7 +359,8 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       unblocks: d.kind === 'bank_details' ? 'Any payment to this payee' : null,
       actionOwner: 'conveyancer',
       // An escalation exists because a clock already ran out — it is never "normal".
-      urgency: d.kind === 'bank_details' ? 'critical' : d.kind === 'escalation' || age >= 2 ? 'attention' : 'normal',
+      urgency: d.kind === 'bank_details' || severity === 'critical' ? 'critical' : severity === 'warning' ? 'delayed' : d.kind === 'escalation' || age >= 2 ? 'attention' : 'normal',
+      ...(severity ? { severity } : {}),
       workstream: null,
       since: d.createdAt, sinceWorkingDays: age, slaWorkingDays: null, chaseInWorkingDays: null,
       chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: null, chaseDue: false,

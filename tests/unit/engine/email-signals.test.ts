@@ -412,3 +412,13 @@ test('an email the reader cannot place goes to a person to read and answer, neve
   assert.equal(item.what, "Read and reply to the client's email");
   assert.equal(item.chip, 'Client Email');
 });
+
+test('an email proposing an issue carries that issue\'s severity (the chip is coloured like the issue)', async () => {
+  const h = await enrolled();
+  const res = await email(h, 'Hi, my mortgage provider has rescinded their offer. Please advise next steps.', CLIENT);
+  const { matterWork } = await import('../../../lib/server/engine/work');
+  const { ISSUE_KIND_SPEC } = await import('../../../lib/server/engine/issues');
+  const item = matterWork(res.state, new Date()).items.find((i) => i.kind === 'note_actions:email')!;
+  assert.equal(item.severity, 'critical', 'a withdrawn offer is High, not the usual Medium');
+  assert.equal(ISSUE_KIND_SPEC.mortgage_at_risk.severity, 'warning');
+});

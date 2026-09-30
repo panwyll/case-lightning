@@ -542,7 +542,7 @@ export type NoteCommand =
   | { type: 'record_survey_plan'; plan: 'none' | 'booked'; date: string | null; note: string }
   /** Someone is away between two dates. */
   | { type: 'record_availability'; party: AvailabilityParty; from: string; until: string; note: string }
-  | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate };
+  | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; /** Overrides the kind's usual severity (a withdrawn offer is High, not the usual Medium). */ severity?: 'info' | 'warning' | 'critical' };
 
 export const SIGNED_DOCUMENTS = ['contract', 'transfer', 'mortgage_deed', 'deed_of_trust'] as const;
 export type SignedDocument = (typeof SIGNED_DOCUMENTS)[number];

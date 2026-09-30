@@ -1653,7 +1653,7 @@ export class EngineService {
                   }
                 }
               } else {
-                await this.run(tenantId, matterId, { type: 'raise_issue', actor: e.actor, kind: c.kind, title: c.title, detail: c.detail, gate: c.gate, documentId: note.documentId });
+                await this.run(tenantId, matterId, { type: 'raise_issue', actor: e.actor, kind: c.kind, title: c.title, detail: c.detail, gate: c.gate, documentId: note.documentId, ...(c.severity ? { severity: c.severity } : {}) });
               }
             } catch (err) {
               const reason = err instanceof Error ? err.message : String(err);

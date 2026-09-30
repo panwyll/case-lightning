@@ -568,7 +568,7 @@ const RULES: Rule[] = [
       summary: 'The mortgage offer has been withdrawn',
       quote: sentence,
       confidence: 0.85,
-      command: { type: 'raise_issue', kind: 'mortgage_at_risk', title: `Mortgage offer withdrawn: ${sentence.trim()}`.slice(0, 160), detail: 'Said in an email or a note. Confirm with the lender or broker that the offer is withdrawn and why; the purchase cannot exchange on it. Advise the client on a new application or lender.', gate: 'exchange' },
+      command: { type: 'raise_issue', kind: 'mortgage_at_risk', title: `Mortgage offer withdrawn: ${sentence.trim()}`.slice(0, 160), detail: 'Said in an email or a note. Confirm with the lender or broker that the offer is withdrawn and why; the purchase cannot exchange on it. Advise the client on a new application or lender.', gate: 'exchange', severity: 'critical' },
     }),
   },
   {
