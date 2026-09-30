@@ -215,7 +215,7 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
 // ───────────────────────────── time as a source of events (docs/case-model.md §6) ─────────────────────────────
 
 export type TimedIssueAction =
-  | { kind: 'raise'; issueKind: IssueKind; key: string; title: string; detail: string; severity: IssueSeverity }
+  | { kind: 'raise'; issueKind: IssueKind; key: string; title: string; detail: string; severity: IssueSeverity; /** Overrides the kind's gate (a warning holds nothing; the same thing, once past, holds its gate). */ gate?: 'none' | 'exchange' | 'completion'; /** The day it must be dealt with by (the expiry itself); shown as the task's due date. */ resolveBy?: string }
   | { kind: 'escalate'; issueId: string; severity: IssueSeverity; reason: string }
   | { kind: 'offer_expired'; expiryDate: string }
   | { kind: 'resolve'; issueId: string; resolution: 'received' | 'other'; note: string };
@@ -258,6 +258,68 @@ export function timedIssueActions(state: MatterState, now: Date, cal: WorkingCal
       else if (existing && daysLeft <= MORTGAGE_EXPIRY_CRITICAL_DAYS && existing.severity !== 'critical') out.push({ kind: 'escalate', issueId: existing.id, severity: 'critical', reason: `${daysLeft} days to the offer expiry on ${expiry}` });
     }
   }
+  const offerLive = state.hasLender && (state.mortgage.status === 'cleared' || state.mortgage.status === 'reviewed');
+  const offerDaysLeft = expiry ? Math.round((Date.parse(expiry) - Date.parse(today)) / 86_400_000) : null;
+  // An offer read without its expiry date: none of the warnings can run until someone records it.
+  if (offerLive && !expiry && !state.completion.confirmedAt && state.mortgage.documentId) {
+    const key = `offer-expiry-unknown:${state.mortgage.documentId}`;
+    if (!has(key)) out.push({ kind: 'raise', issueKind: 'mortgage_offer_expiry_unknown', key, title: `Mortgage offer expiry date not known [${key}]`, detail: 'The offer was read without an expiry date, so the expiry warnings cannot run. Read the date from the offer (or the lender\'s portal) and record it here.', severity: 'warning' });
+  }
+  // Before exchange, well ahead: the target completion falls after the offer runs out (the 30-day warning comes later on its own).
+  const target = state.targetCompletionDate?.slice(0, 10) ?? null;
+  if (offerLive && expiry && offerDaysLeft != null && offerDaysLeft > MORTGAGE_EXPIRY_WARNING_DAYS && !state.exchange.exchangedAt && target && target > expiry) {
+    const key = `offer-before-target:${expiry}:${target}`;
+    if (!has(key)) out.push({ kind: 'raise', issueKind: 'mortgage_offer_expiring', key, title: `Mortgage offer expires on ${expiry}, before the target completion on ${target} [${key}]`, detail: 'Either bring completion inside the offer, or ask the broker / lender now what an extension needs and how long it takes. An offer that lapses after exchange leaves the client bound to complete without the advance.', severity: 'warning', resolveBy: expiry });
+  }
+  // After exchange: the client is bound to complete, so an offer that runs out first is an emergency.
+  if (offerLive && expiry && offerDaysLeft != null && state.exchange.exchangedAt && !state.completion.confirmedAt) {
+    const completionDay = state.exchange.completionDate?.slice(0, 10) ?? null;
+    if (offerDaysLeft < 0) {
+      const key = `offer-lapsed-after-exchange:${expiry}`;
+      if (!has(key)) out.push({ kind: 'raise', issueKind: 'mortgage_offer_expired', key, title: `Mortgage offer expired on ${expiry}, after exchange [${key}]`, detail: 'Contracts are exchanged and the offer has lapsed: the client is bound to complete without the advance. Ask the lender for an extension today, tell the client in writing, and warn the seller\'s solicitor that completion is at risk.', severity: 'critical' });
+    } else if (completionDay && completionDay > expiry) {
+      const key = `offer-before-completion:${expiry}:${completionDay}`;
+      if (!has(key)) out.push({ kind: 'raise', issueKind: 'mortgage_offer_expiring', key, title: `Mortgage offer expires on ${expiry}, before completion on ${completionDay} [${key}]`, detail: 'Contracts are exchanged with completion after the offer runs out. Ask the lender for an extension to cover completion now; without it the advance will not be released.', severity: 'critical', resolveBy: expiry });
+    }
+  }
+  // Completion day passed without completion recorded: a completion failure until someone says otherwise.
+  const due = state.exchange.completionDate?.slice(0, 10);
+  if (state.exchange.exchangedAt && due && due < today && !state.completion.confirmedAt) {
+    const key = `completion-missed:${due}`;
+    if (!has(key)) out.push({ kind: 'raise', issueKind: 'completion_failure', key, title: `Completion was due on ${due} and is not recorded [${key}]`, detail: 'If it completed, record completion. If not, the defaulting side pays contractual interest from the completion date, and a notice to complete may follow: find out why, agree a new date, and tell the client and the chain.', severity: 'critical' });
+  }
+  // Redemption statement: good only until a date; completing on a stale figure leaves the charge undischarged.
+  const red = state.redemption;
+  const redBy = (state.exchange.completionDate ?? state.targetCompletionDate)?.slice(0, 10) ?? null;
+  if (red.status === 'received' && red.validUntil && !state.completion.confirmedAt) {
+    const until = red.validUntil.slice(0, 10);
+    const lapsed = until < today;
+    if (lapsed || (redBy && redBy > until)) {
+      const key = `redemption-validity:${until}`;
+      if (!has(key)) out.push({ kind: 'raise', issueKind: 'redemption_statement_expired', key, title: lapsed ? `Redemption statement out of date (valid until ${until}) [${key}]` : `Redemption statement valid only until ${until}, before completion on ${redBy} [${key}]`, detail: `Ask ${red.lender ?? 'the lender'} for a redemption statement dated for completion${redBy ? ` (${redBy})` : ''}, with the daily interest figure.`, severity: lapsed ? 'critical' : 'warning', resolveBy: redBy && redBy > until ? until : undefined });
+    }
+  }
+  // Searches: most lenders will not lend on results more than six months old at exchange (their own rule when recorded).
+  if (!state.exchange.exchangedAt) {
+    const months = state.lenderRequirements?.maxSearchAgeMonths ?? 6;
+    for (const sr of Object.values(state.searches)) {
+      if (!sr.returnedAt) continue;
+      const staleOn = new Date(Date.parse(sr.returnedAt) + months * 30.44 * 86_400_000).toISOString().slice(0, 10);
+      const daysToStale = Math.round((Date.parse(staleOn) - Date.parse(today)) / 86_400_000);
+      if (daysToStale > 30) continue;
+      // A month ahead: a warning that holds nothing. Once out of date: its own issue, holding exchange on a lender case.
+      const key = `search-age:${sr.searchType}:${sr.returnedAt.slice(0, 10)}`;
+      const staleKey = `search-stale:${sr.searchType}:${sr.returnedAt.slice(0, 10)}`;
+      const lenderRule = state.lenderRequirements?.maxSearchAgeMonths ? `the lender allows ${months} months` : `lenders usually allow ${months} months`;
+      if (daysToStale >= 0) {
+        if (!has(key)) out.push({ kind: 'raise', issueKind: 'search_out_of_date', key, gate: 'none', title: `${sr.searchType} search goes out of date on ${staleOn} [${key}]`, detail: `Returned ${sr.returnedAt.slice(0, 10)}; ${lenderRule} at exchange. Exchange before then, or re-order or update it now.`, severity: state.hasLender ? 'warning' : 'info', resolveBy: staleOn });
+      } else if (!has(staleKey)) {
+        const warning = open.find((i) => i.title.includes(`[${key}]`));
+        if (warning) out.push({ kind: 'resolve', issueId: warning.id, resolution: 'other', note: `Now out of date (since ${staleOn}); superseded (timer)` });
+        out.push({ kind: 'raise', issueKind: 'search_out_of_date', key: staleKey, gate: state.hasLender ? 'exchange' : 'none', title: `${sr.searchType} search out of date since ${staleOn} [${staleKey}]`, detail: `Returned ${sr.returnedAt.slice(0, 10)}; ${lenderRule} at exchange. Re-order or update it, or get the lender's agreement or a no-search indemnity.`, severity: state.hasLender ? 'critical' : 'info' });
+      }
+    }
+  }
   // Issues the timer raised close themselves when the thing they were about happened.
   for (const i of open) {
     const key = i.title.match(/\[([a-z-]+):([^\]]*)\]/);
@@ -267,6 +329,15 @@ export function timedIssueActions(state: MatterState, now: Date, cal: WorkingCal
       const stillOpen = openWaits(state).some((w) => (w.key === (key[1] === 'search-delayed' ? 'search' : 'enquiry')) && w.subject === subject && w.openedAt.slice(0, 10) === openedDay);
       if (!stillOpen) out.push({ kind: 'resolve', issueId: i.id, resolution: 'received', note: `${key[1] === 'search-delayed' ? 'Search' : 'Reply'} received (timer)` });
     }
+    // The offer / date / search / statement they were about has changed or passed its moment.
+    const offerKey = (k: string) => { const [e, d] = k.split(':'); return { e, d }; };
+    if (key[1] === 'offer-expiry-unknown' && (!!expiry || state.mortgage.documentId !== key[2] || state.completion.confirmedAt)) out.push({ kind: 'resolve', issueId: i.id, resolution: 'other', note: expiry ? `Expiry date now known: ${expiry} (timer)` : 'A different offer is now on file (timer)' });
+    if (key[1] === 'offer-before-target') { const { e, d } = offerKey(key[2]); if (state.exchange.exchangedAt || expiry !== e || !target || target <= e || target !== d) out.push({ kind: 'resolve', issueId: i.id, resolution: 'other', note: state.exchange.exchangedAt ? 'Contracts exchanged (timer)' : expiry !== e ? 'The offer expiry has changed (timer)' : 'The target completion now falls inside the offer (timer)' }); }
+    if (key[1] === 'offer-before-completion') { const { e, d } = offerKey(key[2]); if (state.completion.confirmedAt || expiry !== e || state.exchange.completionDate?.slice(0, 10) !== d) out.push({ kind: 'resolve', issueId: i.id, resolution: 'other', note: state.completion.confirmedAt ? 'Completed (timer)' : expiry !== e ? 'The offer expiry has changed (timer)' : 'The completion date has changed (timer)' }); }
+    if (key[1] === 'offer-lapsed-after-exchange' && (state.completion.confirmedAt || expiry !== key[2])) out.push({ kind: 'resolve', issueId: i.id, resolution: 'other', note: state.completion.confirmedAt ? 'Completed (timer)' : 'The offer was extended or replaced (timer)' });
+    if (key[1] === 'completion-missed' && (state.completion.confirmedAt || state.exchange.completionDate?.slice(0, 10) !== key[2])) out.push({ kind: 'resolve', issueId: i.id, resolution: 'other', note: state.completion.confirmedAt ? 'Completion recorded (timer)' : 'A new completion date is set (timer)' });
+    if (key[1] === 'redemption-validity' && (state.completion.confirmedAt || red.validUntil?.slice(0, 10) !== key[2])) out.push({ kind: 'resolve', issueId: i.id, resolution: 'received', note: state.completion.confirmedAt ? 'Completed (timer)' : 'A fresh redemption statement is on file (timer)' });
+    if (key[1] === 'search-age' || key[1] === 'search-stale') { const [type, day] = key[2].split(':'); const sr = Object.values(state.searches).find((x) => x.searchType === type); if (state.exchange.exchangedAt || !sr || sr.returnedAt?.slice(0, 10) !== day) out.push({ kind: 'resolve', issueId: i.id, resolution: state.exchange.exchangedAt ? 'other' : 'received', note: state.exchange.exchangedAt ? 'Contracts exchanged inside the search\'s life (timer)' : 'A fresh search result is on file (timer)' }); }
     if (key[1] === 'offer-expiry' && (state.exchange.exchangedAt || !expiry || expiry !== key[2] || !(state.mortgage.status === 'cleared' || state.mortgage.status === 'reviewed'))) {
       out.push({ kind: 'resolve', issueId: i.id, resolution: 'other', note: state.exchange.exchangedAt ? 'Contracts exchanged inside the offer (timer)' : 'A different offer is now on file (timer)' });
     }

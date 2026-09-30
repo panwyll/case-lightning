@@ -27,7 +27,7 @@ test('every note command and document role points at a rule that exists', () => 
 test('every issue the timer raises has a rule', () => {
   const sla = fs.readFileSync('lib/server/engine/sla.ts', 'utf8');
   const kinds = new Set([...sla.matchAll(/issueKind: '([a-z_]+)'/g)].map((m) => m[1]));
-  const RULE: Record<string, string> = { cdd_refresh: 'timer.cdd_refresh', mortgage_offer_expired: 'timer.offer_expired', mortgage_offer_expiring: 'timer.offer_expiring', search_delayed: 'timer.search_delayed', enquiry_unanswered: 'timer.enquiry_unanswered' };
+  const RULE: Record<string, string> = { cdd_refresh: 'timer.cdd_refresh', mortgage_offer_expired: 'timer.offer_expired', mortgage_offer_expiring: 'timer.offer_expiring', search_delayed: 'timer.search_delayed', enquiry_unanswered: 'timer.enquiry_unanswered', mortgage_offer_expiry_unknown: 'timer.offer_expiry_unknown', redemption_statement_expired: 'timer.redemption_validity', search_out_of_date: 'timer.search_age', completion_failure: 'timer.completion_missed' };
   for (const k of kinds) assert.ok(RULE[k] && ids.has(RULE[k]), `timer raises ${k} but no rule covers it`);
 });
 

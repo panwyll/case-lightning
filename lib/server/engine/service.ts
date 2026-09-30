@@ -1092,7 +1092,7 @@ export class EngineService {
     let timed = 0;
     for (const t of timedIssueActions(state, now)) {
       try {
-        if (t.kind === 'raise') await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: t.issueKind, title: t.title, detail: t.detail, severity: t.severity });
+        if (t.kind === 'raise') await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: t.issueKind, title: t.title, detail: t.detail, severity: t.severity, ...(t.gate ? { gate: t.gate } : {}), ...(t.resolveBy ? { resolveBy: t.resolveBy } : {}) });
         else if (t.kind === 'escalate') await this.run(tenantId, matterId, { type: 'set_issue_severity', actor: SYSTEM, issueId: t.issueId, severity: t.severity, reason: t.reason });
         else if (t.kind === 'resolve') await this.run(tenantId, matterId, { type: 'resolve_issue', actor: SYSTEM, issueId: t.issueId, resolution: t.resolution, note: t.note });
         else if (t.kind === 'offer_expired' && (state.mortgage.status === 'cleared' || state.mortgage.status === 'reviewed')) await this.run(tenantId, matterId, { type: 'mortgage_offer_withdrawn', actor: SYSTEM, reason: `Offer expired on ${t.expiryDate} (timer)` });

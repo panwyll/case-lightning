@@ -75,6 +75,7 @@ export const ISSUE_KINDS = [
   // searches
   'search_adverse_entry',
   'search_delayed',
+  'search_out_of_date',
   // enquiries
   'enquiry_unanswered',
   'enquiry_unsatisfactory',
@@ -86,12 +87,14 @@ export const ISSUE_KINDS = [
   'mortgage_condition_outstanding',
   'mortgage_offer_expiring',
   'mortgage_offer_expired',
+  'mortgage_offer_expiry_unknown',
   'valuation_issue',
   'lender_approval',
   // money
   'deposit_issue',
   'completion_funds_shortfall',
   'lender_funds_delayed',
+  'redemption_statement_expired',
   // parties & chain
   'chain_dependency',
   'seller_delay',
@@ -159,6 +162,7 @@ export const ISSUE_RESOLUTIONS = [
   'document_reexecuted',
   'received',
   'offer_extended',
+  'expiry_recorded',
   'condition_satisfied',
   'new_lender',
   'revaluation_upheld',
@@ -228,6 +232,7 @@ const KIND_SPECS_BASE: Array<Omit<IssueKindSpec, 'severity' | 'workstreams' | 't
   // ── searches ──
   { kind: 'search_adverse_entry', group: 'searches', label: 'Search adverse entry', arisesFrom: 'a search result the client or lender needs to act on: flood risk, contaminated land, a road scheme, a chancel liability, a mining report, no public sewer connection', gate: 'exchange', stages: PRE, resolutions: ['evidence_provided', 'specialist_report_clear', 'indemnity_policy', 'lender_confirmed', 'price_reduced', 'accepted_as_is', 'other'], note: 'Flood risk must be reported to the lender, who may withdraw; insurability is the practical test.', overlaps: 'the search sub-flow raises the flag as a decision; the issue tracks what the decision started (a further report, the lender\'s view)' },
   { kind: 'search_delayed', group: 'searches', label: 'Search delayed', arisesFrom: 'a local authority running weeks behind, a provider outage, a search that has to be re-ordered for freshness', gate: 'none', stages: PRE, resolutions: ['received', 'indemnity_policy', 'dates_replanned', 'accepted_as_is', 'other'], note: 'Search indemnity insurance is the usual workaround when a council is slow and the lender allows it.', overlaps: 'the search wait timer chases at day 10 and escalates at day 18; raise the issue when the delay changes the plan (indemnity, new target dates)' },
+  { kind: 'search_out_of_date', group: 'searches', label: 'Search out of date', arisesFrom: 'a search result older than the lender allows (usually six months) before exchange', gate: 'exchange', stages: PRE, resolutions: ['received', 'lender_confirmed', 'indemnity_policy', 'accepted_as_is', 'other'], note: 'Most lenders will not lend on searches over six months old at exchange; re-order (or update) them, or get the lender\'s agreement or a no-search indemnity.' },
   // ── enquiries ──
   { kind: 'enquiry_unanswered', group: 'enquiries', label: 'Enquiry unanswered', arisesFrom: 'the other side has gone quiet: the seller\'s solicitor has not replied, or has replied to everything but the one that matters', gate: 'none', stages: PRE, resolutions: ['received', 'accepted_as_is', 'other'], note: 'The "enquiry stalemate" is the forum staple: weeks of "we are waiting for our client".', overlaps: 'the enquiry wait timer chases at day 5 and escalates at day 15' },
   { kind: 'enquiry_unsatisfactory', group: 'enquiries', label: 'Unsatisfactory enquiry response', arisesFrom: '"the buyer must rely on their own survey / searches", a refusal to give a statement of truth, an executor who will not answer', gate: 'exchange', stages: PRE, resolutions: ['received', 'evidence_provided', 'indemnity_policy', 'price_reduced', 'accepted_as_is', 'other'], note: 'Executors and attorneys legitimately cannot answer TA6 questions; the client is advised and decides.', overlaps: 'the enquiry sub-flow flags partial / refused replies as a decision; "request further" raises a tracked follow-up' },
@@ -239,12 +244,14 @@ const KIND_SPECS_BASE: Array<Omit<IssueKindSpec, 'severity' | 'workstreams' | 't
   { kind: 'mortgage_condition_outstanding', group: 'mortgage', label: 'Mortgage condition outstanding', arisesFrom: 'a special condition on the offer: a retention, works, an occupier\'s consent, an indemnity approval, insurance, proof of deposit', gate: 'exchange', stages: PRE, resolutions: ['condition_satisfied', 'retention_agreed', 'lender_confirmed', 'evidence_provided', 'other'], note: 'Exchange with an unsatisfied condition risks funds not being released on the day.', overlaps: 'the mortgage sub-flow flags each special condition as a decision' },
   { kind: 'mortgage_offer_expiring', group: 'mortgage', label: 'Mortgage offer expiring', arisesFrom: 'the offer\'s expiry date closing in on a matter that is not ready to exchange', gate: 'none', stages: PRE, resolutions: ['offer_extended', 'received', 'dates_replanned', 'new_lender', 'other'], note: 'Lenders extend once, sometimes twice, for a few weeks; a re-issue means re-underwriting on today\'s rates.', overlaps: 'the deadline timer raises this 15 working days out; the issue tracks the extension request' },
   { kind: 'mortgage_offer_expired', group: 'mortgage', label: 'Mortgage offer expired', arisesFrom: 'the offer lapsed before exchange', gate: 'exchange', stages: PRE, resolutions: ['received', 'new_lender', 'other'], note: 'A fresh application, valuation and offer; rates may have moved.', overlaps: 'record mortgage_offer_withdrawn (the sub-flow reopens and blocks exchange); the issue tracks the re-application' },
+  { kind: 'mortgage_offer_expiry_unknown', group: 'mortgage', label: 'Offer expiry date not known', arisesFrom: 'a mortgage offer read without an expiry date: the expiry warnings cannot run until it is known', gate: 'none', stages: PRE, resolutions: ['expiry_recorded', 'other'], note: 'Most offers run three to six months from issue; the date is on the offer itself or the lender\'s portal.' },
   { kind: 'valuation_issue', group: 'mortgage', label: 'Valuation issue', arisesFrom: 'a down-valuation below the agreed price, a valuer\'s retention or "further reports required" (roof, damp, timber), a nil valuation (spray foam, cladding, knotweed)', gate: 'exchange', stages: PRE, resolutions: ['price_reduced', 'buyer_covers_shortfall', 'new_lender', 'revaluation_upheld', 'specialist_report_clear', 'retention_agreed', 'accepted_as_is', 'other'], note: 'Options are renegotiate, make up the shortfall, a fresh valuation with another lender, or a challenge; a price change must be reported to the lender and can change the offer.' },
   { kind: 'lender_approval', group: 'mortgage', label: 'Lender approval needed', arisesFrom: 'anything the lender must be told: a price change, an indemnity policy, a retention, flood risk, a change of circumstances', gate: 'exchange', stages: PRE, resolutions: ['lender_confirmed', 'new_lender', 'other'], note: 'Raised automatically by the machine when a price change or an indemnity resolution needs the lender\'s confirmation; days to weeks in practice.' },
   // ── money ──
   { kind: 'deposit_issue', group: 'money', label: 'Deposit issue', arisesFrom: 'a deposit below 10%, a deposit funded by the sale in a chain, a deposit not yet in cleared funds, a gifted deposit not yet evidenced', gate: 'exchange', stages: ['contract_review', 'pre_exchange'], resolutions: ['deposit_agreed', 'funds_in_place', 'evidence_provided', 'other'], note: 'A reduced deposit needs the seller\'s agreement in the contract; a deposit "up the chain" is normal but must be agreed.' },
   { kind: 'completion_funds_shortfall', group: 'money', label: 'Completion funds shortfall', arisesFrom: 'the client balance is short of the completion statement: SDLT underestimated, a bonus or ISA not yet released, a sale proceeds shortfall in the chain', gate: 'completion', stages: ['pre_exchange', ...POST_EX], resolutions: ['funds_in_place', 'evidence_provided', 'other'], note: 'Before exchange it is a plan; after exchange it is a completion failure in waiting.' },
   { kind: 'lender_funds_delayed', group: 'money', label: 'Lender funds delayed', arisesFrom: 'the advance not released: the certificate of title sent late, a condition unsatisfied, the lender\'s cut-off missed', gate: 'completion', stages: POST_EX, resolutions: ['received', 'completed_late', 'other'], note: 'Most lenders need the COT 5 working days before completion; a late advance means late completion interest.', overlaps: 'the funds wait timer chases the lender from day 2' },
+  { kind: 'redemption_statement_expired', group: 'money', label: 'Redemption statement out of date', arisesFrom: 'the redemption statement is only good until a date that falls before completion', gate: 'completion', stages: ['pre_exchange', 'exchanged', 'pre_completion'], resolutions: ['received', 'other'], note: 'Redeeming on a stale figure leaves the mortgage undischarged (interest accrues daily); ask the lender for a statement dated for completion.' },
   // ── parties & chain ──
   { kind: 'chain_dependency', group: 'parties_chain', label: 'Chain dependency', arisesFrom: 'the top or bottom of the chain is not ready: their management pack, their enquiries, their buyer pulled out, their mortgage', gate: 'exchange', stages: ['contract_review', 'pre_exchange'], resolutions: ['chain_ready', 'dates_replanned', 'other'], note: 'Agents say "ready" a week before solicitors are; a link dropping out costs ~10 weeks; the collapse is often discovered on exchange day.' },
   { kind: 'seller_delay', context: true, group: 'parties_chain', label: 'Seller delay', arisesFrom: 'the seller has not returned the protocol forms, signed the contract, provided documents, or instructed their solicitor on a point', gate: 'none', stages: PRE, resolutions: ['received', 'dates_replanned', 'accepted_as_is', 'other'], note: 'The commonest reason a matter sits: nothing is technically wrong, someone is just not doing it.' },
@@ -307,6 +314,8 @@ const BEHAVIOUR: Record<IssueKind, { severity: IssueSeverity; workstreams: Works
   building_regs_missing: { severity: 'warning', workstreams: ['searches', 'survey'], threatens: ['exchange'], actions: ['Ask for the completion certificate / FENSA / Gas Safe', 'Quote an indemnity or a regularisation certificate', 'Report to the lender; some insist on regularisation'], responsible: 'seller_side', escalateAfterWorkingDays: 10 },
   search_adverse_entry: { severity: 'warning', workstreams: ['searches'], threatens: ['exchange'], actions: ['Read the entry against the property', 'Obtain a specialist report or an indemnity', 'Report to the lender where required (flood)', 'Advise the client'], responsible: 'conveyancer', escalateAfterWorkingDays: 10 },
   search_delayed: { severity: 'info', workstreams: ['searches'], threatens: ['exchange'], actions: ['Chase the provider / council', 'Consider search indemnity if the lender allows', 'Re-plan target dates'], responsible: 'third_party', escalateAfterWorkingDays: 5 },
+  search_out_of_date: { severity: 'warning', workstreams: ['searches'], threatens: ['exchange'], actions: ['Re-order or update the search', 'Or get the lender\'s agreement / a no-search indemnity'], responsible: 'conveyancer', escalateAfterWorkingDays: 5 },
+  redemption_statement_expired: { severity: 'warning', workstreams: ['redemption'], threatens: ['completion'], actions: ['Ask the lender for a redemption statement dated for completion'], responsible: 'conveyancer', escalateAfterWorkingDays: 3 },
   enquiry_unanswered: { severity: 'info', workstreams: ['enquiries'], threatens: ['exchange'], actions: ['Chase the seller\'s solicitor in writing', 'Escalate to the agent', 'Re-plan target dates'], responsible: 'seller_side', escalateAfterWorkingDays: 5 },
   enquiry_unsatisfactory: { severity: 'warning', workstreams: ['enquiries'], threatens: ['exchange'], actions: ['Raise the further enquiry', 'Obtain the evidence another way (search, indemnity)', 'Advise the client and record their decision'], responsible: 'conveyancer', escalateAfterWorkingDays: 10 },
   source_of_funds: { severity: 'warning', workstreams: ['source_of_funds'], threatens: ['exchange'], actions: ['Send / re-send the proof-of-funds form', 'Query the unusual transactions', 'Record the MLRO\'s view for EDD cases'], responsible: 'client', escalateAfterWorkingDays: 5 },
@@ -320,6 +329,7 @@ const BEHAVIOUR: Record<IssueKind, { severity: IssueSeverity; workstreams: Works
   mortgage_condition_outstanding: { severity: 'warning', workstreams: ['mortgage'], threatens: ['exchange', 'completion'], actions: ['Satisfy the condition and report to the lender', 'Confirm the lender is content before exchange'], responsible: 'conveyancer', escalateAfterWorkingDays: 5 },
   mortgage_offer_expiring: { severity: 'warning', workstreams: ['mortgage'], threatens: ['exchange', 'completion'], actions: ['Contact the broker / lender', 'Determine the extension requirements and timing', 'Plan exchange and completion inside the offer, or start a re-issue'], responsible: 'client', escalateAfterWorkingDays: 3 },
   mortgage_offer_expired: { severity: 'critical', workstreams: ['mortgage'], threatens: ['exchange', 'completion'], actions: ['Fresh application, valuation and offer', 'Tell the chain the timetable has moved'], responsible: 'client', escalateAfterWorkingDays: 3 },
+  mortgage_offer_expiry_unknown: { severity: 'warning', workstreams: ['mortgage'], threatens: ['exchange', 'completion'], actions: ['Read the expiry date from the offer or the lender\'s portal', 'Record it'], responsible: 'conveyancer', escalateAfterWorkingDays: 3 },
   valuation_issue: { severity: 'warning', workstreams: ['mortgage', 'survey'], threatens: ['exchange'], actions: ['Get the valuation figure and the reason', 'Renegotiate, top up, challenge, or move lender', 'Report a price change to the lender'], responsible: 'client', escalateAfterWorkingDays: 5 },
   lender_approval: { severity: 'warning', workstreams: ['mortgage'], threatens: ['exchange'], actions: ['Report to the lender through the panel portal', 'Chase for confirmation the offer stands'], responsible: 'lender', escalateAfterWorkingDays: 5 },
   deposit_issue: { severity: 'warning', workstreams: ['deposit'], threatens: ['exchange'], actions: ['Agree a reduced deposit or a deposit up the chain in the contract', 'Confirm cleared funds before exchange'], responsible: 'client', escalateAfterWorkingDays: 5 },
@@ -390,6 +400,7 @@ export const RESOLUTION_LABEL: Record<IssueResolution, string> = {
   document_reexecuted: 'document re-executed',
   received: 'received (the awaited thing arrived)',
   offer_extended: 'offer extended by the lender',
+  expiry_recorded: 'offer expiry date recorded',
   condition_satisfied: 'condition satisfied',
   new_lender: 'new lender / fresh valuation',
   revaluation_upheld: 'valuation challenged and upheld',
@@ -448,6 +459,7 @@ export const RESOLUTION_TITLE: Record<IssueResolution, string> = {
   document_reexecuted: 'Document Re-Executed',
   received: 'Received',
   offer_extended: 'Offer Extended',
+  expiry_recorded: 'Expiry Recorded',
   condition_satisfied: 'Condition Satisfied',
   new_lender: 'New Lender',
   revaluation_upheld: 'Valuation Upheld',
@@ -492,6 +504,7 @@ export const RESOLUTION_FIELDS: Record<IssueResolution, ResolutionField[]> = {
   document_reexecuted: [f('documentId', 'Re-Executed Document', 'document')],
   received: [f('documentId', 'What Arrived', 'document', false)],
   offer_extended: [f('newExpiry', 'New Expiry', 'date')],
+  expiry_recorded: [f('newExpiry', 'Expiry Date', 'date')],
   condition_satisfied: [f('documentId', 'Evidence', 'document', false)],
   new_lender: [f('lender', 'New Lender', 'lender')],
   revaluation_upheld: [f('valuation', 'Valuation', 'money')],
@@ -518,6 +531,7 @@ export const RESOLUTION_EFFECT: Partial<Record<IssueResolution, string>> = {
   retention_agreed: 'Adds a task to tell the lender',
   new_lender: 'Sets the current offer aside',
   offer_extended: 'Moves the offer expiry',
+  expiry_recorded: 'Sets the offer expiry',
   dates_replanned: 'Moves the target dates',
 };
 /** The working days an issue of this kind is given to be sorted, when nobody sets a date. */
@@ -533,7 +547,7 @@ export const ISSUE_CHIP: Record<IssueKind, string> = {
   ground_rent_issue: 'Ground Rent', freeholder_info_outstanding: 'Management Pack', planning_permission_missing: 'Planning', building_regs_missing: 'Building Regs',
   search_adverse_entry: 'Search', search_delayed: 'Search Delayed', enquiry_unanswered: 'Enquiry', enquiry_unsatisfactory: 'Enquiry', source_of_funds: 'Source Of Funds',
   aml_kyc_problem: 'AML', mortgage_offer_outstanding: 'Mortgage Offer', mortgage_condition_outstanding: 'Mortgage Condition', mortgage_offer_expiring: 'Offer Expiring',
-  mortgage_offer_expired: 'Offer Expired', valuation_issue: 'Valuation', lender_approval: 'Tell The Lender', deposit_issue: 'Deposit',
+  mortgage_offer_expired: 'Offer Expired', mortgage_offer_expiry_unknown: 'Offer Expiry', search_out_of_date: 'Search Out Of Date', redemption_statement_expired: 'Redemption Statement', valuation_issue: 'Valuation', lender_approval: 'Tell The Lender', deposit_issue: 'Deposit',
   completion_funds_shortfall: 'Shortfall', lender_funds_delayed: 'Lender Funds', chain_dependency: 'Chain', seller_delay: 'Seller Delay', buyer_delay: 'Buyer Delay',
   third_party_consent: 'Consent', document_execution_problem: 'Signing', occupier_consent: 'Occupier', probate_issue: 'Probate', power_of_attorney_issue: 'Attorney',
   bankruptcy_insolvency: 'Insolvency', survey_defect: 'Survey', environmental_risk: 'Environmental', third_party_encumbrance: 'Encumbrance', document_missing: 'Missing Document',

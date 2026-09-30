@@ -824,7 +824,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       i.details = p.details ?? null;
       i.evidenceDocumentId = p.documentId ?? null;
       // An extension moves the offer's expiry (the deadline timer reads it).
-      if (p.resolution === 'offer_extended' && typeof p.details?.newExpiry === 'string' && s.mortgage.facts) s.mortgage.facts.expiryDate = p.details.newExpiry;
+      if ((p.resolution === 'offer_extended' || p.resolution === 'expiry_recorded') && typeof p.details?.newExpiry === 'string' && s.mortgage.facts) s.mortgage.facts.expiryDate = p.details.newExpiry;
       i.updatedAt = e.createdAt;
       i.history.push({ at: e.createdAt, by: e.actor, what: `resolved: ${p.resolution.replace(/_/g, ' ')}${p.costPennies != null ? ` (£${(p.costPennies / 100).toLocaleString('en-GB')}${p.paidBy ? `, paid by ${p.paidBy}` : ''})` : ''}${p.note ? ` — ${p.note}` : ''}` });
       settleSurvey(s);

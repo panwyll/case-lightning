@@ -34,6 +34,8 @@ export const HEALTH_BANDS = ['normal', 'attention', 'delayed', 'blocked', 'criti
  * A report that has just come in and needs reading is a job, not a crisis: it "needs attention".
  * A third party that is slow is "delayed", however slow.
  */
+/** Dates running out (sla.ts timedIssueActions): early they are ours to act on (With Us); critical, the deal is at risk (Critical). */
+const EXPIRY: ReadonlySet<string> = new Set(['mortgage_offer_expiring', 'mortgage_offer_expiry_unknown', 'redemption_statement_expired', 'search_out_of_date']);
 const JEOPARDY: ReadonlySet<string> = new Set(['transaction_at_risk', 'mortgage_offer_expired', 'mortgage_at_risk', 'completion_failure', 'completion_funds_shortfall', 'lender_funds_delayed', 'bankruptcy_insolvency', 'aml_kyc_problem']);
 /** Working days a decision of ours may wait before it is our delay, then a serious one. */
 const OUR_DELAY = { late: 5, severe: 10 };
@@ -53,7 +55,7 @@ function colourOf(s: MatterState, reasons: HealthReason[], now: Date): HealthBan
   const issueOf = (r: HealthReason) => (r.ref.type === 'issue' ? s.issues[r.ref.id] : undefined);
   const oursIssue = (r: HealthReason) => { const i = issueOf(r); const who = i ? ISSUE_KIND_SPEC[i.kind]?.responsible : undefined; return !who || who === 'conveyancer' || who === 'mlro'; };
   // The deal itself at risk: a jeopardy issue, or the offer or a notice to complete about to run out.
-  const jeopardy = reasons.some((r) => (r.code === 'issue_critical' && JEOPARDY.has(issueOf(r)?.kind ?? '')) || ((r.code === 'deadline_near' || r.code === 'deadline_passed') && r.band === 'critical' && /^(Mortgage offer|Notice to complete)/.test(r.headline)));
+  const jeopardy = reasons.some((r) => (r.code === 'issue_critical' && (JEOPARDY.has(issueOf(r)?.kind ?? '') || EXPIRY.has(issueOf(r)?.kind ?? ''))) || ((r.code === 'deadline_near' || r.code === 'deadline_passed') && r.band === 'critical' && /^(Mortgage offer|Notice to complete)/.test(r.headline)));
   const today = now.toISOString().slice(0, 10);
   const due = dueSteps(s, now);
   const oursLate = reasons.some((r) =>
@@ -61,7 +63,7 @@ function colourOf(s: MatterState, reasons: HealthReason[], now: Date): HealthBan
     || (r.code === 'issue_overdue' && oursIssue(r))
     || (r.code === 'decision_pending' && r.band !== 'attention')
     || (r.code === 'deadline_near' && r.band === 'critical')
-    || (r.code === 'issue_critical' && !JEOPARDY.has(issueOf(r)?.kind ?? '')))
+    || (r.code === 'issue_critical' && !JEOPARDY.has(issueOf(r)?.kind ?? '') && !EXPIRY.has(issueOf(r)?.kind ?? '')))
     || due.some((d) => !!d.dueDate && d.dueDate < today);
   const theirsLate = reasons.some((r) =>
     r.code === 'wait_overdue' || r.code === 'wait_escalated'
@@ -70,7 +72,7 @@ function colourOf(s: MatterState, reasons: HealthReason[], now: Date): HealthBan
     || (r.code === 'issue_blocking' && r.band === 'blocked' && !oursIssue(r))
     || (r.code === 'stage_overrun' && r.band === 'delayed'));
   const oursPending = due.length > 0 || reasons.some((r) =>
-    r.code === 'manual_handling' || r.code === 'decision_pending' || r.code === 'deadline_near'
+    r.code === 'manual_handling' || r.code === 'decision_pending' || r.code === 'deadline_near' || r.code === 'expiry_warning'
     || (r.code === 'issue_blocking' && oursIssue(r)));
   if (jeopardy || (oursLate && theirsLate)) return 'critical';
   if (oursLate) return 'blocked';
@@ -94,7 +96,7 @@ export type ReasonCode =
   | 'issue_blocking' | 'issue_critical' | 'issue_stale' | 'issue_overdue'
   | 'decision_pending' | 'hard_stop'
   | 'deadline_near' | 'deadline_passed'
-  | 'stage_overrun' | 'manual_handling' | 'abandoned' | 'step_due';
+  | 'stage_overrun' | 'manual_handling' | 'abandoned' | 'step_due' | 'expiry_warning';
 
 export interface HealthReason {
   code: ReasonCode;
@@ -251,7 +253,11 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
     const ours = spec.responsible === 'conveyancer' || spec.responsible === 'mlro';
     const oursTooLong = ours && spec.escalateAfterWorkingDays != null && age >= spec.escalateAfterWorkingDays * 2;
     const raisedAge = dayAge(i.raisedAt, now, cal);
-    if (JEOPARDY.has(i.kind) || oursTooLong) {
+    if (EXPIRY.has(i.kind)) {
+      // A date running out: critical when the deal is at risk, otherwise ours to act on in time (never "late" before the date).
+      if (i.severity === 'critical') reasons.push({ code: 'issue_critical', band: 'critical', headline: named, why, suggested, workstream: spec.workstreams[0] ?? null, ref: { type: 'issue', id: i.id }, ageWorkingDays: age });
+      else reasons.push({ code: 'expiry_warning', band: 'attention', headline: named, why, suggested, workstream: spec.workstreams[0] ?? null, ref: { type: 'issue', id: i.id }, ageWorkingDays: age });
+    } else if (JEOPARDY.has(i.kind) || oursTooLong) {
       reasons.push({ code: 'issue_critical', band: 'critical', headline: oursTooLong && !JEOPARDY.has(i.kind) ? `${named} — ours, untouched for ${plural(age, 'working day')}` : named, why, suggested, workstream: spec.workstreams[0] ?? null, ref: { type: 'issue', id: i.id }, ageWorkingDays: age });
     } else if (holds && raisedAge < FRESH_ISSUE_DAYS) {
       // Just in (a survey read, a search back): the job is to read it and act, not an alarm.
@@ -263,7 +269,7 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
     }
     // Past the date it was to be sorted by: late, on us or on whoever owns the next step.
     const today = now.toISOString().slice(0, 10);
-    if (i.resolveBy && i.resolveBy < today && !JEOPARDY.has(i.kind) && !isContextKind(i.kind)) {
+    if (i.resolveBy && i.resolveBy < today && !JEOPARDY.has(i.kind) && !EXPIRY.has(i.kind) && !isContextKind(i.kind)) {
       reasons.push({ code: 'issue_overdue', band: ours ? 'blocked' : 'delayed', headline: `${named} — due ${i.resolveBy}`, why: [...why, `It was to be sorted by ${i.resolveBy}.`], suggested, workstream: spec.workstreams[0] ?? null, ref: { type: 'issue', id: i.id }, ageWorkingDays: age });
     }
   }
