@@ -2,6 +2,15 @@
 import { Spin } from './BusyButton';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { MarkComplete } from './MarkComplete';
+import { ReopenStep } from './ReopenStep';
+
+/** What marking a step incomplete does (engine/types.ts REOPENABLE_STEPS). */
+const REOPENABLE_STEP_EFFECT: Record<string, string> = {
+  id_check: 'The ID check has to be done again', proof_of_funds: 'Proof of funds has to be given and signed off again', title: 'The title has to be checked again',
+  report_on_title: 'The report on title has to be redrafted and sent again', mortgage: 'The mortgage offer is treated as withdrawn: a new offer is needed and exchange is held until it is checked',
+  management_pack: 'The management pack has to be obtained and reviewed again', property_forms: 'The property forms have to be completed again', contract_pack: 'The contract pack has to be sent again',
+  contract_approved: 'The contract has to be approved again, and signed again by the client', deposit: 'The deposit is no longer treated as held', redemption: 'A fresh redemption statement is needed',
+};
 import { uploadCaseFile } from './uploadCaseFile';
 import { IssuesPanel } from './IssuesPanel';
 import { AddNote, RaiseEnquiry } from './NotesPanel';
@@ -940,9 +949,18 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     if (l === 'Redemption statement') return 'redemption';
     return null;
   };
-  const withManual = (tiles: Tile[]): Tile[] => !manual ? tiles : tiles.map((t) => {
+  const withManual = (tiles: Tile[]): Tile[] => tiles.map((t) => {
     const step = stepFor(t);
-    if (!step || DONE_STATUSES.has(t.status)) return t;
+    if (!step) return t;
+    // Done: taken back (Undo, if marked by hand in error) or reopened (Mark Incomplete, if it no longer holds).
+    if (DONE_STATUSES.has(t.status)) {
+      const canUndo = !!s.manualSteps?.[step] && !closed;
+      const canReopen = !closed && (step in REOPENABLE_STEP_EFFECT || /^search:/.test(step));
+      if (!canUndo && !canReopen) return t;
+      const back = <ReopenStep key={`ro-${step}`} step={step} label={t.label} canUndo={canUndo} canReopen={canReopen} effect={REOPENABLE_STEP_EFFECT[step] ?? 'The search has to be ordered again'} busy={busy} cmd={cmd} />;
+      return { ...t, action: t.action ? <>{t.action}{back}</> : back };
+    }
+    if (!manual) return t;
     const mark = <MarkComplete key={`mc-${step}`} matterId={matterId} api={api} step={step} label={t.label} busy={busy} cmd={cmd} lender={step === 'mortgage' ? s.mortgage.facts?.lender ?? null : step === 'redemption' ? s.redemption?.lender ?? null : null} />;
     return { ...t, action: t.action ? <>{t.action}{mark}</> : mark };
   });

@@ -51,7 +51,7 @@ export function Harness() {
       {typeof window !== 'undefined' && window.location.hash.startsWith('#step:')
         ? <StepReview api={api} matterId={MATTER} stepKey={window.location.hash.slice('#step:'.length)} onDone={() => {}} />
         : typeof window !== 'undefined' && window.location.hash === '#thread' ? <ThreadPanes />
-        : typeof window !== 'undefined' && window.location.hash === '#email-task' ? <EmailTask />
+        : typeof window !== 'undefined' && (window.location.hash === '#email-task' || window.location.hash === '#task-page') ? <EmailTask />
         : typeof window !== 'undefined' && window.location.hash === '#templates' ? <EmailTemplates />
         : typeof window !== 'undefined' && window.location.hash.startsWith('#docpacks') ? <DocPacks />
         : view === 'tasks' ? <HarnessTasks /> : <CasePanel section={view === 'flow' ? 'flow' : 'tasks'} />}
@@ -96,5 +96,7 @@ function ThreadPanes() {
 function EmailTask() {
   const [id, setId] = useState<string | null>(null);
   useEffect(() => { void fetch('/api/dev/harness/dev/email-task').then((r) => r.json()).then((j) => setId(j.eventId)); }, []);
-  return id ? <DecisionPanel eventId={id} inline onResolved={() => {}} /> : null;
+  // #task-page: the task's own page (/conveyi/decisions/:id), with its header; #email-task: as it opens on the Tasks list.
+  const page = typeof window !== 'undefined' && window.location.hash === '#task-page';
+  return id ? (page ? <DecisionPanel eventId={id} /> : <DecisionPanel eventId={id} inline onResolved={() => {}} />) : null;
 }

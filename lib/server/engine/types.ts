@@ -203,6 +203,8 @@ export const EVENT_TYPES = [
   'related_matter_linked',
   'related_matter_unlinked',
   'step_completed_manually',
+  'manual_step_undone',
+  'step_reopened',
   'lender_requirements_recorded',
   'name_change_evidenced',
   'client_account_receipt_recorded',
@@ -1089,6 +1091,8 @@ export interface Payloads {
   related_matter_linked: { relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null };
   related_matter_unlinked: { relatedMatterId: string; reason: string };
   step_completed_manually: { step: string; note: string; documentIds: string[]; facts?: ManualStepFacts | null; skipReason?: string | null };
+  manual_step_undone: { step: string; completionEventId: string; reason: string };
+  step_reopened: { step: string; reason: string };
   /** The lender's Part 2 answers that change a rule on this matter. */
   lender_requirements_recorded: { minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null };
   /** A credit on client account that is not the completion money: recorded so the sender is checked (LSAG 5.6.3.2, 6.17.2). */
@@ -1395,6 +1399,25 @@ export const MANUAL_STEP_REQUIRED: Record<string, Array<{ key: keyof ManualStepF
   title: [{ key: 'titleNumber', label: 'the title number' }],
 };
 export const MANUAL_STEPS = ['id_check', 'proof_of_funds', 'title', 'report_on_title', 'enquiries', 'mortgage', 'management_pack', 'property_forms', 'contract_pack', 'contract_approved', 'deposit', 'redemption'] as const;
+/**
+ * Steps a person can mark incomplete when what was done no longer holds (an offer expired, a price
+ * change voided the signed papers, a search went stale): the history stays, the step is outstanding
+ * again from now, and what it unlocked is locked again. Not the same as undoing a completion made in error.
+ */
+export const REOPENABLE_STEPS: Record<string, string> = {
+  id_check: 'The ID check has to be done again',
+  proof_of_funds: 'Proof of funds has to be given and signed off again',
+  title: 'The title has to be checked again',
+  report_on_title: 'The report on title has to be redrafted and sent again',
+  mortgage: 'The mortgage offer is treated as withdrawn: a new offer is needed and exchange is held until it is checked',
+  management_pack: 'The management pack has to be obtained and reviewed again',
+  property_forms: 'The property forms have to be completed again',
+  contract_pack: 'The contract pack has to be sent again',
+  contract_approved: 'The contract has to be approved again, and signed again by the client',
+  deposit: 'The deposit is no longer treated as held',
+  redemption: 'A fresh redemption statement is needed',
+};
+export const isReopenableStep = (step: string): boolean => step in REOPENABLE_STEPS || /^search:[A-Z0-9_]+$/.test(step);
 export const isManualStep = (step: string): boolean => (MANUAL_STEPS as readonly string[]).includes(step) || /^search:[A-Z0-9_]+$/.test(step) || /^enquiry:[\w-]{1,40}$/.test(step);
 /** cleared (auto), reviewed (human) and withdrawn (enquiries) all count as resolved for stage gating. */
 export const isResolved = (s: string | undefined): boolean => s === 'cleared' || s === 'reviewed' || s === 'withdrawn';
@@ -1656,7 +1679,7 @@ export interface MatterState {
   /** Readiness milestones (advisory; shown as "ready to exchange?" not enforced as gates). */
   readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null; contractDocumentId?: string | null };
   /** Steps a person marked complete by hand (manual handling), with what they said and what they filed. */
-  manualSteps?: Record<string, { at: string; by: string; note: string; documentIds: string[]; skipReason?: string | null }>;
+  manualSteps?: Record<string, { at: string; by: string; note: string; documentIds: string[]; skipReason?: string | null; /** The completion's event, so it can be undone; and the stage it was done in. */ eventId?: string; stage?: string }>;
 
   decisions: Record<string, DecisionState>;
   waits: WaitState[];

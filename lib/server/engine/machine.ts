@@ -114,7 +114,8 @@ import {
   type TitlePlanFacts,
   type SupportingDocFacts,
   openIssues,
-  isManualStep, type ManualStepFacts, MANUAL_STEP_REQUIRED, deedsToSign } from './types';
+  isManualStep,
+  isReopenableStep, type ManualStepFacts, MANUAL_STEP_REQUIRED, deedsToSign } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
 export interface SummaryOverride {
@@ -223,6 +224,8 @@ type CommandBody =
   | { type: 'link_related_matter'; actor: Actor; relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null }
   | { type: 'unlink_related_matter'; actor: Actor; reason: string }
   | { type: 'complete_step_manually'; actor: Actor; step: string; note: string; documentIds?: string[]; facts?: ManualStepFacts | null; skipReason?: string | null }
+  | { type: 'undo_manual_step'; actor: Actor; step: string; reason: string }
+  | { type: 'reopen_step'; actor: Actor; step: string; reason: string }
   | { type: 'record_lender_requirements'; actor: Actor; minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null }
   | { type: 'name_change_evidenced'; actor: Actor; party?: string | null; from: string; to: string; reason: string; documentId?: string | null }
   | { type: 'client_account_receipt'; actor: Actor; remitter: string; amountPennies?: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; reference?: string | null }
@@ -322,6 +325,8 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'link_related_matter',
   'unlink_related_matter',
   'complete_step_manually',
+  'undo_manual_step',
+  'reopen_step',
   'record_lender_requirements',
   'name_change_evidenced',
   'client_account_receipt',
@@ -2036,6 +2041,32 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.step === 'mortgage' && (f.minUnexpiredYears != null || f.maxSearchAgeMonths != null || f.acceptsNonFamilyGift != null || f.requiresEws1 != null))
         out.push({ type: 'lender_requirements_recorded', actor: cmd.actor, payload: { minUnexpiredYears: f.minUnexpiredYears ?? null, maxSearchAgeMonths: f.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: f.acceptsNonFamilyGift ?? null, requiresEws1: f.requiresEws1 ?? null, note: f.lender ? `${f.lender} (entered by hand)` : 'entered by hand' } });
       return out;
+    }
+    case 'undo_manual_step': {
+      // A step marked done by hand in error: taken back as if it never happened (the case is rebuilt without it).
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Only a person undoes a step.', 403);
+      const done = s.manualSteps?.[cmd.step];
+      if (!done?.eventId) reject('That step was not marked complete by hand, so there is nothing to undo. If it no longer holds, mark it incomplete instead.', 400);
+      if (!cmd.reason?.trim()) reject('Say why it is undone.', 400);
+      if (done.stage && done.stage !== s.stage) reject(`The case has moved on to ${s.stage.replace(/_/g, ' ')} since it was marked done; mark the step incomplete instead.`, 409);
+      return [{ type: 'manual_step_undone', actor: cmd.actor, payload: { step: cmd.step, completionEventId: done.eventId, reason: cmd.reason.trim() } }];
+    }
+    case 'reopen_step': {
+      // Done, but no longer holds (an offer expired, a price change voided the papers): outstanding again from now, history kept.
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Only a person marks a step incomplete.', 403);
+      if (!isReopenableStep(cmd.step)) reject(`"${cmd.step}" is not a step that can be marked incomplete.`, 400);
+      if (!cmd.reason?.trim()) reject('Say why it no longer holds.', 400);
+      if (s.completion.confirmedAt) reject('The transaction has completed.');
+      if (cmd.step === 'mortgage') {
+        // The offer no longer holds: the same as a withdrawn offer (a new one is chased, exchange is held).
+        if (!s.hasLender || s.mortgage.status === 'awaiting' || s.mortgage.status === 'not_required') reject('No mortgage offer is on file.');
+        if (s.exchange.exchangedAt) reject('Contracts are exchanged: a mortgage offer that fails now is a manual-handling emergency.');
+        return [{ type: 'mortgage_offer_withdrawn', actor: cmd.actor, payload: { reason: cmd.reason.trim(), lender: s.mortgage.facts?.lender ?? null } }, { type: 'step_reopened', actor: cmd.actor, payload: { step: cmd.step, reason: cmd.reason.trim() } }];
+      }
+      if (['contract_approved', 'deposit', 'contract_pack', 'property_forms'].includes(cmd.step) && s.exchange.exchangedAt) reject('Contracts are exchanged: that step cannot be reopened now.');
+      return [{ type: 'step_reopened', actor: cmd.actor, payload: { step: cmd.step, reason: cmd.reason.trim() } }];
     }
     case 'unlink_related_matter': {
       requireEnrolled(s);

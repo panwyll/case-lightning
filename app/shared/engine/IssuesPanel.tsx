@@ -117,12 +117,14 @@ const FORM: Record<SmallMode, { field: string; button: string; done: string; req
   fatal: { field: 'Why The Transaction Cannot Go On', button: 'Abandon The Case', done: 'Abandoned', required: true },
 };
 
-export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, err = null }: {
+export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, err = null, raiseOnly = false }: {
   api: Api; state: EngineState; busy: boolean; cmd: (body: Record<string, unknown>) => Promise<unknown>; onChanged?: () => void;
   /** The case's last command error: shown on the form whose command it was. */
   err?: string | null;
   /** Just this issue, opened straight onto its resolve form (the Tasks list shows it in place); `onCancel` closes it there. */
   only?: string; onCancel?: () => void;
+  /** Just the Raise Issue dialog, open (a task's header opens it); `onCancel` when it closes. */
+  raiseOnly?: boolean;
 }) {
   const [cat, setCat] = useState<IssueCatalogue | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
@@ -136,7 +138,8 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   const [note, setNote] = useState('');
   const [formErr, setFormErr] = useState<string | null>(null);
   const [docs, setDocs] = useState<CaseDocument[] | null>(null);
-  const [raising, setRaising] = useState(false);
+  const [raising, setRaising] = useState(raiseOnly);
+  useEffect(() => { if (raiseOnly && !raising) onCancel?.(); }, [raiseOnly, raising, onCancel]);
   const [draft, setDraft] = useState({ kind: 'survey_defect', title: '', detail: '', gate: 'default' as 'default' | 'exchange' | 'completion' | 'none', resolveBy: '', severity: 'default' as 'default' | Severity });
   const [sev, setSev] = useState<Severity>('critical');
   const [newValue, setNewValue] = useState('');
@@ -541,46 +544,10 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
     return ok;
   };
 
-  if (only) {
-    const one = live.find((i) => i.id === only);
-    return (
-      <div className="is">
-        <style>{CSS}</style>
-        {outcome && <div className={`is-out${outcome.ok ? '' : ' warn'}`} role="status">{outcome.text}</div>}
-        {one ? <div className="is-list">{row(one, isContext(one), true)}</div> : null}
-      </div>
-    );
-  }
-  const holding = open.filter((i) => i.gate !== 'none').length;
-  const late = open.filter((i) => i.resolveBy && i.resolveBy < todayIso()).length;
-  return (
-    <div className="is">
-      <style>{CSS}</style>
-      <div className="is-h">
-        <h3>Issues</h3>
-        <span className="n">{open.length ? [`${open.length} open`, holding ? `${holding} stopping ${exchanged ? 'completion' : 'exchange'}` : '', late ? `${late} overdue` : ''].filter(Boolean).join(' · ') : 'None open'}</span>
-        {!done && <button className="ep-btn sp" style={{ margin: '0 0 0 auto' }} disabled={busy} onClick={() => { setRaising(true); setFormErr(null); pickKind(draft.kind); }}>Raise Issue</button>}
-      </div>
-      {outcome && <div className={`is-out${outcome.ok ? '' : ' warn'}`} role="status">{outcome.text}</div>}
-      <div className="is-list">{open.length ? open.map((i) => row(i, false)) : <div className="is-empty">Nothing is wrong on this case.</div>}</div>
-
-      {context.length > 0 && (
-        <>
-          <div className="is-h"><h3>Context</h3></div>
-          <div className="is-list">{context.map((i) => row(i, true))}</div>
-        </>
-      )}
-
-      {closed.length > 0 && (
-        <div className="is-closed">
-          <button type="button" onClick={() => setShowClosed((x) => !x)}>{showClosed ? 'Hide' : 'Show'} {closed.length} Resolved</button>
-          {showClosed && closed.map((i) => (
-            <div key={i.id}><b>{clean(i.title)}</b>{i.resolution ? ` · ${resTitle(i.resolution)}` : ''}{i.resolvedAt ? ` · ${fmtDay(i.resolvedAt)}` : ''}{i.costPennies != null ? ` · ${gbp(i.costPennies)}${i.paidBy ? ` paid by ${i.paidBy}` : ''}` : ''}</div>
-          ))}
-        </div>
-      )}
-
-      {raising && (
+  // Opened on its own (from a task's header): the kind's usual resolve-by, as the Raise Issue button sets it.
+  const primed = useRef(false);
+  useEffect(() => { if (raiseOnly && cat && !primed.current) { primed.current = true; pickKind(draft.kind); } }); // eslint-disable-line react-hooks/exhaustive-deps
+  const raiseDialog = () => (
         <div className="is-veil" onMouseDown={(e) => { if (e.target === e.currentTarget) setRaising(false); }}>
           <div className="is-dlg" role="dialog" aria-label="Raise Issue">
             <h2>Raise Issue</h2>
@@ -623,7 +590,48 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
             </div>
           </div>
         </div>
+  );
+  if (raiseOnly) return <div className="is"><style>{CSS}</style>{raising && raiseDialog()}</div>;
+  if (only) {
+    const one = live.find((i) => i.id === only);
+    return (
+      <div className="is">
+        <style>{CSS}</style>
+        {outcome && <div className={`is-out${outcome.ok ? '' : ' warn'}`} role="status">{outcome.text}</div>}
+        {one ? <div className="is-list">{row(one, isContext(one), true)}</div> : null}
+      </div>
+    );
+  }
+  const holding = open.filter((i) => i.gate !== 'none').length;
+  const late = open.filter((i) => i.resolveBy && i.resolveBy < todayIso()).length;
+  return (
+    <div className="is">
+      <style>{CSS}</style>
+      <div className="is-h">
+        <h3>Issues</h3>
+        <span className="n">{open.length ? [`${open.length} open`, holding ? `${holding} stopping ${exchanged ? 'completion' : 'exchange'}` : '', late ? `${late} overdue` : ''].filter(Boolean).join(' · ') : 'None open'}</span>
+        {!done && <button className="ep-btn sp" style={{ margin: '0 0 0 auto' }} disabled={busy} onClick={() => { setRaising(true); setFormErr(null); pickKind(draft.kind); }}>Raise Issue</button>}
+      </div>
+      {outcome && <div className={`is-out${outcome.ok ? '' : ' warn'}`} role="status">{outcome.text}</div>}
+      <div className="is-list">{open.length ? open.map((i) => row(i, false)) : <div className="is-empty">Nothing is wrong on this case.</div>}</div>
+
+      {context.length > 0 && (
+        <>
+          <div className="is-h"><h3>Context</h3></div>
+          <div className="is-list">{context.map((i) => row(i, true))}</div>
+        </>
       )}
+
+      {closed.length > 0 && (
+        <div className="is-closed">
+          <button type="button" onClick={() => setShowClosed((x) => !x)}>{showClosed ? 'Hide' : 'Show'} {closed.length} Resolved</button>
+          {showClosed && closed.map((i) => (
+            <div key={i.id}><b>{clean(i.title)}</b>{i.resolution ? ` · ${resTitle(i.resolution)}` : ''}{i.resolvedAt ? ` · ${fmtDay(i.resolvedAt)}` : ''}{i.costPennies != null ? ` · ${gbp(i.costPennies)}${i.paidBy ? ` paid by ${i.paidBy}` : ''}` : ''}</div>
+          ))}
+        </div>
+      )}
+
+      {raising && raiseDialog()}
     </div>
   );
 }

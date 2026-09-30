@@ -31,8 +31,10 @@ export function project(tenantId: string, matterId: string, events: EngineEvent[
   // One copy of the log, then every event applied in place: copying the whole state per event made a
   // rebuild quadratic in the case's size. The copy keeps the caller's events untouched by the fold.
   const log = clone(events);
+  // A completion undone as an error is read as never having happened (the undo stays on the log).
+  const undone = new Set(log.filter((e) => e.type === 'manual_step_undone').map((e) => (e.payload as Payloads['manual_step_undone']).completionEventId));
   const state = initialState(tenantId, matterId);
-  for (const e of log) applyInPlace(state, e);
+  for (const e of log) if (!undone.has(e.id)) applyInPlace(state, e);
   return state;
 }
 
@@ -1101,7 +1103,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     // A person marked a step complete by hand (manual handling): it reads as reviewed, and anything waited on for it stops.
     case 'step_completed_manually': {
       const p = e.payload as Payloads['step_completed_manually'];
-      s.manualSteps = { ...(s.manualSteps ?? {}), [p.step]: { at: e.createdAt, by: e.actor, note: p.note, documentIds: p.documentIds, skipReason: p.skipReason ?? null } };
+      s.manualSteps = { ...(s.manualSteps ?? {}), [p.step]: { at: e.createdAt, by: e.actor, note: p.note, documentIds: p.documentIds, skipReason: p.skipReason ?? null, eventId: e.id, stage: s.stage } };
       const close = (key: string, subject: string | null = null) => {
         for (const w of s.waits) if (w.key === key && w.closedAt === null && (subject === null || w.subject === subject)) w.closedAt = e.createdAt;
       };
@@ -1146,6 +1148,32 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
           s.searches[t] = was ? { ...was, status: 'reviewed', resolution: 'approve' } : { searchType: t, cycle: 1, status: 'reviewed', orderedAt: null, returnedAt: e.createdAt, documentId: p.documentIds[0] ?? null, facts: null, flags: [], decisionEventId: null, resolution: 'approve' };
           close('search', sub);
         } break;
+      }
+      break;
+    }
+    case 'manual_step_undone': {
+      // The full rebuild skips the completion (project() above); a fold onto a cached state is replaced by one (service.run).
+      const p = e.payload as Payloads['manual_step_undone'];
+      if (s.manualSteps) delete s.manualSteps[p.step];
+      break;
+    }
+    case 'step_reopened': {
+      // Done once, no longer holds: outstanding again from now; what it unlocked is locked again.
+      const p = e.payload as Payloads['step_reopened'];
+      if (s.manualSteps) delete s.manualSteps[p.step];
+      const [kind, sub] = p.step.includes(':') ? [p.step.split(':')[0], p.step.split(':').slice(1).join(':')] : [p.step, null];
+      switch (kind) {
+        case 'id_check': s.idCheck = { ...s.idCheck, status: 'not_started', decisionEventId: null, resolvedAt: null }; break;
+        case 'proof_of_funds': s.proofOfFunds.status = 'not_started'; break;
+        case 'title': s.title.status = 'awaiting'; s.title.decisionEventId = null; break;
+        case 'report_on_title': s.reportOnTitle = { ...s.reportOnTitle, status: 'not_started', draftId: null, draftEventId: null, draftDocumentId: null, approvedEventId: null, approvedBy: null, sentAt: null }; break;
+        case 'management_pack': s.managementPack.status = 'not_started'; break;
+        case 'property_forms': s.propertyForms.status = 'not_started'; break;
+        case 'contract_pack': s.contractPack.sentAt = null; break;
+        case 'contract_approved': s.readiness.contractApprovedAt = null; s.readiness.signedContractHeldAt = null; break;
+        case 'deposit': s.deposit = { received: false, at: null }; break;
+        case 'redemption': s.redemption = { ...s.redemption, status: 'not_started', redemptionPennies: null, validUntil: null }; break;
+        case 'search': if (sub) delete s.searches[sub]; break;
       }
       break;
     }

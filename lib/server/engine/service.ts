@@ -162,7 +162,8 @@ export class EngineService {
       const now = this.ports.now();
       const { events } = decide(state, cmd, { now, levels: subflows });
       const appended = await tx.append(events, state.lastSeq, now, this.ports.newId);
-      const next = foldOnto(state, appended);
+      // Undoing a completion rewrites what it did: the case is rebuilt from the whole log, not folded forward.
+      const next = appended.some((e) => e.type === 'manual_step_undone') ? project(tenantId, matterId, [...(await tx.load()).filter((x) => x.seq <= state.lastSeq), ...appended]) : foldOnto(state, appended);
       await tx.afterAppend(next, appended);
       return { events: appended, state: next };
     });

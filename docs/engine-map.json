@@ -1,5 +1,5 @@
 {
-  "version": "0be4cde36298",
+  "version": "a264a55a7a7a",
   "generatedFrom": "lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)",
   "transactionTypes": [
     {
@@ -2233,6 +2233,25 @@
       "description": "Our client's linked sale or purchase: a chain_dependency issue holds exchange until the other matter can exchange too; the service checks the other file at exchange and clears the issue."
     },
     {
+      "type": "undo_manual_step",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "manual_step_undone"
+      ],
+      "description": "A step marked complete by hand in error is taken back: the case is rebuilt as if it had never been marked (only in the stage it was done in)."
+    },
+    {
+      "type": "reopen_step",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "step_reopened",
+        "mortgage_offer_withdrawn"
+      ],
+      "description": "A step that was done no longer holds (an offer expired, a price change voided the signed papers, a search went stale): outstanding again from now, with the reason; history kept. The mortgage reopens as a withdrawn offer."
+    },
+    {
       "type": "complete_step_manually",
       "actor": "person",
       "stages": "any",
@@ -3094,6 +3113,18 @@
     },
     {
       "type": "step_completed_manually",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "manual_step_undone",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "step_reopened",
       "category": "lifecycle",
       "decision": false,
       "humanGated": false

@@ -8,6 +8,8 @@ import { APP_BASE, PROTECTED_SEGMENTS } from './lib/paths';
  * that was written before the move working, permanently.
  */
 const nextConfig: NextConfig = {
+  // The smoke test (scripts/smoke.sh) builds into its own folder so it never overwrites a running dev server's.
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   // mupdf (WebAssembly: locked-PDF detection and unlocking) breaks when bundled ("_ is not a function"): it is loaded from
   // node_modules as it ships, and its .wasm is carried into every server function that can reach it.
   serverExternalPackages: ['pdfjs-dist', 'tesseract.js', '@napi-rs/canvas', 'mupdf', 'heic-decode', 'libheif-js', 'sharp'],

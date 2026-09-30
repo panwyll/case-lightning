@@ -77,4 +77,5 @@ export const User = (p: IconProps) => <Icon {...p}><path d="M19 21v-2a4 4 0 0 0-
 export const Zap = (p: IconProps) => <Icon {...p}><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></Icon>;
 /** A spinner: the arc turns while something is in progress (the caller adds the animation). */
 export const RefreshCw = (p: IconProps) => <Icon {...p}><path d="M3 12a9 9 0 0 1 15.5-6.36L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15.5 6.36L3 16" /><path d="M3 21v-5h5" /></Icon>;
+export const Hand = (p: IconProps) => <Icon {...p}><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2" /><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" /><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></Icon>;
 export const Loader = (p: IconProps) => <Icon {...p}><path d="M21 12a9 9 0 1 1-6.22-8.56" /></Icon>;

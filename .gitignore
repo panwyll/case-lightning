@@ -17,3 +17,4 @@ test-results/
 tsconfig.tsbuildinfo
 .env*.local
 eng.traineddata
+.next-smoke/

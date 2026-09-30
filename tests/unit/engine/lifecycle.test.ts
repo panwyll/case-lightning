@@ -389,3 +389,40 @@ test('a step that asks someone for something sends the request, not only a chase
   assert.deepEqual([FIRST_REQUESTS.contract_approved?.to, FIRST_REQUESTS.contract_approved?.template], ['client', 'deposit_request'], 'contract approved asks the client for the deposit');
   assert.equal(FIRST_REQUESTS.completion_statement_generated?.template, 'completion_statement');
 });
+
+test('undo and mark incomplete are different: an error is taken back as if it never happened; a step that no longer holds is outstanding again with its history kept', async () => {
+  const h = harness();
+  const { svc } = h;
+  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: true, requiredSearches: [] });
+  await svc.run(TENANT, MATTER, { type: 'mark_manual_handling', actor: USER, reason: 'By hand' } as never);
+  const offer = { lender: 'Nationwide', amountPennies: 20_000_000, expiryDate: '2027-03-01' };
+
+  // Undo: marked done in error.
+  const openBefore = (await svc.getState(TENANT, MATTER)).waits.filter((w) => !w.closedAt).map((w) => w.key).sort();
+  await svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: USER, step: 'mortgage', note: 'Wrong case', facts: offer });
+  assert.equal((await svc.getState(TENANT, MATTER)).mortgage.status, 'reviewed');
+  await svc.run(TENANT, MATTER, { type: 'undo_manual_step', actor: USER, step: 'mortgage', reason: 'Marked on the wrong case' });
+  let s = await svc.getState(TENANT, MATTER);
+  assert.equal(s.mortgage.status, 'awaiting', 'as if it never happened');
+  assert.equal(s.mortgage.facts, null, 'nothing it recorded remains');
+  assert.equal(s.manualSteps?.mortgage, undefined);
+  assert.deepEqual(s.waits.filter((w) => !w.closedAt).map((w) => w.key).sort(), openBefore, 'the same things are awaited as before');
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'undo_manual_step', actor: USER, step: 'mortgage', reason: 'again' }), /nothing to undo/);
+
+  // Mark incomplete: it was done, and no longer holds.
+  await svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: USER, step: 'mortgage', note: 'Offer by post', facts: offer });
+  await svc.run(TENANT, MATTER, { type: 'reopen_step', actor: USER, step: 'mortgage', reason: 'The offer expired' });
+  s = await svc.getState(TENANT, MATTER);
+  assert.equal(s.mortgage.status, 'awaiting', 'a new offer is needed');
+  const log = h.store.dump(TENANT, MATTER).map((e) => e.type);
+  assert.ok(log.includes('step_completed_manually') && log.includes('mortgage_offer_withdrawn') && log.includes('step_reopened'), 'the history stays');
+
+  // A price change voids the signed papers: the contract has to be approved and signed again.
+  await svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: USER, step: 'contract_approved', note: 'Approved' });
+  assert.ok((await svc.getState(TENANT, MATTER)).readiness.contractApprovedAt);
+  await svc.run(TENANT, MATTER, { type: 'reopen_step', actor: USER, step: 'contract_approved', reason: 'Price reduced: the contract is void' });
+  s = await svc.getState(TENANT, MATTER);
+  assert.equal(s.readiness.contractApprovedAt, null);
+  assert.equal(s.readiness.signedContractHeldAt, null);
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'reopen_step', actor: USER, step: 'enquiry:E1', reason: 'x' }), /not a step that can be marked incomplete/);
+});
