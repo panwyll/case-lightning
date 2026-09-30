@@ -27,6 +27,10 @@ import { X, Check, ChevronRight } from '@/app/shared/icons';
  */
 
 /** A line's kind, as a tag on it (an email often makes several points). */
+/** How long a chosen option counts down on its button before it is recorded (clicking again cancels). */
+const COUNTDOWN_MS = 3000;
+/** The option, as it is happening. */
+const DOING: Record<string, string> = { approve: 'Approving', reject: 'Declining', escalate: 'Escalating', verify: 'Recording', refer_to_client: 'Referring', request_further: 'Requesting', indemnity: 'Recording' };
 /** Who a message goes to, as a heading. */
 const PARTY_TITLE: Record<string, string> = { client: 'The Client', seller_solicitor: "The Other Side's Solicitor", estate_agent: 'The Estate Agent', lender: 'The Lender Or Broker' };
 const LINE_TAG: Record<string, string> = { question: 'Question', progress: 'Done Or On Its Way', resend: 'Send Again', issue: 'Problem', client_decision: 'Decision', confirm_with_client: 'Check With Client', expectation: 'Expected', information: 'Noted' };
@@ -130,8 +134,10 @@ const CSS = `
 .dp-out b{font-weight:800}
 .dp-lock{background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:8px;padding:8px 10px;font-size:12.5px}
 .dp-shadow{background:#312e81;color:#fff;border-radius:8px;padding:8px 10px;font-size:12.5px}
-@keyframes dp-nudge{0%{transform:scale(1);box-shadow:0 0 0 0 rgba(90,39,224,.6)}30%{transform:scale(1.06)}60%{transform:scale(1);box-shadow:0 0 0 10px rgba(90,39,224,0)}100%{box-shadow:0 0 0 0 rgba(90,39,224,0)}}
-.dp-btn.nudge{animation:dp-nudge .7s ease-out 2}
+.dp-btn.counting{position:relative;overflow:hidden}
+.dp-cd{position:absolute;left:0;bottom:0;height:3px;width:100%;background:currentColor;opacity:.85;animation-name:dp-cd;animation-timing-function:linear;animation-fill-mode:forwards}
+.dp-btn.primary .dp-cd{background:#fff}
+@keyframes dp-cd{from{width:100%}to{width:0}}
 .dp-lines{display:flex;flex-direction:column;gap:6px}
 .dp-prose + .dp-lines{margin-top:14px}
 .dp-line{display:flex;gap:10px;align-items:flex-start;border:1px solid #e6e8ee;border-radius:10px;padding:8px 10px;background:#fff}
@@ -199,10 +205,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [choice, setChoice] = useState<string | null>(null);
-  // Clicking the chosen option again points at Confirm (it pulses and takes focus).
-  const [nudge, setNudge] = useState(0);
-  const confirmRef = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => { if (nudge) confirmRef.current?.focus(); }, [nudge]);
+  // Choosing an option counts down on the button itself, then records it; clicking it again cancels.
+  const [countdown, setCountdown] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [method, setMethod] = useState('');
   const [reference, setReference] = useState('');
@@ -440,6 +444,11 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
       setBusy(false);
     }
   };
+  useEffect(() => {
+    if (!countdown) return;
+    const t = setTimeout(() => { const o = countdown; setCountdown(null); void resolve(o); }, COUNTDOWN_MS);
+    return () => clearTimeout(t);
+  }, [countdown]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!detail || !d) {
     return (
@@ -683,22 +692,28 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
               )}
               {choice && !needsReason(choice) && <textarea className="eg-ta" rows={1} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note for the record…" />}
               <div className="dp-opts">
-                {d.options.map((o) => (
-                  <button
-                    key={o}
-                    className={`dp-btn${o === 'approve' || o === 'verify' ? ' primary' : ''}${choice === o ? ' on' : ''}`}
-                    disabled={busy || !engaged || (isBank && o === 'verify' && !method) || (!!noteLines && o === 'approve' && !picked?.size && noteLines.actions.some((a) => a.effect)) || (!!noteLines?.messages?.length && o === 'approve' && noteLines.messages.some((m) => picked?.has(m.id) && !(drafts[m.id]?.body ?? m.body).trim()))}
-                    title={!engaged ? 'Read the source first' : isBank && o === 'verify' && !method ? 'Choose the verification method first' : noteLines && o === 'approve' && !picked?.size && noteLines.actions.some((a) => a.effect) ? 'Tick at least one line, or reject the reading with a reason' : OPTION_HELP[o] ?? ''}
-                    onClick={() => { if (choice === o) setNudge((n) => n + 1); else { setChoice(o); setNudge(0); } }}
-                  >
-                    {optionLabel(o)}
-                  </button>
-                ))}
-                {choice && (
-                  <button key={`confirm-${nudge}`} ref={confirmRef} className={`dp-btn primary${nudge ? ' nudge' : ''}`} disabled={busy || !engaged || (needsReason(choice) && !note.trim()) || (choice === 'escalate' && !escalateTo)} onClick={() => resolve(choice)}>
-                    {busy ? <Spin>Recording…</Spin> : `Confirm: ${optionLabel(choice)}${choice === 'approve' && openQueries > 0 ? ` (withdraws ${openQueries} open ${openQueries === 1 ? 'query' : 'queries'})` : ''}`}
-                  </button>
-                )}
+                {d.options.map((o) => {
+                  const blocked = busy || !engaged || (isBank && o === 'verify' && !method) || (!!noteLines && o === 'approve' && !picked?.size && noteLines.actions.some((a) => a.effect)) || (!!noteLines?.messages?.length && o === 'approve' && noteLines.messages.some((m) => picked?.has(m.id) && !(drafts[m.id]?.body ?? m.body).trim()));
+                  const ready = !(needsReason(o) && !note.trim()) && !(o === 'escalate' && !escalateTo);
+                  const counting = countdown === o;
+                  return (
+                    <button
+                      key={o}
+                      className={`dp-btn${o === 'approve' || o === 'verify' ? ' primary' : ''}${choice === o ? ' on' : ''}${counting ? ' counting' : ''}`}
+                      disabled={blocked || (!!countdown && !counting)}
+                      title={!engaged ? 'Read the source first' : isBank && o === 'verify' && !method ? 'Choose the verification method first' : noteLines && o === 'approve' && !picked?.size && noteLines.actions.some((a) => a.effect) ? 'Tick at least one line, or reject the reading with a reason' : counting ? 'Click to cancel' : OPTION_HELP[o] ?? ''}
+                      onClick={() => {
+                        if (counting) { setCountdown(null); return; }
+                        setChoice(o);
+                        // A reason or a person is needed first: the first click opens that, the next one counts down.
+                        if (ready) setCountdown(o);
+                      }}
+                    >
+                      {busy && choice === o ? <Spin>Recording…</Spin> : counting ? `${DOING[o] ?? optionLabel(o)}… Click To Cancel` : `${optionLabel(o)}${o === 'approve' && openQueries > 0 ? ` (Withdraws ${openQueries} Open ${openQueries === 1 ? 'Query' : 'Queries'})` : ''}`}
+                      {counting && <span className="dp-cd" style={{ animationDuration: `${COUNTDOWN_MS}ms` }} aria-hidden />}
+                    </button>
+                  );
+                })}
                 {flagged > 0 && <span className="dp-gate" style={{ marginLeft: 'auto' }}>{flagged} to look at</span>}
               </div>
               {!engaged && <div className="dp-gate">Unlocks once the source has been read.</div>}
