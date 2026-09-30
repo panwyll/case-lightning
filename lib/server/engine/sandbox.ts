@@ -16,7 +16,7 @@ import { query, queryOne, runOutsideAutomation } from '../db';
 import { putBlob } from '../blob-store';
 import type { ClientComms, EnginePorts, ThirdPartyChaser } from './ports';
 import crypto from 'node:crypto';
-import { FixtureExtractor, MockIdCheckProvider, MockSearchProvider, TemplateReportDrafter, TemplateSummariser } from './mocks';
+import { FixtureExtractor, MockIdCheckProvider, MockSearchProvider, MockSigning, TemplateReportDrafter, TemplateSummariser } from './mocks';
 import { ProductionChaser, ProductionClientComms, type CommsDeps, type MatterContactInfo } from '../comms/client-comms';
 import { contactInfo, productionCommsDeps } from '../comms/adapters';
 import { DeterministicNoteReader } from './notes';
@@ -63,6 +63,7 @@ export function sandboxGuard(base: EnginePorts): EnginePorts {
   const fixture = new FixtureExtractor();
   const summariser = new TemplateSummariser();
   const drafter = new TemplateReportDrafter();
+  const sandboxSigning = new MockSigning();
   const search = new MockSearchProvider();
   const idCheck = new MockIdCheckProvider();
   // The outbox: the live senders, rendering the firm's own wording with the case's data, delivering into the case's documents instead of a mailbox.
@@ -104,6 +105,8 @@ export function sandboxGuard(base: EnginePorts): EnginePorts {
     // so a method added later (a first request, our enquiries) is never dropped — a dropped optional method reads as "not configured" on every case.
     clientComms: routeEach(base.clientComms, comms as unknown as ClientComms, pick),
     chaser: routeEach(base.chaser, chaser as unknown as ThirdPartyChaser, pick),
+    // The signing pack is an outward send too: a sandbox's goes to the mock, never a real mailbox or provider.
+    signing: base.signing ? { name: base.signing.name, defaults: (t, l) => base.signing!.defaults(t, l), sendPack: async (input) => ((await isSandboxMatter(input.tenantId, input.matterId)) ? sandboxSigning : base.signing!).sendPack(input) } : base.signing,
     onEvents: base.onEvents ? async (input) => { if (!(await isSandboxMatter(input.tenantId, input.matterId))) await base.onEvents!(input); } : undefined,
   };
 }

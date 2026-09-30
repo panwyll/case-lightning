@@ -1278,7 +1278,7 @@ export class EngineService {
     // The deeds this pack is for (a proposal names them); by hand, everything still unsigned goes again.
     const docs = (only ?? deedsToSign(s)).filter((d) => !deedSigned(s, d));
     if (!docs.length) throw Object.assign(new Error('Nothing on this case is waiting for the client to sign.'), { status: 409 });
-    if (!this.ports.signing) throw Object.assign(new Error('Sending the signing pack is not available here; send it by hand and record the signed copies.'), { status: 503 });
+    if (!this.ports.signing) throw Object.assign(new Error('The signing service is not set up on this deployment, so the signing pack could not be sent.'), { status: 503 });
     const def = await this.ports.signing.defaults(tenantId, s.mortgage?.facts?.lender ?? null);
     const method = (d: SignedDocument): SigningMethod => s.signing.methods[d] ?? (def.provider !== 'none' && (d !== 'mortgage_deed' || def.lenderAcceptsDigital === true) ? 'electronic' : 'wet');
     const wet = docs.filter((d) => method(d) === 'wet');
@@ -1822,7 +1822,7 @@ export class EngineService {
     const ROLE: Record<string, string> = { seller_solicitor: "the seller's solicitor", buyer_solicitor: "the buyer's solicitor", lender: 'the lender', estate_agent: 'the estate agent', client: 'the client', search_provider: 'the search provider' };
     const role = typeof detail.recipientRole === 'string' ? ROLE[detail.recipientRole] ?? `the ${detail.recipientRole.replace(/_/g, ' ')}` : 'the client';
     // The title says what did not go; why, and what to do, are the issue's detail.
-    const what = kind === 'party_message' ? `Message to ${role}` : kind === 'proof_of_funds_request' ? 'Proof-of-funds form to the client' : kind === 'id_check_request' ? 'ID check request to the client' : kind === 'request' ? `Request to ${role}` : action === 'chase' ? `Chase to ${role}` : action === 'acknowledgement' ? `Acknowledgement to ${role}` : action === 'search_order' ? 'Search order' : action === 'client_update' ? 'Update to the client' : action.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    const what = kind === 'party_message' ? `Message to ${role}` : kind === 'signing_pack' ? 'Signing pack to the client' : kind === 'proof_of_funds_request' ? 'Proof-of-funds form to the client' : kind === 'id_check_request' ? 'ID check request to the client' : kind === 'request' ? `Request to ${role}` : action === 'chase' ? `Chase to ${role}` : action === 'acknowledgement' ? `Acknowledgement to ${role}` : action === 'search_order' ? 'Search order' : action === 'client_update' ? 'Update to the client' : action.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
     const title = `${what} unsuccessful`;
     const proposalId = typeof detail.__proposalEventId === 'string' ? detail.__proposalEventId : null;
     const outside = this.ports.outsideAutomation ?? (<T,>(fn: () => Promise<T>) => fn());

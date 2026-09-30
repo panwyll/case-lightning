@@ -156,10 +156,20 @@ class PgLinkedMatterNotifier implements LinkedMatterNotifier {
 let _ports: EnginePorts | null = null;
 let _service: EngineService | null = null;
 
-function productionSigningPort(): EnginePorts['signing'] {
-  // Lazy: keeps Graph and the providers out of module graphs that never send a pack.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return (require('../signing') as typeof import('../signing')).productionSigning;
+function productionSigningPort(): NonNullable<EnginePorts['signing']> {
+  // The module is loaded when a pack is actually sent, not when the ports are built: a module still
+  // initialising at build time (an import cycle) once left the port undefined for the life of the server,
+  // and every signing pack failed as "not available". If it cannot load, the error says why.
+  const port = async () => {
+    const m = await import('../signing');
+    if (!m.productionSigning) throw new Error('The signing module loaded without its sender (productionSigning); this is a deployment fault, not the case.');
+    return m.productionSigning;
+  };
+  return {
+    name: 'signing:mailbox+provider',
+    defaults: async (tenantId, lender) => (await port()).defaults(tenantId, lender),
+    sendPack: async (input) => (await port()).sendPack(input),
+  };
 }
 
 export function productionPorts(): EnginePorts {
