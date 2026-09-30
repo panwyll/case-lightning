@@ -130,6 +130,8 @@ const CSS = `
 .dp-out b{font-weight:800}
 .dp-lock{background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:8px;padding:8px 10px;font-size:12.5px}
 .dp-shadow{background:#312e81;color:#fff;border-radius:8px;padding:8px 10px;font-size:12.5px}
+@keyframes dp-nudge{0%{transform:scale(1);box-shadow:0 0 0 0 rgba(90,39,224,.6)}30%{transform:scale(1.06)}60%{transform:scale(1);box-shadow:0 0 0 10px rgba(90,39,224,0)}100%{box-shadow:0 0 0 0 rgba(90,39,224,0)}}
+.dp-btn.nudge{animation:dp-nudge .7s ease-out 2}
 .dp-lines{display:flex;flex-direction:column;gap:6px}
 .dp-prose + .dp-lines{margin-top:14px}
 .dp-line{display:flex;gap:10px;align-items:flex-start;border:1px solid #e6e8ee;border-radius:10px;padding:8px 10px;background:#fff}
@@ -197,6 +199,10 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [choice, setChoice] = useState<string | null>(null);
+  // Clicking the chosen option again points at Confirm (it pulses and takes focus).
+  const [nudge, setNudge] = useState(0);
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => { if (nudge) confirmRef.current?.focus(); }, [nudge]);
   const [note, setNote] = useState('');
   const [method, setMethod] = useState('');
   const [reference, setReference] = useState('');
@@ -683,13 +689,13 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                     className={`dp-btn${o === 'approve' || o === 'verify' ? ' primary' : ''}${choice === o ? ' on' : ''}`}
                     disabled={busy || !engaged || (isBank && o === 'verify' && !method) || (!!noteLines && o === 'approve' && !picked?.size && noteLines.actions.some((a) => a.effect)) || (!!noteLines?.messages?.length && o === 'approve' && noteLines.messages.some((m) => picked?.has(m.id) && !(drafts[m.id]?.body ?? m.body).trim()))}
                     title={!engaged ? 'Read the source first' : isBank && o === 'verify' && !method ? 'Choose the verification method first' : noteLines && o === 'approve' && !picked?.size && noteLines.actions.some((a) => a.effect) ? 'Tick at least one line, or reject the reading with a reason' : OPTION_HELP[o] ?? ''}
-                    onClick={() => setChoice(o)}
+                    onClick={() => { if (choice === o) setNudge((n) => n + 1); else { setChoice(o); setNudge(0); } }}
                   >
                     {optionLabel(o)}
                   </button>
                 ))}
                 {choice && (
-                  <button className="dp-btn primary" disabled={busy || !engaged || (needsReason(choice) && !note.trim()) || (choice === 'escalate' && !escalateTo)} onClick={() => resolve(choice)}>
+                  <button key={`confirm-${nudge}`} ref={confirmRef} className={`dp-btn primary${nudge ? ' nudge' : ''}`} disabled={busy || !engaged || (needsReason(choice) && !note.trim()) || (choice === 'escalate' && !escalateTo)} onClick={() => resolve(choice)}>
                     {busy ? <Spin>Recording…</Spin> : `Confirm: ${optionLabel(choice)}${choice === 'approve' && openQueries > 0 ? ` (withdraws ${openQueries} open ${openQueries === 1 ? 'query' : 'queries'})` : ''}`}
                   </button>
                 )}
