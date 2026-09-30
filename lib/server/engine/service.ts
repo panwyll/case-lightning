@@ -64,7 +64,7 @@ import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTra
 import { isResolved, openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedsReadyToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
-import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, WAIT_LABEL, type NoteActionDraft } from './notes';
+import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, documentRequests, WAIT_LABEL, type NoteActionDraft } from './notes';
 import { replyFacts, templateIssueMessage, templateMessage, templateReply } from './reply';
 import { FOLLOW_UP_PARTY, PARTY_LABEL, whoNeedsToHear } from './recipients';
 
@@ -900,7 +900,10 @@ export class EngineService {
     const stranger = input.kind === 'email' && (input.from?.relation ?? 'unknown') === 'unknown';
     // An email that brings files is not evidence that those files are missing: whatever the reader
     // made of "attached", an "it has not arrived" issue is not proposed from it.
-    const kept = input.attachments?.length ? drafts.filter((d) => !(d.command?.type === 'raise_issue' && ARRIVAL_ISSUES.has(d.command.kind))) : drafts;
+    const read = input.attachments?.length ? drafts.filter((d) => !(d.command?.type === 'raise_issue' && ARRIVAL_ISSUES.has(d.command.kind))) : drafts;
+    // A document the client (or a colleague) asks for is read by rule too: the file is attached to the reply even when the AI missed the request.
+    const asked = input.kind === 'email' && (input.from?.relation === 'client' || input.from?.relation === 'colleague') && !read.some((d) => d.command?.type === 'send_file_copy') ? documentRequests(input.text) : [];
+    const kept = [...read.filter((d) => !asked.some((a) => a.quote === d.quote && !d.command)), ...asked];
     if (!kept.length && !stranger && !input.surface) return recorded;
     // Whoever wrote gets a reply answering every point, and anyone else who needs to hear gets a message (recipients.ts), all on this one task.
     const messages = input.kind === 'email' && input.from && !input.acknowledgement ? await this.draftMessages(tenantId, matterId, recorded.state, input.text, input.subject ?? null, input.from, kept).catch((err) => { this.ports.log('the messages could not be drafted', err); return []; }) : [];
@@ -973,7 +976,9 @@ export class EngineService {
     const firstName = (from.name ?? '').trim().split(/\s+/)[0] || null;
     const re = subject ? (/^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`) : 'Re: your email';
     const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts: replyFacts(state, now), now: now.toISOString(), weActFor: weActFor(state), purposes: [...new Set(['Reply to their email, answering every point they made', ...attached, ...also.purposes, ...others.map((o) => `Tell them we are writing to ${o} today`)])] }) : null;
-    if (drafted?.body) return { subject: re, body: drafted.body, drafter: this.ports.replyDrafter!.name };
+    // A reply may not say a document is attached or being resent unless it is attached: then it is the reply from the facts.
+    const falseClaim = !!drafted?.body && missing.length > 0 && !attach.length && /\b(attach(ed|ing)?|re-?send(ing)?|resent|send (it|this|them) (again|to you|through|over))\b/i.test(drafted.body);
+    if (drafted?.body && !falseClaim) return { subject: re, body: drafted.body, drafter: this.ports.replyDrafter!.name };
     return { subject: re, body: templateReply(state, now, { firstName, others, also: also.sentences, attached: attach, lines: lines.map((l, i) => ({ id: `A${i + 1}`, kind: l.kind, summary: l.summary, quote: l.quote, confidence: l.confidence ?? 0.6, command: l.command ?? null })) }), drafter: 'case-facts' };
   }
 

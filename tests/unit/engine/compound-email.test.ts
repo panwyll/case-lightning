@@ -184,3 +184,25 @@ test('"can\'t find my report on title" attaches the report they were sent, never
   assert.deepEqual(later.attach?.map((a) => [a.id, a.fileName]), [[s.reportOnTitle.draftDocumentId, 'Report on title.docx']]);
   assert.match(later.body, /I attach Report on title\.docx/);
 });
+
+test('a document request the AI reader missed is still read, and the file still goes attached', async () => {
+  const h = await withWaits();
+  h.ports.noteExtractor = { name: 'ai-that-missed-it', extract: async () => [] };
+  h.ports.files = { find: async (_t, _m, what) => (/search/i.test(what) ? [{ id: 'doc-searches', fileName: 'Local search.pdf' }] : []), bytes: async () => null };
+  const documentId = h.doc(null, 'EMAIL');
+  const res = await h.svc.recordNote(TENANT, MATTER, { text: "Hi, I can't find the searches in my inbox, can you send them over?", kind: 'email', actor: USER, documentId, from: CLIENT, surface: true, subject: 'Searches' });
+  const note = Object.values(res.state.notes).at(-1)!;
+  assert.ok(note.actions.some((a) => a.command?.type === 'send_file_copy'), 'read by rule');
+  assert.deepEqual(note.messages!.find((m) => m.id === 'reply')!.attach?.map((a) => a.fileName), ['Local search.pdf']);
+});
+
+test('a drafted reply that promises a resend without the file attached is replaced by the reply from the facts', async () => {
+  const h = await withWaits();
+  h.ports.files = { find: async () => [], bytes: async () => null };
+  h.ports.replyDrafter = { name: 'hedger', draft: async () => ({ body: 'Hello Jo,\n\nWe will resend it to you today.' }) };
+  const documentId = h.doc(null, 'EMAIL');
+  const res = await h.svc.recordNote(TENANT, MATTER, { text: 'Could I have a copy of the TA10?', kind: 'email', actor: USER, documentId, from: CLIENT, surface: true, subject: 'TA10' });
+  const reply = Object.values(res.state.notes).at(-1)!.messages!.find((m) => m.id === 'reply')!;
+  assert.doesNotMatch(reply.body, /resend/i);
+  assert.match(reply.body, /as soon as we can/);
+});
