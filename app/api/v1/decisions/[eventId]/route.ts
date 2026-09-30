@@ -66,7 +66,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
       const note = state.notes[p.noteId] ?? null;
       const applied = resolving?.type === 'note_actions_applied' ? (resolving.payload as Payloads['note_actions_applied']) : null;
       noteActions = {
-        title: note?.kind === 'email' && (note.messages?.length || note.reply) ? replyTitle(note.from) : noteTaskTitle(p.actions) ?? (note?.kind === 'email' ? (note.acknowledgement ? acknowledgementTitle(note.from, note.text) : nothingToActTitle(note.from)) : null),
+        title: note?.kind === 'email' && (note.messages?.length || note.reply) ? replyTitle(note.from, note.actions) : noteTaskTitle(p.actions) ?? (note?.kind === 'email' ? (note.acknowledgement ? acknowledgementTitle(note.from, note.text) : nothingToActTitle(note.from)) : null),
         messages: note?.messages ?? (note?.reply ? [{ id: 'reply', to: 'client', purposes: [], subject: note.reply.subject, body: note.reply.body, drafter: note.reply.drafter, on: true }] : []),
         messagesSent: applied?.messages ?? (applied?.reply ? [{ id: 'reply', to: 'client', subject: applied.reply.subject, body: applied.reply.body }] : null),
         noteId: p.noteId,

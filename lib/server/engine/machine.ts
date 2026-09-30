@@ -22,7 +22,7 @@ import { assertCompletion, CompletionError, type Completion } from './completion
 import type { DeadlineKind } from './sla';
 import { validateNoteActions, summariseNoteActions, nothingToActSummary, acknowledgementSummary, replyOnlySummary, type NoteActionDraft } from './notes';
 import { investigationGroups, investigationTitle } from './survey-review';
-import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, RESOLUTION_FIELDS, RESOLUTION_TITLE, FORMLESS_KINDS, type IssueGate, type IssueKind, type IssueResolution } from './issues';
+import { duplicateIssue, ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, RESOLUTION_FIELDS, RESOLUTION_TITLE, FORMLESS_KINDS, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 import { SHAPE_SPEC, fundsFromFor, type CaseShape } from './shapes';
 import { buildDecision, offeredOptions, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
@@ -1589,6 +1589,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.causedBy && !s.issues[cmd.causedBy]) reject(`Issue ${cmd.causedBy} (causedBy) not found.`, 404);
       if (cmd.severity && !ISSUE_SEVERITIES.includes(cmd.severity)) reject(`Unknown severity "${cmd.severity}".`, 400);
       if (cmd.resolveBy && !ISO_DAY.test(cmd.resolveBy)) reject('The resolve-by date must be a date (YYYY-MM-DD).', 400);
+      // The same problem reported again (two emails about the seller pulling out) is the one issue, noted again; it holds the more of the two.
+      const dup = cmd.issueId ? null : duplicateIssue(Object.values(s.issues), cmd.kind, cmd.title, cmd.party ?? null);
+      if (dup) {
+        const rank = { none: 0, completion: 1, exchange: 2 } as const;
+        const stronger = rank[gate] > rank[dup.gate] ? gate : null;
+        return [{ type: 'issue_updated', actor: cmd.actor, payload: { issueId: dup.id, status: dup.status === 'negotiating' ? 'negotiating' : 'open', note: `Reported again: ${cmd.title.trim()}${cmd.detail?.trim() ? ` (${cmd.detail.trim().slice(0, 200)})` : ''}`, gate: stronger } }];
+      }
       return [{ type: 'issue_raised', actor: cmd.actor, payload: { issueId, kind: cmd.kind, title: cmd.title.trim(), detail: cmd.detail?.trim() || null, gate, stage: s.stage, sourceDocumentId: cmd.documentId ?? null, origin: null, party: cmd.party?.trim() || null, severity: cmd.severity ?? spec.severity, causedBy: cmd.causedBy ?? null, ...(cmd.resolveBy ? { resolveBy: cmd.resolveBy } : {}) }, sourceDocumentId: cmd.documentId ?? null }];
     }
     case 'set_issue_severity': {

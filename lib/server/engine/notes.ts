@@ -315,8 +315,31 @@ export function replyOnlySummary(text: string, from?: NoteSender | null): string
   return [`An email from ${who}${first ? `: “${first}${text.length > first.length ? '…' : ''}”` : ''}.`, '', 'A reply answering it from the case is drafted. Read it, edit it if needed, and approve to send it.'].join('\n');
 }
 /** The task for an email answered by the drafted reply. */
-export function replyTitle(from?: NoteSender | null): string {
-  return `Reply to ${whose(from)} email`;
+/** "What's going on?", "any update?", "where are we?": a request for where things stand. */
+export const STATUS_ASK = /\b(what'?s (going on|happening|the latest|the status)|whats going on|any (update|news|progress)|an update|where (are|do) (we|things) (stand|at)?|how('?s| is| are) (it|things|everything) (going|progressing|looking)|status( update)?|update me|progress so far|chase (this|things) up)\b/i;
+/**
+ * The title of an email's task, from what the email was read as (the way an issue's chip names it):
+ * a request for a status update, a document, something again, their news, a problem they report, a
+ * question; otherwise just the email.
+ */
+export function replyTitle(from?: NoteSender | null, actions: Array<{ kind: string; summary: string; quote: string; command: NoteCommand | null }> = []): string {
+  const who = whose(from);
+  const their = (w: string) => w.trim().replace(/^(my|our)\b/i, 'their');
+  const cmds = actions.map((a) => a.command).filter((c): c is NoteCommand => !!c);
+  const more = (n: number) => (n > 1 ? ` (+${n - 1} more)` : '');
+  const issue = cmds.find((c) => c.type === 'raise_issue' || c.type === 'record_mortgage_withdrawn');
+  if (issue) return `Reply to ${who} report: ${issue.type === 'raise_issue' ? issue.title : 'the mortgage offer withdrawn'}${more(cmds.length)}`;
+  const file = cmds.find((c) => c.type === 'send_file_copy');
+  if (file && file.type === 'send_file_copy') return `Reply to ${who} request for ${their(file.what)}${more(cmds.length)}`;
+  const resend = cmds.find((c) => c.type === 'resend_to_client');
+  if (resend && resend.type === 'resend_to_client') return `Reply to ${who} request for ${WAIT_LABEL[resend.waitKey].replace(/^your /, 'their ')} again${more(cmds.length)}`;
+  const progress = cmds.find((c) => c.type === 'record_client_progress');
+  if (progress && progress.type === 'record_client_progress') return `Reply to ${who} update on ${WAIT_LABEL[progress.waitKey].replace(/^your /, 'their ')}${more(cmds.length)}`;
+  if (cmds.length) return `Reply to ${who} email: ${commandTitle(cmds[0]).replace(/^./, (x) => x.toLowerCase())}${more(cmds.length)}`;
+  if (actions.some((a) => STATUS_ASK.test(a.quote) || /\bstatus update|general update|progress update|where things stand\b/i.test(a.summary))) return `Reply to ${who} request for a status update`;
+  const q = actions.find((a) => a.kind === 'question');
+  if (q) { const t = q.quote.replace(/\s+/g, ' ').trim(); return `Answer ${who} question: “${t.length > 70 ? `${t.slice(0, 68)}…` : t}”`; }
+  return `Reply to ${who} email`;
 }
 /** An acknowledgement's task: confirm nobody needs to reply. */
 export function acknowledgementTitle(from?: NoteSender | null, text = ''): string {

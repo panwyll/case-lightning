@@ -657,3 +657,27 @@ export function issueSteps(kind: IssueKind, side: 'buyer' | 'seller' = 'buyer'):
   if (spec.gate === 'none') return [UPDATE_CLIENT];
   return side === 'seller' ? [ASK_CLIENT, TELL_OTHER_SIDE, NEGOTIATING] : [ASK_OTHER_SIDE, UPDATE_CLIENT, NEGOTIATING];
 }
+
+/** Kinds a case has at most one of open at a time: a second report of the same thing is the same issue. */
+const ONE_PER_CASE: ReadonlySet<IssueKind> = new Set<IssueKind>(['transaction_at_risk', 'mortgage_at_risk', 'mortgage_offer_expiring', 'mortgage_offer_expired', 'mortgage_offer_expiry_unknown', 'completion_failure', 'chain_dependency', 'seller_delay', 'buyer_delay', 'lender_funds_delayed', 'completion_funds_shortfall', 'redemption_statement_expired', 'survey_report_outstanding']);
+const STOP = new Set(['the', 'and', 'for', 'with', 'not', 'yet', 'has', 'have', 'from', 'that', 'this', 'are', 'was', 'our', 'their', 'unless', 'client', 'reports', 'says']);
+const words = (t: string) => new Set(t.toLowerCase().replace(/\[[^\]]*\]/g, ' ').split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !STOP.has(w)));
+/**
+ * The open issue a new one would duplicate: the same kind, about the same party, and either a kind a
+ * case has only one of (the deal at risk, the offer expiring) or the same problem in other words
+ * (most of the meaningful words shared). Timer-keyed issues (`[key:…]` in the title) keep their own
+ * idempotence and are never matched here.
+ */
+export function duplicateIssue<T extends { id: string; kind: IssueKind; title: string; party: string | null; status: string }>(issues: T[], kind: IssueKind, title: string, party: string | null = null): T | null {
+  if (/\[[a-z-]+:[^\]]*\]/.test(title)) return null;
+  const mine = words(title);
+  for (const i of issues) {
+    if (i.kind !== kind || (i.status !== 'open' && i.status !== 'negotiating') || (i.party ?? null) !== (party?.trim() || null) || /\[[a-z-]+:[^\]]*\]/.test(i.title)) continue;
+    if (ONE_PER_CASE.has(kind)) return i;
+    const theirs = words(i.title);
+    const shared = [...mine].filter((w) => theirs.has(w)).length;
+    const union = new Set([...mine, ...theirs]).size;
+    if (union && shared / union >= 0.6) return i;
+  }
+  return null;
+}

@@ -12,7 +12,7 @@
  */
 import type { MatterState, WaitKey, WaitState } from './types';
 import { openIssues, openWaits } from './types';
-import { ISSUE_KIND_SPEC, MORTGAGE_EXPIRY_CRITICAL_DAYS, MORTGAGE_EXPIRY_WARNING_DAYS, type IssueKind, type IssueSeverity } from './issues';
+import { duplicateIssue, ISSUE_KIND_SPEC, MORTGAGE_EXPIRY_CRITICAL_DAYS, MORTGAGE_EXPIRY_WARNING_DAYS, type IssueKind, type IssueSeverity } from './issues';
 import { openIssues as openIssuesOf } from './types';
 import { workingDaysBetween, type WorkingCalendar, EW_CALENDAR, addWorkingDays, subtractWorkingDays } from './working-days';
 import { computeSdlt, sdltLabel } from './sdlt';
@@ -220,7 +220,8 @@ export type TimedIssueAction =
   | { kind: 'raise'; issueKind: IssueKind; key: string; title: string; detail: string; severity: IssueSeverity; /** Overrides the kind's gate (a warning holds nothing; the same thing, once past, holds its gate). */ gate?: 'none' | 'exchange' | 'completion'; /** The day it must be dealt with by (the expiry itself); shown as the task's due date. */ resolveBy?: string }
   | { kind: 'escalate'; issueId: string; severity: IssueSeverity; reason: string }
   | { kind: 'offer_expired'; expiryDate: string }
-  | { kind: 'resolve'; issueId: string; resolution: 'received' | 'other'; note: string };
+  | { kind: 'resolve'; issueId: string; resolution: 'received' | 'other'; note: string }
+  | { kind: 'merge'; issueId: string; into: string };
 
 /**
  * State changes that happen because time passed, not because something arrived: the
@@ -237,6 +238,15 @@ export function timedIssueActions(state: MatterState, now: Date, cal: WorkingCal
   const has = (key: string) => issues.some((i) => i.title.includes(`[${key}]`));
   const open = openIssuesOf(state);
   const today = now.toISOString().slice(0, 10);
+
+  // Duplicates already on the file (raised before they were caught at the door): the later one is merged into the earlier.
+  const byAge = [...open].sort((a, b) => a.raisedAt.localeCompare(b.raisedAt));
+  const merged = new Set<string>();
+  for (let n = 1; n < byAge.length; n++) {
+    const later = byAge[n];
+    const earlier = duplicateIssue(byAge.slice(0, n).filter((x) => !merged.has(x.id)), later.kind, later.title, later.party);
+    if (earlier) { merged.add(later.id); out.push({ kind: 'merge', issueId: later.id, into: earlier.id }); }
+  }
 
   // Ongoing monitoring (LSAG 6.21): a client identified more than a year ago on a matter still open is due a refresh. Holds nothing.
   const identifiedAt = state.idCheck.resolvedAt ?? null;

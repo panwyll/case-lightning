@@ -66,7 +66,7 @@ test('unticking the reply sends only the lines; a reply alone can be approved', 
   const res = await h.svc.recordNote(TENANT, MATTER, { text: 'Hello, how long do searches usually take?', kind: 'email', actor: USER, documentId, from: CLIENT, surface: true, subject: 'Searches' });
   const d = firstDecision(res.state, 'note_actions');
   const { matterWork } = await import('../../../lib/server/engine/work');
-  assert.equal(matterWork(res.state, new Date()).items.find((i) => i.ref.id === d.eventId)!.what, "Reply to the client's email");
+  assert.equal(matterWork(res.state, new Date()).items.find((i) => i.ref.id === d.eventId)!.what, "Answer the client's question: “Hello, how long do searches usually take?”");
   await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
   await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve', null, null, null, ['reply']);
   assert.ok((h.ports.clientComms as MockClientComms).sent.some((m) => m.template === 'email_reply'));
@@ -223,4 +223,14 @@ test('a status reply knows what the client told us that is not yet recorded, and
   await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve');
   const risk = Object.values((await h.svc.getState(TENANT, MATTER)).issues).find((i) => i.kind === 'transaction_at_risk')!;
   assert.equal(risk.gate, 'exchange', 'the reader said it holds nothing; the kind says it holds exchange');
+});
+
+test('an email task is named by what the email was read as', async () => {
+  const { replyTitle } = await import('../../../lib/server/engine/notes');
+  const q = (quote: string, summary = '') => ({ kind: 'question', summary, quote, command: null });
+  assert.equal(replyTitle(CLIENT, [q('Whats going on?', 'Client asks for a general status update on the matter')]), "Reply to the client's request for a status update");
+  assert.equal(replyTitle(CLIENT, [q('Any update?')]), "Reply to the client's request for a status update");
+  assert.equal(replyTitle(CLIENT, [{ kind: 'resend', summary: '', quote: 'can you resend my report on title', command: { type: 'send_file_copy', what: 'my report on title' } }]), "Reply to the client's request for their report on title");
+  assert.equal(replyTitle(CLIENT, [{ kind: 'issue', summary: '', quote: 'the seller is pulling out', command: { type: 'raise_issue', kind: 'transaction_at_risk', title: 'Seller threatening to pull out', detail: null, gate: 'exchange' } }]), "Reply to the client's report: Seller threatening to pull out");
+  assert.equal(replyTitle(CLIENT, []), "Reply to the client's email");
 });

@@ -307,3 +307,25 @@ test('the system closes a locked-file task it raised itself, and still cannot cl
   const oid = (other.events[0].payload as { issueId: string }).issueId;
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: SYSTEM, issueId: oid, resolution: 'other', note: 'x' }), /resolved by people/);
 });
+
+test('the same problem reported twice is one issue: caught when raised, and duplicates already on file are merged by the timer', async () => {
+  const { timedIssueActions } = await import('../../../lib/server/engine/sla');
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [] });
+  await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'transaction_at_risk', title: 'Seller threatening to withdraw unless completion by Friday', gate: 'none' });
+  await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'transaction_at_risk', title: 'Seller threatening to pull out unless completion by Friday' });
+  let s = await h.svc.getState(TENANT, MATTER);
+  const risks = Object.values(s.issues).filter((i) => i.kind === 'transaction_at_risk');
+  assert.equal(risks.length, 1, 'one issue');
+  assert.equal(risks[0].gate, 'exchange', 'it holds the more of the two');
+  assert.ok(risks[0].history.some((x) => /Reported again: Seller threatening to pull out/.test(x.what)));
+  // Different problems of the same kind stay apart.
+  await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'building_regs_missing', title: 'No completion certificate for the 2019 loft conversion' });
+  await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'building_regs_missing', title: 'No FENSA certificate for the replacement windows' });
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(Object.values(s.issues).filter((i) => i.kind === 'building_regs_missing').length, 2);
+  // Two already on file (as before this rule): the timer merges the later into the earlier.
+  const twin = { ...risks[0], id: 'ISS-99', title: 'Seller says they are pulling out', raisedAt: '2099-01-01T00:00:00Z', gate: 'none' as const };
+  const merges = timedIssueActions({ ...s, issues: { ...s.issues, [twin.id]: twin } }, new Date()).filter((a) => a.kind === 'merge');
+  assert.deepEqual(merges, [{ kind: 'merge', issueId: 'ISS-99', into: risks[0].id }]);
+});
