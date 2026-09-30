@@ -5,6 +5,7 @@ import DocPacks from '@/app/conveyi/(app)/admin/DocPacks';
 import TaskList, { TaskTools, type TaskSort } from '@/app/conveyi/(app)/admin/TaskList';
 import { useEngine } from '@/app/shared/engine/useEngine';
 import { WorkPanel } from '@/app/shared/engine/WorkPanel';
+import { CaseQuickActions } from '@/app/shared/engine/CaseQuickActions';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { StepReview } from '@/app/shared/engine/StepReview';
@@ -30,7 +31,8 @@ function patchFetch() {
 function CasePanel({ section }: { section: 'tasks' | 'flow' }) {
   const eng = useEngine(MATTER, api);
   if (!eng.view) return <div>{eng.err ?? 'Loading…'}</div>;
-  return <WorkPanel matterId={MATTER} api={api} view={eng.view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={() => void eng.load()} notice={eng.notice} section={section} />;
+  // The case page's header icons (Raise Issue, Take Over Manually), as they sit beside the health chip.
+  return <><div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}><CaseQuickActions api={api} matterId={MATTER} onChanged={() => void eng.load()} /></div><WorkPanel matterId={MATTER} api={api} view={eng.view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={() => void eng.load()} notice={eng.notice} section={section} /></>;
 }
 
 export function Harness() {
