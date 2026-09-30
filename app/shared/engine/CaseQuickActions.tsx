@@ -20,6 +20,9 @@ const CSS = `
 .cqa-pop b{font-size:13px;color:#0f172a}
 .cqa-pop textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:inherit;font-size:13px;resize:vertical}
 .cqa-pop .f{display:flex;gap:6px;justify-content:flex-end}
+.cqa-pop .warn{display:flex;gap:8px;align-items:flex-start;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.45}
+.cqa-pop .warn svg{flex:none;margin-top:1px}
+.cqa-pop .dont{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#475569;font-weight:600}
 .cqa-pop .bad{font-size:12.5px;color:#b91c1c;font-weight:600}
 `;
 
@@ -41,13 +44,15 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
   const manual = !!state?.manualHandling?.required;
   // What each button does, shown on hover or focus (the tooltip style of the rest of the case).
   const [tip, setTip] = useState<{ which: 'issue' | 'manual'; x: number; y: number } | null>(null);
-  const showTip = (which: 'issue' | 'manual') => (e: { currentTarget: HTMLElement }) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ which, x: Math.max(8, Math.min(r.right - 264, window.innerWidth - 272)), y: r.bottom + 6 }); };
-  const TIPS = {
-    issue: <><b>Raise Issue</b><br />Record a problem on this case the engine has not caught. It holds exchange or completion until it is resolved, and it goes on the Tasks list. Most issues are raised for you: this is for the ones that are not.</>,
-    manual: manual
-      ? <><b>Manual Mode</b><br />The engine is not acting on this case on its own: nothing is sent or ordered without you, and steps are marked complete by hand. Click to resume automation.</>
-      : <><b>Take Over Manually</b><br />Stop the engine acting on this case on its own: nothing is sent or ordered without you, everything becomes a task, and steps can be marked complete by hand. For a case that cannot run the normal way.</>,
-  };
+  const showTip = (which: 'issue' | 'manual') => (e: { currentTarget: HTMLElement }) => { const r = e.currentTarget.getBoundingClientRect(); setTip({ which, x: Math.max(8, window.innerWidth - r.right), y: r.bottom + 6 }); };
+  const TIPS = { issue: 'Raise Issue', manual: manual ? 'Resume Automation' : 'Take Over Manually' };
+  // The warning before taking a case over, until the person says not to show it again (this browser only).
+  const WARN_KEY = 'conveyi:manual-warning-hidden';
+  const [warnHidden, setWarnHidden] = useState(false);
+  useEffect(() => { try { setWarnHidden(localStorage.getItem(WARN_KEY) === '1'); } catch { /* storage blocked */ } }, []);
+  // Saved at once, applied from the next time: the warning stays while it is being read.
+  const [dontShow, setDontShow] = useState(false);
+  const hideWarning = (on: boolean) => { setDontShow(on); try { if (on) localStorage.setItem(WARN_KEY, '1'); else localStorage.removeItem(WARN_KEY); } catch { /* storage blocked */ } };
   const hover = (which: 'issue' | 'manual') => ({ onMouseEnter: showTip(which), onFocus: showTip(which), onMouseLeave: () => setTip(null), onBlur: () => setTip(null) });
   const done = !!state?.completion?.confirmedAt || !!state?.abandoned;
 
@@ -55,7 +60,7 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
     <span className="cqa" ref={box}>
       <style>{WORK_CSS + CSS}</style>
       {!done && <button type="button" className="cqa-b" aria-label="Raise Issue" {...hover('issue')} onClick={() => { setTip(null); setErr(null); setOpen(open === 'issue' ? null : 'issue'); }}><AlertTriangle size={16} /></button>}
-      {!done && <button type="button" className={`cqa-b${manual ? ' on' : ''}`} aria-label={manual ? 'Resume Automation' : 'Take Over Manually'} {...hover('manual')} onClick={() => { setTip(null); setErr(null); setReason(''); setOpen(open === 'manual' ? null : 'manual'); }}><Hand size={16} /></button>}
+      {!done && <button type="button" className={`cqa-b${manual ? ' on' : ''}`} aria-label={manual ? 'Resume Automation' : 'Take Over Manually'} {...hover('manual')} onClick={() => { setTip(null); setErr(null); setReason(''); try { setWarnHidden(localStorage.getItem(WARN_KEY) === '1'); } catch { /* storage blocked */ } setOpen(open === 'manual' ? null : 'manual'); }}><Hand size={16} /></button>}
       {tip && !open && createPortal(<div className="ep-tip" role="tooltip" style={{ left: tip.x, top: tip.y }}>{TIPS[tip.which]}</div>, document.body)}
       {open === 'issue' && state && (
         <IssuesPanel api={api} state={state} busy={false} raiseOnly onCancel={() => setOpen(null)} onChanged={() => { void load(); onChanged?.(); }} cmd={async (body) => { try { return await cmd(body); } catch (e: unknown) { throw e instanceof Error ? e : new Error('It did not save.'); } }} />
@@ -63,6 +68,13 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
       {open === 'manual' && (
         <span className="cqa-pop" role="dialog" aria-label={manual ? 'Resume Automation' : 'Take Over Manually'}>
           <b>{manual ? 'Resume Automation' : 'Take Over Manually'}</b>
+          {!manual && !warnHidden && (
+            <span className="warn">
+              <AlertTriangle size={16} />
+              <span>The engine stops acting on this case on its own. Nothing is sent, chased or ordered without you, and you mark each step complete by hand until you resume automation.</span>
+            </span>
+          )}
+          {!manual && !warnHidden && <label className="dont"><input type="checkbox" checked={dontShow} onChange={(e) => hideWarning(e.target.checked)} />Don&apos;t Show This Again</label>}
           <textarea rows={2} autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder={manual ? 'Why it can run on its own again' : 'Why this case needs handling by hand'} aria-label="Reason" />
           {err && <span className="bad">{err}</span>}
           <span className="f">
