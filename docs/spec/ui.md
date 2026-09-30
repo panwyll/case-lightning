@@ -14,7 +14,7 @@
 - **Proper terminology**: "unsuccessful", not "did not go"; the reason in plain words under it.
 - **Loading says Loading…**, never "No templates"/"No emails".
 - **Title Case** on buttons, headers, labels, chips, dropdown options ("Ready To Exchange", "On Track").
-- **Edge cases live on a task's own page, not the Tasks list.** Its top bar has a warning triangle (Raise Issue on the case) and a hand (Take Over Manually; amber in manual mode, where it resumes automation). Each asks for its reason in a small form.
+- **Edge cases live in the case page's header, not the Tasks list.** Beside the health chip: a warning triangle (Raise Issue on the case) and a hand (Take Over Manually; amber in manual mode, where it resumes automation). Each asks for its reason in a small form.
 - **Undo vs Mark Incomplete** on a done step in the case view.
   - **Undo** is for a step marked done by hand in error: the case is rebuilt as if it had never been marked (only in the stage it was done in).
   - **Mark Incomplete** is for a step that was done but no longer holds (the offer expired, a price change voided the signed papers, a search went stale): outstanding again from now, with the reason, history kept. The mortgage reopens as a withdrawn offer.

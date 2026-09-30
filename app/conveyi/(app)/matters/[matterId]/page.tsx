@@ -18,6 +18,7 @@ import { useEngine, type EngineBundle } from '@/app/shared/engine/useEngine';
 import { ContactsCard } from '@/app/shared/engine/ContactsCard';
 import { ChainCard } from '@/app/shared/engine/ChainCard';
 import { CaseDetailsEdit } from '@/app/shared/engine/CaseDetailsEdit';
+import { CaseQuickActions } from '@/app/shared/engine/CaseQuickActions';
 import { paths } from '@/lib/paths';
 import { ArrowLeft } from '@/app/shared/icons';
 import { useRouter } from 'next/navigation';
@@ -205,6 +206,8 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 <button className="mx-sel" style={{ cursor: 'pointer', background: '#5A27E0', color: '#fff', borderColor: '#5A27E0' }} disabled={stepping} onClick={() => void nextStep()} title={view.matter.sandboxStep ?? undefined}>{stepping ? <Spin>Stepping…</Spin> : 'Next Step'}</button>
               )}
               {view?.matter?.sandbox && <button className="mx-sel" style={{ cursor: 'pointer' }} onClick={() => { if (window.confirm('Retire this sandbox case? It leaves every list; its log stays.')) void api(`/engine/scenarios/${matterId}`, { method: 'DELETE' }).then(() => { window.location.href = '/conveyi/engine/scenarios'; }); }}>Retire Sandbox Case</button>}
+              {/* The edge cases: raise an issue on the case, or take it over by hand. */}
+              {enrolled && <CaseQuickActions api={api} matterId={matterId} onChanged={() => void eng.load()} />}
               {band && <span className="mx-health" style={{ background: BAND[band].bg, color: BAND[band].fg }}><House band={band} size={18} />{HEALTH_LABEL[band]}</span>}
               <select className="mx-sel" value={row.assignedTo ?? ''} onChange={(e) => void setOwner(e.target.value || null)} aria-label="Handler">
                 <option value="">Unassigned</option>

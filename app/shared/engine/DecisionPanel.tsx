@@ -9,7 +9,6 @@ import { api } from './api';
 import { ENGINE_CSS } from './ui';
 import { KIND_LABEL, OPTION_HELP, OPTION_LABEL, OPTION_LABEL_BY_KIND, STAGE_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Citation, type DecisionDetail, type Engagement, type SourceDoc } from './types';
 import { X, Check, ChevronRight, Paperclip, Lock } from '@/app/shared/icons';
-import { CaseQuickActions } from './CaseQuickActions';
 
 /**
  * Addendum 3 §3 — the decision panel. A fixed three-part vertical layout:
@@ -531,8 +530,6 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
             <div className="dp-case" style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
               {detail.shadowed && <span className="eg-chip shadow">shadow</span>}
               <span className={`eg-chip ${d.status === 'pending' ? 'pending' : d.status === 'actioned' ? 'ok' : 'info'}`}>{d.status}</span>
-              {/* The edge cases, kept off the Tasks list: raise an issue on the case, or take it over by hand. */}
-              {!inline && <CaseQuickActions api={api} matterId={d.matterId} />}
               <a href={`/conveyi/engine/${d.matterId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>{detail.matter?.matterRef ?? d.matterRef}<ChevronRight size={16} /></a>
             </div>
           </div>

@@ -12,7 +12,7 @@ import { WORK_CSS } from './WorkPanel';
  */
 const CSS = `
 .cqa{position:relative;display:inline-flex;gap:4px;align-items:center}
-.cqa-b{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid #e2e8f0;background:#fff;border-radius:8px;color:#475569;cursor:pointer;padding:0}
+.cqa-b{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid #e2e8f0;background:#fff;border-radius:8px;color:#475569;cursor:pointer;padding:0}
 .cqa-b:hover{border-color:#5A27E0;color:#5A27E0}
 .cqa-b.on{border-color:#f59e0b;color:#b45309;background:#fffbeb}
 .cqa-pop{position:absolute;top:36px;right:0;z-index:50;width:320px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.14);padding:12px;display:grid;gap:8px;text-align:left}
