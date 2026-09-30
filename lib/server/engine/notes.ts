@@ -116,6 +116,10 @@ export function senderPolicy(source: NoteSource | undefined, action: NoteAction)
   if (action.command?.type === 'record_survey_plan' && relation !== 'client' && relation !== 'colleague') {
     return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (from ${RELATION_LABEL[relation]}, not the client; not recorded)` }];
   }
+  // Only the client says whether their own chain may be shared.
+  if (action.command?.type === 'record_chain_consent' && relation !== 'client' && relation !== 'colleague') {
+    return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (from ${RELATION_LABEL[relation]}, not the client)` }];
+  }
   // How files reach the client is the client's call.
   if (action.command?.type === 'set_file_delivery' && relation !== 'client' && relation !== 'colleague') {
     return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (from ${RELATION_LABEL[relation]}, not the client)` }];
@@ -283,6 +287,7 @@ export function commandTitle(c: NoteCommand): string {
     case 'request_from_seller': return `Ask the seller: ${c.about.trim().slice(0, 80) || 'as the client instructed'}`;
     case 'send_file_copy': return `Send the client a copy: ${c.what.trim().slice(0, 80)}`;
     case 'set_file_delivery': return c.mode === 'attachments' ? 'Client asks for files as attachments instead of a secure link' : 'Client is happy with secure links for files';
+    case 'record_chain_consent': return c.given ? 'Client says we may tell the other side about their own sale or purchase' : 'Client asks us not to share their own sale or purchase';
     case 'record_availability': return `${AVAILABILITY_PARTY_LABEL[c.party].replace(/^the /, '').replace(/^./, (x) => x.toUpperCase())} away ${dayShort(c.from)} to ${dayShort(c.until)}`;
     case 'record_survey_plan': return c.plan === 'none' ? 'No survey: the client\'s choice' : `Survey booked${c.date ? ` for ${dayShort(c.date)}` : ''}`;
     case 'raise_issue': return `Issue: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
@@ -379,6 +384,7 @@ export function effectText(c: NoteCommand, opts: { withMessages?: boolean } = {}
     case 'resolve_issue': return `Closes the open "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}" issue as ${RESOLUTION_LABEL[c.resolution]?.toLowerCase() ?? c.resolution}`;
     case 'send_file_copy': return `Sends ${c.what.trim().slice(0, 80)} with the reply (a task to find it if it is not on the file)`;
     case 'set_file_delivery': return c.mode === 'attachments' ? 'Sends this client\'s files as attachments from now on, not a secure link' : 'Sends this client\'s files as a secure link from now on';
+    case 'record_chain_consent': return c.given ? 'Updates to the other side may say where the client\'s own sale or purchase stands' : 'Updates to the other side say nothing about the client\'s own sale or purchase';
     case 'request_from_seller': return `Proposes this enquiry to the seller's solicitor (editable before it goes): ${c.text.trim().slice(0, 300)}${c.text.trim().length > 300 ? '…' : ''}`;
     case 'record_client_progress': return `Notes against ${WAIT_LABEL[c.waitKey]} that they say: "${c.claim.slice(0, 120)}". It is not chased again before ${c.expectBy ? prettyDate(c.expectBy) : 'three working days from now'}; nothing is cleared until it arrives`;
     case 'resend_to_client': return `Sends the request for ${WAIT_LABEL[c.waitKey]} again, with its links and forms`;
@@ -492,6 +498,7 @@ export function effectChanges(c: NoteCommand, opts: { jeopardy?: (kind: string) 
     }
     case 'record_mortgage_withdrawn': return ['The mortgage offer is marked withdrawn', 'You cannot exchange until a new offer arrives and you have checked it', 'The client is chased for the new offer as with the first'];
     case 'set_file_delivery': return c.mode === 'attachments' ? ['Files go to this client as attachments from now on, not a secure link', 'The files with this reply go as attachments'] : ['Files go to this client as a secure link from now on'];
+    case 'record_chain_consent': return c.given ? ['Updates to the other side may say where the client\'s own sale or purchase stands (never the detail of a problem)'] : ['Updates to the other side say nothing about the client\'s own sale or purchase'];
     case 'record_client_progress': return [`${WAIT_LABEL[c.waitKey].replace(/^your /, 'The client\'s ').replace(/^the /, 'The ')} is marked as on its way`, `The client is not reminded about it before ${c.expectBy ? prettyDate(c.expectBy) : 'three working days from now'}`, 'It still has to arrive before the step is done'];
     case 'resend_to_client': return [`The client is sent the request for ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} again, with its links and forms`];
     case 'set_target_dates': return [c.targetExchangeDate ? `The target exchange date becomes ${prettyDate(c.targetExchangeDate)}` : null, c.targetCompletionDate ? `The target completion date becomes ${prettyDate(c.targetCompletionDate)}` : null, 'Deadlines and warnings are measured against it'].filter((x): x is string => !!x);
@@ -526,6 +533,7 @@ export function commandProblem(c: NoteCommand): string | null {
     return null;
   }
   if (c.type === 'send_file_copy') return c.what?.trim() ? null : 'it does not say which document';
+  if (c.type === 'record_chain_consent') return typeof c.given === 'boolean' ? null : 'it does not say whether they agree';
   if (c.type === 'set_file_delivery') return c.mode === 'attachments' || c.mode === 'link' ? null : `"${String(c.mode)}" is not a way to send files`;
   if (c.type === 'request_from_seller') {
     if (!c.text?.trim() || c.text.trim().length < 20) return 'the request says nothing';

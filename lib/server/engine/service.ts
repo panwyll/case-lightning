@@ -66,6 +66,7 @@ import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, documentRequests, attachmentPreference, WAIT_LABEL, type NoteActionDraft } from './notes';
 import { replyFacts, templateIssueMessage, templateMessage, templateReply } from './reply';
+import { counterpartyNotice, dueCounterpartyNotices, renderCounterpartyFacts, templateCounterpartyUpdate } from './counterparty-status';
 import { FOLLOW_UP_PARTY, PARTY_LABEL, whoNeedsToHear } from './recipients';
 
 /** Who the firm acts for on this case, as the drafter is told. */
@@ -251,6 +252,13 @@ export class EngineService {
       const sent = await this.ports.chaser.sendAcknowledgement({ tenantId, matterId, recipientRole: d.recipientRole as never, what: d.what, forEventType: d.forEventType, override: (detail as { edited?: MessageOverride }).edited ?? null });
       if (!sent) return;
       await this.run(tenantId, matterId, { type: 'record_acknowledgement', ack: { forEventId: d.forEventId, forEventType: d.forEventType, recipientRole: d.recipientRole as never, what: d.what, channel: sent.channel, messageId: sent.messageId } });
+    } else if (action === 'counterparty_update') {
+      // A milestone to the other side or the agent, as approved (and edited); remembered so it goes once.
+      const d = detail as { to: 'seller_solicitor' | 'estate_agent'; milestone: string; subject: string; body: string; triggeredByEventId: string };
+      const ed = (detail as { edited?: MessageOverride }).edited ?? null;
+      if (!this.ports.chaser.sendMessage) throw new Error('Messages to other parties are not configured on this deployment.');
+      const sent = await this.ports.chaser.sendMessage({ tenantId, matterId, recipientRole: d.to, subject: ed?.subject?.trim() || d.subject, body: ed?.body?.trim() || d.body });
+      await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: `cp_${d.milestone}:${d.to}`, recipientRole: d.to, channel: sent.channel, messageId: sent.messageId, triggeredByEventId: d.triggeredByEventId } });
     } else if (action === 'chase' && (detail as { kind?: string }).kind === 'party_message') {
       // A message a person approved on an email's task, to a party on the case, as they wrote it.
       const d = detail as { recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; subject: string; body: string };
@@ -956,8 +964,11 @@ export class EngineService {
       }
       const re = subject ? (/^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`) : 'Re: your email';
       const title = replying ? re : property ?? "Our client's transaction";
-      const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName: (from.name ?? '').trim().split(/\s+/)[0] || null, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts, now: now.toISOString(), to: r.to, purposes: r.purposes, weActFor: weActFor(state) }).catch(() => null) : null;
-      const body = drafted?.body || (r.to === 'client' ? templateReply(state, now, { firstName: null, lines: [] }) : templateMessage(state, r.to, r.sentences, property));
+      // The other side and the agent are written to from what may be shared with them, never from the client's brief.
+      const toThem = r.to === 'seller_solicitor' || r.to === 'estate_agent';
+      const partyFacts = toThem ? renderCounterpartyFacts(state, now, r.to as 'seller_solicitor' | 'estate_agent') : facts;
+      const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: text, subject: subject ?? '', from, firstName: (from.name ?? '').trim().split(/\s+/)[0] || null, lines: lines.map((l) => ({ kind: l.kind, summary: l.summary, quote: l.quote })), facts: partyFacts, now: now.toISOString(), to: r.to, purposes: r.purposes, weActFor: weActFor(state) }).catch(() => null) : null;
+      const body = drafted?.body || (r.to === 'client' ? templateReply(state, now, { firstName: null, lines: [] }) : replying && toThem ? templateCounterpartyUpdate(state, now, r.to as 'seller_solicitor' | 'estate_agent', property) : templateMessage(state, r.to, r.sentences, property));
       out.push({ id: replying ? 'reply' : `msg:${r.to}`, to: r.to, purposes: r.purposes, subject: title, body, drafter: drafted?.body ? this.ports.replyDrafter!.name : 'case-facts', on: r.on });
     }
     return out;
@@ -1009,7 +1020,7 @@ export class EngineService {
     const firstName = clientName?.trim().split(/\s+/)[0] || null;
     const subject = property ?? "Our client's transaction";
     const about = `THE ISSUE ON THE CASE (DATA): ${issue.title}${issue.detail ? `\n${issue.detail}` : ''}`;
-    const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: about, subject, from: null, firstName, lines: [], facts: replyFacts(state, now), now: now.toISOString(), to: step.to, purposes: [step.purpose], weActFor: weActFor(state) }).catch(() => null) : null;
+    const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: about, subject, from: null, firstName, lines: [], facts: step.to === 'seller_solicitor' || step.to === 'estate_agent' ? renderCounterpartyFacts(state, now, step.to) : replyFacts(state, now), now: now.toISOString(), to: step.to, purposes: [step.purpose], weActFor: weActFor(state) }).catch(() => null) : null;
     if (drafted?.body) return { to: step.to, subject, body: drafted.body, drafter: this.ports.replyDrafter!.name };
     return { to: step.to, subject, body: templateIssueMessage(state, step.to, { sentence: step.sentence, issueTitle: issue.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, ''), firstName, property }), drafter: 'case-facts' };
   }
@@ -1821,6 +1832,8 @@ export class EngineService {
               } else if (c.type === 'resend_to_client') {
                 // The same request again, with its links and forms: what Chase Now sends.
                 await this.chaseNow(tenantId, matterId, c.waitKey, c.subject || null, e.actor);
+              } else if (c.type === 'record_chain_consent') {
+                await this.run(tenantId, matterId, { type: 'record_chain_consent', actor: e.actor, given: c.given, reason: action.quote ?? null, noteId: p.noteId });
               } else if (c.type === 'set_file_delivery') {
                 await this.run(tenantId, matterId, { type: 'set_file_delivery', actor: e.actor, mode: c.mode, reason: action.quote ?? null, noteId: p.noteId });
               } else if (c.type === 'send_file_copy' && (p.messages ?? []).some((m) => m.to === 'client' && (m.attach ?? []).some((x) => x.what === c.what))) {
@@ -1859,6 +1872,22 @@ export class EngineService {
               ? ['client_update' as const, { template: 'email_reply', context: { subject: m.subject }, triggeredByEventId: e.id, edited: { subject: m.subject, body: m.body }, ...('attach' in m && m.attach?.length ? { attachFileIds: m.attach.map((x) => x.id), attachFileNames: m.attach.map((x) => x.fileName), ...(m.asAttachments ? { asAttachments: true } : {}) } : {}) }]
               : ['chase' as const, { kind: 'party_message', recipientRole: m.to, subject: m.subject, body: m.body, triggeredByEventId: e.id }];
             try { await this.perform(tenantId, matterId, action, detail); } catch (err) { this.ports.log(`the message to ${m.to} could not be sent`, err); await this.recordSendFailure(tenantId, matterId, action, detail, err); }
+          }
+        }
+        // Milestones the other side hears without asking (counterparty-status.ts): each once, proposed by default.
+        if (e.type !== 'client_update_sent' && e.type !== 'action_proposed') {
+          const fresh = await this.getState(tenantId, matterId);
+          const due = dueCounterpartyNotices(fresh, this.ports.now());
+          if (due.length) {
+            const property = (await this.caseRecord(tenantId, matterId).catch(() => null))?.propertyAddress ?? null;
+            for (const n of due) {
+              const msg = counterpartyNotice(fresh, this.ports.now(), n, property);
+              const detail = { to: n.to, milestone: n.key, title: n.title, subject: msg.subject, body: msg.body, triggeredByEventId: e.id };
+              const summary = `UPDATE TO ${n.to === 'seller_solicitor' ? "THE OTHER SIDE'S SOLICITOR" : 'THE ESTATE AGENT'}\n\nWhat: ${n.title}\n\n${msg.body}`;
+              try {
+                if (!(await this.proposeUnless(tenantId, matterId, subflows, 'counterparty_update', n.key, `cp:${n.key}:${n.to}`, detail, summary))) await this.perform(tenantId, matterId, 'counterparty_update', detail);
+              } catch (err) { this.ports.log(`update to ${n.to} could not be sent`, err); await this.recordSendFailure(tenantId, matterId, 'counterparty_update', detail, err); }
+            }
           }
         }
         // A chase to a third party is also news for the client (docs/architecture-review.md
@@ -1928,7 +1957,7 @@ export class EngineService {
     const ROLE: Record<string, string> = { seller_solicitor: "the seller's solicitor", buyer_solicitor: "the buyer's solicitor", lender: 'the lender', estate_agent: 'the estate agent', client: 'the client', search_provider: 'the search provider' };
     const role = typeof detail.recipientRole === 'string' ? ROLE[detail.recipientRole] ?? `the ${detail.recipientRole.replace(/_/g, ' ')}` : 'the client';
     // The title says what did not go; why, and what to do, are the issue's detail.
-    const what = kind === 'party_message' ? `Message to ${role}` : kind === 'signing_pack' ? 'Signing pack to the client' : kind === 'proof_of_funds_request' ? 'Proof-of-funds form to the client' : kind === 'id_check_request' ? 'ID check request to the client' : kind === 'request' ? `Request to ${role}` : action === 'chase' ? `Chase to ${role}` : action === 'acknowledgement' ? `Acknowledgement to ${role}` : action === 'search_order' ? 'Search order' : action === 'client_update' ? 'Update to the client' : action.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    const what = action === 'counterparty_update' ? `Update to ${String(detail.to) === 'estate_agent' ? 'the estate agent' : "the other side's solicitor"}` : kind === 'party_message' ? `Message to ${role}` : kind === 'signing_pack' ? 'Signing pack to the client' : kind === 'proof_of_funds_request' ? 'Proof-of-funds form to the client' : kind === 'id_check_request' ? 'ID check request to the client' : kind === 'request' ? `Request to ${role}` : action === 'chase' ? `Chase to ${role}` : action === 'acknowledgement' ? `Acknowledgement to ${role}` : action === 'search_order' ? 'Search order' : action === 'client_update' ? 'Update to the client' : action.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
     const title = `${what} unsuccessful`;
     const proposalId = typeof detail.__proposalEventId === 'string' ? detail.__proposalEventId : null;
     const outside = this.ports.outsideAutomation ?? (<T,>(fn: () => Promise<T>) => fn());
@@ -2008,6 +2037,8 @@ export class EngineService {
     } else if (action === 'client_update') {
       const template = typeof detail.template === 'string' ? detail.template : kind ?? 'client_update';
       await this.run(tenantId, matterId, { type: 'record_client_update', update: { template, recipientRole: 'client', channel, messageId: null, triggeredByEventId: typeof detail.triggeredByEventId === 'string' ? detail.triggeredByEventId : null } });
+    } else if (action === 'counterparty_update' && typeof detail.milestone === 'string') {
+      await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: `cp_${detail.milestone}:${String(detail.to)}`, recipientRole: detail.to as 'seller_solicitor' | 'estate_agent', channel, messageId: null, triggeredByEventId: typeof detail.triggeredByEventId === 'string' ? detail.triggeredByEventId : null } });
     } else if (action === 'chase' && typeof detail.waitKey === 'string') {
       await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: detail.waitKey as WaitKey, subject: String(detail.subject ?? ''), recipientRole: detail.recipientRole as never, template: String(detail.template ?? 'chase'), channel, messageId: null } });
     } else if (action === 'acknowledgement' && typeof detail.forEventId === 'string') {

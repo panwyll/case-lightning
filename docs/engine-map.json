@@ -1,5 +1,5 @@
 {
-  "version": "6e69de27553d",
+  "version": "0be4cde36298",
   "generatedFrom": "lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)",
   "transactionTypes": [
     {
@@ -1980,6 +1980,16 @@
       "eventuality": true
     },
     {
+      "type": "record_chain_consent",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "chain_consent_recorded"
+      ],
+      "description": "The client says we may (or may not) tell the other side about their own sale or purchase. Without it, updates to the other side never mention the client's chain.",
+      "eventuality": true
+    },
+    {
       "type": "set_file_delivery",
       "actor": "person",
       "stages": "any",
@@ -2706,6 +2716,12 @@
     },
     {
       "type": "file_delivery_set",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "chain_consent_recorded",
       "category": "lifecycle",
       "decision": false,
       "humanGated": false

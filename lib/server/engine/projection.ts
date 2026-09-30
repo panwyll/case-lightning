@@ -707,6 +707,10 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (p.plan === 'none') closeWait(s, 'survey', null, e);
       break;
     }
+    case 'chain_consent_recorded': {
+      s.shareChain = (e.payload as Payloads['chain_consent_recorded']).given;
+      break;
+    }
     case 'file_delivery_set': {
       s.fileDelivery = (e.payload as Payloads['file_delivery_set']).mode;
       break;

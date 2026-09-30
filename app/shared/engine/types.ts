@@ -135,7 +135,7 @@ export interface NoteActionsDetail {
 
 export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;
 export type TrustLevel = (typeof TRUST_LEVELS)[number];
-export const ENGINE_ACTION_LABEL: Record<string, string> = { acknowledgement: 'Acknowledge what arrives', chase: 'Chase the other side', client_update: 'Update the client', search_order: 'Order searches', auto_clear: 'Clear a document the rules pass', enquiry_draft: "Draft enquiries from the seller's forms", email_no_reply: 'Let acknowledgements go without a reply' };
+export const ENGINE_ACTION_LABEL: Record<string, string> = { acknowledgement: 'Acknowledge what arrives', chase: 'Chase the other side', client_update: 'Update the client', search_order: 'Order searches', auto_clear: 'Clear a document the rules pass', enquiry_draft: "Draft enquiries from the seller's forms", email_no_reply: 'Let acknowledgements go without a reply', counterparty_update: 'Update the other side at milestones' };
 export const SUB_FLOWS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'chase'] as const;
 export const SUBFLOW_LABEL: Record<string, string> = { id_check: 'ID / AML', search: 'Searches', enquiry: 'Enquiries', mortgage: 'Mortgage offer', title: 'Title', report_on_title: 'Report on title', chase: 'Chasing & escalation' };
 

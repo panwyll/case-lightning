@@ -110,6 +110,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   // Eventualities (docs/engine-eventualities.md).
   z.object({ type: z.literal('abandon_matter'), reason: z.enum(ABANDON_REASONS), detail: z.string().max(2000).nullish() }),
   z.object({ type: z.literal('set_clients'), names: z.array(z.string().min(1).max(120)).min(1).max(8), reason: z.string().max(500).nullish() }),
+  z.object({ type: z.literal('record_chain_consent'), given: z.boolean(), reason: z.string().max(500).nullish() }),
   z.object({ type: z.literal('set_target_dates'), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), reason: z.string().max(500).nullish() }),
   z.object({ type: z.literal('change_completion_date'), completionDate: isoDate, reason: z.string().max(500).nullish() }),
   z.object({ type: z.literal('notice_to_complete_served'), servedBy: z.enum(['buyer', 'seller']), servedAt: z.string().datetime().nullish(), expiresAt: isoDate, documentId: z.string().uuid() }),

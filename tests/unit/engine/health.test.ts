@@ -65,6 +65,8 @@ test('health: a case sitting in one phase with nothing outstanding becomes delay
     const type = d === 'contract' ? 'signed_contract_held' : d === 'mortgage_deed' ? 'mortgage_deed_executed' : d === 'transfer' ? 'transfer_deed_executed' : 'deed_of_trust_executed';
     await h.svc.run(TENANT, MATTER, { type, actor: USER, documentId: h.doc({}) } as never);
   }
+  // Updates to the other side at milestones are dealt with too (declined here), so nothing waits on us.
+  for (const d of Object.values((await h.svc.getState(TENANT, MATTER)).decisions).filter((x) => x.status === 'pending' && x.kind === 'proposal')) await resolve(h, d.eventId, 'reject', USER, 'Not now');
   const s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.waits.filter((w) => !w.closedAt).length, 0);
   const now = h.advanceDays(70); // ~50 working days in pre-contract; 20 is typical

@@ -130,6 +130,7 @@ export const EVENT_TYPES = [
   'note_actions_applied',
   'wait_progress_reported',
   'file_delivery_set',
+  'chain_consent_recorded',
   'note_action_refused',
   'escalation_raised',
   'escalation_resolved',
@@ -531,6 +532,7 @@ export type NoteCommand =
   /** The client asks for a copy of a document ("I can't find my TA10"): found on the case and sent back to them. */
   | { type: 'send_file_copy'; what: string }
   | { type: 'set_file_delivery'; mode: 'attachments' | 'link' }
+  | { type: 'record_chain_consent'; given: boolean }
   | { type: 'client_decision_recorded'; subject: ClientDecisionSubject; decision: string; note: string; /** further_investigation: which specialists, by name ("damp", "structural engineer"); absent = all. */ scope?: string[] | null }
   /** Someone other than the client reported a client decision: ask the client; it is recorded only when they say so themselves. */
   | { type: 'confirm_with_client'; subject: ClientDecisionSubject; decision: string; saidBy: string; quote: string; detail?: string | null }
@@ -849,7 +851,7 @@ export interface AcknowledgementSpec {
 export interface ClientUpdateSpec {
   template: string;
   /** Who heard: the client unless said otherwise (the agent hears that we chased, too). */
-  recipientRole?: 'client' | 'estate_agent' | 'lender';
+  recipientRole?: 'client' | 'estate_agent' | 'lender' | 'seller_solicitor';
   channel: 'email' | 'whatsapp' | 'mock' | ManualChannel;
   messageId?: string | null;
   triggeredByEventId?: string | null;
@@ -964,6 +966,7 @@ export interface Payloads {
   note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec; /** Read as a pure acknowledgement (both checks): no reply needed. */ acknowledgement?: boolean; reply?: NoteReply | null; messages?: NoteMessage[] };
   wait_progress_reported: { waitKey: WaitKey; subject: string; claim: string; until: string; noteId: string | null };
   file_delivery_set: { mode: 'attachments' | 'link'; reason: string | null; noteId: string | null };
+  chain_consent_recorded: { given: boolean; reason: string | null; noteId: string | null };
   note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null; /** The reply to send with it, as approved (and edited). */ reply?: { subject: string; body: string } | null; /** Every message to send with it, as approved (and edited). */ messages?: Array<{ id: string; to: MessageParty; subject: string; body: string; attach?: MessageAttachment[]; asAttachments?: boolean; alwaysAttach?: boolean }> };
   note_action_refused: { noteId: string; actionId: string; reason: string };
   escalation_raised: {
@@ -1229,7 +1232,7 @@ export type SubFlow = (typeof SUB_FLOWS)[number];
  *
  * Promotion is earned per action, from the proposals a firm has approved unchanged.
  */
-export const ENGINE_ACTIONS = ['acknowledgement', 'chase', 'client_update', 'search_order', 'auto_clear', 'enquiry_draft', 'email_no_reply'] as const;
+export const ENGINE_ACTIONS = ['acknowledgement', 'chase', 'client_update', 'search_order', 'auto_clear', 'enquiry_draft', 'email_no_reply', 'counterparty_update'] as const;
 export type EngineAction = (typeof ENGINE_ACTIONS)[number];
 export const ENGINE_ACTION_LABEL: Record<EngineAction, string> = {
   acknowledgement: 'Acknowledgements',
@@ -1239,12 +1242,18 @@ export const ENGINE_ACTION_LABEL: Record<EngineAction, string> = {
   auto_clear: 'Auto-clears',
   enquiry_draft: 'Enquiries drafted from the forms',
   email_no_reply: 'Acknowledgements needing no reply',
+  counterparty_update: 'Updates to the other side',
 };
 /**
  * The subjects a level can be set on within each action: who is written to, which search,
  * which template, which sub-flow. A level set on `action:subject` overrides the action's.
  */
 export const ENGINE_ACTION_SUBJECTS: Record<EngineAction, ReadonlyArray<{ key: string; label: string }>> = {
+  counterparty_update: [
+    { key: 'searches_back', label: 'Our searches are back' },
+    { key: 'mortgage_offer', label: "Our client's mortgage offer is in" },
+    { key: 'ready_to_exchange', label: 'We are ready to exchange' },
+  ],
   acknowledgement: [
     { key: 'seller_solicitor', label: "Other side's solicitor" },
     { key: 'client', label: 'Client' },
@@ -1313,7 +1322,7 @@ export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;
 export type TrustLevel = (typeof TRUST_LEVELS)[number];
 /** Keys are an action (`chase`) or an action and subject (`chase:lender`). */
 export type LevelConfig = Record<string, TrustLevel>;
-export const DEFAULT_LEVELS: LevelConfig = { acknowledgement: 'propose', chase: 'propose', client_update: 'propose', search_order: 'propose', auto_clear: 'propose', enquiry_draft: 'propose', email_no_reply: 'propose' };
+export const DEFAULT_LEVELS: LevelConfig = { acknowledgement: 'propose', chase: 'propose', client_update: 'propose', search_order: 'propose', auto_clear: 'propose', enquiry_draft: 'propose', email_no_reply: 'propose', counterparty_update: 'propose' };
 export const levelKey = (action: EngineAction, subject?: string | null): string => (subject ? `${action}:${subject}` : action);
 /** The level in force for an action on a subject: the subject's own, else the action's, else propose. */
 export function levelFor(cfg: LevelConfig | null | undefined, action: EngineAction, subject?: string | null): TrustLevel {
@@ -1321,7 +1330,7 @@ export function levelFor(cfg: LevelConfig | null | undefined, action: EngineActi
   return (subject ? c[levelKey(action, subject)] : undefined) ?? c[action] ?? 'propose';
 }
 /** What ASSIST does unasked. Everything else at assist is proposed. */
-export const ASSIST_ACTS: Record<EngineAction, boolean> = { acknowledgement: true, chase: true, search_order: true, client_update: false, auto_clear: true, enquiry_draft: false, email_no_reply: false };
+export const ASSIST_ACTS: Record<EngineAction, boolean> = { acknowledgement: true, chase: true, search_order: true, client_update: false, auto_clear: true, enquiry_draft: false, email_no_reply: false, counterparty_update: false };
 /** Whether an action at a level goes ahead without a person. */
 export const actsUnasked = (level: TrustLevel, action: EngineAction): boolean => level === 'auto' || (level === 'assist' && ASSIST_ACTS[action]);
 
@@ -1553,6 +1562,8 @@ export interface MatterState {
   relatedMatter: { matterId: string; relation: 'sale' | 'purchase'; linkedAt: string } | null;
   /** How files reach the client: a secure link (the default), or attachments when they asked for that. */
   fileDelivery?: 'link' | 'attachments';
+  /** The client has said we may tell the other side about their own sale or purchase (their chain). */
+  shareChain?: boolean;
   /** The lender's own (Part 2) requirements recorded on this matter; null = the defaults. */
   lenderRequirements: { minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; note: string | null; recordedAt: string } | null;
   /** Documented name changes: [from, to] pairs the cross-checks treat as one person. */

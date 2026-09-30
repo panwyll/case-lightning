@@ -210,6 +210,7 @@ export function proposalChip(action: string, det: Record<string, unknown>): stri
   if (action === 'acknowledgement') return `${who} Acknowledgement`;
   if (action === 'search_order') return 'Search Order';
   if (action === 'enquiry_draft') return "Seller's Solicitor Enquiries";
+  if (action === 'counterparty_update') return det.to === 'estate_agent' ? 'Agent Update' : 'Other Side Update';
   if (action === 'chase' && det.kind === 'request') return det.template === 'exchanged_agent' || det.template === 'completed_agent' ? 'Agent Update' : `${who} Request`;
   if (action === 'chase') return `${who} Chaser`;
   if (action === 'client_update') {
@@ -281,6 +282,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
         const subj = typeof det.subject === 'string' && det.subject && !/^[0-9a-f-]{20,}$/i.test(det.subject) ? ` (${SEARCH_NAME[det.subject] ?? det.subject.replace(/_/g, ' ')})` : '';
         return `Chase ${whom(det.recipientRole)} for ${low(WAIT_LABEL[key] ?? 'what they owe')}${subj}`;
       }
+      case 'counterparty_update': return `Tell ${whom(det.to)} ${String(det.title ?? 'where our side stands').replace(/^./, (x) => x.toLowerCase())}`;
       case 'search_order': { const n = SEARCH_NAME[cleanSubject ?? String(det.searchType ?? '')] ?? cleanSubject ?? String(det.searchType ?? ''); return `Order the ${n}${/search/i.test(n) ? '' : ' search'}`; }
       case 'enquiry_draft': {
         const k = pr.dedupKey;

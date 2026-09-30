@@ -159,6 +159,7 @@ type CommandBody =
   | { type: 'record_availability'; actor: Actor; party: AvailabilityParty; from: string; until: string; note?: string | null }
   | { type: 'record_client_progress'; actor: Actor; waitKey: WaitKey; subject: string; claim: string; expectBy?: string | null; noteId?: string | null }
   | { type: 'set_file_delivery'; actor: Actor; mode: 'attachments' | 'link'; reason?: string | null; noteId?: string | null }
+  | { type: 'record_chain_consent'; actor: Actor; given: boolean; reason?: string | null; noteId?: string | null }
   | { type: 'open_expectation'; key: ExpectationKey }
   | { type: 'record_title_plan'; documentId: string; facts: TitlePlanFacts }
   | { type: 'record_supporting_document'; documentId: string; facts: SupportingDocFacts }
@@ -282,6 +283,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'record_availability',
   'record_client_progress',
   'set_file_delivery',
+  'record_chain_consent',
   'record_survey_plan',
   'set_funding',
   'set_signing_method',
@@ -1484,6 +1486,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.expectBy && (!/^\d{4}-\d{2}-\d{2}$/.test(cmd.expectBy) || Number.isNaN(Date.parse(cmd.expectBy)))) reject('The expected date must be YYYY-MM-DD.', 400);
       const until = cmd.expectBy ?? addWorkingDays(ctx.now, 3).toISOString().slice(0, 10);
       return [{ type: 'wait_progress_reported', actor: cmd.actor, payload: { waitKey: cmd.waitKey, subject: cmd.subject ?? '', claim: cmd.claim.trim().slice(0, 400), until, noteId: cmd.noteId ?? null } }];
+    }
+    case 'record_chain_consent': {
+      // Whether the other side may hear about our client's own sale or purchase: the client's say-so only.
+      if (!!s.shareChain === cmd.given) reject(cmd.given ? 'The client has already said we may share their chain position.' : 'The chain position is already not shared.', 409);
+      return [{ type: 'chain_consent_recorded', actor: cmd.actor, payload: { given: cmd.given, reason: cmd.reason?.trim() || null, noteId: cmd.noteId ?? null } }];
     }
     case 'set_file_delivery': {
       // How files reach this client: a secure link unless they asked for attachments.

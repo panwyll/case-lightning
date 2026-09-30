@@ -234,7 +234,9 @@ test('timers: an unanswered search is chased at day 10 and escalated at day 18 w
   assert.equal(pending.filter((d) => d.kind === 'report_on_title').length, 1, 'the report on title is drafted for approval');
   // The contract in the pack is at contract review now: it is the other thing on the Tasks tab, to approve for signature.
   assert.equal(pending.filter((d) => d.kind === 'contract').length, 1, 'the contract is on the Tasks tab to approve');
-  assert.equal(pending.filter((d) => d.kind !== 'auto_clear' && d.kind !== 'report_on_title' && d.kind !== 'contract').length, 0, 'nothing else waits on a person');
+  // The seller's solicitor is told our searches are back (proposed, for a person to approve).
+  const others = pending.filter((d) => d.kind !== 'auto_clear' && d.kind !== 'report_on_title' && d.kind !== 'contract');
+  assert.ok(others.every((d) => d.kind === 'proposal' && /searches_back/.test(JSON.stringify(d))), 'nothing else waits on a person but the update to the other side');
 });
 
 test('extraction failure never stalls the matter — it becomes a human decision', async () => {
