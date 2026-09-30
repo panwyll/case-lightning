@@ -60,12 +60,14 @@ const ACK_WINDOW_MS = 4 * 60 * 60 * 1000;
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateLease, evaluateTitle, evaluateIdCheck } from './rules';
 import { describeIdDocument, reviewIdDocument } from './id-document';
-import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
+import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission, type StatementFacts } from './proof-of-funds';
+import type { Flag as PofFlag } from './types';
 import { isResolved, openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedsReadyToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, documentRequests, attachmentPreference, WAIT_LABEL, type NoteActionDraft } from './notes';
 import { replyFacts, templateIssueMessage, templateMessage, templateReply } from './reply';
+import { analyseSourceOfFunds } from './source-of-funds';
 import { counterpartyNotice, dueCounterpartyNotices, renderCounterpartyFacts, templateCounterpartyUpdate } from './counterparty-status';
 import { FOLLOW_UP_PARTY, PARTY_LABEL, whoNeedsToHear } from './recipients';
 
@@ -484,6 +486,9 @@ export class EngineService {
       const ref = await this.ports.documents.get(tenantId, id).catch(() => null);
       if (!ref || ref.matterId !== matterId) return;
       const fileName = evidenceNames[id] ?? ref.fileName ?? null;
+      // An account connected by open banking is already the bank's own lines: nothing to extract.
+      const ob = ref.docType === 'OPEN_BANKING_ACCOUNT' ? (ref.extractedFacts as { statement?: StatementFacts } | null)?.statement ?? null : null;
+      if (ob) { evidence.push({ id, fileName, sourceIndex, donorFor, kind: 'bank_statement', payslip: null, statement: ob, unreadable: null, provenance: 'open_banking' }); return; }
       try {
         const read = this.ports.extractor.extractEvidence ? await this.ports.extractor.extractEvidence(ref) : await this.ports.extractor.extractStatement(ref).then((st) => ({ kind: st ? ('bank_statement' as const) : ('other' as const), statement: st, payslip: null }));
         evidence.push({ id, fileName, sourceIndex, donorFor, kind: read.kind, payslip: read.payslip, statement: read.statement, unreadable: null });
@@ -497,8 +502,16 @@ export class EngineService {
       for (const id of src.gift?.donorEvidenceDocumentIds ?? []) await attach(id, null, i + 1);
     }
     for (const a of sub.answers ?? []) for (const id of a.evidenceDocumentIds) await attach(id, null, null);
-    const review = reviewTransactions(facts, evidence, sub.submittedAt);
-    const declaration = renderDeclaration(facts, sub, evidenceNames);
+    const lineReview = reviewTransactions(facts, evidence, sub.submittedAt);
+    // The source-of-funds analysis on the same evidence (source-of-funds.ts): categories, income, own-account tracing,
+    // each declared source against what the accounts show. A credit it explains is not asked about.
+    // One question per point: the growth check stands down where the line review already asked about the balance.
+    const balanceAskedOn = new Set(lineReview.queries.filter((q) => q.flagCode === 'BALANCE_JUMP').map((q) => q.documentId));
+    const analysis = analyseSourceOfFunds(facts, evidence, sub.submittedAt, undefined, { balanceAskedOn });
+    const explained = lineReview.queries.filter((q) => analysis.explainedKeys.includes(q.key));
+    const isExplained = (f: PofFlag) => explained.some((q) => q.flagCode === f.code && q.transaction && f.locator?.quote?.startsWith(`${q.transaction.date} ${q.transaction.description}`));
+    const review = { ...lineReview, flags: [...lineReview.flags.filter((f) => !isExplained(f)), ...analysis.flags], queries: [...lineReview.queries.filter((q) => !analysis.explainedKeys.includes(q.key)), ...analysis.queries] };
+    const declaration = renderDeclaration(facts, sub, evidenceNames) + (analysis.report ? `\n${analysis.report}` : '');
     const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'PROOF_OF_FUNDS_DECLARATION', fileName: readableName(`Proof of funds declaration${facts.round > 1 ? ` (round ${facts.round})` : ''}`, this.ports.now()), content: declaration });
     const verdict = evaluateProofOfFunds(facts, { coBuyers: state.partyNames.slice(1), hasLinkedSale: state.relatedMatter?.relation === 'sale' ? true : state.relatedMatter ? undefined : false, acceptsNonFamilyGift: state.lenderRequirements?.acceptsNonFamilyGift ?? null });
     const flags = [...(verdict.outcome === 'flag' ? verdict.flags : []), ...review.flags];

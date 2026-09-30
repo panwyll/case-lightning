@@ -154,11 +154,15 @@ test('flow: fire the form → the client wait opens and is chased → submission
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.partyChecks[donor.party].status, 'cleared');
 
-  // A donor abroad is enhanced due diligence, which brings one source-of-wealth query with it; it has to be sent or withdrawn with a reason before sign-off.
+  // A donor abroad is enhanced due diligence, which brings a source-of-wealth query with it; and the gift's money (only a letter so far) is asked for. Each has to be sent or withdrawn with a reason before sign-off.
   const sow = openPofQueries(s).find((q) => q.flagCode === 'SOURCE_OF_WEALTH')!;
   assert.ok(sow, 'enhanced risk drafts the source-of-wealth query');
-  await assert.rejects(resolve(h, d.eventId, 'approve'), /1 query is still open .*give a reason here to sign off regardless/);
+  await assert.rejects(resolve(h, d.eventId, 'approve'), /2 queries are still open .*give a reason here to sign off regardless/);
   await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: sow.id, reason: 'Source of wealth taken at the instruction meeting: salary and an inheritance in 2019, recorded on the file note' });
+  // A gift letter is not the money: with no donor statement and the gift not yet seen arriving, the donor's funds are asked for.
+  const giftQ = openPofQueries(await h.svc.getState(TENANT, MATTER)).find((q) => q.flagCode === 'GIFT_NOT_EVIDENCED')!;
+  assert.ok(giftQ, 'the gift\'s money is asked for');
+  await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: giftQ.id, reason: "Donor's statements seen at the meeting and copied to the file" });
 
   // Sign-off.
   await resolve(h, d.eventId, 'approve');
@@ -550,6 +554,7 @@ test('joint accounts: a gift from a joint account makes both holders donors (bot
   const d = pendingDecisions(s).find((x) => x.kind === 'proof_of_funds')!;
   await assert.rejects(resolve(h, d.eventId, 'approve'), /Sign-off waits for the donor's ID \/ AML check: .*Vikram Shah/);
   for (const pc of Object.values(s.partyChecks)) await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()), pc.party);
+  for (const q of openPofQueries(await h.svc.getState(TENANT, MATTER)).filter((x) => x.flagCode === 'GIFT_NOT_EVIDENCED')) await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: q.id, reason: "Donors' statements held on file" });
   await resolve(h, d.eventId, 'approve');
   s = await h.svc.getState(TENANT, MATTER);
   const lender = openIssues(s).find((i) => i.kind === 'lender_approval')!;

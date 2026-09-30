@@ -1,6 +1,7 @@
 import { NextRequest, after } from 'next/server';
 import { z } from 'zod';
 import { ok, fail } from '@/lib/server/http';
+import { devPofView, isDevPof } from '@/lib/server/dev-pof';
 import { query, queryOne, runAsAutomation, runAsSystem } from '@/lib/server/db';
 import { engine } from '@/lib/server/engine/adapters';
 import { markSubmitted, openRequestByToken, readSubmission, type PofRequestRow } from '@/lib/server/engine/pof-store';
@@ -86,6 +87,7 @@ async function context(token: string) {
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
+    if (isDevPof(token)) return ok(devPofView());
     const ctx = await runAsSystem(() => context(token));
     if (!ctx) return ok({ status: 'unknown' }, { status: 404 });
     return ok(ctx.view);

@@ -349,6 +349,8 @@ export interface EvidenceDocument {
   statement: StatementFacts | null;
   /** The extractor's reason when a statement was expected and not read. */
   unreadable: string | null;
+  /** Where the lines came from: an account connected by open banking (the bank's own data) or a statement the client uploaded. */
+  provenance?: 'open_banking' | 'upload';
 }
 
 /**
@@ -444,7 +446,7 @@ export interface TransactionReview {
   /** Payslips read, for the briefing: income evidence, kept apart from the statements. */
   payslips: Array<{ documentId: string; fileName: string | null; employee: string | null; employer: string | null; payDate: string | null; netPennies: number | null }>;
   /** Per-document coverage summary for the briefing. */
-  statements: Array<{ documentId: string; fileName: string | null; holder: string | null; bank: string | null; from: string | null; to: string | null; transactions: number; credits: number; closingPennies: number | null; readable: boolean }>;
+  statements: Array<{ documentId: string; fileName: string | null; holder: string | null; bank: string | null; from: string | null; to: string | null; transactions: number; credits: number; closingPennies: number | null; readable: boolean; provenance?: 'open_banking' | 'upload' }>;
 }
 
 /**
@@ -490,7 +492,7 @@ export function reviewTransactions(facts: ProofOfFundsFacts, evidence: EvidenceD
     const donor = doc.donorFor != null ? facts.sources[doc.donorFor - 1]?.gift ?? null : null;
     const expectedHolders = donor ? [donor.donorName, donor.jointDonorName ?? ''] : [facts.declarantName, source?.jointHolderName ?? '', source?.description ?? ''];
     const credits = st.transactions.filter((t) => t.amountPennies > 0);
-    statements.push({ documentId: doc.id, fileName: doc.fileName, holder: st.accountHolder, bank: st.bankName, from: st.periodFrom, to: st.periodTo, transactions: st.transactions.length, credits: credits.length, closingPennies: st.closingBalancePennies, readable: true });
+    statements.push({ documentId: doc.id, fileName: doc.fileName, holder: st.accountHolder, bank: st.bankName, from: st.periodFrom, to: st.periodTo, transactions: st.transactions.length, credits: credits.length, closingPennies: st.closingBalancePennies, readable: true, provenance: doc.provenance ?? 'upload' });
 
     // Whose account is this? A joint account names two people; the second is a contributor the client must have declared.
     const undeclared = holderNames(st.accountHolder).filter((h) => !samePerson(h, [...expectedHolders, ...knownParties].filter(Boolean)));
@@ -602,7 +604,7 @@ export interface PofQuery {
 }
 
 /** Enhanced due diligence is required by regulation in these situations (docs/proof-of-funds.md §4); the machine records the rating, the MLRO applies it. */
-export const EDD_TRIGGER_CODES = ['POF_HIGH_RISK:CRYPTO', 'POF_HIGH_RISK:OVERSEAS', 'POF_HIGH_RISK:LOAN', 'POF_HIGH_RISK:BUSINESS_INCOME', 'POF_GIFT_DONOR_ABROAD', 'CRYPTO_CREDIT', 'GAMBLING_CREDIT', 'OVERSEAS_CREDIT', 'CASH_PATTERN', 'IN_AND_OUT', 'HOLDER_MISMATCH'] as const;
+export const EDD_TRIGGER_CODES = ['POF_HIGH_RISK:CRYPTO', 'POF_HIGH_RISK:OVERSEAS', 'POF_HIGH_RISK:LOAN', 'POF_HIGH_RISK:BUSINESS_INCOME', 'POF_GIFT_DONOR_ABROAD', 'CRYPTO_CREDIT', 'GAMBLING_CREDIT', 'OVERSEAS_CREDIT', 'CASH_PATTERN', 'IN_AND_OUT', 'HOLDER_MISMATCH', 'GAMBLING_SPEND', 'GIFT_DONOR_FUNDS_RECENT'] as const;
 
 export type PofRiskRating = 'standard' | 'enhanced';
 export function riskRating(flags: Flag[]): PofRiskRating {
@@ -611,6 +613,14 @@ export function riskRating(flags: Flag[]): PofRiskRating {
 
 /** Standard flags → what is normally asked for (used by the template briefing and shown next to each flag). */
 export const FLAG_GUIDANCE: Record<string, string> = {
+  GIFT_NOT_EVIDENCED: 'A gift letter is not the money. The donor\'s own account must show the funds (and how they came to have them), or the client\'s account must show the gift arriving from the donor.',
+  GIFT_DONOR_FUNDS_RECENT: 'The donor received a large sum shortly before the gift. Trace it one step back (their sale, maturing policy, inheritance): the donor\'s source of funds is part of the client\'s.',
+  SAVINGS_PREDATE_HISTORY: 'The savings were already there when the bank history starts. A short account of how they were built up (source of wealth), with older statements if held, completes the picture.',
+  SAVINGS_GROWTH_UNEXPLAINED: 'The balance grew by more than the income and known transfers into it. The difference is money from somewhere not yet seen: ask where, and trace it.',
+  OWN_ACCOUNT_NOT_PROVIDED: 'Money moved in from another of the client\'s accounts that we have not seen. That account shows where the money was built up; ask for it (connected or statements).',
+  GAMBLING_SPEND: 'Regular gambling spend is not in itself a problem, but winnings as a source of funds need the operator\'s history (stakes and returns); it is an enhanced due diligence indicator.',
+  LOAN_RECENT: 'A loan taken out recently may be funding part of the purchase. Borrowing towards the deposit must be disclosed to the mortgage lender.',
+  SOURCE_NOT_SEEN: 'The declared source has not been seen arriving in the accounts provided: the completion statement or estate accounts, or the account it went into, will show it.',
   CASH_DEPOSIT: 'Cash is the highest-risk form of funds: the client must explain where it came from and evidence how it was earned or accumulated. Repeated cash deposits are a reason to consider the firm\'s reporting obligations.',
   CASH_PATTERN: 'Several cash deposits below any single threshold is the classic structuring pattern. Ask, record the answer, and consider whether the explanation is plausible against the client\'s known income.',
   THIRD_PARTY_CREDIT: 'Money from anyone other than the client is a third-party source: it needs its own source-of-funds evidence and, if it is a gift or a loan, the lender must be told.',

@@ -60,6 +60,13 @@ const CSS = `
 .pf .files{font-size:12.5px;color:#334155;margin-top:6px}
 .pf .err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:8px;padding:10px;font-size:13px;margin:10px 0}
 .pf .ok{background:#f0fdf4;border:1px solid #86efac;color:#14532d;border-radius:10px;padding:16px;font-size:14px}
+.pf .ob-veil{position:fixed;inset:0;background:rgba(15,23,42,.4);display:flex;align-items:flex-start;justify-content:center;padding:60px 16px;z-index:50}
+.pf .ob-dlg{background:#fff;border-radius:14px;width:100%;max-width:460px;padding:18px;display:grid;gap:10px;box-shadow:0 24px 64px rgba(15,23,42,.24)}
+.pf .ob-dlg h2{margin:0;font-size:17px}
+.pf .ob-list{display:grid;gap:4px;max-height:320px;overflow-y:auto}
+.pf .ob-bank{display:flex;align-items:center;gap:10px;border:1px solid #e2e8f0;background:#fff;border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;text-align:left;cursor:pointer}
+.pf .ob-bank:hover{border-color:#5A27E0;background:#f5f3ff}
+.pf .ob-bank img,.pf .ob-logo{width:24px;height:24px;border-radius:6px;object-fit:contain;background:#f1f5f9;flex:none}
 .pf .tot{display:flex;justify-content:space-between;font-size:13.5px;padding:6px 0;border-top:1px solid #f1f5f9}
 `;
 
@@ -80,6 +87,13 @@ export default function ProofOfFundsPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState<null | { flagged: number }>(null);
+  // Open banking: connect a bank for one source (the client's account, or the donor's for a gift).
+  const [obAvailable, setObAvailable] = useState(false);
+  const [bankFor, setBankFor] = useState<{ i: number; party: 'client' | 'donor' } | null>(null);
+  const [bankQ, setBankQ] = useState('');
+  const [banks, setBanks] = useState<Array<{ id: string; name: string; logo: string | null }>>([]);
+  const [obMsg, setObMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const draftKey = `pof-draft:${token}`;
 
   useEffect(() => {
     fetch(`/api/v1/pof/${token}`).then(async (r) => {
@@ -95,8 +109,49 @@ export default function ProofOfFundsPage() {
           setSources((j.previous.sources as Array<{ kind: string; amountPennies: number; description: string; bankName?: string | null; accountHolder?: string | null; jointHolderName?: string | null; files?: Array<{ id: string; fileName: string }>; gift: { donorName: string; donorRelationship: string; donorAddress?: string | null; repayable: boolean; donorAbroad: boolean; jointDonorName?: string | null; files?: Array<{ id: string; fileName: string }> } | null; overseas: { country: string; alreadyInUk: boolean } | null }>).map((s) => ({ ...blank(s.kind), amount: String(s.amountPennies / 100), description: s.description, bankName: s.bankName ?? '', accountHolder: s.accountHolder ?? '', jointHolderName: s.jointHolderName ?? '', files: s.files ?? [], gift: s.gift ? { donorName: s.gift.donorName, donorRelationship: s.gift.donorRelationship, donorAddress: s.gift.donorAddress ?? '', repayable: s.gift.repayable, donorAbroad: s.gift.donorAbroad, jointDonorName: s.gift.jointDonorName ?? '', files: s.gift.files ?? [] } : blank().gift, overseas: s.overseas ?? blank().overseas })));
         }
       }
+      // Back from the bank: the form as it was, with the accounts shared attached to the source they were for.
+      const url = new URL(window.location.href);
+      const connected = url.searchParams.get('connected');
+      const failed = url.searchParams.get('connectFailed');
+      if (r.ok && (connected || failed)) {
+        try {
+          const d = JSON.parse(localStorage.getItem(draftKey) ?? 'null');
+          if (d) { setSources(d.sources); setFullName(d.fullName); setPrice(d.price); setMortgage(d.mortgage); setCoDeclarants(d.coDeclarants ?? []); setEmail(d.email ?? ''); setPhone(d.phone ?? ''); setNote(d.note ?? ''); setDec(d.dec); setAnswers(d.answers ?? {}); }
+        } catch { /* storage blocked: the form starts again, the connected accounts are still attached below */ }
+        const c = await fetch(`/api/v1/pof/${token}/connections`).then((x) => x.json()).catch(() => null) as { connections?: Array<{ id: string; sourceIndex: number; party: 'client' | 'donor'; status: string; bank: string; files: Array<{ id: string; fileName: string }> }> } | null;
+        const got = (c?.connections ?? []).filter((x) => x.status === 'linked');
+        setSources((ss) => ss.map((src, k) => {
+          const mine = got.filter((x) => x.sourceIndex === k + 1);
+          const add = (have: Array<{ id: string; fileName: string }>, party: 'client' | 'donor') => [...have, ...mine.filter((x) => x.party === party).flatMap((x) => x.files).filter((f) => !have.some((h) => h.id === f.id))];
+          return { ...src, files: add(src.files, 'client'), gift: { ...src.gift, files: add(src.gift.files, 'donor') } };
+        }));
+        const just = got.find((x) => x.id === connected);
+        setObMsg(failed ? { ok: false, text: failed } : { ok: true, text: just ? `${just.bank} connected: ${just.files.length} account${just.files.length === 1 ? '' : 's'} added.` : 'Bank connected.' });
+        url.searchParams.delete('connected'); url.searchParams.delete('connectFailed'); url.searchParams.delete('demo');
+        window.history.replaceState(null, '', url.pathname + url.search);
+      }
+      if (r.ok) fetch(`/api/v1/pof/${token}/banks`).then((x) => x.json()).then((b) => { setObAvailable(!!b.available); setBanks(b.banks ?? []); }).catch(() => {});
     }).catch(() => setCtx({ status: 'unknown' }));
-  }, [token]);
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Choosing a bank: the form is kept in this browser while the client is away at their bank.
+  useEffect(() => {
+    if (!bankFor) return;
+    const t = setTimeout(() => { fetch(`/api/v1/pof/${token}/banks?q=${encodeURIComponent(bankQ)}`).then((x) => x.json()).then((b) => setBanks(b.banks ?? [])).catch(() => {}); }, 200);
+    return () => clearTimeout(t);
+  }, [bankQ, bankFor, token]);
+  const connectBank = async (institutionId: string) => {
+    if (!bankFor) return;
+    setBusy(true); setObMsg(null);
+    try {
+      try { localStorage.setItem(draftKey, JSON.stringify({ sources, fullName, price, mortgage, coDeclarants, email, phone, note, dec, answers })); } catch { /* storage blocked */ }
+      const src = sources[bankFor.i];
+      const r = await fetch(`/api/v1/pof/${token}/connect`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sourceIndex: bankFor.i + 1, party: bankFor.party, institutionId, holderName: bankFor.party === 'donor' ? src.gift.donorName || null : fullName || null }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? 'The bank could not be connected.');
+      window.location.href = j.link;
+    } catch (e: unknown) { setObMsg({ ok: false, text: e instanceof Error ? e.message : 'The bank could not be connected.' }); setBusy(false); }
+  };
 
   const upload = useCallback(async (file: File) => {
     const buf = await file.arrayBuffer();
@@ -198,6 +253,7 @@ export default function ProofOfFundsPage() {
 
   return (
     <div className="pf"><style>{CSS}</style><div className="wrap">
+      {obMsg && <div className={obMsg.ok ? 'ok' : 'err'} style={obMsg.ok ? { marginBottom: 12, padding: 12 } : undefined} role="status">{obMsg.text}</div>}
       <h1>Proof of funds — {ctx.propertyAddress}</h1>
       <p className="sub">{ctx.firmName} must verify where the money for your purchase is coming from before contracts can be exchanged. This is a legal requirement on every purchase. It takes about ten minutes; you can attach photos or PDFs from your phone.</p>
       {ctx.followUp && ctx.noteToClient && <div className="card" style={{ borderColor: '#fde68a', background: '#fffbeb' }}><b>Your conveyancer asked for a little more:</b><div style={{ marginTop: 6, whiteSpace: 'pre-wrap', fontSize: 14 }}>{ctx.noteToClient}</div></div>}
@@ -281,6 +337,7 @@ export default function ProofOfFundsPage() {
                 <div className="hint">Both account holders are giving the money, so both will be asked for ID and to sign the gift letter.</div>
                 <div className="chk"><input id={`pf-abroad-${i}`} type="checkbox" checked={s.gift.donorAbroad} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, gift: { ...x.gift, donorAbroad: e.target.checked } } : x)))} /><label htmlFor={`pf-abroad-${i}`} style={{ margin: 0, fontWeight: 400 }}>They live outside the UK</label></div>
                 <label>Documents from the person giving it (ID, gift letter, their statements)</label>
+                {obAvailable && <div style={{ margin: '6px 0' }}><button type="button" className="btn primary" disabled={busy} onClick={() => { setBankQ(''); setBankFor({ i, party: 'donor' }); }}>Connect Their Bank</button><div className="hint">The quickest way: {s.gift.donorName || 'they'} sign in to their own bank and share the account the gift comes from. We never see their login.</div></div>}
                 <input type="file" multiple accept="application/pdf,image/*" onChange={(e) => void attach(i, e.target.files, true)} disabled={busy} />
                 {s.gift.files.length > 0 && <div className="files">Attached: {s.gift.files.map((f) => f.fileName).join(', ')}</div>}
               </div>
@@ -293,6 +350,7 @@ export default function ProofOfFundsPage() {
             )}
             <label>{k.gift ? 'Your own statement showing the gift arriving (optional)' : 'Attach evidence'}</label>
             <div className="hint">{k.gift ? 'A statement for the account the gift was (or will be) paid into.' : k.evidence}</div>
+            {obAvailable && k.id !== 'mortgage' && <div style={{ margin: '6px 0' }}><button type="button" className="btn primary" disabled={busy} onClick={() => { setBankQ(''); setBankFor({ i, party: 'client' }); }}>Connect Your Bank</button><div className="hint">The quickest way: sign in to your bank and share the account, instead of uploading statements. We never see your login.</div></div>}
             <input type="file" multiple accept="application/pdf,image/*" onChange={(e) => void attach(i, e.target.files)} disabled={busy} style={{ marginTop: 6 }} />
             {s.files.length > 0 && <div className="files">Attached: {s.files.map((f) => f.fileName).join(', ')}</div>}
           </div>
@@ -320,6 +378,20 @@ export default function ProofOfFundsPage() {
       {err && <div className="err">{err}</div>}
       <button className="btn primary" disabled={busy || !canSubmit} onClick={() => void submit()} style={{ padding: '11px 18px', fontSize: 15 }}>Submit to {ctx.firmName}</button>
       <div className="hint" style={{ marginTop: 8 }}>Your answers and documents go only to {ctx.firmName} and are stored on your file. This link stops working once you have submitted.</div>
+      {bankFor && (
+        <div className="ob-veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setBankFor(null); }}>
+          <div className="ob-dlg" role="dialog" aria-label="Choose Your Bank">
+            <h2>{bankFor.party === 'donor' ? `Choose ${sources[bankFor.i]?.gift.donorName || 'their'}'s Bank` : 'Choose Your Bank'}</h2>
+            <input type="text" autoFocus placeholder="Search for your bank" value={bankQ} onChange={(e) => setBankQ(e.target.value)} aria-label="Search for your bank" />
+            <div className="ob-list">
+              {banks.map((b) => <button key={b.id} type="button" className="ob-bank" disabled={busy} onClick={() => void connectBank(b.id)}>{b.logo ? <img src={b.logo} alt="" /> : <span className="ob-logo" />}{b.name}</button>)}
+              {!banks.length && <div className="hint">No bank matches. Try another spelling, or close this and upload statements instead.</div>}
+            </div>
+            <div className="hint">You will sign in on your bank&apos;s own page and choose the accounts to share. We get up to 24 months of transactions and the balance, read-only, once.</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button type="button" className="btn" disabled={busy} onClick={() => setBankFor(null)}>Cancel</button></div>
+          </div>
+        </div>
+      )}
     </div></div>
   );
 }

@@ -286,3 +286,39 @@ Run migration 073 (or `db/supabase/engine-one-shot-5.sql`).
 - One declarant per form. Joint buyers each get their own round (send the form twice), and
   the issue layer's `party` field says whose problem an unevidenced source is.
 - The form is English-only and unbranded beyond the firm's name.
+
+## 9 · Open banking and the source-of-funds analysis
+
+**Connecting a bank instead of uploading statements** (`lib/server/open-banking/`, migration 118).
+
+- **The buttons.** On the form, each source has **Connect Your Bank**. A gift also has **Connect Their Bank** for the donor.
+- **The bank picker.** The client picks their bank and signs in on the bank's own page (the provider's consent screen). We never see a login.
+- **What comes back.** Up to **24 months** of booked transactions (less where the bank gives less), the balance, and the holder's name as the bank records it.
+- **How it is stored.** Each shared account becomes a document on the case (`doc_type OPEN_BANKING_ACCOUNT`) whose facts are a `StatementFacts`. The running balance is worked back from today's balance, and the regular income is recognised. Every rule that reads an uploaded statement reads it unchanged, and the briefing marks it **bank-verified**.
+- **The trip to the bank.** The form is kept in the browser while the client is at their bank, and restored with the account attached to the source when they return.
+- **Provider.** GoCardless Bank Account Data when `GOCARDLESS_SECRET_ID` / `GOCARDLESS_SECRET_KEY` are set. The demo bank is used in development and tests, or when `OPEN_BANKING_DEMO=1`. In production without a provider, the form offers uploads only. Other providers (TrueLayer, Yapily, or a firm's own contract) are adapters behind `OpenBankingProvider`.
+
+**The analysis** (`lib/server/engine/source-of-funds.ts`) runs after the line-by-line review on the same evidence. It does five things:
+
+1. **Categorises every line.** Credits: income, benefits, own transfer, from the donor, solicitor, investment, cash, crypto, gambling, overseas, loan. Debits: gambling spend, loan repayment, cash withdrawal, transfer out, spend.
+2. **Finds income streams:** the same payer in at least 3 months, at a similar amount (±25%).
+3. **Traces own-account transfers.** A large credit whose matching debit (same amount, ±3 days) is on another account the client gave us is explained, and the review's question about it is withdrawn.
+4. **Matches each declared source against what the accounts show:** *evidenced*, *part seen*, *not seen*, or *held, not yet moved* (a gift still in the donor's account).
+5. **Applies the source-of-wealth rules** below.
+
+Each rule drafts the routine question for the conveyancer:
+
+| Flag | Fires when |
+| --- | --- |
+| `GIFT_NOT_EVIDENCED` | a gift with neither the donor's account nor its arrival from the donor seen (a letter is not the money) |
+| `GIFT_DONOR_FUNDS_RECENT` | the donor received a non-income sum ≥ 50% of the gift within 90 days before it (EDD) |
+| `SAVINGS_PREDATE_HISTORY` | at least 12 months of history, and half the declared savings were already there at its start |
+| `SAVINGS_GROWTH_UNEXPLAINED` | on lines that reconcile (opening + lines = closing), growth that income and known transfers do not account for (> 20%), unless the review already asked about the balance |
+| `OWN_ACCOUNT_NOT_PROVIDED` | a large credit from another account in the client's name that we have not seen |
+| `GAMBLING_SPEND` | gambling spend ≥ £250 a month or ≥ 5% of income seen (EDD) |
+| `LOAN_RECENT` | repayments to a lender that began within 180 days |
+| `SOURCE_NOT_SEEN:<KIND>` | sale proceeds or an inheritance not seen arriving from a solicitor or estate |
+
+The analysis is written into the declaration document the decision cites. It lists the accounts, where each came from, its period and balance, the income, the category totals, and each source against what was seen.
+
+Thresholds are `SOF_POLICY` (firm policy, for the MLRO to set).
