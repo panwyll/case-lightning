@@ -452,17 +452,19 @@ export function effectChanges(c: NoteCommand, opts: { jeopardy?: (kind: string) 
   switch (c.type) {
     case 'raise_issue': {
       const spec = ISSUE_KIND_SPEC[c.kind];
-      const out = [`Opens the issue "${spec?.label ?? c.kind}", severity ${SEVERITY_WORD[c.severity ?? spec?.severity ?? 'warning']}`];
-      if (c.gate !== 'none') out.push(`Holds ${c.gate} until it is resolved`);
-      if (opts.jeopardy?.(c.kind) || (c.severity ?? spec?.severity) === 'critical') out.push('The case shows Critical until it is resolved');
-      if (spec?.actions?.length) out.push(`On the Tasks list to resolve: ${spec.actions[0].replace(/^./, (x) => x.toLowerCase())}`);
+      const label = spec?.label ?? c.kind.replace(/_/g, ' ');
+      const out: string[] = [];
+      if (c.gate !== 'none') out.push(`You cannot ${c.gate} on this case until you resolve it`);
+      if (opts.jeopardy?.(c.kind) || (c.severity ?? spec?.severity) === 'critical') out.push('The case turns Critical on your caseload');
+      out.push(`You get a task to resolve it: ${spec?.actions?.[0] ? spec.actions[0].replace(/^./, (x) => x.toLowerCase()) : label.toLowerCase()}`);
+      out.push(`It is logged on the case as "${label}", with this email as the source`);
       return out;
     }
-    case 'record_mortgage_withdrawn': return ['Mortgage offer: marked withdrawn', 'The mortgage step reopens: a new offer has to arrive and be checked', 'Exchange is held until then'];
-    case 'record_client_progress': return [`${WAIT_LABEL[c.waitKey].replace(/^your /, 'The client\'s ').replace(/^the /, 'The ')}: noted as done or on its way`, `No reminder before ${c.expectBy ? prettyDate(c.expectBy) : 'three working days from now'}`, 'Nothing is cleared until it arrives'];
-    case 'resend_to_client': return [`Sends the request for ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} again, with its links and forms`, 'Counts as a reminder'];
-    case 'set_target_dates': return [c.targetExchangeDate ? `Target exchange: ${prettyDate(c.targetExchangeDate)}` : null, c.targetCompletionDate ? `Target completion: ${prettyDate(c.targetCompletionDate)}` : null].filter((x): x is string => !!x);
-    case 'record_price_change': return [c.toPennies ? `Price: ${pounds(c.toPennies)}` : `Price reduced by ${pounds(c.reductionPennies ?? 0)}`, 'The lender is told, if there is one'];
+    case 'record_mortgage_withdrawn': return ['The mortgage offer is marked withdrawn', 'You cannot exchange until a new offer arrives and you have checked it', 'The client is chased for the new offer as with the first'];
+    case 'record_client_progress': return [`${WAIT_LABEL[c.waitKey].replace(/^your /, 'The client\'s ').replace(/^the /, 'The ')} is marked as on its way`, `The client is not reminded about it before ${c.expectBy ? prettyDate(c.expectBy) : 'three working days from now'}`, 'It still has to arrive before the step is done'];
+    case 'resend_to_client': return [`The client is sent the request for ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} again, with its links and forms`];
+    case 'set_target_dates': return [c.targetExchangeDate ? `The target exchange date becomes ${prettyDate(c.targetExchangeDate)}` : null, c.targetCompletionDate ? `The target completion date becomes ${prettyDate(c.targetCompletionDate)}` : null, 'Deadlines and warnings are measured against it'].filter((x): x is string => !!x);
+    case 'record_price_change': return [c.toPennies ? `The price becomes ${pounds(c.toPennies)}` : `The price is reduced by ${pounds(c.reductionPennies ?? 0)}`, 'The lender is told, if there is one'];
     default: return [effectText(c)];
   }
 }

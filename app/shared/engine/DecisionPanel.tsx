@@ -130,7 +130,8 @@ const CSS = `
 .dp-out b{font-weight:800}
 .dp-lock{background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:8px;padding:8px 10px;font-size:12.5px}
 .dp-shadow{background:#312e81;color:#fff;border-radius:8px;padding:8px 10px;font-size:12.5px}
-.dp-lines{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.dp-lines{display:flex;flex-direction:column;gap:6px}
+.dp-prose + .dp-lines{margin-top:14px}
 .dp-line{display:flex;gap:10px;align-items:flex-start;border:1px solid #e6e8ee;border-radius:10px;padding:8px 10px;background:#fff}
 .dp-tag{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;background:#f1f5f9;border-radius:999px;padding:1px 7px;margin-right:6px;vertical-align:1px}
 .dp-changes{margin:4px 0 0;padding-left:16px;font-size:12px;color:#475569;line-height:1.45}
@@ -605,12 +606,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                   </label>
                 );
               })}
-              {noteLines.actions.some((a) => !a.effect) && (
-                <div className="dp-said">
-                  <span className="dp-said-h">{noteLines.messages?.length ? 'Answered In The Reply' : 'Noted'}</span>
-                  {noteLines.actions.filter((a) => !a.effect).map((a) => <q key={a.id}>{a.quote}</q>)}
-                </div>
-              )}
+
               {(noteLines.messages ?? []).map((m) => {
                 const on = !!picked?.has(m.id);
                 const dr = drafts[m.id] ?? { subject: m.subject, body: m.body };
