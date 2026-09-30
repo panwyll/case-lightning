@@ -1,3 +1,5 @@
+import { notFound } from 'next/navigation';
+import { REFERRALS_ENABLED } from '@/lib/flags';
 import type { Metadata } from 'next';
 import { NavHeader, SiteFooter, ctaHref, ROUTES } from '../../_components/shared';
 
@@ -14,6 +16,7 @@ function H2({ children }: { children: React.ReactNode }) {
 }
 
 export default function ReferralTermsPage() {
+  if (!REFERRALS_ENABLED) notFound();
   return (
     <main className="bg-paper text-ink antialiased">
       <NavHeader signupHref={ctaHref(ROUTES.signup, PAGE_SOURCE, 'nav_signup')} />

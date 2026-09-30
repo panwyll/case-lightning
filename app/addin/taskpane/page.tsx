@@ -1,5 +1,6 @@
 'use client';
 
+import { REFERRALS_ENABLED } from '@/lib/flags';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
 import NewMatter from '@/app/conveyi/(app)/admin/NewMatter';
@@ -3666,12 +3667,14 @@ export default function Taskpane() {
             >
               <Icon name="settings" size={16} /> <span>Setup &amp; settings</span>
             </button>
+            {REFERRALS_ENABLED && (
             <button
               style={{ ...S.acctRow }}
               onClick={() => { setShowAccount(false); openReferral(); }}
             >
               <Icon name="gift" size={16} /> <span>Refer a firm, earn credit</span>
             </button>
+            )}
             <button
               style={{ ...S.acctRow }}
               onClick={() => { setShowAccount(false); openAdmin('billing'); }}

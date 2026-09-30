@@ -1,4 +1,5 @@
 'use client';
+import { REFERRALS_ENABLED } from '@/lib/flags';
 import { Spin } from '@/app/shared/engine/BusyButton';
 import { BackLink } from '@/app/shared/BackLink';
 import { BaselineCard, FirmDetails, MySignature } from './FirmDetails';
@@ -659,7 +660,7 @@ function AdminPageInner() {
     try {
       if (tab === 'billing') {
         setBilling(await api('/billing/account'));
-        setReferrals(await api('/referrals'));
+        if (REFERRALS_ENABLED) setReferrals(await api('/referrals'));
         api('/admin/import-analytics').then(setImportStats).catch(() => {});
       }
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
@@ -1024,7 +1025,8 @@ function AdminPageInner() {
                 </div>
               </div>
 
-              {/* Referrals — merged in under Billing. */}
+              {/* Referrals (parked: lib/flags.ts) */}
+              {REFERRALS_ENABLED && (
               <div style={card}>
                 <div style={overline}>Refer a firm, earn credit</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 6, marginBottom: 10 }}>
@@ -1066,6 +1068,7 @@ function AdminPageInner() {
                   </div>
                 )}
               </div>
+              )}
             </>
           )
         )}

@@ -4,7 +4,7 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'FAQ — CONVEYi',
   description:
-    'Common questions about CONVEYi: GDPR, where your data lives, onboarding, the referral scheme, the 30-day money-back guarantee, and the Go, Pro and Firm plans.',
+    'Common questions about CONVEYi: GDPR, where your data lives, onboarding, the 30-day money-back guarantee, and the Go, Pro and Firm plans.',
 };
 
 const PAGE_SOURCE = 'faq';
@@ -29,10 +29,6 @@ const faqs = [
   {
     q: 'Will it send emails to clients on its own?',
     a: 'Only if you explicitly switch that on. By default everything is draft-only — replies land in your Drafts for a human to check and send. Automatic sending is opt-in per rule, limited to routine updates, and you can turn it off at any time.',
-  },
-  {
-    q: 'How does the referral scheme work?',
-    a: 'It’s the most generous in legal software: refer another firm and you earn £10 for every case they’re billed for, for as long as they remain a customer — recurring, not a one-off. It’s paid as account credit, so a handful of referrals can cover your own subscription entirely.',
   },
   {
     q: 'How does £100 per case work?',

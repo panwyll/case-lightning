@@ -1,3 +1,4 @@
+import { REFERRALS_ENABLED } from '@/lib/flags';
 import type { Metadata } from 'next';
 import { config } from '@/lib/server/config';
 import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/shared';
@@ -5,7 +6,7 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'Pricing — CONVEYi',
   description:
-    'One price: £100 per case. No seats, no tiers, no monthly fee. Pay only for the cases CONVEYi works on. 30-day money-back guarantee. Earn £10 for every case run by a firm you refer.',
+    'One price: £100 per case. No seats, no tiers, no monthly fee. Pay only for the cases CONVEYi works on. 30-day money-back guarantee.',
 };
 
 const PAGE_SOURCE = 'pricing';
@@ -94,12 +95,14 @@ export default function PricingPage() {
           </div>
         </div>
 
+        {REFERRALS_ENABLED && (
         <div className="mx-auto mt-10 max-w-6xl rounded-2xl border border-violet/20 bg-violet-soft p-6 text-center md:p-8">
           <p className="font-serif text-2xl font-semibold tracking-tight">
             Earn it back: <span className="text-violet">£10 for every case</span> run by a firm you refer.
           </p>
           <p className="mt-2 text-ink-soft">£10 for every case each firm you refer is billed for — as account credit, for as long as they stay a customer. A few referrals and your own cases pay for themselves.</p>
         </div>
+        )}
 
         <p className="mx-auto mt-8 max-w-6xl text-center text-sm text-ink-soft">
           30-day money-back guarantee. ·{' '}

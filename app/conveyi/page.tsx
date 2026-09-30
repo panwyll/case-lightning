@@ -1,3 +1,4 @@
+import { REFERRALS_ENABLED } from '@/lib/flags';
 import type { Metadata } from 'next';
 import {
   ctaHref,
@@ -237,7 +238,8 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── REFERRAL ── */}
+      {/* ── REFERRAL ── (parked: lib/flags.ts) */}
+      {REFERRALS_ENABLED && (
       <section className="px-6 py-20 md:py-28">
         <div className="mx-auto max-w-4xl rounded-3xl border border-violet/20 bg-violet-soft p-10 md:p-14">
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">The best referral scheme in legal software</p>
@@ -250,6 +252,7 @@ export default function Page() {
           </p>
         </div>
       </section>
+      )}
 
       {/* ── PRICING TEASER ── */}
       <section className="border-t border-line px-6 py-20 md:py-24">

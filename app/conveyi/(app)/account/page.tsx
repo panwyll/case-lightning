@@ -12,6 +12,7 @@
  * Subscription management itself is delegated to the Stripe Billing Portal: the
  * "Manage subscription" button mints a portal session server-side and redirects.
  */
+import { REFERRALS_ENABLED } from '@/lib/flags';
 import { Spin } from '@/app/shared/engine/BusyButton';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -263,7 +264,8 @@ export default function AccountPage() {
         </p>
       </Card>
 
-      {/* Referrals & credit */}
+      {/* Referrals & credit (parked: lib/flags.ts) */}
+      {REFERRALS_ENABLED && (
       <Card>
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Refer a firm, earn credit</p>
         <div className="mt-2 flex flex-wrap items-baseline gap-x-2">
@@ -292,6 +294,7 @@ export default function AccountPage() {
           </p>
         )}
       </Card>
+      )}
 
       {error && error !== 'unauth' && <p className="text-sm text-red-600">{error}</p>}
     </Shell>
