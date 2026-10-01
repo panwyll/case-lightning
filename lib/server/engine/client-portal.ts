@@ -19,7 +19,8 @@ export type PortalAction =
   | { type: 'link'; url: string; label: string }
   | { type: 'upload'; label: string; role: DocumentClassification['role'] | null }
   | { type: 'call'; label: string }
-  | { type: 'reply'; label: string };
+  | { type: 'reply'; label: string }
+  | { type: 'questions'; label: string; kind: 'sdlt' | 'cgt'; questions: Array<{ key: string; q: string }> };
 export interface PortalTask { id: string; title: string; detail: string; since: string; action: PortalAction }
 export interface PortalProgress { id: string; label: string; state: 'done' | 'in_progress' | 'with_you' | 'not_started' }
 export interface ClientPortalView {
@@ -109,6 +110,27 @@ function task(s: MatterState, w: BriefWait, opts: PortalOptions): PortalTask {
   }
 }
 
+/** The tax questions the client answers themselves (sdlt-facts.ts), until they or we have recorded the answers. */
+export const SDLT_QUESTIONS: Array<{ key: string; q: string }> = [
+  { key: 'mainResidence', q: 'Will it be your only or main home?' },
+  { key: 'anyEverOwned', q: 'Has any of you ever owned a home, or a share of one, anywhere in the world (including one you inherited)?' },
+  { key: 'anyOwnsOther', q: 'At the end of the completion day, will any of you (or your husband, wife or civil partner) own another home, or a share of one, worth £40,000 or more, anywhere in the world?' },
+  { key: 'replacing', q: 'Are you selling the home you live in now?' },
+  { key: 'replacingFirst', q: 'If so, will that sale complete on or before the day you buy?' },
+  { key: 'anyNonResident', q: 'Has any of you spent fewer than 183 days in the UK in the last 12 months?' },
+];
+export const CGT_QUESTIONS: Array<{ key: string; q: string }> = [
+  { key: 'mainResidenceThroughout', q: 'Has it been your only or main home for the whole time you have owned it?' },
+  { key: 'ukResident', q: 'Are you UK resident for tax?' },
+];
+function taxTask(s: MatterState, side: ClientPortalView['side']): PortalTask[] {
+  if (s.exchange.exchangedAt) return [];
+  const since = s.waits[0]?.openedAt ?? new Date().toISOString();
+  if ((side === 'buyer' || s.transactionType === 'transfer_of_equity') && !s.sdltFacts) return [{ id: 'tax:sdlt', title: 'Tax Questions', detail: 'A few questions that decide how much Stamp Duty you pay. Answer for everyone buying.', since, action: { type: 'questions', label: 'Answer The Questions', kind: 'sdlt', questions: SDLT_QUESTIONS } }];
+  if (side === 'seller' && !s.cgtFacts) return [{ id: 'tax:cgt', title: 'Tax Questions', detail: 'Two questions about the property, so we can tell you if you need to report the sale to HMRC.', since, action: { type: 'questions', label: 'Answer The Questions', kind: 'cgt', questions: CGT_QUESTIONS } }];
+  return [];
+}
+
 export function clientPortalView(s: MatterState, now: Date = new Date(), opts: PortalOptions = {}): ClientPortalView {
   const p = profileOf(s.transactionType);
   const b = caseBrief(s, now);
@@ -141,7 +163,7 @@ export function clientPortalView(s: MatterState, now: Date = new Date(), opts: P
     stage,
     stageLabel: lc === 'aborted' ? 'Closed' : MACRO_LABEL[stage],
     progress,
-    tasks: lc === 'aborted' || finished || ['completed', 'post_completion'].includes(lc) ? [] : onClient.map((w) => task(s, w, opts)),
+    tasks: lc === 'aborted' || finished || ['completed', 'post_completion'].includes(lc) ? [] : [...taxTask(s, side), ...onClient.map((w) => task(s, w, opts))],
     waitingOnOthers: [...byWho].map(([who, what]) => ({ who, what })),
     dates: { targetExchange: b.milestones.targetExchangeDate, exchanged: b.milestones.exchangedAt, completion: b.milestones.completionDate, targetCompletion: b.milestones.targetCompletionDate, completed: b.milestones.completedAt },
   };

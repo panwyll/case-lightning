@@ -33,6 +33,10 @@ const CSS = `
 .cp .task:first-of-type{border-top:0;padding-top:0}
 .cp .task:last-child{padding-bottom:0}
 .cp .task .t{font-size:16px;font-weight:700;margin:0 0 4px}
+.cp .qs{display:grid;gap:14px}
+.cp .q p{font-size:15px;color:#0f172a;line-height:1.45;margin:0 0 8px}
+.cp .yn{display:flex;gap:8px}
+.cp .yn .btn{min-width:84px}
 .cp .task .d{font-size:15px;color:#475569;line-height:1.5;margin:0 0 10px}
 .cp .none{font-size:15px;color:#166534;display:flex;align-items:center;gap:8px}
 .cp .steps{display:flex;gap:0;margin:0 0 18px;overflow-x:auto}
@@ -95,7 +99,7 @@ const CSS = `
 }
 `;
 
-type Action = { type: 'link'; url: string; label: string } | { type: 'upload'; label: string; role: string | null } | { type: 'call'; label: string } | { type: 'reply'; label: string };
+type Action = { type: 'link'; url: string; label: string } | { type: 'upload'; label: string; role: string | null } | { type: 'call'; label: string } | { type: 'reply'; label: string } | { type: 'questions'; label: string; kind: 'sdlt' | 'cgt'; questions: Array<{ key: string; q: string }> };
 interface View {
   closed: boolean;
   journey: Array<{ key: string; label: string; state: 'done' | 'current' | 'next' }>;
@@ -150,6 +154,8 @@ export default function ClientPortal() {
   const [score, setScore] = useState<number | null>(null);
   const [comment, setComment] = useState('');
   const [rated, setRated] = useState<{ reviewUrl: string | null } | null>(null);
+  const [asking, setAsking] = useState<string | null>(null);
+  const [answers, setAnswers] = useState<Record<string, boolean>>({});
   const codeInput = useRef<HTMLInputElement | null>(null);
   const picker = useRef<HTMLInputElement | null>(null);
   const pickRole = useRef<{ role: string | null; task: string | null }>({ role: null, task: null });
@@ -202,6 +208,13 @@ export default function ClientPortal() {
     if (!r.ok) throw new Error(j?.error?.message ?? j?.error ?? 'It did not send. Please try again.');
     setRated({ reviewUrl: j.reviewUrl ?? null });
   });
+  const sendAnswers = (kind: 'sdlt' | 'cgt') => run('tax', async () => {
+    const r = await fetch(`/api/v1/portal/${token}/tax`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, answers }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j?.error?.message ?? j?.error ?? 'It did not send. Please try again.');
+    setAsking(null); setDone('Thank you. We have your answers.');
+    await load();
+  });
   const choose = (role: string | null, task: string | null) => { pickRole.current = { role, task }; picker.current?.click(); };
 
   const shell = (body: React.ReactNode) => <div className="cp"><style>{CSS}</style><div className="wrap">{body}</div></div>;
@@ -240,6 +253,24 @@ export default function ClientPortal() {
   const tasks = v?.tasks ?? [];
   const actionFor = (t: View['tasks'][number]) => {
     const a = t.action;
+    if (a.type === 'questions') {
+      if (asking !== t.id) return <button className="btn primary" onClick={() => { setAsking(t.id); setAnswers({}); }}>{a.label}</button>;
+      const missing = a.questions.some((q) => answers[q.key] === undefined);
+      return (
+        <div className="qs">
+          {a.questions.map((q) => (
+            <div key={q.key} className="q">
+              <p>{q.q}</p>
+              <div className="yn">
+                <button className={`btn${answers[q.key] === true ? ' primary' : ''}`} onClick={() => setAnswers({ ...answers, [q.key]: true })}>Yes</button>
+                <button className={`btn${answers[q.key] === false ? ' primary' : ''}`} onClick={() => setAnswers({ ...answers, [q.key]: false })}>No</button>
+              </div>
+            </div>
+          ))}
+          <button className="btn primary" disabled={missing || !!busy} onClick={() => void sendAnswers(a.kind)}>{busy === 'tax' ? <><Loader size={18} className="spin" />Sending…</> : 'Send Answers'}</button>
+        </div>
+      );
+    }
     if (a.type === 'link') return <a className="btn primary" href={a.url} target="_blank" rel="noreferrer">{a.label}</a>;
     if (a.type === 'upload') return <button className="btn primary" disabled={!!busy} onClick={() => choose(a.role, t.id)}>{busy === `up:${t.id}` ? <><Loader size={18} className="spin" />Uploading…</> : <><Upload size={18} />{a.label}</>}</button>;
     if (a.type === 'call') return phone ? <a className="btn primary" href={`tel:${phone.replace(/[^\d+]/g, '')}`}><Phone size={18} />{a.label}</a> : null;

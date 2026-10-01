@@ -61,3 +61,5 @@
 - The conveyancer is notified.
 
 A dev preview is at `/portal/dev-preview-portal-000000` (code 123456), showing the dev harness's case.
+
+- **Tax questions on the portal**: until the answers are on the case, a buyer's For You list starts with Tax Questions (the SDLT questions, yes or no each) and a seller's with the two CGT questions; answering records them as the client's (`record_sdlt_facts` / `record_cgt_facts`) and the firm's matching task clears.

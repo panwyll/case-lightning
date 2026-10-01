@@ -63,3 +63,14 @@ test("the seller's CGT answers: a flag, never advice", () => {
   assert.match(cgtFlags({ mainResidenceThroughout: false, ukResident: true })[0], /60 days/);
   assert.match(cgtFlags({ mainResidenceThroughout: true, ukResident: false })[0], /non-resident/);
 });
+
+test('the client answers the tax questions on their portal until the answers are on the case', async () => {
+  const { clientPortalView } = await import('../../../lib/server/engine/client-portal');
+  const buy: MatterState = { ...initialState(TENANT, MATTER), enrolled: true, transactionType: 'freehold_purchase', stage: 'pre_contract' };
+  const t = clientPortalView(buy).tasks[0];
+  assert.equal(t.action.type, 'questions');
+  assert.equal((t.action as { kind: string }).kind, 'sdlt');
+  assert.ok(!clientPortalView({ ...buy, sdltFacts: { mainResidence: true } }).tasks.some((x) => x.id === 'tax:sdlt'));
+  const sale: MatterState = { ...buy, transactionType: 'freehold_sale' };
+  assert.equal((clientPortalView(sale).tasks[0].action as { kind: string }).kind, 'cgt');
+});
