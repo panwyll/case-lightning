@@ -23,7 +23,13 @@ export async function GET(req: NextRequest) {
     if (q.person && !admin && q.person !== user.userId) throw Object.assign(new Error('You can see your own figures and the firm\'s.'), { status: 403 });
     const input = await loadAnalyticsInput(user.tenantId);
     const report = computeAnalytics(input, { personId: q.person ?? null, side: q.side ?? null });
-    if (!admin) report.people = report.people.filter((p) => p.id === user.userId);
+    if (!admin) {
+      report.people = report.people.filter((p) => p.id === user.userId);
+      // Someone who is not an admin sees their own bars beside the team's line, not their colleagues'.
+      const keep = report.team.people.map((p, i) => (p.id === user.userId ? i : -1)).filter((i) => i >= 0);
+      report.team.people = keep.map((i) => report.team.people[i]);
+      for (const m of Object.values(report.team.metrics)) m.perPerson = keep.map((i) => m.perPerson[i]);
+    }
     const people = admin ? input.people.filter((p) => input.cases.some((c) => c.handlerId === p.id)) : input.people.filter((p) => p.id === user.userId);
     return ok({ report, people: people.sort((a, b) => a.name.localeCompare(b.name)), me: user.userId, admin });
   } catch (error) {

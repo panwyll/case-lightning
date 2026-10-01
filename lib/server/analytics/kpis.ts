@@ -77,8 +77,11 @@ export interface AnalyticsReport {
   fallThrough: { rate: number | null; n: number; completed: number; fell: number; reasons: Array<{ reason: string; count: number }>; industry: typeof INDUSTRY.fallThroughRate };
   satisfaction: { csat: { pct: number | null; avg: number | null; n: number }; nps: { score: number | null; promoters: number; detractors: number; n: number }; responseRate: number | null; comments: Array<{ score: number; kind: 'csat' | 'nps'; comment: string; at: string }> };
   people: PersonRow[];
+  /** Month by month for each person, with the team's line: completions, instructions, response time (median hours to clear a task), satisfaction (% scoring 4-5 of 5, or 9-10 of 10), survey answers, and survey rate (answers ÷ exchanges and completions, when clients are asked). */
+  team: { months: string[]; people: Array<{ id: string; name: string }>; metrics: Record<TeamMetric, { kind: 'count' | 'hours' | 'percent'; perPerson: Array<Array<number | null>>; team: Array<number | null> }> };
   insights: string[];
 }
+export type TeamMetric = 'completions' | 'instructions' | 'responseHours' | 'satisfaction' | 'surveys' | 'surveyRate';
 
 // ───────────────────────────── helpers ─────────────────────────────
 
@@ -311,10 +314,47 @@ export function computeAnalytics(input: AnalyticsInput, scope: Scope = {}): Anal
   const report: AnalyticsReport = {
     generatedAt: now.toISOString(),
     scope: { personId: scope.personId ?? null, personName: name(scope.personId ?? null), side: scope.side ?? null },
-    pace, instructions, months, fees, pipeline, cycle, ageing, flow, delays, tasks, chases, fallThrough, satisfaction, people, insights: [],
+    pace, instructions, months, fees, pipeline, cycle, ageing, flow, delays, tasks, chases, fallThrough, satisfaction, people, team: teamSeries(sided, input.feedback, people.map((p) => ({ id: p.id, name: p.name })), thisMonth), insights: [],
   };
   report.insights = insights(report);
   return report;
+}
+
+/** Twelve months of each person's figures beside the team's, for the clustered charts. */
+function teamSeries(cases: CaseFacts[], fb: FeedbackFact[], people: Array<{ id: string; name: string }>, thisMonth: string): AnalyticsReport['team'] {
+  // Whole months only: a month in progress would read as a fall (this month is the tiles' job).
+  const months = Array.from({ length: 12 }, (_, i) => addMonths(thisMonth, i - 12));
+  const range = (m: string) => [monthStart(m), monthStart(addMonths(m, 1))] as const;
+  const count = (cs: CaseFacts[], at: (c: CaseFacts) => string | null) => months.map((m) => { const [a, b] = range(m); return cs.filter((c) => within(at(c), a, b)).length; });
+  const hours = (pred: (d: CaseFacts['decisions'][number]) => boolean) => months.map((m) => {
+    const [a, b] = range(m);
+    const xs = cases.flatMap((c) => c.decisions).filter((d) => pred(d) && within(d.resolvedAt, a, b)).map((d) => (t(d.resolvedAt!) - t(d.createdAt)) / 3_600_000);
+    return xs.length ? Math.round(percentile(xs, 50)! * 10) / 10 : null;
+  });
+  const happy = (f: FeedbackFact) => (f.kind === 'nps' ? f.score >= 9 : f.score >= 4);
+  const ids = new Set(cases.map((c) => c.id));
+  const sat = (pred: (f: FeedbackFact) => boolean) => months.map((m) => {
+    const [a, b] = range(m);
+    const xs = fb.filter((f) => ids.has(f.matterId) && pred(f) && within(f.at, a, b));
+    return xs.length ? Math.round((xs.filter(happy).length / xs.length) * 100) : null;
+  });
+  const mine = (id: string) => cases.filter((c) => c.handlerId === id);
+  const responses = (pred: (f: FeedbackFact) => boolean) => months.map((m) => { const [a, b] = range(m); return fb.filter((f) => ids.has(f.matterId) && pred(f) && within(f.at, a, b)).length; });
+  // Clients are asked at exchange and at completion: the rate is answers over those moments in the month.
+  const asked = (cs: CaseFacts[]) => months.map((m) => { const [a, b] = range(m); return cs.filter((c) => within(c.exchangedAt, a, b)).length + cs.filter((c) => within(c.completedAt, a, b)).length; });
+  const rate = (got: number[], of: number[]) => got.map((g, i) => (of[i] ? Math.min(100, Math.round((g / of[i]) * 100)) : null));
+  return {
+    months,
+    people,
+    metrics: {
+      completions: { kind: 'count', perPerson: people.map((p) => count(mine(p.id), (c) => c.completedAt)), team: count(cases, (c) => c.completedAt) },
+      instructions: { kind: 'count', perPerson: people.map((p) => count(mine(p.id), (c) => c.instructedAt)), team: count(cases, (c) => c.instructedAt) },
+      responseHours: { kind: 'hours', perPerson: people.map((p) => hours((d) => d.resolvedBy === p.id)), team: hours(() => true) },
+      satisfaction: { kind: 'percent', perPerson: people.map((p) => sat((f) => f.handlerId === p.id)), team: sat(() => true) },
+      surveys: { kind: 'count', perPerson: people.map((p) => responses((f) => f.handlerId === p.id)), team: responses(() => true) },
+      surveyRate: { kind: 'percent', perPerson: people.map((p) => rate(responses((f) => f.handlerId === p.id), asked(mine(p.id)))), team: rate(responses(() => true), asked(cases)) },
+    },
+  };
 }
 
 function satisfactionOf(fb: FeedbackFact[], completions: number): AnalyticsReport['satisfaction'] {

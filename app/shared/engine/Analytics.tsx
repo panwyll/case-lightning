@@ -4,8 +4,8 @@
  * read first, then this month's pace, the two-year trend, where cases wait, our own turnaround, the cases to
  * look at, and each person against their own target and past (listed by name, not ranked).
  */
-import { useMemo } from 'react';
-import type { AnalyticsReport, PersonRow, Stat } from '@/lib/server/analytics/kpis';
+import { useMemo, useState } from 'react';
+import type { AnalyticsReport, PersonRow, Stat, TeamMetric } from '@/lib/server/analytics/kpis';
 
 const CSS = `
 .an{max-width:1360px;color:#0f172a}
@@ -51,6 +51,14 @@ const CSS = `
 .an-legend{margin-left:auto;display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-weight:600;font-size:11.5px;color:#64748b}
 .an-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-left:8px}
 .an-set{display:inline-flex;margin-top:6px;background:#5A27E0;color:#fff;border-radius:8px;padding:8px 14px;font-weight:700;font-size:13px;text-decoration:none}
+.an-seg{display:inline-flex;background:#f1f5f9;border-radius:8px;padding:2px;text-transform:none;letter-spacing:0;margin-left:8px}
+.an-seg button{border:0;background:none;font:inherit;font-size:12px;font-weight:700;color:#64748b;padding:4px 10px;border-radius:6px;cursor:pointer}
+.an-seg button.on{background:#fff;color:#0f172a;box-shadow:0 1px 2px rgba(15,23,42,.08)}
+.an-people{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;font-size:12.5px}
+.an-people button,.an-people span{display:inline-flex;align-items:center;gap:6px;border:0;background:none;font:inherit;color:#334155;cursor:pointer;padding:2px 0}
+.an-people span{cursor:default;color:#64748b}
+.an-people button.off{opacity:.35}
+.an-people i{width:10px;height:10px;border-radius:3px;display:inline-block}
 .an-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .an-chips span{font-size:12px;background:#f8fafc;border:1px solid #e6e8ee;border-radius:99px;padding:2px 9px;color:#475569}
 .an-q{font-size:13.5px;line-height:1.5;border-left:3px solid #e2e8f0;padding:2px 0 2px 10px;margin:0 0 10px}
@@ -132,6 +140,66 @@ function MonthChart({ r }: { r: AnalyticsReport }) {
       })}
       {r.pace.target != null && <g><line x1={PAD} x2={W} y1={y(r.pace.target)} y2={y(r.pace.target)} stroke="#b91c1c" strokeDasharray="5 4" /><rect x={PAD + 4} y={y(r.pace.target) - 17} width="62" height="15" rx="3" fill="#fff" /><text x={PAD + 8} y={y(r.pace.target) - 6} fontSize="11" fill="#b91c1c">Target {r.pace.target}</text></g>}
     </svg>
+  );
+}
+
+const PERSON_COLOURS = ['#5A27E0', '#0ea5e9', '#f59e0b', '#10b981', '#ec4899', '#64748b', '#a855f7', '#14b8a6', '#ef4444', '#84cc16'];
+const METRICS: Array<[TeamMetric, string, string]> = [['completions', 'Completions', 'Team Total'], ['instructions', 'Instructions', 'Team Total'], ['responseHours', 'Response Time', 'Team Median'], ['satisfaction', 'Satisfaction', 'Team'], ['surveys', 'Surveys', 'Team Total'], ['surveyRate', 'Survey Rate', 'Team']];
+
+/** Each person's bars month by month, clustered, with the team's line over them (on its own scale when it is a total). */
+function TeamChart({ team }: { team: AnalyticsReport['team'] }) {
+  const [metric, setMetric] = useState<TeamMetric>('completions');
+  const [span, setSpan] = useState<6 | 12>(6);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const m = team.metrics[metric];
+  const from = team.months.length - span;
+  const months = team.months.slice(from);
+  const shown = team.people.map((p, i) => ({ ...p, i, colour: PERSON_COLOURS[i % PERSON_COLOURS.length] })).filter((p) => !hidden.has(p.id));
+  const vals = shown.map((p) => m.perPerson[p.i].slice(from));
+  const line = m.team.slice(from);
+  const W = 960, H = 250, L = 34, R = m.kind === 'count' ? 40 : 10, base = H - 34;
+  const fmt = (v: number) => (m.kind === 'hours' ? hours(v) : m.kind === 'percent' ? `${v}%` : String(v));
+  const leftMax = Math.max(1, ...vals.flat().filter((v): v is number => v != null), ...(m.kind === 'count' ? [] : line.filter((v): v is number => v != null))) * 1.15;
+  const rightMax = m.kind === 'count' ? Math.max(1, ...line.filter((v): v is number => v != null)) * 1.15 : leftMax;
+  const yL = (v: number) => base - (v / leftMax) * (base - 12);
+  const yR = (v: number) => base - (v / rightMax) * (base - 12);
+  const cw = (W - L - R) / months.length;
+  const bw = Math.min(26, (cw * 0.78) / Math.max(1, shown.length));
+  const cx = (j: number) => L + j * cw + cw / 2;
+  const pts = line.map((v, j) => (v == null ? null : [cx(j), yR(v)] as const));
+  const path = pts.reduce((acc, p, j) => (p ? `${acc}${acc && pts[j - 1] ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}` : acc), '');
+  return (
+    <div className="an-card" style={{ marginBottom: 14 }}>
+      <div className="an-h">Team
+        <span className="an-seg" style={{ marginLeft: 'auto' }}>{METRICS.map(([k, label]) => <button key={k} className={metric === k ? 'on' : ''} onClick={() => setMetric(k)}>{label}</button>)}</span>
+        <span className="an-seg">{([6, 12] as const).map((n) => <button key={n} className={span === n ? 'on' : ''} onClick={() => setSpan(n)}>{n} Months</button>)}</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`${METRICS.find((x) => x[0] === metric)![1]} by person and month`}>
+        {[0.5, 1].map((f) => <g key={f}><line x1={L} x2={W - R} y1={yL((leftMax / 1.15) * f)} y2={yL((leftMax / 1.15) * f)} stroke="#f1f5f9" /><text x={L - 6} y={yL((leftMax / 1.15) * f) + 4} fontSize="11" textAnchor="end" fill="#94a3b8">{fmt(Math.round((leftMax / 1.15) * f))}</text></g>)}
+        {m.kind === 'count' && [0.5, 1].map((f) => <text key={f} x={W - R + 6} y={yR((rightMax / 1.15) * f) + 4} fontSize="11" fill="#0f172a">{Math.round((rightMax / 1.15) * f)}</text>)}
+        {months.map((mo, j) => (
+          <g key={mo}>
+            {shown.map((p, k) => {
+              const v = vals[k][j];
+              if (v == null || v === 0) return null;
+              const x = cx(j) - (shown.length * bw) / 2 + k * bw;
+              return <rect key={p.id} x={x + 1} y={yL(v)} width={bw - 2} height={base - yL(v)} rx="2" fill={p.colour}><title>{`${p.name}, ${MONTH(mo)}: ${fmt(v)}`}</title></rect>;
+            })}
+            <text x={cx(j)} y={H - 14} fontSize="11" textAnchor="middle" fill="#64748b">{new Date(`${mo}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })}</text>
+          </g>
+        ))}
+        {path && <path d={path} fill="none" stroke="#0f172a" strokeWidth="2" />}
+        {pts.map((p, j) => p && <circle key={j} cx={p[0]} cy={p[1]} r="3.5" fill="#fff" stroke="#0f172a" strokeWidth="2"><title>{`${METRICS.find((x) => x[0] === metric)![2]}, ${MONTH(months[j])}: ${fmt(line[j]!)}`}</title></circle>)}
+      </svg>
+      <div className="an-people">
+        {team.people.map((p, i) => (
+          <button key={p.id} className={hidden.has(p.id) ? 'off' : ''} onClick={() => setHidden((h) => { const n = new Set(h); if (n.has(p.id)) n.delete(p.id); else n.add(p.id); return n; })}>
+            <i style={{ background: PERSON_COLOURS[i % PERSON_COLOURS.length] }} />{p.name}
+          </button>
+        ))}
+        <span><i style={{ background: '#0f172a', height: 2, borderRadius: 0 }} />{METRICS.find((x) => x[0] === metric)![2]}</span>
+      </div>
+    </div>
   );
 }
 
@@ -313,6 +381,8 @@ export function AnalyticsView(props: {
           </table>
         </div>
       )}
+
+      {r.team.people.length > 0 && <TeamChart team={r.team} />}
 
       {r.people.length > 0 && (
         <div className="an-card" style={{ marginBottom: 14 }}>

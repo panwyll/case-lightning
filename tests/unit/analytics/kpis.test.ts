@@ -99,3 +99,14 @@ test('fee income is counted on completion: done and booked this month, the pipel
   assert.deepEqual([r.fees.set, r.fees.thisMonth, r.fees.booked, r.fees.forecast, r.fees.pipeline], [true, 1200, 1000, 2200, 1800]);
   assert.equal(r.people[0].feesThisMonth, 1200);
 });
+
+test('team charts: each person month by month beside the team line, whole months only, with survey answers and rate', () => {
+  const r = computeAnalytics(demoAnalyticsInput(NOW));
+  assert.equal(r.team.months.length, 12);
+  assert.equal(r.team.months[11], '2026-09', 'the month in progress is left out');
+  const c = r.team.metrics.completions;
+  assert.equal(c.perPerson.length, DEMO_PEOPLE.length);
+  for (let j = 0; j < 12; j++) assert.equal(c.team[j], c.perPerson.reduce((a, p) => a + (p[j] ?? 0), 0), 'the team line is the total');
+  assert.ok(r.team.metrics.surveys.team.some((v) => (v ?? 0) > 0));
+  assert.ok(r.team.metrics.surveyRate.team.every((v) => v === null || (v >= 0 && v <= 100)));
+});
