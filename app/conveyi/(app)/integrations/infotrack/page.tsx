@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { fmtWhen } from '@/app/shared/engine/types';
-import { ArrowLeft, Check } from '@/app/shared/icons';
+import { ArrowLeft } from '@/app/shared/icons';
 import { paths } from '@/lib/paths';
 
 /**
@@ -27,8 +27,6 @@ const CSS = `
 .it-form input{padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;font-family:inherit;color:#0f172a;background:#fff}
 .it-form input:focus{outline:2px solid #c4b5fd;border-color:#8b5cf6}
 .it-acts{grid-column:1 / -1;display:flex;gap:8px}
-.it-hook{display:flex;gap:8px;align-items:center;margin-top:6px;max-width:760px}
-.it-hook input{flex:1;min-width:0;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#0f172a;background:#f8fafc}
 .it-orders{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
 .it-orders th{text-align:left;font-size:11.5px;font-weight:700;color:#64748b;padding:6px 8px;border-bottom:1px solid #e6e8ee}
 .it-orders td{padding:8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
@@ -56,28 +54,6 @@ function ConnectForm({ s, busy, onConnect, onCancel }: { s: Status; busy: boolea
         {onCancel && <button className="eg-btn" type="button" onClick={onCancel}>Cancel</button>}
       </div>
     </form>
-  );
-}
-
-function ResultUrl({ url }: { url: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      /* the field is selectable */
-    }
-  };
-  return (
-    <div style={{ marginTop: 12 }}>
-      <label htmlFor="itk-hook" style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>Results URL</label>
-      <div className="it-hook">
-        <input id="itk-hook" readOnly value={url} onFocus={(e) => e.currentTarget.select()} />
-        <button className="eg-btn" type="button" onClick={copy}>{copied ? <><Check /> Copied</> : 'Copy'}</button>
-      </div>
-    </div>
   );
 }
 
@@ -158,7 +134,6 @@ export default function InfoTrackPage() {
             {s.canManage && (!connected || editing) && (
               <ConnectForm key={editing ? 'edit' : 'new'} s={s} busy={busy === 'Connect'} onConnect={connect} onCancel={editing ? () => setEditing(false) : undefined} />
             )}
-            {connected && s.webhookUrl && <ResultUrl url={s.webhookUrl} />}
           </div>
 
           <div className="eg-card" style={{ padding: 14 }}>

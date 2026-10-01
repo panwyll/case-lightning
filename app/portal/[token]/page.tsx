@@ -16,7 +16,7 @@ const CSS = `
 .cp h1{font-size:24px;margin:0 0 6px;line-height:1.3}
 .cp h2{font-size:18px;font-weight:800;margin:0 0 12px;display:flex;align-items:center;gap:8px}
 .cp .count{background:#5A27E0;color:#fff;border-radius:999px;font-size:13px;padding:2px 9px;font-weight:700}
-.cp .stage{display:inline-flex;align-items:center;gap:6px;background:#ede9fe;color:#4c1d95;border-radius:999px;padding:5px 12px;font-size:14px;font-weight:700;margin:4px 0 18px}
+.cp .stage{display:inline-flex;align-items:center;gap:5px;background:#ede9fe;color:#4c1d95;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:700;margin-left:10px;vertical-align:middle}
 .cp .card{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:20px;margin-bottom:14px}
 .cp .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:10px;padding:11px 16px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;white-space:nowrap}
 .cp .btn.primary{background:#5A27E0;color:#fff;border-color:#5A27E0}
@@ -45,11 +45,19 @@ const CSS = `
 .cp .step.current i{border-color:#5A27E0}
 .cp .step.current{color:#4c1d95}
 .cp .step.done{color:#475569}
-.cp .ws{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 18px}
-.cp .ws div{display:flex;align-items:center;gap:8px;font-size:15px}
-.cp .ws .done svg{color:#16a34a}.cp .ws .with_you svg{color:#5A27E0}.cp .ws .in_progress svg{color:#d97706}.cp .ws .not_started svg{color:#cbd5e1}
-.cp .ws small{color:#64748b;font-size:13px;margin-left:auto}
-.cp .others{margin-top:16px;font-size:15px;color:#475569;line-height:1.6}
+.cp .ws{display:flex;flex-wrap:wrap;gap:8px}
+.cp .chip{display:inline-flex;align-items:center;gap:6px;font-size:14px;border-radius:99px;padding:6px 12px;background:#f1f5f9;color:#475569}
+.cp .chip b{font-size:12px;font-weight:800;margin-left:2px}
+.cp .chip.done{background:#dcfce7;color:#14532d}
+.cp .chip.with_you{background:#ede9fe;color:#4c1d95}
+.cp .chip.in_progress{background:#fef3c7;color:#78350f}
+.cp .steps-m{display:none}
+.cp .steps-m .seg{display:flex;gap:4px;margin-bottom:8px}
+.cp .steps-m .seg i{flex:1;height:8px;border-radius:99px;background:#e2e8f0}
+.cp .steps-m .seg i.done,.cp .steps-m .seg i.current{background:#5A27E0}
+.cp .steps-m b{font-size:16px;margin-right:8px}
+.cp .steps-m span{font-size:13px;color:#64748b}
+.cp .others{margin-top:14px;font-size:15px;color:#475569;line-height:1.6}
 .cp .dates{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:14px;font-size:15px}
 .cp .dates b{display:block;font-size:13px;color:#64748b;font-weight:600}
 .cp .doc{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid #f1f5f9;font-size:15px}
@@ -57,7 +65,7 @@ const CSS = `
 .cp .doc .n{flex:1;min-width:0;word-break:break-word}
 .cp .doc .n small{display:block;color:#64748b;font-size:13px}
 .cp .doc svg{flex:none;color:#64748b}
-.cp .drop{border:2px dashed #cbd5e1;border-radius:12px;padding:18px;text-align:center;font-size:15px;color:#475569;margin-bottom:12px;cursor:pointer}
+.cp .drop{border:2px dashed #cbd5e1;border-radius:12px;padding:12px;text-align:center;font-size:15px;color:#475569;margin-bottom:12px;cursor:pointer}
 .cp .drop.over{border-color:#5A27E0;background:#f5f3ff}
 .cp .who{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 
@@ -80,11 +88,8 @@ const CSS = `
 @keyframes cp-spin{to{transform:rotate(360deg)}}
 .cp .spin{animation:cp-spin .8s linear infinite}
 @media (max-width:560px){
-.cp .ws{grid-template-columns:1fr}
-.cp .steps{flex-direction:column;overflow:visible}
-.cp .step{text-align:left;padding:3px 0 0 36px;min-height:40px;min-width:0;font-size:15px}
-.cp .step:before{top:-16px;left:10.5px;right:auto;width:3px;height:16px}
-.cp .step i{left:0;transform:none}
+.cp .steps{display:none}
+.cp .steps-m{display:block;margin-bottom:16px}
 }
 `;
 
@@ -240,9 +245,8 @@ export default function ClientPortal() {
 
   return shell(
     <>
-      <p className="firm">{ctx.firmName}</p>
-      <h1>{ctx.propertyAddress}</h1>
-      {v && <div className="stage"><CircleDot size={16} />{v.stageLabel}</div>}
+      <p className="firm">{ctx.firmName}{v && <span className="stage"><CircleDot size={16} />{v.stageLabel}</span>}</p>
+      <h1 style={{ marginBottom: 18 }}>{ctx.propertyAddress}</h1>
       <input ref={picker} type="file" multiple hidden accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.doc,.docx" onChange={(e) => { const { role, task } = pickRole.current; void upload(e.target.files, role, task); e.target.value = ''; }} />
       {err && <div className="err">{err}</div>}
       {done && <div className="ok"><Check size={18} />{done}</div>}
@@ -297,12 +301,22 @@ export default function ClientPortal() {
               <div key={s.key} className={`step ${s.state}`}><i>{s.state === 'done' ? <Check size={16} /> : null}</i>{s.label}</div>
             ))}
           </div>
+          {(() => {
+            const at = Math.max(0, v.journey.findIndex((s) => s.state === 'current'));
+            const all = v.journey.every((s) => s.state === 'done');
+            return (
+              <div className="steps-m">
+                <div className="seg">{v.journey.map((s) => <i key={s.key} className={s.state} />)}</div>
+                <b>{all ? v.journey[v.journey.length - 1].label : v.journey[at].label}</b><span>{all ? '' : `Step ${at + 1} Of ${v.journey.length}`}</span>
+              </div>
+            );
+          })()}
           <div className="ws">
             {v.progress.map((p) => (
-              <div key={p.id} className={p.state}>
-                {p.state === 'done' ? <CheckCircle size={18} /> : p.state === 'not_started' ? <Circle size={18} /> : p.state === 'with_you' ? <CircleDot size={18} /> : <Clock size={18} />}
-                {p.label}<small>{STATE_LABEL[p.state]}</small>
-              </div>
+              <span key={p.id} className={`chip ${p.state}`} title={STATE_LABEL[p.state]}>
+                {p.state === 'done' ? <CheckCircle size={16} /> : p.state === 'not_started' ? <Circle size={16} /> : p.state === 'with_you' ? <CircleDot size={16} /> : <Clock size={16} />}
+                {p.label}{p.state === 'with_you' && <b>With You</b>}
+              </span>
             ))}
           </div>
           {v.waitingOnOthers.length > 0 && (

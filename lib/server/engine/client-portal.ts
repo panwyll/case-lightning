@@ -70,7 +70,7 @@ function task(s: MatterState, w: BriefWait, opts: PortalOptions): PortalTask {
       const who = party ? ` For ${party.label}` : '';
       if (target.link) return { ...base, title: `Identity Check${who}`, detail: 'A few minutes on your phone: photos of your ID and a selfie.', action: { type: 'link', url: target.link, label: 'Start Your ID Check' } };
       if (opts.idProviderSendsLink) return { ...base, title: `Identity Check${who}`, detail: `Look for the email from ${opts.idProviderLabel ?? 'our ID provider'} with your link. Tell us if you cannot find it.`, action: { type: 'reply', label: 'I Cannot Find The Email' } };
-      return { ...base, title: `Identity Check${who}`, detail: 'Upload clear photos of your passport or driving licence, and a bank statement or utility bill from the last three months.', action: { type: 'upload', label: 'Upload ID', role: null } };
+      return { ...base, title: `Identity Check${who}`, detail: 'Upload photos of your passport or driving licence, and a bank statement or bill from the last three months.', action: { type: 'upload', label: 'Upload ID', role: null } };
     }
     case 'proof_of_funds':
       return s.proofOfFunds.formUrl
@@ -82,12 +82,12 @@ function task(s: MatterState, w: BriefWait, opts: PortalOptions): PortalTask {
     }
     case 'signed_documents': {
       const deeds = unsignedDeeds(s);
-      return { ...base, title: 'Documents To Sign', detail: `${deeds.length ? `To sign: ${deeds.map((d) => d.label).join(', ')}. ` : ''}Sign where shown, with a witness where the document asks for one, and post the originals to us. Upload a photo or scan so we know they are on the way.`, action: { type: 'upload', label: 'Upload A Copy', role: null } };
+      return { ...base, title: 'Documents To Sign', detail: `${deeds.length ? `To sign: ${deeds.map((d) => d.label).join(', ')}. ` : ''}Sign where shown (with a witness where asked) and post the originals to us. Upload a photo so we know they are coming.`, action: { type: 'upload', label: 'Upload A Copy', role: null } };
     }
     case 'mortgage_offer':
       return { ...base, title: 'Mortgage Offer', detail: 'Your lender sends us a copy too. If you have yours, upload it to save time.', action: { type: 'upload', label: 'Upload Your Offer', role: 'mortgage_offer' } };
     case 'survey':
-      return { ...base, title: 'Survey', detail: 'Upload your survey report when you have it, and tell us anything in it that worries you.', action: { type: 'upload', label: 'Upload Your Survey', role: 'survey' } };
+      return { ...base, title: 'Survey', detail: 'Upload the report when you have it.', action: { type: 'upload', label: 'Upload Your Survey', role: 'survey' } };
     case 'deposit':
       return { ...base, title: 'Deposit', detail: MONEY_SAFE, action: { type: 'call', label: 'Call Us' } };
     case 'funds':

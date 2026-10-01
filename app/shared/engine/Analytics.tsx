@@ -14,22 +14,16 @@ const CSS = `
 .an-sel{border:1px solid #cbd5e1;border-radius:8px;padding:7px 36px 7px 10px;font:inherit;font-size:13px;background:#fff}
 .an-card{background:#fff;border:1px solid #e6e8ee;border-radius:12px;padding:16px 18px;min-width:0}
 .an-h{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin:0 0 10px;display:flex;align-items:center;gap:8px}
-.an-h .r{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:600;color:#94a3b8}
 .an-grid{display:grid;gap:14px;margin-bottom:14px}
 .an-g4{grid-template-columns:repeat(4,minmax(0,1fr))}
 .an-g2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .an-g3{grid-template-columns:2fr 1fr}
-.an-ins{margin:0;padding:0;list-style:none;display:grid;gap:8px}
-.an-ins li{font-size:14px;line-height:1.5;padding-left:16px;position:relative}
-.an-ins li:before{content:'';position:absolute;left:0;top:8px;width:7px;height:7px;border-radius:99px;background:#5A27E0}
 .an-big{font-size:30px;font-weight:800;line-height:1.1;letter-spacing:-.01em}
-.an-big small{font-size:14px;font-weight:600;color:#64748b;margin-left:6px;letter-spacing:0}
-.an-sub{font-size:12.5px;color:#64748b;margin-top:6px;line-height:1.6}
-.an-sub b{color:#0f172a;font-weight:700}
+.an-big small{font-size:14px;font-weight:700;color:#7c3aed;margin-left:8px;letter-spacing:0}
 .an-up{color:#15803d;font-weight:700}.an-down{color:#b91c1c;font-weight:700}
 .an-bar{position:relative;height:10px;background:#f1f5f9;border-radius:99px;margin-top:10px;overflow:visible}
 .an-bar i{position:absolute;top:0;bottom:0;left:0;border-radius:99px}
-.an-bar .t{position:absolute;top:-4px;bottom:-4px;width:2px;background:#0f172a}
+.an-bar .t{position:absolute;top:-4px;bottom:-4px;width:2px;background:#0f172a;margin-left:-1px}
 .an-stack{display:flex;height:22px;border-radius:6px;overflow:hidden;margin:4px 0 12px}
 .an-stack div{height:100%}
 .an-leg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px}
@@ -45,9 +39,18 @@ const CSS = `
 .an-thin{color:#94a3b8}
 .an-mini{display:inline-block;width:64px;height:6px;background:#f1f5f9;border-radius:99px;position:relative;vertical-align:middle;margin-right:6px}
 .an-mini i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:#5A27E0}
-.an-kv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.an-kv b{display:block;font-size:20px;font-weight:800}
-.an-kv span{font-size:12px;color:#64748b}
+.an-kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:8px 12px;margin-top:12px}
+.an-kv b{display:block;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums}
+.an-kv small{display:block;font-size:11.5px;color:#64748b;margin-top:1px}
+.an-kv.big{margin-top:0}
+.an-kv.big b{font-size:22px}
+.an-chip{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:700;font-size:11.5px;color:#475569;background:#f1f5f9;border-radius:99px;padding:2px 9px}
+.an-delta{font-size:13px;margin-left:10px;letter-spacing:0;vertical-align:middle}
+.an-of{font-size:12px;color:#94a3b8;font-weight:600}
+.an-legend{margin-left:auto;display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-weight:600;font-size:11.5px;color:#64748b}
+.an-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-left:8px}
+.an-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.an-chips span{font-size:12px;background:#f8fafc;border:1px solid #e6e8ee;border-radius:99px;padding:2px 9px;color:#475569}
 .an-q{font-size:13.5px;line-height:1.5;border-left:3px solid #e2e8f0;padding:2px 0 2px 10px;margin:0 0 10px}
 .an-q small{display:block;color:#94a3b8;font-size:12px}
 @media (max-width:1100px){.an-g4{grid-template-columns:repeat(2,minmax(0,1fr))}.an-g3,.an-g2{grid-template-columns:1fr}}
@@ -57,11 +60,40 @@ const CSS = `
 const COLOUR: Record<string, string> = { us: '#5A27E0', client: '#0ea5e9', other_side: '#f59e0b', lender: '#10b981', searches: '#ec4899', land_registry: '#64748b', other: '#94a3b8', none: '#e2e8f0' };
 const pc = (x: number | null | undefined) => (x == null ? '–' : `${Math.round(x * 100)}%`);
 const MONTH = (k: string) => new Date(`${k}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
-const change = (now: number, then: number) => {
+/** Change on the comparison; `lowerIsBetter` for days. */
+const change = (now: number, then: number, lowerIsBetter = false) => {
   if (!then) return null;
   const c = (now - then) / then;
-  return <span className={c >= 0 ? 'an-up' : 'an-down'}>{c >= 0 ? '+' : '−'}{Math.abs(Math.round(c * 100))}%</span>;
+  if (Math.round(c * 100) === 0) return null;
+  const good = lowerIsBetter ? c < 0 : c > 0;
+  return <span className={`an-delta ${good ? 'an-up' : 'an-down'}`} title="Against the same period last year">{c >= 0 ? '▲' : '▼'} {Math.abs(Math.round(c * 100))}%</span>;
 };
+const Chip = ({ children }: { children: React.ReactNode }) => <span className="an-chip">{children}</span>;
+/** Small label/value pairs under a headline figure. */
+function KV({ items, big }: { items: Array<[string, React.ReactNode]>; big?: boolean }) {
+  return <div className={`an-kv${big ? ' big' : ''}`}>{items.map(([k, v]) => <div key={k}><b>{v}</b><small>{k}</small></div>)}</div>;
+}
+/** A bar to a value, with an optional marker (the target, the industry figure). */
+function Meter({ value, max, mark, markLabel, good }: { value: number; max: number; mark?: number; markLabel?: string; good: boolean }) {
+  return (
+    <div className="an-bar">
+      <i style={{ width: `${Math.min(100, (value / max) * 100)}%`, background: good ? '#16a34a' : '#5A27E0' }} />
+      {mark != null && <span className="t" style={{ left: `${Math.min(100, (mark / max) * 100)}%` }} title={markLabel ?? `Target ${mark}`} />}
+    </div>
+  );
+}
+/** Days to exchange and on to completion as one bar, with the industry's total marked. */
+function Split({ ex, done, industry, industrySource }: { ex: number | null; done: number | null; industry: number; industrySource: string }) {
+  if (ex == null || done == null) return null;
+  const max = Math.max(ex + done, industry) * 1.05;
+  return (
+    <div className="an-bar" style={{ display: 'flex', overflow: 'visible' }}>
+      <i style={{ position: 'static', width: `${(ex / max) * 100}%`, background: '#5A27E0', borderRadius: '99px 0 0 99px' }} title={`To exchange: ${Math.round(ex)} days`} />
+      <i style={{ position: 'static', width: `${(done / max) * 100}%`, background: '#a78bfa', borderRadius: '0 99px 99px 0' }} title={`Exchange to completion: ${Math.round(done)} days`} />
+      <span className="t" style={{ left: `${(industry / max) * 100}%` }} title={`Industry ${industry} days (${industrySource})`} />
+    </div>
+  );
+}
 const hours = (h: number | null) => (h == null ? '–' : h < 24 ? `${Math.round(h)}h` : `${Math.round((h / 24) * 10) / 10}d`);
 function S({ s, unit = 'd', p = 'p50' }: { s: Stat; unit?: string; p?: 'p50' | 'p85' }) {
   const v = s[p];
@@ -149,7 +181,6 @@ export function AnalyticsView(props: {
 }) {
   const { report: r, person, side } = props;
   const p = r.pace;
-  const toTarget = p.target ? Math.min(100, (p.forecast / p.target) * 100) : null;
   const flowOut = useMemo(() => r.flow.shares.filter((s) => s.party !== 'none'), [r.flow.shares]);
   const delayMax = Math.max(0.0001, ...r.delays.map((d) => d.share));
   return (
@@ -170,65 +201,50 @@ export function AnalyticsView(props: {
         </select>
       </div>
 
-      {r.insights.length > 0 && (
-        <div className="an-card" style={{ marginBottom: 14 }}>
-          <div className="an-h">Read First</div>
-          <ul className="an-ins">{r.insights.map((x, i) => <li key={i}>{x}</li>)}</ul>
-        </div>
-      )}
-
       <div className="an-grid an-g4">
         <div className="an-card">
           <div className="an-h">Completions This Month</div>
-          <div className="an-big">{p.completions}<small>done</small> {p.booked > 0 && <>+{p.booked}<small>booked</small></>}</div>
-          {toTarget !== null && <div className="an-bar" title={`Forecast ${p.forecast} of ${p.target}`}><i style={{ width: `${toTarget}%`, background: p.forecast >= (p.target ?? 0) ? '#16a34a' : '#5A27E0' }} /></div>}
-          <div className="an-sub">
-            {p.target != null ? <>Forecast <b>{p.forecast}</b> of <b>{p.target}</b></> : <>Forecast <b>{p.forecast}</b></>}
-            {p.runRate != null && <> · Run rate <b>{p.runRate}</b></>}
-            <br />Same point last year <b>{p.samePointLastYear}</b> (month {p.lastYearMonth})
-            {p.record && <><br />Record <b>{p.record.completions}</b> in {MONTH(p.record.month)}</>}
-          </div>
+          <div className="an-big">{p.completions}{p.booked > 0 && <small>+{p.booked} Booked</small>}</div>
+          {p.target != null && <Meter value={p.forecast} max={Math.max(p.target, p.forecast)} mark={p.target} good={p.forecast >= p.target} />}
+          <KV items={[['Target', p.target ?? '–'], ['Last Year', p.lastYearMonth], ['Record', p.record ? <span title={MONTH(p.record.month)}>{p.record.completions}</span> : '–']]} />
         </div>
         <div className="an-card">
-          <div className="an-h">Instructions</div>
-          <div className="an-big">{r.instructions.last4Weeks}<small>last 4 weeks</small></div>
-          <div className="an-sub">Same 4 weeks last year <b>{r.instructions.same4WeeksLastYear}</b> {change(r.instructions.last4Weeks, r.instructions.same4WeeksLastYear)}<br />This month <b>{r.instructions.thisMonth}</b> · Year to date completions <b>{p.yearToDate}</b> {change(p.yearToDate, p.lastYearToDate)}</div>
+          <div className="an-h">Instructions<Chip>4 Weeks</Chip></div>
+          <div className="an-big">{r.instructions.last4Weeks}{change(r.instructions.last4Weeks, r.instructions.same4WeeksLastYear)}</div>
+          <KV items={[['Last Year', r.instructions.same4WeeksLastYear], ['This Month', r.instructions.thisMonth], ['Completions YTD', <>{p.yearToDate} {change(p.yearToDate, p.lastYearToDate)}</>]]} />
         </div>
         <div className="an-card">
-          <div className="an-h">Instruction To Completion</div>
-          <div className="an-big"><S s={r.cycle.instructionToCompletion} unit="" /><small>days median</small></div>
-          <div className="an-sub">
-            85% within <b><S s={r.cycle.instructionToCompletion} unit="" p="p85" /></b> days · Last year <b><S s={r.cycle.lastYearInstructionToCompletion} unit="" /></b>
-            <br />To exchange <b><S s={r.cycle.instructionToExchange} unit="" /></b> · Exchange to completion <b><S s={r.cycle.exchangeToCompletion} unit="" /></b>
-            <br />Industry <b>{r.cycle.industry.value}</b> ({r.cycle.industry.source})
-          </div>
+          <div className="an-h">Days To Complete</div>
+          <div className="an-big"><S s={r.cycle.instructionToCompletion} unit="" />{r.cycle.lastYearInstructionToCompletion.p50 != null && r.cycle.instructionToCompletion.p50 != null && change(r.cycle.instructionToCompletion.p50, r.cycle.lastYearInstructionToCompletion.p50, true)}</div>
+          <Split ex={r.cycle.instructionToExchange.p50} done={r.cycle.exchangeToCompletion.p50} industry={r.cycle.industry.value} industrySource={r.cycle.industry.source} />
+          <KV items={[['85% Within', <S key="p" s={r.cycle.instructionToCompletion} unit="" p="p85" />], ['Last Year', <S key="l" s={r.cycle.lastYearInstructionToCompletion} unit="" />], ['Industry', <span key="i" title={r.cycle.industry.source}>{r.cycle.industry.value}</span>]]} />
         </div>
         <div className="an-card">
           <div className="an-h">Client Satisfaction</div>
-          <div className="an-big">{pc(r.satisfaction.csat.pct)}<small>satisfied</small></div>
-          <div className="an-sub">
-            NPS <b>{r.satisfaction.nps.score ?? '–'}</b> ({r.satisfaction.nps.n} {r.satisfaction.nps.n === 1 ? 'response' : 'responses'}) · CSAT from {r.satisfaction.csat.n}
-            <br />Asked at completion, answered by <b>{pc(r.satisfaction.responseRate)}</b>
-          </div>
+          <div className="an-big"><span className={r.satisfaction.csat.n < 5 ? 'an-thin' : undefined}>{pc(r.satisfaction.csat.pct)}</span></div>
+          {r.satisfaction.csat.pct != null && <Meter value={r.satisfaction.csat.pct} max={1} good={r.satisfaction.csat.pct >= 0.8} />}
+          <KV items={[['NPS', <span key="n" className={r.satisfaction.nps.n < 5 ? 'an-thin' : undefined}>{r.satisfaction.nps.score ?? '–'}</span>], ['Responses', r.satisfaction.csat.n + r.satisfaction.nps.n], ['Response Rate', pc(r.satisfaction.responseRate)]]} />
         </div>
       </div>
 
       <div className="an-card" style={{ marginBottom: 14 }}>
-        <div className="an-h">Completions By Month<span className="r">Bars this year · black ticks last year · light this month's booked</span></div>
+        <div className="an-h">Completions By Month
+          <span className="an-legend"><i style={{ background: '#5A27E0' }} />This Year<i style={{ background: '#0f172a', height: 2 }} />Last Year<i style={{ background: '#c4b5fd' }} />Booked{p.target != null && <><i style={{ background: 'none', borderTop: '2px dashed #b91c1c', height: 0 }} />Target</>}</span>
+        </div>
         <MonthChart r={r} />
       </div>
 
       <div className="an-grid an-g2">
         <div className="an-card">
-          <div className="an-h">Where Cases Wait<span className="r">Last {r.flow.windowDays} days · {r.flow.caseDays.toLocaleString('en-GB')} case-days</span></div>
+          <div className="an-h">Where Cases Wait<Chip>90 Days</Chip></div>
           <div className="an-stack">{r.flow.shares.map((s) => <div key={s.party} title={`${s.label}: ${pc(s.share)}`} style={{ width: `${s.share * 100}%`, background: COLOUR[s.party] }} />)}</div>
-          <div className="an-leg">{r.flow.shares.map((s) => <div key={s.party}><i style={{ background: COLOUR[s.party] }} />{s.label}<span>{pc(s.share)}</span></div>)}</div>
-          {r.flow.withUsOfOutstanding !== null && flowOut.length > 0 && <div className="an-sub" style={{ marginTop: 10 }}>When something is outstanding, it is with us <b>{pc(r.flow.withUsOfOutstanding)}</b> of the time.</div>}
+          <div className="an-leg">{r.flow.shares.map((s) => <div key={s.party} style={s.party === 'us' ? { fontWeight: 700 } : undefined}><i style={{ background: COLOUR[s.party] }} />{s.label}<span>{pc(s.share)}</span></div>)}</div>
+          {r.flow.withUsOfOutstanding !== null && flowOut.length > 0 && <KV items={[['With Us When Open', pc(r.flow.withUsOfOutstanding)], ['Case-Days', r.flow.caseDays.toLocaleString('en-GB')]]} />}
         </div>
         <div className="an-card">
-          <div className="an-h">What Cases Wait For<span className="r">Last 12 months</span></div>
+          <div className="an-h">What Cases Wait For<Chip>12 Months</Chip></div>
           <table className="an-t">
-            <thead><tr><th>Waiting For</th><th>Share Of Waiting</th><th className="num">Median</th><th className="num">Open Now</th></tr></thead>
+            <thead><tr><th>Waiting For</th><th>Share</th><th className="num">Median</th><th className="num">Open</th></tr></thead>
             <tbody>
               {r.delays.slice(0, 8).map((d) => (
                 <tr key={d.key}>
@@ -245,36 +261,30 @@ export function AnalyticsView(props: {
 
       <div className="an-grid an-g2">
         <div className="an-card">
-          <div className="an-h">Our Turnaround<span className="r">Tasks finished in the last 90 days</span></div>
-          <div className="an-kv">
-            <div><b><S s={r.tasks.turnaroundHours} unit="h" /></b><span>Median</span></div>
-            <div><b><S s={r.tasks.turnaroundHours} unit="h" p="p85" /></b><span>85% Within</span></div>
-            <div><b style={r.tasks.overdue ? { color: '#b91c1c' } : undefined}>{r.tasks.overdue}</b><span>Over 2 Working Days ({r.tasks.pending} waiting)</span></div>
-          </div>
+          <div className="an-h">Our Turnaround<Chip>90 Days</Chip></div>
+          <KV big items={[['Median', <S key="m" s={r.tasks.turnaroundHours} unit="h" />], ['85% Within', <S key="p" s={r.tasks.turnaroundHours} unit="h" p="p85" />], ['Waiting', r.tasks.pending], ['Overdue', <span key="o" style={r.tasks.overdue ? { color: '#b91c1c' } : undefined}>{r.tasks.overdue}</span>]]} />
           {r.tasks.slowestKinds.length > 0 && (
-            <table className="an-t" style={{ marginTop: 12 }}>
+            <table className="an-t" style={{ marginTop: 10 }}>
               <thead><tr><th>Slowest To Clear</th><th className="num">Median</th><th className="num">Tasks</th></tr></thead>
               <tbody>{r.tasks.slowestKinds.map((k) => <tr key={k.kind}><td>{k.label}</td><td className="num">{hours(k.p50)}</td><td className="num">{k.n}</td></tr>)}</tbody>
             </table>
           )}
         </div>
         <div className="an-card">
-          <div className="an-h">Pipeline And Fall-Through</div>
-          <div className="an-kv">
-            {r.pipeline.byStep.map((s) => <div key={s.step}><b>{s.count}</b><span>{s.label}</span></div>)}
-            <div><b>{r.pipeline.completingNext30}</b><span>Completing In 30 Days</span></div>
-          </div>
-          <div className="an-sub">Chases answered within 3 days <b>{pc(r.chases.answeredWithin3Days)}</b> of {r.chases.sent}{r.chases.medianDaysToReply != null && <> · median reply <b>{r.chases.medianDaysToReply}</b> days after a chase</>}</div>
-          <div className="an-sub" style={{ marginTop: 10 }}>
-            Fell through <b>{pc(r.fallThrough.rate)}</b> of {r.fallThrough.n} in the last 12 months (industry {pc(r.fallThrough.industry.value)})
-            {r.fallThrough.reasons.length > 0 && <><br />{r.fallThrough.reasons.slice(0, 4).map((x) => `${x.reason} ${x.count}`).join(' · ')}</>}
-          </div>
+          <div className="an-h">Pipeline</div>
+          <KV big items={[...r.pipeline.byStep.map((x) => [x.label, x.count] as [string, React.ReactNode]), ['Completing In 30 Days', r.pipeline.completingNext30]]} />
+          <div className="an-h" style={{ marginTop: 16 }}>Fell Through<Chip>12 Months</Chip></div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}><span className="an-big" style={{ fontSize: 24 }}><span className={r.fallThrough.n < 5 ? 'an-thin' : undefined}>{pc(r.fallThrough.rate)}</span></span><span className="an-of">of {r.fallThrough.n}</span></div>
+          {r.fallThrough.rate != null && <Meter value={r.fallThrough.rate} max={Math.max(0.4, r.fallThrough.rate)} mark={r.fallThrough.industry.value} markLabel={`Industry ${pc(r.fallThrough.industry.value)}`} good={r.fallThrough.rate <= r.fallThrough.industry.value} />}
+          {r.fallThrough.reasons.length > 0 && <div className="an-chips">{r.fallThrough.reasons.slice(0, 5).map((x) => <span key={x.reason}>{x.reason} <b>{x.count}</b></span>)}</div>}
+          <div className="an-h" style={{ marginTop: 16 }}>Chases<Chip>90 Days</Chip></div>
+          <KV items={[['Sent', r.chases.sent], ['Answered In 3 Days', pc(r.chases.answeredWithin3Days)], ['Median Reply', r.chases.medianDaysToReply == null ? '–' : `${r.chases.medianDaysToReply}d`]]} />
         </div>
       </div>
 
       {r.ageing.cases.length > 0 && (
         <div className="an-card" style={{ marginBottom: 14 }}>
-          <div className="an-h">Cases To Look At<span className="r">{r.ageing.overSle} open longer than {r.cycle.sle ? `85% of cases took (${r.cycle.sle} days)` : 'usual'}</span></div>
+          <div className="an-h">Cases To Look At<Chip>{r.ageing.overSle} Over {r.cycle.sle ?? Math.round(r.cycle.industry.value * 1.3)} Days</Chip></div>
           <table className="an-t">
             <thead><tr><th>Case</th><th>Handler</th><th className="num">Days Open</th><th>Stage</th><th>Waiting On</th></tr></thead>
             <tbody>
@@ -289,7 +299,7 @@ export function AnalyticsView(props: {
 
       {r.people.length > 0 && (
         <div className="an-card" style={{ marginBottom: 14 }}>
-          <div className="an-h">{props.admin && !person ? 'People' : 'Your Figures'}<span className="r">Grey: too few cases to rely on</span></div>
+          <div className="an-h">{props.admin && !person ? 'People' : 'Your Figures'}</div>
           <PeopleTable people={r.people} onPick={props.admin && !person ? (id) => props.onScope(id, side) : undefined} />
         </div>
       )}
