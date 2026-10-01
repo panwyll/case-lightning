@@ -55,6 +55,18 @@ export function titleFindings(t: TitleFacts, ctx: FindingContext): Finding[] {
       out.push({ code: `CHARGE_NON_LENDER:${c.code}`, kind: 'title_defect', severity: 'critical', gate: 'exchange', page: pageOf(c.locator), title: `A charge that is not a mortgage: ${clip(text, 90)}`, detail: `"${clip(text)}" on ${ours}. A creditor's or a tax charge is not discharged by an ordinary redemption: get a payoff figure and the creditor's agreement to release it from the proceeds, put it on the completion statement, and check the proceeds cover it (if they do not, the sale cannot complete as it stands).` });
     }
   }
+  // The class of title: anything but absolute is a defect a lender must accept (LRA ss.9-10; property.md 1.2).
+  if (t.titleClass === 'possessory' || t.titleClass === 'qualified') out.push({ code: `TITLE_CLASS:${t.titleClass}`, kind: 'title_defect', severity: 'critical', gate: 'exchange', page: null, title: `${t.titleClass === 'possessory' ? 'Possessory' : 'Qualified'} title, not absolute`, detail: `The title is ${t.titleClass}: the registry does not guarantee it against claims ${t.titleClass === 'possessory' ? 'existing at first registration' : 'it names'}. Routes: a defective title indemnity policy, an application to upgrade (possessory can be upgraded after 12 years, LRA s.62), or a lender that accepts it in writing.` });
+  if (t.titleClass === 'good_leasehold' && ctx.hasLender) out.push({ code: 'TITLE_CLASS:good_leasehold', kind: 'lender_approval', severity: 'warning', gate: 'exchange', page: null, title: 'Good leasehold title: the lender must accept it', detail: "The landlord's title was not examined at registration. Most lenders want an indemnity policy unless their Part 2 accepts good leasehold; ask." });
+  // Notices in the charges register (property.md 1.9).
+  for (const n of t.notices ?? []) {
+    if (/home rights|family law act/i.test(n.text)) out.push(homeRights(n.code, n.text, pageOf(n.locator)));
+    else if (/unilateral notice/i.test(n.text)) out.push(unilateral(n.code, n.text, pageOf(n.locator)));
+    else if (/agreed notice|notice of (an )?(option|lease|deed|agreement|right)/i.test(n.text)) out.push({ code: `NOTICE:${n.code}`, kind: 'third_party_encumbrance', severity: 'warning', gate: 'exchange', page: pageOf(n.locator), title: 'A notice on the register binds the buyer', detail: `"${clip(n.text)}". Get the document it protects and report its effect (an option, an overage, a lease, a right of way) before exchange.` });
+  }
+  // Form A on a purchase from a sole surviving proprietor: the buyer pays two trustees or takes subject to the beneficiaries' interests.
+  if (ctx.side === 'buyer' && (t.proprietors ?? []).length === 1 && t.restrictions.some((r) => /no disposition by a sole proprietor/i.test(r.text))) out.push({ code: 'RESTRICTION_FORM_A:purchase', kind: 'title_restriction', severity: 'warning', gate: 'exchange', page: null, title: 'Form A restriction, and only one proprietor: two trustees must sign', detail: `${t.proprietors![0]} is the only proprietor of a title held in shares. Ask the seller's solicitor for a second trustee to be appointed (with the death certificate if a co-owner has died) so the money is paid to two trustees and the buyer takes free of the shares (LPA s.27).` });
+  if (ctx.side === 'buyer') { const risk = sellerIdentityRisk(t); if (risk) out.push(risk); }
   // A covenant against building or altering, where the seller says works were done.
   const works = ctx.alterations?.trim();
   if (works && !/^(none|no|n\/a|not applicable|nil)\.?$/i.test(works)) {
@@ -65,6 +77,25 @@ export function titleFindings(t: TitleFacts, ctx: FindingContext): Finding[] {
     }
   }
   return out;
+}
+
+/**
+ * Seller impersonation red flags from the register (parties.md 9.2; Dreamvar v Mishcon, P&P v Owen White): an
+ * unencumbered property whose owner gives an address elsewhere (worse, abroad), held for many years. Two or more and
+ * the buyer's firm must ask how the seller's solicitor verified their client before any money goes.
+ */
+export function sellerIdentityRisk(t: TitleFacts): Finding | null {
+  if (t.planOnly) return null;
+  const postcode = (s: string | null | undefined) => s?.toUpperCase().match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/)?.slice(1, 3).join(' ') ?? null;
+  const here = postcode(t.propertyDescription);
+  const flags: string[] = [];
+  if (!t.charges.some((c) => /\b(charge|mortgage)\b/i.test(c.text) && !/home rights|notice/i.test(c.text))) flags.push('no mortgage on the title');
+  const addrs = t.proprietorAddresses ?? [];
+  if (addrs.length && here && !addrs.some((a) => postcode(a) === here)) flags.push("the owner's address for service is not the property");
+  if (addrs.some((a) => !postcode(a) && /\b(spain|france|usa|united states|australia|canada|dubai|uae|germany|italy|portugal|ireland|hong kong|singapore|india|china|nigeria|south africa)\b/i.test(a))) flags.push('the owner gives an address abroad');
+  if (t.proprietorSince && Date.now() - Date.parse(t.proprietorSince) > 10 * 365.25 * 86_400_000) flags.push(`owned since ${t.proprietorSince.slice(0, 4)}`);
+  if (flags.length < 2) return null;
+  return { code: 'SELLER_IDENTITY_RISK', kind: 'seller_identity_risk', severity: 'warning', gate: 'exchange', page: null, title: `Seller identity red flags: ${flags.join(', ')}`, detail: `These are the marks of the properties fraudsters sell by impersonating the owner. Before any money goes: ask the seller's solicitor how they verified their client's identity and that they are the registered owner (and when they were instructed), check the firm on the SRA register, and keep the reply on file.` };
 }
 
 const homeRights = (code: string, text: string, page: number | null): Finding => ({ code: `HOME_RIGHTS:${code}`, kind: 'title_defect', severity: 'critical', gate: 'exchange', page, title: 'Home rights notice on the register', detail: `"${clip(text)}". A spouse or civil partner has registered home rights (Family Law Act 1996). They must release them (or the notice is cancelled on form HR4 with their consent) before exchange; vacant possession cannot be given while it stands.` });

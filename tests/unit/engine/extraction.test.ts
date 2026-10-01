@@ -41,7 +41,7 @@ test('toMortgageFacts / toTitleFacts / toEnquiryReplyFacts shape the engine type
   assert.equal(m.conditions[0].code, 'SC_4');
   assert.equal(m.confidence, 0.9);
   assert.equal(m.amountPennies, undefined);
-  const t = toTitleFacts({ titleNumber: 'ab123', tenure: 'freehold', planOnly: false, unregistered: false, editionDate: '', registeredProprietors: [], propertyDescription: '', restrictions: [], charges: [{ code: 'C1', text: 'Charge', register: 'C', locator: loc, confidence: 0.8 }], covenants: [], pages: [], scanQuality: 'good', confidence: 0.99 });
+  const t = toTitleFacts({ titleNumber: 'ab123', tenure: 'freehold', planOnly: false, unregistered: false, editionDate: '', registeredProprietors: [], titleClass: 'absolute', proprietorAddresses: [], proprietorSince: '', pricePaidPennies: 0, notices: [], propertyDescription: '', restrictions: [], charges: [{ code: 'C1', text: 'Charge', register: 'C', locator: loc, confidence: 0.8 }], covenants: [], pages: [], scanQuality: 'good', confidence: 0.99 });
   assert.equal(t.titleNumber, 'AB123');
   assert.equal(t.confidence, 0.8);
   const e = toEnquiryReplyFacts({ replies: [{ enquiryReference: 'Enquiry 2', status: 'partial', replyText: '…', issues: [], locator: loc, confidence: 0.9 }, { enquiryReference: '1', status: 'answered', replyText: '…', issues: [], locator: loc, confidence: 0.95 }], pages: [], scanQuality: 'good', confidence: 0.95 }, 'E1');

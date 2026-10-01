@@ -404,6 +404,17 @@ export interface TitleFacts {
   unregistered?: boolean | null;
   /** The document was a title plan (a map), not the register: nothing here is a reading of the register. */
   planOnly?: boolean | null;
+  /** Notices in the charges register: agreed or unilateral notices, home rights, leases noted. */
+  notices?: TitleEntry[];
+  /** The registered proprietors as named, their addresses for service, and when they were registered. */
+  proprietors?: string[];
+  proprietorAddresses?: string[];
+  proprietorSince?: string | null;
+  pricePaidPennies?: number | null;
+  /** Absolute, possessory, qualified or good leasehold. */
+  titleClass?: 'absolute' | 'possessory' | 'qualified' | 'good_leasehold' | 'unknown';
+  propertyDescription?: string | null;
+  editionDate?: string | null;
   confidence: number;
 }
 
@@ -1147,7 +1158,7 @@ export interface Payloads {
   daml_response_recorded: { decision: 'granted' | 'refused'; moratoriumEnds: string | null };
   sdlt_facts_recorded: { facts: { wales?: boolean; mainResidence?: boolean; anyEverOwned?: boolean; anyOwnsOther?: boolean; replacing?: boolean; replacingFirst?: boolean; anyNonResident?: boolean; mixedUse?: boolean; debtAssumedPennies?: number | null }; basis: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; wales?: boolean }; reasons: string[]; refundDiary: boolean };
   cgt_facts_recorded: { mainResidenceThroughout: boolean; ukResident: boolean };
-  client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; /** further_investigation: the investigations this applies to (issue ids); absent = all open ones. */ scope?: string[] | null };
+  client_decision_recorded: { subject: ClientDecisionSubject; decision: string; /** Joint clients: whose decision this is (each must authorise exchange). */ party?: string | null; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; /** further_investigation: the investigations this applies to (issue ids); absent = all open ones. */ scope?: string[] | null };
   /** Severity moved (by a person, or by the timer as a deadline nears). */
   issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };
   /** The file is closed: registered, everything served, nothing further. */
@@ -1650,6 +1661,8 @@ export interface MatterState {
     interimSentAt?: string | null;
   };
   deposit: { received: boolean; at: string | null; /** What has come in towards it, and what the contract says it is. */ amountPennies?: number | null; contractPennies?: number | null };
+  /** Joint clients' authority to exchange, each their own (parties.md 2.7). */
+  authorityByParty?: Record<string, string>;
   /** What each buyer puts in and the declaration of trust's model, with each owner's share at purchase (co-owners.ts). */
   coOwnership?: { model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent: Record<string, number> | null; shares: Array<{ party: string; shareBp: number }>; recordedAt: string } | null;
   /** After registration: the new register read against what it should say, and when (theme H). */

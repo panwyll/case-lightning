@@ -187,7 +187,7 @@ type CommandBody =
   // ── case model: survey workstream, client decisions, closure ──
   | { type: 'survey_received'; actor: Actor; documentId: string; surveyType: SurveyType; facts: SurveyFacts; extractor: string }
   | { type: 'specialist_report_received'; actor: Actor; documentId: string; facts: SurveyFacts; forIssueId?: string | null; extractor: string }
-  | { type: 'client_decision_recorded'; actor: Actor; subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; scope?: string[] | null }
+  | { type: 'client_decision_recorded'; actor: Actor; subject: ClientDecisionSubject; decision: string; party?: string | null; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; scope?: string[] | null }
   | { type: 'close_matter'; actor: Actor; reason?: string | null }
   | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null; party?: string | null; resolveBy?: string | null }
   | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null; costPennies?: number | null; paidBy?: IssuePaidBy | null; details?: Record<string, string | number | boolean | null> | null; documentId?: string | null }
@@ -1879,7 +1879,17 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.subject === 'exchange_authority' && !profile(s).hasExchange) reject(`A ${profile(s).label.toLowerCase()} has no exchange to authorise.`);
       if (cmd.subject === 'ownership_basis' && s.parties < 2) reject('Only one client on this matter: there is no co-ownership to decide.');
       if (!cmd.note?.trim() && cmd.decision !== 'satisfied' && cmd.decision !== 'authorised' && cmd.decision !== 'accepted' && cmd.decision !== 'agreed' && cmd.decision !== 'evidence') reject('Record what the client said (note).', 400);
-      const out: NewEvent[] = [{ type: 'client_decision_recorded', actor: cmd.actor, payload: { subject: cmd.subject, decision: cmd.decision, note: cmd.note?.trim() || null, evidenceDocumentId: cmd.evidenceDocumentId ?? null, ...(cmd.approvedEventId ? { approvedEventId: cmd.approvedEventId } : {}), ...(cmd.scope?.length ? { scope: cmd.scope } : {}) }, sourceDocumentId: cmd.evidenceDocumentId ?? null }];
+      // Joint clients each give (or withdraw) their own authority to exchange; one saying yes while another says no is a conflict.
+      const party = cmd.party?.trim() || null;
+      if (party && !(s.partyNames ?? []).some((n) => n.trim().toLowerCase() === party.toLowerCase())) reject(`${party} is not one of the clients (${(s.partyNames ?? []).join(', ')}).`, 400);
+      const conflict: NewEvent[] = [];
+      if (party && cmd.subject === 'exchange_authority') {
+        const others = Object.entries(s.authorityByParty ?? {}).filter(([p]) => p.toLowerCase() !== party.toLowerCase());
+        const clash = others.find(([, d]) => (d === 'authorised' && cmd.decision === 'withdrawn') || (d === 'withdrawn' && cmd.decision === 'authorised'));
+        if (clash && !openOf(s, 'joint_client_conflict', 'Joint clients disagree')) conflict.push(issue(s, issueIds(s)(), 'joint_client_conflict', `Joint clients disagree about exchanging: ${cmd.decision === 'authorised' ? party : clash[0]} authorises, ${cmd.decision === 'authorised' ? clash[0] : party} withdraws`, `${cmd.note?.trim() ? `"${cmd.note.trim()}". ` : ''}Nothing exchanges until both instruct the same thing. Joint clients have no confidentiality from each other: tell each what the other has said. If they cannot agree, consider whether we can go on acting for either (SRA Code 6.2).`, s.exchange.exchangedAt ? 'completion' : 'exchange'));
+      }
+      const out: NewEvent[] = [{ type: 'client_decision_recorded', actor: cmd.actor, payload: { subject: cmd.subject, decision: cmd.decision, ...(party ? { party } : {}), note: cmd.note?.trim() || null, evidenceDocumentId: cmd.evidenceDocumentId ?? null, ...(cmd.approvedEventId ? { approvedEventId: cmd.approvedEventId } : {}), ...(cmd.scope?.length ? { scope: cmd.scope } : {}) }, sourceDocumentId: cmd.evidenceDocumentId ?? null }];
+      out.push(...conflict);
       if (cmd.subject === 'further_investigation') {
         // The client's instruction is per investigation: "leave the drains, get the damp guarantee, send a structural engineer in".
         const scope = cmd.scope?.length ? new Set(cmd.scope) : null;

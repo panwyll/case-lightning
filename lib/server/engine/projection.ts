@@ -1144,11 +1144,18 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'client_decision_lapsed': {
       delete s.clientDecisions[(e.payload as Payloads['client_decision_lapsed']).subject];
+      if ((e.payload as Payloads['client_decision_lapsed']).subject === 'exchange_authority') s.authorityByParty = {};
       break;
     }
     case 'client_decision_recorded': {
       const p = e.payload as Payloads['client_decision_recorded'];
-      s.clientDecisions[p.subject] = { decision: p.decision, at: e.createdAt, by: e.actor, note: p.note ?? null };
+      if (p.subject === 'exchange_authority' && p.party) {
+        // Each joint client's own say: authorised only when every client has authorised; withdrawn if any has withdrawn.
+        s.authorityByParty = { ...(s.authorityByParty ?? {}), [p.party]: p.decision };
+        const all = (s.partyNames ?? []).map((n) => Object.entries(s.authorityByParty ?? {}).find(([k]) => k.toLowerCase() === n.toLowerCase())?.[1] ?? null);
+        const decision = all.length && all.every((d) => d === 'authorised') ? 'authorised' : all.some((d) => d === 'withdrawn') ? 'withdrawn' : 'not_yet';
+        s.clientDecisions[p.subject] = { decision, at: e.createdAt, by: e.actor, note: p.note ?? null };
+      } else s.clientDecisions[p.subject] = { decision: p.decision, at: e.createdAt, by: e.actor, note: p.note ?? null };
       closeWait(s, 'client_decision', p.subject, e);
       // Which investigations the instruction covers: those named, or every open one.
       if (p.subject === 'further_investigation') {

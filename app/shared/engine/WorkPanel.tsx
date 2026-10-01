@@ -793,6 +793,10 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const [closing, setClosing] = useState(false);
   // The figure to ask for, from what the file already says: the client's balance from the statement, the advance from the offer.
   const askFor = (role: string): number | undefined => (role === 'lender' ? (s.mortgage.facts as { amountPennies?: number } | null)?.amountPennies : role === 'client' ? s.money?.statementBalancePennies ?? undefined : undefined) ?? undefined;
+  // Joint clients each authorise exchange themselves (parties.md 2.7): one button per client still to say so.
+  const authorityAction = (): ReactNode => ((s.partyNames?.length ?? 0) > 1
+    ? <>{s.partyNames!.filter((n) => s.authorityByParty?.[n] !== 'authorised').map((n) => <span key={n}>{act('exchange', 'client_decision_recorded', `${n.split(' ')[0]} Authorised`, { subject: 'exchange_authority', decision: 'authorised', party: n })}</span>)}</>
+    : act('exchange', 'client_decision_recorded', 'Client Authorised', { subject: 'exchange_authority', decision: 'authorised' }));
   // The declaration's shares, from what each co-owner put in (co-owners.ts), filled in for the person to check.
   const deedShares = s.coOwnership?.shares?.length ? s.coOwnership.shares.map((x) => `${x.party} ${(x.shareBp / 100).toFixed(x.shareBp % 100 ? 2 : 0)}%`).join(', ') : undefined;
   const firmAccounts = () => Object.values(s.bankDetails).filter((b) => b.payeeKind === 'firm_client_account' && b.status === 'verified');
@@ -884,7 +888,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       }
       case 'funds': return act('completion', 'funds_received', 'Record Received', { fromRole: subject });
       case 'client_decision': return subject === 'exchange_authority'
-        ? act('exchange', 'client_decision_recorded', 'Client Authorised', { subject: 'exchange_authority', decision: 'authorised' })
+        ? authorityAction()
         : <>{(['joint_tenants', 'tenants_in_common_equal', 'tenants_in_common_unequal'] as const).map((d) => <span key={d}>{act('co_ownership', 'client_decision_recorded', pretty(d), { subject: 'ownership_basis', decision: d })}</span>)}</>;
       default: return null;
     }
@@ -1247,7 +1251,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
           action: !s.readiness.signedContractHeldAt && !exchanged && s.readiness.contractApprovedAt ? openSigning : undefined },
         ...(buyer ? [{ label: 'Deposit', status: s.deposit.received ? 'received' : 'awaiting', action: live && !s.deposit.received ? act('exchange', 'deposit_received', 'Record Received') : undefined }] : []),
         ...(s.requireExchangeAuthority ? [{ label: "Client's authority to exchange", status: s.clientDecisions?.exchange_authority?.decision === 'authorised' ? 'done' : 'not_started',
-          action: live && s.clientDecisions?.exchange_authority?.decision !== 'authorised' ? act('exchange', 'client_decision_recorded', 'Client Authorised', { subject: 'exchange_authority', decision: 'authorised' }) : undefined }] : []),
+          action: live && s.clientDecisions?.exchange_authority?.decision !== 'authorised' ? authorityAction() : undefined }] : []),
         { label: 'Exchange', status: exchanged ? 'done' : s.exchange.conditionsMet ? 'approved' : 'awaiting', detail: exchanged ? undefined : s.exchange.conditionsMet ? 'everything is in place; exchange when the client instructs' : 'waits on every item above and the client\'s go-ahead',
           action: s.stage === 'pre_exchange' && s.exchange.conditionsMet && !exchanged ? act('exchange', 'contracts_exchanged', 'Contracts Exchanged', {}, { primary: true }) : undefined },
         ...(exchanged || s.stage === 'pre_exchange' ? [{ label: 'Completion statement', status: s.completion.statementGeneratedAt ? 'done' : 'not_started',
