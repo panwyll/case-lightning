@@ -106,6 +106,10 @@ export function productionCommsDeps(): CommsDeps {
       const { ensurePortal } = await import('../client-portal');
       return ensurePortal(tenantId, matterId);
     },
+    surveysOn: async (tenantId) => {
+      const { featureOn } = await import('../features');
+      return featureOn(tenantId, 'satisfactionSurveys');
+    },
     renderReport: async (tenantId, matterId, body) => {
       const { renderReportOnTitleDocx } = await import('../doc-templates');
       const out = await renderReportOnTitleDocx(tenantId, matterId, body);

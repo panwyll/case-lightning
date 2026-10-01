@@ -87,6 +87,8 @@ export interface CommsDeps {
   ackMode?: 'send' | 'off';
   /** The case's client portal link (made the first time it is needed); it goes at the foot of every message to the client. */
   portalLink?(tenantId: string, matterId: string): Promise<string | null>;
+  /** Whether the firm asks clients how we did (the exchange and completion messages then ask, linking to the portal's rating). */
+  surveysOn?(tenantId: string): Promise<boolean>;
   /** The engine's account of a matter, for answering "any update?" from the case itself. */
   briefFor?(tenantId: string, matterId: string): Promise<CaseBrief | null>;
   onChaseDrafted?(input: { tenantId: string; matterId: string; messageId: string | null; title: string; detail: string }): Promise<void>;
@@ -134,8 +136,11 @@ const withOverview = (body: string, context: Record<string, unknown>): string =>
 
 /** The portal line goes in before the sign-off (a short last paragraph), or at the end. */
 export const PORTAL_LINE = 'See where things stand, what we need from you and your documents at any time:';
-export function withPortal(body: string, url: string): string {
-  const line = `${PORTAL_LINE}\n${url}`;
+/** The messages that ask for a rating: the client's exchange and completion updates, whatever the kind of case. */
+const SURVEY_ASK = /^(exchanged|completed)(__\w+)?$/;
+export const SURVEY_LINE = { exchanged: 'How are we doing so far? Tell us in one tap:', completed: 'How did we do? One question, and it helps us a lot:' };
+export function withPortal(body: string, url: string, lead: string = PORTAL_LINE): string {
+  const line = `${lead}\n${url}`;
   const cut = body.trimEnd().lastIndexOf('\n\n');
   const last = cut > 0 ? body.trimEnd().slice(cut + 2) : '';
   return cut > 0 && last.length <= 60 && !/https?:\/\//.test(last) ? `${body.trimEnd().slice(0, cut)}\n\n${line}\n\n${last}` : `${body.trimEnd()}\n\n${line}`;
@@ -173,7 +178,9 @@ export class ProductionClientComms implements ClientComms {
   private async deliver(tenantId: string, matterId: string, info: MatterContactInfo, template: string, subject: string, text: string, attachments: MailAttachment[] = []): Promise<{ channel: 'whatsapp' | 'email' | 'mock'; messageId: string | null; address: string | null }> {
     // Every message to the client carries their portal: where things stand, what we need, their documents.
     const portal = this.deps.portalLink ? await this.deps.portalLink(tenantId, matterId).catch(() => null) : null;
-    const body = portal && !text.includes(portal) ? withPortal(text, portal) : text;
+    // The exchange and completion messages (every kind of case) ask how we did, with the link to the one-tap rating.
+    const ask = portal && SURVEY_ASK.test(template) && this.deps.surveysOn ? await this.deps.surveysOn(tenantId).catch(() => false) : false;
+    const body = portal && !text.includes(portal) ? withPortal(text, portal, ask ? (template.startsWith('completed') ? SURVEY_LINE.completed : SURVEY_LINE.exchanged) : undefined) : text;
     if (info.clientPhone && info.clientWhatsAppOptIn && this.deps.whatsapp) {
       try {
         const r = await this.deps.whatsapp.sendText(info.clientPhone, body);
@@ -216,7 +223,8 @@ export class ProductionClientComms implements ClientComms {
     const r = render(t, this.vars(info, input.context));
     const body = withOverview(r.body, input.context);
     const portal = this.deps.portalLink ? await this.deps.portalLink(input.tenantId, input.matterId).catch(() => null) : null;
-    return { to: clientLine(info), ...clientAddress(info), subject: r.subject, body: portal ? withPortal(body, portal) : body };
+    const ask = portal && SURVEY_ASK.test(t.key) && this.deps.surveysOn ? await this.deps.surveysOn(input.tenantId).catch(() => false) : false;
+    return { to: clientLine(info), ...clientAddress(info), subject: r.subject, body: portal ? withPortal(body, portal, ask ? (t.key.startsWith('completed') ? SURVEY_LINE.completed : SURVEY_LINE.exchanged) : undefined) : body };
   }
 
   async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null; attachments?: MailAttachment[]; link?: FileLink | null }) {

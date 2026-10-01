@@ -19,7 +19,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);
     if (!(await featureOn(user.tenantId, 'clientPortal'))) return ok({ enabled: false, portal: null });
-    return ok({ enabled: true, portal: await portalSummary(user.tenantId, matterId) });
+    // Until migration 121 has run there is no portal to show.
+    const portal = await portalSummary(user.tenantId, matterId).catch((err: { code?: string }) => (err?.code === '42P01' ? undefined : Promise.reject(err)));
+    return ok({ enabled: portal !== undefined, portal: portal ?? null });
   } catch (error) {
     return fail(error);
   }

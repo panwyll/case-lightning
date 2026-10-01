@@ -251,21 +251,6 @@ export default function ClientPortal() {
       {err && <div className="err">{err}</div>}
       {done && <div className="ok"><Check size={18} />{done}</div>}
 
-      {v && !v.closed && (
-        <div className="card">
-          <h2>For You{tasks.length > 0 && <span className="count">{tasks.length}</span>}</h2>
-          {tasks.length === 0 ? (
-            <div className="none"><CheckCircle size={18} />Nothing for you to do right now.</div>
-          ) : tasks.map((t) => (
-            <div key={t.id} className="task">
-              <p className="t">{t.title}</p>
-              <p className="d">{t.detail}</p>
-              {actionFor(t)}
-            </div>
-          ))}
-        </div>
-      )}
-
       {ctx.feedback && (
         <div className="card">
           {rated ? (
@@ -290,6 +275,21 @@ export default function ClientPortal() {
               )}
             </>
           )}
+        </div>
+      )}
+
+      {v && !v.closed && (
+        <div className="card">
+          <h2>For You{tasks.length > 0 && <span className="count">{tasks.length}</span>}</h2>
+          {tasks.length === 0 ? (
+            <div className="none"><CheckCircle size={18} />Nothing for you to do right now.</div>
+          ) : tasks.map((t) => (
+            <div key={t.id} className="task">
+              <p className="t">{t.title}</p>
+              <p className="d">{t.detail}</p>
+              {actionFor(t)}
+            </div>
+          ))}
         </div>
       )}
 

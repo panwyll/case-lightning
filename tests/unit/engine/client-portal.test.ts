@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clientPortalView } from '../../../lib/server/engine/client-portal';
-import { withPortal, PORTAL_LINE } from '../../../lib/server/comms/client-comms';
+import { withPortal, PORTAL_LINE, SURVEY_LINE, ProductionClientComms } from '../../../lib/server/comms/client-comms';
 import { harness, TENANT, MATTER, USER } from './helpers';
 
 async function purchase() {
@@ -64,4 +64,20 @@ test('the portal line goes in above a short sign-off, once', () => {
   const signed = withPortal('Hello Priya,\n\nYour searches are back.\n\nKind regards', url);
   assert.equal(signed, `Hello Priya,\n\nYour searches are back.\n\n${PORTAL_LINE}\n${url}\n\nKind regards`);
   assert.ok(withPortal('One long paragraph with no sign-off that keeps going well past sixty characters in length.', url).endsWith(url));
+});
+
+test('the completion message on every kind of case asks how we did, linking to the rating; others carry the plain portal line', async () => {
+  const sent: Array<{ subject: string; text: string }> = [];
+  const info = { matterRef: 'R', propertyAddress: '1 Oak St', firmName: 'Firm', feeEarnerName: 'Pat', feeEarnerUserId: null, clientFirstName: 'Priya', clientEmail: 'p@example.com', clientPhone: null, clientWhatsAppOptIn: false, contacts: {}, completionDate: null };
+  const comms = new ProductionClientComms({
+    contactInfo: async () => ({ ...info, transaction: 'sale' as const }), whatsapp: null, mailbox: null,
+    email: { send: async (m) => { sent.push({ subject: m.subject, text: m.text }); return { messageId: 'x' }; } },
+    log: async () => {}, routeToHuman: async () => {}, matterForAddress: async () => null, tenantForAddress: async () => null, chaseMode: 'send',
+    portalLink: async () => 'https://app.test/portal/abc', surveysOn: async () => true,
+  });
+  await comms.sendStatusUpdate({ tenantId: 't', matterId: 'm', template: 'completed', context: {} });
+  await comms.sendStatusUpdate({ tenantId: 't', matterId: 'm', template: 'searches_ordered', context: {} });
+  assert.match(sent[0].subject, /sale/);
+  assert.ok(sent[0].text.includes(`${SURVEY_LINE.completed}\nhttps://app.test/portal/abc`), sent[0].text);
+  assert.ok(sent[1].text.includes(PORTAL_LINE) && !sent[1].text.includes(SURVEY_LINE.completed));
 });

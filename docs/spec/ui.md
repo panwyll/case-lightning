@@ -49,7 +49,7 @@
   - Where the case can answer, the answer is the case's own: "Why haven't I heard anything?" says who we are waiting on; "How long will it take?" gives the target date.
   - Answers are general information, never advice and never an issue.
 - **Still Need Help?:** Contact Us opens a message box and the conveyancer's phone and email. A message is read like an email from the client and becomes a reply task on the Tasks list. Ten a day.
-- **How Are We Doing?** (Ask Clients How We Did): CSAT after exchange, NPS after completion, once each. A promoter is offered the firm's review page.
+- **How Are We Doing?** (Ask Clients How We Did): CSAT after exchange, NPS after completion, once each, at the top of the page. A promoter is offered the firm's review page. The client's exchange and completion messages (every kind of case) ask for it, with the link, in place of the plain portal line.
 
 **Never shown:** an issue, a decision, a flag or an internal code. A step held by an issue reads In Progress; the conveyancer tells the client about a problem, the page does not.
 
