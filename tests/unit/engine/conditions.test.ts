@@ -303,3 +303,15 @@ test('an enquiry drafted against an issue that has since been withdrawn is still
   const s = await h.svc.getState(TENANT, MATTER);
   assert.ok(Object.values(s.enquiries).some((q) => /drainage/.test(q.subject)));
 });
+
+test('SDLT edges: a non-UK company pays 19% above £500k; a company relief means the higher rates instead; under £40k no surcharge; a return is never skipped at £40k or more', async () => {
+  const { computeSdlt } = await import('../../../lib/server/engine/sdlt');
+  assert.equal(computeSdlt(60_000_000, { firstTimeBuyer: false, additionalProperty: false, nonUkResident: true, company: true }).totalPennies, Math.round(60_000_000 * 0.19));
+  assert.equal(computeSdlt(60_000_000, { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false, company: true }).totalPennies, Math.round(60_000_000 * 0.17));
+  const relief = computeSdlt(60_000_000, { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false, company: true, companyRelief: true });
+  assert.ok(relief.scheme.startsWith('standard') && relief.totalPennies < Math.round(60_000_000 * 0.17), 'the higher rates, banded');
+  assert.equal(computeSdlt(3_500_000, { firstTimeBuyer: false, additionalProperty: true, nonUkResident: true }).totalPennies, 0, 'under £40,000: not a higher-rates transaction');
+  assert.equal(computeSdlt(5_000_000, { firstTimeBuyer: false, additionalProperty: true, nonUkResident: false }).totalPennies, 250_000, '£50,000 second home: 5% on the whole first band');
+  const s = { ...initialState(TENANT, MATTER), enrolled: true, transactionType: 'freehold_purchase' as const, stage: 'completed' as const, purchasePricePennies: 30_000_000 };
+  assert.throws(() => decide(s, { type: 'sdlt_not_required', actor: USER, reason: 'first-time buyer, nil tax' }, ctx), /return is required for a purchase of £40,000 or more/);
+});

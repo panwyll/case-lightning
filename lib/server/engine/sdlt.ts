@@ -16,6 +16,8 @@ export interface SdltBasis {
   company?: boolean;
   /** Mixed use (a shop with a flat, a house with agricultural land): the non-residential rates, no surcharges, no reliefs. */
   mixedUse?: boolean;
+  /** A company claiming a relief from the 17% rate (property rental business, development, trading): the higher rates instead. */
+  companyRelief?: boolean;
   /** Linked transactions: the other consideration between the same parties; the rate is set on the total and this purchase pays its share. */
   linkedConsiderationPennies?: number | null;
 }
@@ -43,6 +45,8 @@ const NON_RESIDENT_SURCHARGE = 0.02;
 const NON_RESIDENTIAL: Array<[number, number | null, number]> = [[0, 150_000, 0], [150_000, 250_000, 0.02], [250_000, null, 0.05]];
 const COMPANY_FLAT_THRESHOLD = 500_000;
 const COMPANY_FLAT_RATE = 0.17;
+/** Below this, a purchase is not a higher-rates transaction and the non-resident surcharge does not apply (FA 2003 Sch 4ZA para 2; Sch 9A). */
+const SURCHARGE_FLOOR = 40_000;
 
 export function computeSdlt(pricePennies: number, basis: SdltBasis): SdltEstimate {
   const linked = basis.linkedConsiderationPennies ?? 0;
@@ -68,14 +72,19 @@ export function computeSdlt(pricePennies: number, basis: SdltBasis): SdltEstimat
     notes.push('Mixed use: the non-residential rates on the whole price; no higher-rates surcharge, no non-resident surcharge and no first-time buyer relief. HMRC looks hard at "mixed use" claims: the non-residential part must be genuine (a working farm, a shop), not a paddock or a strip of woodland.');
     return { totalPennies: total, bands, scheme: 'non-residential / mixed-use rates', notes, ratesFrom: RATES_FROM };
   }
-  const surcharge = (basis.additionalProperty || basis.company ? ADDITIONAL_SURCHARGE : 0) + (basis.nonUkResident ? NON_RESIDENT_SURCHARGE : 0);
+  const belowFloor = price < SURCHARGE_FLOOR;
+  const surcharge = belowFloor ? 0 : (basis.additionalProperty || basis.company ? ADDITIONAL_SURCHARGE : 0) + (basis.nonUkResident ? NON_RESIDENT_SURCHARGE : 0);
+  if (belowFloor && (basis.additionalProperty || basis.company || basis.nonUkResident)) notes.push('Under £40,000: not a higher-rates transaction, and the non-resident surcharge does not apply.');
   let table = STANDARD;
   let scheme = 'standard residential rates';
-  if (basis.company && price > COMPANY_FLAT_THRESHOLD) {
-    const tax = Math.round(pricePennies * COMPANY_FLAT_RATE);
-    notes.push('A company buying a dwelling for more than £500,000 pays the 17% flat rate unless a relief applies (property rental business, development, trading); if a relief applies the higher rates are charged instead.');
-    return { totalPennies: tax, bands: [{ fromPennies: 0, toPennies: null, rate: COMPANY_FLAT_RATE, taxPennies: tax }], scheme: 'company: 17% flat rate above £500,000', notes, ratesFrom: RATES_FROM };
+  if (basis.company && price > COMPANY_FLAT_THRESHOLD && !basis.companyRelief) {
+    // The 17% flat rate, plus the non-resident surcharge for a non-UK company: 19%.
+    const rate = COMPANY_FLAT_RATE + (basis.nonUkResident ? NON_RESIDENT_SURCHARGE : 0);
+    const tax = Math.round(pricePennies * rate);
+    notes.push(`A company buying a dwelling for more than £500,000 pays the 17% flat rate${basis.nonUkResident ? ', 19% as a non-UK company' : ''} unless a relief applies (property rental business, development, trading); with a relief the higher rates are charged instead, and the relief is clawed back if the use changes within three years.`);
+    return { totalPennies: tax, bands: [{ fromPennies: 0, toPennies: null, rate, taxPennies: tax }], scheme: `company: ${Math.round(rate * 100)}% flat rate above £500,000`, notes, ratesFrom: RATES_FROM };
   }
+  if (basis.company && basis.companyRelief) notes.push('Company relief claimed (rental business, development or trading): the higher rates instead of the 17% flat rate. Clawed back if the qualifying use stops within three years.');
   if (basis.firstTimeBuyer && !basis.additionalProperty && !basis.company) {
     if (price <= FTB_CEILING) { table = FIRST_TIME; scheme = "first-time buyers' relief"; }
     else notes.push(`First-time buyers' relief is not available above £${FTB_CEILING.toLocaleString('en-GB')}: standard rates apply to the whole price.`);
@@ -94,7 +103,7 @@ export function computeSdlt(pricePennies: number, basis: SdltBasis): SdltEstimat
     total += tax;
   }
   if (basis.additionalProperty) notes.push('Higher rates (additional dwellings): every band carries 5 percentage points more. Not due if the purchase replaces the buyer\'s only or main residence sold within the last three years; refundable if the previous main residence is sold within three years.');
-  if (basis.nonUkResident) notes.push('Non-UK resident surcharge: 2 percentage points on every band, refundable if the buyer becomes UK resident (183 days) within the two years around completion.');
+  if (basis.nonUkResident) notes.push('Non-UK resident surcharge: 2 percentage points on every band, refundable if the buyer is UK resident for 183 days in any continuous 365-day period from one year before to one year after the purchase (claim within two years of the purchase).');
   notes.push('An estimate on the declared basis for a single dwelling. Linked transactions, mixed use, chattels apportionment and any other relief are for the person filing the return; check against HMRC\'s calculator before filing.');
   return { totalPennies: total, bands, scheme, notes, ratesFrom: RATES_FROM };
 }

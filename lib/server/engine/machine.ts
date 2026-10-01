@@ -2289,6 +2289,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.postCompletion.sdltSubmittedAt) reject('An SDLT return has already been filed.');
       if (s.sdltNotRequiredAt) reject('Already recorded.');
       if (!cmd.reason?.trim()) reject('Say why no return is due.', 400);
+      // A purchase of £40,000 or more needs a return even when no tax is due (and a relief can only be claimed on one).
+      const p = profile(s);
+      const consideration = p.side === 'buyer' ? s.purchasePricePennies : s.transactionType === 'transfer_of_equity' ? s.considerationPennies : null;
+      if ((p.side === 'buyer' || s.transactionType === 'transfer_of_equity') && consideration != null && consideration >= 4_000_000) reject('A return is required for a purchase of £40,000 or more, even when no tax is due or a relief brings it to nil (the relief is claimed on the return).');
       return [{ type: 'sdlt_not_required', actor: cmd.actor, payload: { reason: cmd.reason.trim() } }];
     }
 
