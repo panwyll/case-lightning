@@ -4,12 +4,12 @@ These six catalogues list what can realistically happen at each junction of the 
 
 | Catalogue | Covers | Rows | Built (1 October 2026) |
 |---|---|---|---|
-| [parties.md](parties.md) | Who the clients are and how that changes: a co-buyer leaving, divorce, death, capacity, attorneys, insolvency, sanctions, conflicts, fraud | 77 | 31% fully, more in part |
-| [money.md](money.md) | Source of funds (business owners, overseas, loans, gifts), mortgage changes, ISAs, completion money, refunds | 87 | 36% fully, more in part |
-| [property.md](property.md) | Title, unregistered land, planning and building regulations, searches, surveys, leasehold, the Building Safety Act, new build, auctions, tenanted property | 91 | 44% fully, more in part |
-| [tax.md](tax.md) | SDLT edge by edge (second homes, commercial holdings, homes abroad, replacing a main residence, companies, non-residents, transfers of equity), Wales LTT, seller CGT | 83 | 33% fully, more in part |
+| [parties.md](parties.md) | Who the clients are and how that changes: a co-buyer leaving, divorce, death, capacity, attorneys, insolvency, sanctions, conflicts, fraud | 77 | 34% fully, more in part |
+| [money.md](money.md) | Source of funds (business owners, overseas, loans, gifts), mortgage changes, ISAs, completion money, refunds | 87 | 38% fully, more in part |
+| [property.md](property.md) | Title, unregistered land, planning and building regulations, searches, surveys, leasehold, the Building Safety Act, new build, auctions, tenanted property | 91 | 46% fully, more in part |
+| [tax.md](tax.md) | SDLT edge by edge (second homes, commercial holdings, homes abroad, replacing a main residence, companies, non-residents, transfers of equity), Wales LTT, seller CGT | 83 | 34% fully, more in part |
 | [exchange.md](exchange.md) | The contract, the deposit, the exchange formulae, authority, chains, notice to complete, failure to complete | 61 | 26% fully, more in part |
-| [completion.md](completion.md) | Undertakings, charges, the day itself, delays, money, registration, discharge, file closure | 99 | 41% fully, more in part |
+| [completion.md](completion.md) | Undertakings, charges, the day itself, delays, money, registration, discharge, file closure | 99 | 48% fully, more in part |
 
 ## Build plan
 
