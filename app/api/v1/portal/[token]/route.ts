@@ -51,7 +51,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     const view = enrolled ? clientPortalView(state, new Date(), infotrack ? { idProviderSendsLink: true, idProviderLabel: 'InfoTrack' } : {}) : null;
     return ok({
       status: 'open',
-      help: view ? clientHelp(view) : { now: [], all: [] },
+      help: view ? clientHelp(view) : [],
       feedback: view ? await feedbackDue(row, view.lifecycle) : null,
       firmName: info.firmName,
       propertyAddress: info.propertyAddress,

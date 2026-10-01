@@ -39,34 +39,33 @@ test('ordered in the practice system: recorded as such, the handler told, no pla
   assert.deepEqual(told, ['InTouch: the CON29 search', 'InTouch: the ID check']);
 });
 
-test('help: the questions asked at the client\'s stage come first, for their side, answered from the case; never a negative question', async () => {
+test('help follows the workflow\'s stages: the current one first (what happens, how long, what to do), the rest in order, then general', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: ['LLC1'], requireProofOfFunds: false, requireExchangeAuthority: false });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   const v = clientPortalView(await h.svc.getState(TENANT, MATTER), h.ports.now());
+  assert.deepEqual(v.journey.map((s) => s.label), ['Instruction', 'Investigation', 'Enquiries', 'Contract & Exchange', 'Completion', 'Registration']);
   const help = clientHelp(v);
-  const first = help.now.map((f) => f.id);
-  assert.ok(first.length >= 3 && first.length <= 5, first.join(', '));
-  assert.equal(first[0], 'now');
-  assert.match(help.now[0].q, /What's happening on my purchase now\?/);
-  assert.match(help.now.find((f) => f.id === 'todo')!.a, /identity check/i, 'what they need to do comes from the case');
-  const every = [...help.now, ...help.all];
-  const ids = every.map((f) => f.id);
-  assert.ok(!ids.includes('move_out') && !ids.includes('first_sale'), 'seller questions are not shown to a buyer');
-  assert.ok(!first.includes('keys'), 'completion-day questions are not first at the start');
+  assert.deepEqual(help.map((x) => x.label), [v.stageLabel, ...v.journey.map((s) => s.label).filter((l) => l !== v.stageLabel).slice(v.journey.findIndex((s) => s.label === v.stageLabel)), ...v.journey.map((s) => s.label).slice(0, v.journey.findIndex((s) => s.label === v.stageLabel)), 'General']);
+  const now = help[0];
+  assert.equal(now.current, true);
+  assert.deepEqual(now.faqs.slice(0, 3).map((f) => f.q), [`What happens at ${now.label}?`, `How long does ${now.label} take?`, 'What do I need to do?']);
+  assert.match(now.faqs[2].a, /Identity Check/, 'what they need to do comes from the case');
+  assert.ok(help.slice(1, -1).every((x) => !x.current && x.faqs.every((f) => f.q !== 'What do I need to do?')));
+  const every = help.flatMap((x) => x.faqs);
+  assert.ok(!every.some((f) => /move out/i.test(f.q)), 'seller questions are not shown to a buyer');
   for (const f of every) {
     assert.doesNotMatch(f.q, /haven't|why (is|has)|delay|slow|wrong/i, `a question that invites worry: ${f.q}`);
     assert.doesNotMatch(f.a, /issue|flag|decision/i);
   }
-  assert.equal(new Set(ids).size, ids.length, 'no question twice');
+  assert.equal(new Set(every.map((f) => f.id)).size, every.length, 'no question twice');
 });
 
-test('help follows the stage: after exchange a buyer is first asked about completion day and the keys; a seller about moving out', () => {
-  const base = { transaction: 'Freehold purchase', lifecycle: 'exchanged', leasehold: false, hasLender: true, closed: false, journey: [], stageLabel: 'Exchanged', progress: [], tasks: [], waitingOnOthers: [], dates: { targetExchange: null, exchanged: '2026-10-01', completion: '2026-10-29', targetCompletion: null, completed: null } };
-  const buyer = clientHelp({ ...base, side: 'buyer' } as never).now.map((f) => f.id);
-  assert.deepEqual(buyer.slice(0, 3), ['completion_day', 'keys', 'balance']);
-  const seller = clientHelp({ ...base, side: 'seller' } as never).now.map((f) => f.id);
-  assert.deepEqual(seller.slice(0, 3), ['completion_day', 'move_out', 'sale_money']);
-  const done = clientHelp({ ...base, side: 'buyer', lifecycle: 'completed' } as never).now.map((f) => f.id);
-  assert.equal(done[0], 'after');
+test('a remortgage has its own stages, and a seller at completion is asked about moving out and their money', () => {
+  const base = { transaction: 'Remortgage', lifecycle: 'investigating', leasehold: false, hasLender: true, closed: false, journey: [], progress: [], tasks: [], waitingOnOthers: [], dates: { targetExchange: null, exchanged: null, completion: null, targetCompletion: null, completed: null } };
+  const owner = clientHelp({ ...base, side: 'owner', stage: 'investigation', stageLabel: 'Investigation' } as never);
+  assert.deepEqual(owner.map((x) => x.label), ['Investigation', 'Completion', 'Registration', 'Instruction', 'General']);
+  const seller = clientHelp({ ...base, transaction: 'Freehold sale', side: 'seller', stage: 'completion', stageLabel: 'Completion', dates: { ...base.dates, completion: '2026-10-29' } } as never);
+  assert.deepEqual(seller[0].faqs.map((f) => f.id), ['completion:what', 'completion:how_long', 'completion:you', 'completion:move_out', 'completion:sale_money']);
+  assert.match(seller[0].faqs[1].a, /29 October 2026/);
 });

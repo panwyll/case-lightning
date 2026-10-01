@@ -19,7 +19,7 @@ async function purchase() {
 test('a new purchase: the client\'s steps, and their ID check and proof of funds as tasks with the way to do each', async () => {
   const h = await purchase();
   const v = clientPortalView(await h.svc.getState(TENANT, MATTER), h.ports.now());
-  assert.deepEqual(v.journey.map((s) => s.label), ['Getting Started', 'Searches, Checks And Enquiries', 'Ready To Exchange', 'Exchanged', 'Completed']);
+  assert.deepEqual(v.journey.map((s) => s.label), ['Instruction', 'Investigation', 'Enquiries', 'Contract & Exchange', 'Completion', 'Registration']);
   assert.equal(v.journey.filter((s) => s.state === 'current').length, 1);
   const titles = v.tasks.map((t) => t.title);
   assert.ok(titles.includes('Identity Check') && titles.includes('Proof Of Funds'), titles.join(', '));

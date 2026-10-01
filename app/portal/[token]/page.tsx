@@ -79,7 +79,8 @@ const CSS = `
 .cp details[open] summary svg{transform:rotate(90deg)}
 .cp details p{margin:0 0 14px 26px;font-size:15px;color:#334155;line-height:1.6}
 .cp .more{margin-top:8px}
-.cp .topic{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin:16px 0 2px}
+.cp .topic{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin:16px 0 2px;display:flex;align-items:center;gap:8px}
+.cp .topic .now{background:#ede9fe;color:#4c1d95;border-radius:99px;padding:1px 8px;font-size:11px;letter-spacing:0;text-transform:none}
 .cp textarea{width:100%;font:inherit;font-size:16px;padding:11px 14px;border:1.5px solid #cbd5e1;border-radius:10px;min-height:110px;resize:vertical;margin:4px 0 10px}
 .cp textarea:focus{outline:none;border-color:#5A27E0;box-shadow:0 0 0 3px #ede9fe}
 .cp .scores{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}
@@ -105,10 +106,11 @@ interface View {
   dates: { targetExchange: string | null; exchanged: string | null; completion: string | null; targetCompletion: string | null; completed: string | null };
 }
 interface Doc { id: string; name: string; at: string; from: 'us' | 'you' }
-interface Faq { id: string; topic: string; q: string; a: string }
+interface Faq { id: string; q: string; a: string }
+interface HelpSection { stage: string; label: string; current: boolean; faqs: Faq[] }
 type Ctx =
   | { status: 'locked'; firmName: string; propertyAddress: string; codeTo: string[] }
-  | { status: 'open'; firmName: string; propertyAddress: string; clientNames: string | null; handler: { name: string | null; email: string | null; phone: string | null }; firmPhone: string | null; view: View | null; documents: Doc[]; help: { now: Faq[]; all: Faq[] }; feedback: { milestone: string; kind: 'csat' | 'nps' } | null }
+  | { status: 'open'; firmName: string; propertyAddress: string; clientNames: string | null; handler: { name: string | null; email: string | null; phone: string | null }; firmPhone: string | null; view: View | null; documents: Doc[]; help: HelpSection[]; feedback: { milestone: string; kind: 'csat' | 'nps' } | null }
   | { status: 'gone' }
   | { status: 'error' };
 
@@ -356,17 +358,22 @@ export default function ClientPortal() {
         ))}
       </div>
 
-      {(ctx.help.now.length > 0 || ctx.help.all.length > 0) && (() => {
+      {ctx.help.length > 0 && (() => {
         const term = q.trim().toLowerCase();
-        const every = [...ctx.help.now, ...ctx.help.all];
-        const hits = term ? every.filter((f) => `${f.q} ${f.a}`.toLowerCase().includes(term)) : [];
+        const hits = term ? ctx.help.flatMap((sec) => sec.faqs).filter((f) => `${f.q} ${f.a}`.toLowerCase().includes(term)) : [];
         const qa = (f: Faq) => (
           <details key={f.id}>
             <summary><ChevronRight size={16} />{f.q}</summary>
             <p>{f.a}</p>
           </details>
         );
-        const topics = Array.from(new Set(ctx.help.all.map((f) => f.topic)));
+        const [first, ...rest] = ctx.help;
+        const section = (sec: HelpSection) => (
+          <div key={sec.stage}>
+            <div className="topic">{sec.label}{sec.current && <span className="now">Now</span>}</div>
+            {sec.faqs.map(qa)}
+          </div>
+        );
         return (
           <div className="card">
             <h2>Help</h2>
@@ -378,13 +385,8 @@ export default function ClientPortal() {
               hits.length ? hits.map(qa) : <div className="line">No answer for that here. Ask us below.</div>
             ) : (
               <>
-                {ctx.help.now.map(qa)}
-                {allFaqs ? topics.map((t) => (
-                  <div key={t}>
-                    <div className="topic">{t}</div>
-                    {ctx.help.all.filter((f) => f.topic === t).map(qa)}
-                  </div>
-                )) : ctx.help.all.length > 0 && <button className="link more" onClick={() => setAllFaqs(true)}>More Questions</button>}
+                {section(first)}
+                {allFaqs ? rest.map(section) : rest.length > 0 && <button className="link more" onClick={() => setAllFaqs(true)}>Other Stages</button>}
               </>
             )}
           </div>

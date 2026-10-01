@@ -43,14 +43,13 @@
   - the proof-of-funds form;
   - an upload for property forms, mortgage offer, survey, signed papers or insurance;
   - **Call Us** for any money. Bank details are never shown, with the "we never change bank details by email" warning.
-- **Progress:** their steps (Getting Started → … → Completed), each workstream as Done, In Progress, With You or Not Started, what we are waiting on from others, and the key dates.
+- **Progress:** the workflow's macro stages as their steps (Instruction → … → Registration), each workstream as Done, In Progress, With You or Not Started, what we are waiting on from others, and the key dates.
 - **Documents:** what we have sent them by secure link, and what they have given us. Only listed files can be downloaded.
-- **Help:** answers to what clients ask (`engine/client-faq.ts`).
-  - **Stage questions come first:** up to five for the client's stage and side. At the start, "What happens first?"; near exchange, "How do I pay the deposit?"; after exchange, "When do I get the keys?" (or "When do I need to move out?"); after completion, "What happens now?".
-  - **The rest:** behind More Questions, by topic. Search covers all of them.
-  - **Phrasing:** written to reassure and say what happens next: "What's happening on my purchase now?", never "Why haven't I heard?".
-  - **Answers from the case:** where the case can answer, it does (where we are, what is done, what we expect next, what we need from them, the dates).
-  - **Never** advice, and never an issue.
+- **Help:** organised by the workflow's macro stages (`engine/client-faq.ts`). These are the flowchart's sections, which are also the client's steps in Progress: Instruction, Investigation, Enquiries, Contract & Exchange, Completion, Registration. A remortgage or transfer has Instruction, Investigation, Completion and Registration.
+  - **Each stage answers, for the client's side:** "What happens at {stage}?", "How long does {stage} take?", and the one or two questions clients ask then (the deposit at Contract & Exchange, the keys or moving out at Completion).
+  - **Current stage first, marked Now:** it adds "What do I need to do?", answered from the case. Its How Long uses the case's own dates.
+  - **The rest:** the other stages, in order, behind Other Stages, then General (paying safely, cost, documents, security, contact details, concerns). Search covers everything.
+  - Never a question that invites worry, never advice, never an issue.
 - **Still Need Help?:** Contact Us opens a message box and the conveyancer's phone and email. A message is read like an email from the client and becomes a reply task on the Tasks list. Ten a day.
 - **How Are We Doing?** (Ask Clients How We Did): CSAT after exchange, NPS after completion, once each, at the top of the page. A promoter is offered the firm's review page. The client's exchange and completion messages (every kind of case) ask for it, with the link, in place of the plain portal line.
 

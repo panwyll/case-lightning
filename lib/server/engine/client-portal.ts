@@ -31,6 +31,8 @@ export interface ClientPortalView {
   hasLender: boolean;
   closed: boolean;
   journey: PortalStep[];
+  /** The macro stage the case is at (the workflow's sections). */
+  stage: MacroStage;
   stageLabel: string;
   progress: PortalProgress[];
   tasks: PortalTask[];
@@ -38,14 +40,20 @@ export interface ClientPortalView {
   dates: { targetExchange: string | null; exchanged: string | null; completion: string | null; targetCompletion: string | null; completed: string | null };
 }
 
-/** The steps a client recognises, per kind of case (the engine's finer stages sit inside them). */
-const JOURNEY_LABEL: Record<string, Record<string, string>> = {
-  buyer: { instructed: 'Getting Started', pre_exchange: 'Searches, Checks And Enquiries', ready_to_exchange: 'Ready To Exchange', exchanged: 'Exchanged', completed: 'Completed' },
-  seller: { instructed: 'Getting Started', pre_exchange: 'Contract Pack And Enquiries', ready_to_exchange: 'Ready To Exchange', exchanged: 'Exchanged', completed: 'Completed' },
-  owner: { instructed: 'Getting Started', investigating: 'Checks', ready_to_complete: 'Ready To Complete', completed: 'Completed' },
-};
-/** Where the finer lifecycle states sit on the client's steps. */
-const ON_STEP: Record<string, string> = { pre_completion: 'exchanged', post_completion: 'completed', closed: 'completed' };
+/**
+ * The workflow's macro stages (the flowchart's sections: WorkPanel PHASES), which the client sees as their steps and
+ * which Help is organised by. A remortgage or transfer has no enquiries or exchange of its own.
+ */
+export const MACRO_STAGES = ['instruction', 'investigation', 'enquiries', 'contract', 'completion', 'registration'] as const;
+export type MacroStage = (typeof MACRO_STAGES)[number];
+export const MACRO_LABEL: Record<MacroStage, string> = { instruction: 'Instruction', investigation: 'Investigation', enquiries: 'Enquiries', contract: 'Contract & Exchange', completion: 'Completion', registration: 'Registration' };
+/** Where each engine stage sits among the macro stages. */
+const MACRO_OF: Record<string, MacroStage> = { instruction: 'instruction', pre_contract: 'investigation', contract_review: 'enquiries', pre_exchange: 'contract', exchanged: 'completion', pre_completion: 'completion', completed: 'registration', post_completion: 'registration' };
+export const macroStagesFor = (side: string): MacroStage[] => (side === 'owner' ? ['instruction', 'investigation', 'completion', 'registration'] : [...MACRO_STAGES]);
+export function macroStageOf(s: MatterState): MacroStage {
+  const m = MACRO_OF[s.stage] ?? 'instruction';
+  return profileOf(s.transactionType).side === 'owner' && (m === 'enquiries' || m === 'contract') ? 'investigation' : m;
+}
 
 const CLIENT_WS: Partial<Record<Workstream, string>> = {
   id_aml: 'Identity Check', source_of_funds: 'Source Of Funds', title: 'Legal Title', searches: 'Searches', enquiries: 'Enquiries', mortgage: 'Mortgage',
@@ -105,13 +113,13 @@ export function clientPortalView(s: MatterState, now: Date = new Date(), opts: P
   const p = profileOf(s.transactionType);
   const b = caseBrief(s, now);
   const side = p.side as ClientPortalView['side'];
-  const labels = JOURNEY_LABEL[side] ?? JOURNEY_LABEL.buyer;
   const lc = lifecycle(s);
-  const at = ON_STEP[lc] ?? lc;
-  const steps = lifecycleFor(p).filter((k) => labels[k]);
-  const here = steps.indexOf(at as (typeof steps)[number]);
-  const finished = lc === 'completed' || lc === 'post_completion' || lc === 'closed';
-  const journey: PortalStep[] = steps.map((k, i) => ({ key: k, label: labels[k], state: finished || i < here ? 'done' : i === here ? 'current' : 'next' }));
+  const stage = macroStageOf(s);
+  const steps = macroStagesFor(side);
+  const here = steps.indexOf(stage);
+  // Registration done (or the file closed): every step is done.
+  const finished = lc === 'closed' || !!s.postCompletion?.ap1ConfirmedAt;
+  const journey: PortalStep[] = steps.map((k, i) => ({ key: k, label: MACRO_LABEL[k], state: finished || i < here ? 'done' : i === here ? 'current' : 'next' }));
 
   const onClient = b.waiting.filter((w) => w.role === 'client');
   const withYou = new Set(onClient.map((w) => CLIENT_WAIT_WS[w.key]).filter(Boolean));
@@ -130,9 +138,10 @@ export function clientPortalView(s: MatterState, now: Date = new Date(), opts: P
     hasLender: !!s.hasLender,
     closed: lc === 'aborted' || lc === 'closed',
     journey,
-    stageLabel: lc === 'aborted' ? 'Closed' : (labels[at] ?? b.lifecycleLabel),
+    stage,
+    stageLabel: lc === 'aborted' ? 'Closed' : MACRO_LABEL[stage],
     progress,
-    tasks: lc === 'aborted' || finished ? [] : onClient.map((w) => task(s, w, opts)),
+    tasks: lc === 'aborted' || finished || ['completed', 'post_completion'].includes(lc) ? [] : onClient.map((w) => task(s, w, opts)),
     waitingOnOthers: [...byWho].map(([who, what]) => ({ who, what })),
     dates: { targetExchange: b.milestones.targetExchangeDate, exchanged: b.milestones.exchangedAt, completion: b.milestones.completionDate, targetCompletion: b.milestones.targetCompletionDate, completed: b.milestones.completedAt },
   };
