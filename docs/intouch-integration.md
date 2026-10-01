@@ -226,3 +226,23 @@ so reconnecting is one click, and what is already mirrored stays on the matter, 
 is the firm's own case file.
 
 ![The InTouch settings page](demo/34-intouch.png)
+
+## Writing back (InTouch as the system of record)
+
+A firm that keeps InTouch as its file can have CONVEYi write into it (`writeback.ts`, migration 119). Two switches, each **off** until an admin turns it on under Integrations → InTouch, both audited:
+
+| Switch | Does |
+| --- | --- |
+| **Send Documents To InTouch** | Every document CONVEYi files on a mirrored case (letters it generated, the proof-of-funds declaration with its analysis, emails filed, the client's uploads to our forms) is filed on the InTouch case. **Never** drafts (`REPORT_ON_TITLE_DRAFT`, `PROPOSAL`), internal working papers (dossiers, the bank-details note) or raw bank data (`OPEN_BANKING_ACCOUNT`). A document sent is stamped with InTouch's id for it, so the next sync recognises it and never mirrors it back. |
+| **Send Case Notes To InTouch** | One line on the InTouch case for each significant thing the engine records, in the same words as the LEAP file notes: stage moves, searches ordered, ID checks requested, chases and client updates sent, the report on title sent, enquiries raised, issues raised and resolved, proof of funds submitted and signed off, deposit received, exchange, completion. Format: `CONVEYi · <date time> · <what happened>`. |
+
+The rules are the same as for milestones:
+- only for a matter the engine runs, never in shadow mode;
+- once per document and per event (`intouch_applied` kinds `document_out` / `note_out`);
+- it runs with every sync and webhook, so a failure is simply retried next time.
+
+**Still assumed** until the firm's InTouch API reference arrives (in `endpoints.ts`):
+- the upload goes to `POST cases/{id}/documents` as JSON with the bytes base64-encoded;
+- the note goes to `POST cases/{id}/notes` with `{ text }`.
+
+Both live in one place to correct.

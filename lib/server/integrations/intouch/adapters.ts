@@ -14,6 +14,8 @@ import { config } from '../../config';
 import { paths } from '../../../paths';
 import { engine } from '../../engine/adapters';
 import { InTouchHttpClient, type InTouchApi, type InTouchClientConfig } from './client';
+import type { InTouchWritebackStore } from './writeback';
+import type { EngineEvent } from '../../engine/types';
 import { InTouchError } from './types';
 import type { InTouchCase, InTouchConnectionRow, InTouchDocument, InTouchParty, InTouchSyncSummary } from './types';
 import type { InTouchMirrorRef, InTouchMirrorStore, InTouchSyncDeps } from './sync';
@@ -112,10 +114,11 @@ export async function inTouchClient(tenantId: string): Promise<InTouchApi & InTo
 }
 
 export async function inTouchConnection(tenantId: string): Promise<InTouchConnectionRow | null> {
-  const r = await queryOne<{ tenant_id: string; account_id: string | null; account_name: string | null; status: InTouchConnectionRow['status']; status_detail: string | null; last_sync_at: Date | null; last_sync_detail: InTouchSyncSummary | null; connected_at: Date | null; milestones_enabled: boolean }>(
-    `select tenant_id, account_id, account_name, status, status_detail, last_sync_at, last_sync_detail, connected_at, milestones_enabled from intouch_connection where tenant_id = $1`,
-    [tenantId]
-  );
+  type Row = { tenant_id: string; account_id: string | null; account_name: string | null; status: InTouchConnectionRow['status']; status_detail: string | null; last_sync_at: Date | null; last_sync_detail: InTouchSyncSummary | null; connected_at: Date | null; milestones_enabled: boolean; documents_writeback?: boolean; notes_writeback?: boolean };
+  const cols = 'tenant_id, account_id, account_name, status, status_detail, last_sync_at, last_sync_detail, connected_at, milestones_enabled';
+  // Before migration 119 the write-back columns do not exist yet: read without them rather than fail the page.
+  const r = await queryOne<Row>(`select ${cols}, documents_writeback, notes_writeback from intouch_connection where tenant_id = $1`, [tenantId])
+    .catch((err: { code?: string }) => (err?.code === '42703' ? queryOne<Row>(`select ${cols} from intouch_connection where tenant_id = $1`, [tenantId]) : Promise.reject(err)));
   if (!r) return null;
   const creds = await inTouchCredentials(tenantId);
   const key = creds?.webhookKey ?? null;
@@ -131,24 +134,29 @@ export async function inTouchConnection(tenantId: string): Promise<InTouchConnec
     lastSyncDetail: r.last_sync_detail,
     connectedAt: r.connected_at?.toISOString() ?? null,
     milestonesEnabled: r.milestones_enabled,
+    documentsWriteback: !!r.documents_writeback,
+    notesWriteback: !!r.notes_writeback,
   };
 }
 
-export async function setInTouchConnectionMeta(tenantId: string, meta: { accountId?: string | null; accountName?: string | null; connectedBy?: string | null; milestonesEnabled?: boolean }): Promise<void> {
+export async function setInTouchConnectionMeta(tenantId: string, meta: { accountId?: string | null; accountName?: string | null; connectedBy?: string | null; milestonesEnabled?: boolean; documentsWriteback?: boolean; notesWriteback?: boolean }): Promise<void> {
   await runAsSystem(() =>
     query(
       `update intouch_connection set account_id = coalesce($2, account_id), account_name = coalesce($3, account_name),
               connected_by = coalesce($4, connected_by), milestones_enabled = coalesce($5, milestones_enabled),
+              documents_writeback = coalesce($6, documents_writeback), notes_writeback = coalesce($7, notes_writeback),
               connected_at = coalesce(connected_at, now()), updated_at = now()
         where tenant_id = $1`,
-      [tenantId, meta.accountId ?? null, meta.accountName ?? null, meta.connectedBy ?? null, meta.milestonesEnabled ?? null]
+      [tenantId, meta.accountId ?? null, meta.accountName ?? null, meta.connectedBy ?? null, meta.milestonesEnabled ?? null, meta.documentsWriteback ?? null, meta.notesWriteback ?? null]
     )
   );
 }
 
 /** Stop reading and pushing. The saved address, key and webhook key stay, so reconnecting is one click. */
 export async function disconnectInTouch(tenantId: string): Promise<void> {
-  await runAsSystem(() => query(`update intouch_connection set status = 'DISCONNECTED', status_detail = 'Disconnected by the firm', milestones_enabled = false, updated_at = now() where tenant_id = $1`, [tenantId]));
+  const set = "status = 'DISCONNECTED', status_detail = 'Disconnected by the firm', milestones_enabled = false, updated_at = now()";
+  await runAsSystem(() => query(`update intouch_connection set ${set}, documents_writeback = false, notes_writeback = false where tenant_id = $1`, [tenantId])
+    .catch((err: { code?: string }) => (err?.code === '42703' ? query(`update intouch_connection set ${set} where tenant_id = $1`, [tenantId]) : Promise.reject(err))));
 }
 
 /** InTouch's side → the matter track the rest of CaseLightning uses. */
@@ -165,7 +173,42 @@ const CONTACT_ROLE: Record<InTouchParty['role'], string> = {
   other: 'OTHER',
 };
 
+/** Write-back's store (writeback.ts): the firm's switches, what is left to send, and what was sent. */
+export class PgInTouchWritebackStore implements InTouchWritebackStore {
+  async writebackOptions(tenantId: string): Promise<{ documents: boolean; notes: boolean }> {
+    const r = await runAsSystem(() => queryOne<{ documents_writeback: boolean; notes_writeback: boolean; status: string }>(`select documents_writeback, notes_writeback, status from intouch_connection where tenant_id = $1`, [tenantId]).catch(() => null));
+    return r?.status === 'CONNECTED' ? { documents: !!r.documents_writeback, notes: !!r.notes_writeback } : { documents: false, notes: false };
+  }
+  async outgoingDocuments(tenantId: string, matterId: string): Promise<Array<{ id: string; fileName: string; docType: string | null }>> {
+    return runAsSystem(() => query<{ id: string; fileName: string; docType: string | null }>(
+      `select id, file_name as "fileName", doc_type as "docType" from document
+        where tenant_id = $1 and matter_id = $2 and intouch_document_id is null and source_type <> 'INTOUCH' and superseded_at is null
+        order by created_at limit 25`, [tenantId, matterId]));
+  }
+  async documentBytes(tenantId: string, documentId: string) {
+    const { fileBytes } = await import('../../engine/file-finder');
+    return runAsSystem(() => fileBytes(tenantId, documentId));
+  }
+  async documentSent(tenantId: string, matterId: string, documentId: string, intouchId: string): Promise<void> {
+    // Stamped with InTouch's id: the next sync finds it already here and never mirrors it back.
+    await runAsSystem(() => query(`update document set intouch_document_id = $3 where id = $2 and tenant_id = $1 and intouch_document_id is null`, [tenantId, documentId, intouchId]));
+    await runAsSystem(() => query(`insert into intouch_applied (tenant_id, matter_id, kind, external_id, detail) values ($1,$2,'document_out',$3,$4) on conflict do nothing`, [tenantId, matterId, documentId, intouchId]));
+  }
+  async unnotedEvents(tenantId: string, matterId: string, types: string[]): Promise<EngineEvent[]> {
+    const rows = await runAsSystem(() => query<{ id: string; seq: string; type: string; actor: string; payload: Record<string, unknown>; created_at: Date }>(
+      `select e.id, e.seq::text as seq, e.type, e.actor, e.payload, e.created_at from matter_event e
+        where e.tenant_id = $1 and e.matter_id = $2 and e.type = any($3::text[])
+          and not exists (select 1 from intouch_applied a where a.tenant_id = $1 and a.kind = 'note_out' and a.external_id = e.id::text)
+        order by e.seq limit 50`, [tenantId, matterId, types]));
+    return rows.map((r) => ({ id: r.id, seq: Number(r.seq), type: r.type, actor: r.actor, payload: r.payload, createdAt: r.created_at.toISOString(), tenantId, matterId }) as unknown as EngineEvent);
+  }
+  async eventNoted(tenantId: string, matterId: string, eventId: string): Promise<void> {
+    await runAsSystem(() => query(`insert into intouch_applied (tenant_id, matter_id, kind, external_id) values ($1,$2,'note_out',$3) on conflict do nothing`, [tenantId, matterId, eventId]));
+  }
+}
+
 export class PgInTouchMirrorStore implements InTouchMirrorStore {
+  readonly writeback = new PgInTouchWritebackStore();
   async upsertMatter(tenantId: string, c: InTouchCase, extras: { assignedTo: string | null; createdBy: string | null }): Promise<{ matterId: string; created: boolean }> {
     return runAsSystem(async () => {
       const existing = await queryOne<{ id: string }>(`select id from matter where tenant_id = $1 and intouch_case_id = $2`, [tenantId, c.id]);

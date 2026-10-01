@@ -39,6 +39,7 @@
  *   [ ] identity-check result shape and outcome values   [ ] form types and their codes
  *   [ ] document download (redirect vs bytes)            [ ] milestone write-back
  *   [ ] a case id in each webhook's `data`
+ *   [ ] document upload (JSON base64 vs multipart)       [ ] case notes path and body
  */
 export const INTOUCH_API_VERSION = 'v1';
 
@@ -57,6 +58,10 @@ export const INTOUCH_ENDPOINTS = {
   caseIdentityChecks: (id: string) => `${V}/cases/${encodeURIComponent(id)}/identity-checks`,
   /** Push the true state of the case to the client/agent portal. */
   caseMilestones: (id: string) => `${V}/cases/${encodeURIComponent(id)}/milestones`,
+  /** File a document on the case (CONVEYi write-back). POST, JSON with the bytes base64-encoded. ASSUMED. */
+  uploadDocument: (id: string) => `${V}/cases/${encodeURIComponent(id)}/documents`,
+  /** Add a note to the case history (CONVEYi write-back). ASSUMED. */
+  caseNotes: (id: string) => `${V}/cases/${encodeURIComponent(id)}/notes`,
   /** Ask InTouch to start an identity check for a party (when the firm drives it from here). */
   requestIdentityCheck: (id: string) => `${V}/cases/${encodeURIComponent(id)}/identity-checks`,
   /** Ask InTouch to send the client a form to complete. */

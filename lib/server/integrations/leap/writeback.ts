@@ -55,7 +55,8 @@ const EMAIL_TYPES: Record<string, (p: Record<string, unknown>) => { messageId: s
 };
 
 const RESOLVING_TYPES = new Set(['id_check_reviewed', 'search_reviewed', 'enquiry_reply_reviewed', 'mortgage_condition_reviewed', 'title_reviewed', 'report_on_title_approved', 'report_on_title_rejected', 'bank_details_verified', 'bank_details_verification_failed', 'auto_clear_confirmed', 'escalation_resolved']);
-const NOTE_TYPES: Record<string, (p: Record<string, unknown>) => string> = {
+/** One line per significant event, for a case file (LEAP file notes, InTouch case notes). */
+export const NOTE_TYPES: Record<string, (p: Record<string, unknown>) => string> = {
   stage_advanced: (p) => `Stage → ${String(p.to).replace(/_/g, ' ')} (${p.reason})`,
   search_ordered: (p) => `${p.searchType} search ordered via ${p.provider}${p.reference ? ` (ref ${p.reference})` : ''}`,
   id_check_requested: (p) => `ID/AML check requested via ${p.provider}`,

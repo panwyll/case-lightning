@@ -160,6 +160,9 @@ export interface InTouchConnectionRow {
   connectedAt: string | null;
   /** Whether milestones are pushed back to the client portal. Off until the firm says so. */
   milestonesEnabled: boolean;
+  /** Write-back switches (writeback.ts): documents and case notes into InTouch. */
+  documentsWriteback?: boolean;
+  notesWriteback?: boolean;
 }
 
 export interface InTouchSyncSummary {
@@ -170,6 +173,9 @@ export interface InTouchSyncSummary {
   forms: number;
   documents: number;
   milestones: number;
+  /** Written back to InTouch (when the firm has it on). */
+  documentsOut?: number;
+  notesOut?: number;
   skipped: number;
   errors: string[];
 }

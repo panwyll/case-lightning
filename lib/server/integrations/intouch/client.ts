@@ -40,6 +40,10 @@ export interface InTouchApi {
   requestIdentityCheck(caseId: string, partyId: string): Promise<{ id: string }>;
   /** Ask InTouch to send the client a form to fill in. */
   requestForm(caseId: string, code: string): Promise<{ id: string }>;
+  /** File a document on the case (write-back). Returns InTouch's id for it, so it is never mirrored back. */
+  uploadDocument(caseId: string, file: { fileName: string; mimeType: string; bytes: Buffer; category?: string }): Promise<{ id: string }>;
+  /** Add a line to the case's notes (write-back). */
+  addNote(caseId: string, text: string): Promise<void>;
 }
 
 export interface InTouchClientConfig {
@@ -213,6 +217,17 @@ export class InTouchHttpClient implements InTouchApi {
   async requestIdentityCheck(caseId: string, partyId: string): Promise<{ id: string }> {
     const body = await this.request<unknown>('POST', INTOUCH_ENDPOINTS.requestIdentityCheck(caseId), { partyId });
     return { id: String(pick(body, ['id', 'checkId', 'identityCheckId']) ?? '') };
+  }
+
+  async uploadDocument(caseId: string, file: { fileName: string; mimeType: string; bytes: Buffer; category?: string }): Promise<{ id: string }> {
+    const body = await this.request<unknown>('POST', INTOUCH_ENDPOINTS.uploadDocument(caseId), { fileName: file.fileName, mimeType: file.mimeType, category: file.category ?? 'conveyi', content: file.bytes.toString('base64') });
+    const id = (body as { id?: unknown; document?: { id?: unknown } } | null)?.id ?? (body as { document?: { id?: unknown } } | null)?.document?.id;
+    if (typeof id !== 'string' && typeof id !== 'number') throw new InTouchError('InTouch did not return an id for the uploaded document.', 502);
+    return { id: String(id) };
+  }
+
+  async addNote(caseId: string, text: string): Promise<void> {
+    await this.request<unknown>('POST', INTOUCH_ENDPOINTS.caseNotes(caseId), { text, source: 'CONVEYi' });
   }
 
   async requestForm(caseId: string, code: string): Promise<{ id: string }> {

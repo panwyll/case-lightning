@@ -23,9 +23,11 @@ interface Status {
     accountId: string | null;
     webhookUrl: string | null;
     lastSyncAt: string | null;
-    lastSyncDetail: { cases: number; created: number; parties: number; identityChecks: number; forms: number; documents: number; milestones: number; skipped: number; errors: string[] } | null;
+    lastSyncDetail: { cases: number; created: number; parties: number; identityChecks: number; forms: number; documents: number; milestones: number; documentsOut?: number; notesOut?: number; skipped: number; errors: string[] } | null;
     connectedAt: string | null;
     milestonesEnabled: boolean;
+    documentsWriteback?: boolean;
+    notesWriteback?: boolean;
   } | null;
   counts: { cases: number; identityChecks: number; forms: number; documents: number };
 }
@@ -176,6 +178,20 @@ export default function InTouchPage() {
                 <span className="eg-sub" style={{ marginLeft: 10 }}>{c!.milestonesEnabled ? 'On' : 'Off'}</span>
               </div>
 
+              <div className="eg-card" style={{ padding: 14, marginBottom: 12 }}>
+                <b>Write Back To InTouch</b>
+                <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                  {([['documents', 'Documents', c!.documentsWriteback], ['notes', 'Case Notes', c!.notesWriteback]] as const).map(([key, label, on]) => (
+                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <button className={`eg-btn${on ? '' : ' primary'}`} disabled={!!busy} onClick={() => act(label, () => api('/integrations/intouch/writeback', { method: 'POST', body: JSON.stringify({ [key]: !on }) }))}>
+                        {on ? `Stop Sending ${label}` : `Send ${label} To InTouch`}
+                      </button>
+                      <span className="eg-sub">{on ? 'On' : 'Off'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div className="eg-card" style={{ padding: 14 }}>
                 <b>What Has Come Across</b>
                 <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', marginTop: 10 }}>
@@ -190,6 +206,7 @@ export default function InTouchPage() {
                   <div className="eg-sub" style={{ marginTop: 12 }}>
                     Last sync: {d.cases} case{d.cases === 1 ? '' : 's'} ({d.created} new), {d.identityChecks} identity check{d.identityChecks === 1 ? '' : 's'}, {d.forms} form{d.forms === 1 ? '' : 's'},{' '}
                     {d.documents} document{d.documents === 1 ? '' : 's'}, {d.milestones} milestone{d.milestones === 1 ? '' : 's'} pushed
+                    {d.documentsOut ? `, ${d.documentsOut} document${d.documentsOut === 1 ? '' : 's'} sent to InTouch` : ''}{d.notesOut ? `, ${d.notesOut} case note${d.notesOut === 1 ? '' : 's'} added` : ''}
                     {d.skipped ? `, ${d.skipped} skipped` : ''}.
                   </div>
                 )}

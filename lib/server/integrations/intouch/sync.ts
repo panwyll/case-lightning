@@ -22,6 +22,7 @@
  * does not become a judgement here — it becomes the same flagged decision a conveyancer
  * would get from any other provider, and a person resolves it.
  */
+import { writeBackToInTouch, type InTouchWritebackStore } from './writeback';
 import type { EngineService } from '../../engine/service';
 import { routeClassification, runAction } from '../../engine/ingest';
 import type { InTouchApi } from './client';
@@ -62,6 +63,8 @@ export interface InTouchMirrorStore {
   mirrors(tenantId: string): Promise<InTouchMirrorRef[]>;
   recordSync(tenantId: string, detail: InTouchSyncSummary): Promise<void>;
   milestonesEnabled(tenantId: string): Promise<boolean>;
+  /** Write-back (writeback.ts); absent where the store cannot (older test stores). */
+  writeback?: InTouchWritebackStore;
 }
 
 export interface InTouchSyncDeps {
@@ -151,6 +154,7 @@ export async function syncInTouch(deps: InTouchSyncDeps, tenantId: string, opts:
     try {
       await applyCaseFacts(deps, tenantId, ref, out);
       if (await deps.store.milestonesEnabled(tenantId)) await pushMilestone(deps, tenantId, ref, out);
+      await pushWriteback(deps, tenantId, ref, out);
     } catch (err) {
       out.errors.push(`case ${ref.intouchCaseId}: ${(err as Error).message}`);
     }
@@ -344,7 +348,17 @@ export async function applyWebhook(deps: InTouchSyncDeps, tenantId: string, even
   }
   await applyCaseFacts(deps, tenantId, ref, out);
   if (await deps.store.milestonesEnabled(tenantId)) await pushMilestone(deps, tenantId, ref, out);
+  await pushWriteback(deps, tenantId, ref, out);
   return out;
+}
+
+/** Documents and notes back to InTouch, when the firm has them on (writeback.ts). */
+async function pushWriteback(deps: InTouchSyncDeps, tenantId: string, ref: InTouchMirrorRef, out: InTouchSyncSummary): Promise<void> {
+  if (!deps.store.writeback) return;
+  const state = await deps.engine.getState(tenantId, ref.matterId).catch(() => null);
+  const r = await writeBackToInTouch(deps.api, deps.store.writeback, tenantId, ref, state, deps.log);
+  out.documentsOut = (out.documentsOut ?? 0) + r.documents;
+  out.notesOut = (out.notesOut ?? 0) + r.notes;
 }
 
 // ───────────────────────────── helpers ─────────────────────────────

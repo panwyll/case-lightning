@@ -1,5 +1,5 @@
 {
-  "version": "a264a55a7a7a",
+  "version": "0852558896ee",
   "generatedFrom": "lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)",
   "transactionTypes": [
     {
@@ -4077,6 +4077,17 @@
         "title",
         "id_check"
       ]
+    },
+    {
+      "id": "intouch.writeback_out",
+      "backend": "both",
+      "source": "user",
+      "feeds": "comms",
+      "label": "Documents and case notes written back to InTouch",
+      "description": "What CONVEYi files on a mirrored case goes into the InTouch case (never drafts, internal papers or raw bank data), and each significant event becomes a one-line case note. Off until the firm turns each on; once each; never for a shadow-mode or unenrolled matter.",
+      "entry": "lib/server/integrations/intouch/writeback.ts → writeBackToInTouch",
+      "implemented": true,
+      "reaches": []
     },
     {
       "id": "intouch.milestone_out",

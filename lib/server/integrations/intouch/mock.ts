@@ -35,6 +35,7 @@ interface Stored {
   forms: Array<Record<string, unknown>>;
   documents: Array<Record<string, unknown>>;
   milestones: Array<Record<string, unknown>>;
+  notes?: Array<{ text: string }>;
 }
 
 const json = (status: number, body: unknown): HttpResponse => ({
@@ -125,6 +126,10 @@ export class MockInTouch {
     return id;
   }
 
+  notesFor(caseId: string): string[] {
+    return (this.cases.get(caseId)?.notes ?? []).map((n) => n.text);
+  }
+
   milestonesFor(caseId: string): Array<Record<string, unknown>> {
     return this.cases.get(caseId)?.milestones ?? [];
   }
@@ -180,6 +185,15 @@ export class MockInTouch {
         return json(200, { id: newId });
       }
       if (rest === '/documents' && init.method === 'GET') return json(200, { items: c.documents, total: c.documents.length });
+      if (rest === '/documents' && init.method === 'POST') {
+        const b = body as { fileName?: string; content?: string; category?: string };
+        const newId = this.addDocument(id, { fileName: b?.fileName, category: b?.category ?? 'conveyi', uploadedBy: 'conveyi', content: Buffer.from(b?.content ?? '', 'base64').toString('utf8') });
+        return json(201, { id: newId });
+      }
+      if (rest === '/notes' && init.method === 'POST') {
+        (c.notes ??= []).push({ text: String((body as { text?: string })?.text ?? '') });
+        return json(201, { ok: true });
+      }
       if (rest === '/milestones' && init.method === 'POST') {
         c.milestones.push({ ...(body as Record<string, unknown>), receivedAt: new Date().toISOString() });
         return json(202, { ok: true });
