@@ -16,7 +16,7 @@
  *     the matter is marked for manual handling;
  *   - every command is either automation (system/ai/external) or a human decision.
  */
-import { addWorkingDays } from './working-days';
+import { addWorkingDays, workingDaysBetween } from './working-days';
 import { applyEvent } from './projection';
 import { assertCompletion, CompletionError, type Completion } from './completion';
 import type { DeadlineKind } from './sla';
@@ -220,6 +220,7 @@ type CommandBody =
   | { type: 'longstop_date_recorded'; actor: Actor; date: string }
   | { type: 'record_party_event'; actor: Actor; event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; hasAttorney?: boolean | null; note?: string | null }
   | { type: 'sar_made'; actor: Actor; note?: string | null }
+  | { type: 'completion_payment_sent'; actor: Actor; reference: string; sentAt?: string | null }
   | { type: 'record_contributions'; actor: Actor; model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent?: Record<string, number> | null }
   | { type: 'ap1_cancelled'; actor: Actor; reason: string }
   | { type: 'requisition_extended'; actor: Actor; requisitionEventId: string; deadline: string; note: string }
@@ -306,6 +307,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'sar_made',
   'daml_response',
   'record_contributions',
+  'completion_payment_sent',
   'ap1_cancelled',
   'requisition_extended',
   'register_checked',
@@ -569,6 +571,7 @@ export function stageBlockers(s: MatterState): string[] {
         if (!(s.completion.receivedFrom ?? []).some((r) => r === 'client' || r === 'isa_provider')) b.push("client's balance not received");
         if (!s.payments.some((p) => p.payeeKind === 'seller_solicitor' && p.purpose === 'completion_monies')) b.push('completion payment not authorised against verified bank details');
         if (pendingBankDetailsDecision(s, 'seller_solicitor')) b.push('bank-details change awaiting out-of-band verification (hard stop)');
+        if (s.payments.some((p) => p.payeeKind === 'seller_solicitor' && p.purpose === 'completion_monies') && !s.completion.paymentSent) b.push('completion money not yet recorded as sent (CHAPS reference)');
         if (!s.completionInformation) b.push("seller's completion information (TA13) not received");
         else if (sellerTitleCharged(s) && !s.completionInformation.undertakingToRedeem) b.push("no undertaking from the seller's solicitor to redeem their charges");
         if (s.completion.fundsReceivedAt && s.payments.length) b.push('completion not confirmed');
@@ -1421,7 +1424,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           if (!cur || cur.id !== auth.bankDetailsId || cur.status !== 'verified') reject("HARD STOP: the lender's bank details the payment was authorised against are no longer the current verified record.", 423);
         }
         if (p.side === 'seller' && anythingCharged(s) && !s.undertaking) reject("Give the buyer's solicitor our undertaking to redeem the charges (the reply to their completion information) before completing.");
-        return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }];
+        return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }, ...lateCompletion(s, cmd.completedAt ?? null, ctx.now)];
       }
       // A purchase completes on paper first: the transfer deed, and with a lender the mortgage deed and the certificate of title.
       if (!s.deeds.transferDeedAt) reject('The transfer deed (TR1) has not been executed.');
@@ -1446,12 +1449,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (pend) reject('HARD STOP: the seller\'s solicitor\'s bank details changed and have not been verified out-of-band. Completion cannot be confirmed until that decision is resolved — however urgent.', 423);
       const auth = s.payments.find((p) => p.payeeKind === 'seller_solicitor' && p.purpose === 'completion_monies');
       if (!auth) reject('No authorised completion payment: authorise the transfer against verified bank details first.', 412);
+      if (!s.completion.paymentSent) reject('Record the completion money as sent (with its CHAPS reference) first.');
       const cur = currentBankDetails(s, 'seller_solicitor');
       if (!cur || cur.id !== auth.bankDetailsId || cur.status !== 'verified') reject('HARD STOP: the bank details the payment was authorised against are no longer the current verified record.', 423);
       // The seller's charges come off only on their solicitor's undertaking (TA13): never complete without it.
       if (!s.completionInformation) reject("The seller's solicitor's replies to completion information (TA13) are not on file.");
       if (sellerTitleCharged(s) && !s.completionInformation.undertakingToRedeem) reject("The seller's title is charged and their solicitor has not undertaken to redeem it (TA13).");
-      const completed: NewEvent[] = [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }];
+      const completed: NewEvent[] = [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }, ...lateCompletion(s, cmd.completedAt ?? null, ctx.now)];
       // Leasehold: what the landlord requires on assignment (deed of covenant, certificate of compliance for a restriction) is owed after completion and before the AP1 can go in clean.
       const consents = s.managementPack.facts?.consentsRequired?.trim();
       if (isLeasehold(s) && consents && !Object.values(s.issues).some((i) => i.kind === 'missing_consent' && i.title.startsWith('After completion:'))) {
@@ -1685,6 +1689,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const moved: NewEvent[] = [{ type: 'completion_date_changed', actor: cmd.actor, payload: { from: s.exchange.completionDate ?? '', to: cmd.completionDate, reason: cmd.reason ?? null } }];
       // Everything dated to the old completion day follows it: the statement's apportionments and daily interest, the lender's certificate, the advance already sent, the linked case.
       const next = issueIds(s);
+      // The redemption figure runs to a day: a later completion adds a day's interest for each day (completion.md 4.3).
+      const red = s.redemption;
+      if (red.status === 'received' && red.redemptionPennies != null && red.dailyInterestPennies && (red.figureDate ?? s.exchange.completionDate)) {
+        const days = Math.round((Date.parse(cmd.completionDate) - Date.parse((red.figureDate ?? s.exchange.completionDate)!)) / 86_400_000);
+        if (days) moved.push({ type: 'redemption_figure_adjusted', actor: SYSTEM, payload: { redemptionPennies: red.redemptionPennies + days * red.dailyInterestPennies, days, reason: `completion moved to ${cmd.completionDate}: ${days} day${Math.abs(days) === 1 ? '' : 's'} at ${pounds(red.dailyInterestPennies)} a day` } });
+        if (red.validUntil && cmd.completionDate > red.validUntil) moved.push(issue(s, next(), 'redemption_statement_expired', `Redemption statement: valid until ${red.validUntil}, completion now ${cmd.completionDate}`, 'Ask the lender for a statement to the new completion date; the payment authorised to the lender must match it.', 'completion'));
+      }
       if (s.completion.statementGeneratedAt) moved.push(issue(s, next(), 'completion_funds_shortfall', `Completion statement: re-issue for ${cmd.completionDate}`, 'Apportionments, the redemption figure\'s daily interest and any interest on the deposit were worked to the old date. Re-issue the statement and tell the client if the balance changed.', 'completion'));
       if (s.deeds.certificateOfTitleAt) moved.push(issue(s, next(), 'lender_funds_delayed', `Tell the lender: completion moved to ${cmd.completionDate}`, (s.completion.receivedFrom ?? []).includes('lender') ? 'The advance is already with us for the old date. Most lenders want it returned if completion slips beyond their Part 2 period (often one to five working days), or interest is charged: check the lender\'s instructions and return it or get consent to hold it.' : 'The certificate of title named the old date: send the lender the new date so the advance is released for it.', 'completion'));
       if (s.relatedMatter) moved.push(issue(s, next(), 'chain_dependency', `Linked case: move its completion date to ${cmd.completionDate} too`, 'The client\'s sale and purchase complete on the same day: the other case\'s date must move with this one, with its other side\'s agreement.', 'completion'));
@@ -2364,6 +2375,19 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (flags.length && !openOf(s, 'cgt_flag', 'Capital Gains Tax')) out.push(issue(s, issueIds(s)(), 'cgt_flag', 'Capital Gains Tax: tell the client a 60-day report may be due', `${flags.join(' ')} Never advise on the tax or give a figure: tell the client in writing and suggest they speak to their accountant before completion.`, 'none'));
       return out;
     }
+    // ── Completion day (completion.md §3) ──
+    case 'completion_payment_sent': {
+      requireEnrolled(s);
+      requireSide(s, ['buyer'], 'Sending the completion money');
+      requireStage(s, 'pre_completion', 'Sending the completion money');
+      moneyMayMove(s, ctx.now, 'No payment');
+      if (!isUserActor(cmd.actor)) reject('A person records the money as sent.', 403);
+      if (!s.payments.some((p) => p.payeeKind === 'seller_solicitor' && p.purpose === 'completion_monies')) reject('Authorise the completion payment against verified details first.', 412);
+      if (s.completion.paymentSent) reject('The completion money is already recorded as sent.');
+      if (!cmd.reference?.trim()) reject('Give the CHAPS reference.', 400);
+      const sentAt = cmd.sentAt && !Number.isNaN(Date.parse(cmd.sentAt)) ? new Date(cmd.sentAt).toISOString() : ctx.now.toISOString();
+      return [{ type: 'completion_payment_sent', actor: cmd.actor, payload: { reference: cmd.reference.trim(), sentAt } }];
+    }
     // ── Co-owners' money (co-owners.ts) ──
     case 'record_contributions': {
       requireEnrolled(s);
@@ -2793,6 +2817,27 @@ const issue = (s: MatterState, id: string, kind: IssueKind, title: string, detai
 const openOf = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).some((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const openList = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).filter((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const resolvedBy = (id: string, note: string): NewEvent => ({ type: 'issue_resolved', actor: SYSTEM, payload: { issueId: id, resolution: 'funds_in_place', note, costPennies: null, paidBy: null } });
+
+// ── Late completion (SCS 6.1.2, 7.2) ──
+/**
+ * Completed after the contract day (or after 2pm on it, which counts as the next working day): the party at fault pays
+ * compensation at the contract rate on the price less the deposit paid, for each day late. The rate is the contract's,
+ * so the figure is given per 1% of it; who was at fault is for the person to establish.
+ */
+function lateCompletion(s: MatterState, completedAt: string | null, now: Date): NewEvent[] {
+  const due = s.exchange.completionDate;
+  if (!due || !s.exchange.exchangedAt) return [];
+  const at = completedAt && !Number.isNaN(Date.parse(completedAt)) ? new Date(completedAt) : now;
+  const londonHour = Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Europe/London' }).format(at));
+  const day = at.toISOString().slice(0, 10);
+  let late = Math.max(0, workingDaysBetween(new Date(`${due.slice(0, 10)}T12:00:00Z`), new Date(`${day}T12:00:00Z`)));
+  if (day >= due.slice(0, 10) && londonHour >= 14) late += 1;
+  if (late <= 0) return [];
+  const balance = Math.max(0, (s.purchasePricePennies ?? 0) - (s.deposit.amountPennies ?? s.deposit.contractPennies ?? 0));
+  const days = Math.round((at.getTime() - Date.parse(`${due.slice(0, 10)}T12:00:00Z`)) / 86_400_000) || 1;
+  const perPercent = balance ? Math.round((balance * 0.01 * days) / 365) : null;
+  return [issue(s, issueIds(s)(), 'completion_failure', `Completed late: ${late} working day${late === 1 ? '' : 's'} after the contract date (${due.slice(0, 10)})`, `${londonHour >= 14 && day === due.slice(0, 10) ? 'The money arrived after 2pm, so completion counts as the next working day (SCS 6.1.2). ' : ''}Whoever caused the delay pays compensation at the contract rate on the price less the deposit${perPercent != null ? ` (${pounds(balance)}): ${pounds(perPercent)} for every 1% of the contract rate over ${days} day${days === 1 ? '' : 's'}` : ''} (SCS 7.2). Establish who was at fault, agree the figure with the other side, and tell the client.`, 'none')];
+}
 
 // ── After completion (theme H) ──
 /** What is left once the application is in: registration, the register read, the seller's DS1. */

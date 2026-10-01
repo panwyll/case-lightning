@@ -288,6 +288,7 @@ const exchangeBuyer = (price: number, deposit: number, advance: number | null): 
     const theirs = await c.verifiedDetails('seller_solicitor', '11112222', 'Seller Solicitors LLP client account');
     await c.run({ type: 'payment_authorised', payeeKind: 'seller_solicitor', bankDetailsId: theirs, amountPennies: price - deposit, purpose: 'completion_monies' });
   }),
+  step('money_sent', 'Completion money sent by CHAPS', async (c) => { await c.run({ type: 'completion_payment_sent', reference: 'CHAPS-SANDBOX-1' }); }),
   step('ta13', "The seller's solicitor's replies to completion information (TA13), with their undertaking to redeem", async (c) => {
     const doc = await c.doc({ docType: 'TA13', fileName: 'ta13-completion-information.txt', facts: { content: 'TA13 replies' }, body: F.body('Completion information and undertakings (TA13)', ["We undertake to redeem the charge in favour of the seller's lender and to send the DS1 on receipt."]) });
     await c.run({ type: 'completion_information_received', undertakingToRedeem: true, documentId: doc });

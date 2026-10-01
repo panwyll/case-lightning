@@ -211,6 +211,8 @@ export const EVENT_TYPES = [
   'sdlt_facts_recorded',
   'party_event_recorded',
   'contributions_recorded',
+  'completion_payment_sent',
+  'redemption_figure_adjusted',
   'ap1_cancelled',
   'requisition_extended',
   'register_checked',
@@ -1133,6 +1135,8 @@ export interface Payloads {
   /** The seller's solicitor's replies to completion information (TA13): the undertaking to redeem the seller's charges. */
   completion_information_received: { undertakingToRedeem: boolean; documentId: string | null };
   longstop_date_recorded: { date: string };
+  completion_payment_sent: { reference: string; sentAt: string };
+  redemption_figure_adjusted: { redemptionPennies: number; days: number; reason: string };
   contributions_recorded: { model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent: Record<string, number> | null; shares: Array<{ party: string; shareBp: number }> };
   ap1_cancelled: { reason: string };
   requisition_extended: { requisitionEventId: string; deadline: string; note: string };
@@ -1701,6 +1705,8 @@ export interface MatterState {
     /** Who the money came from (lender, client, buyer_solicitor, incoming_owner, isa_provider): a purchase completes only with the advance and the client's balance in. */
     receivedFrom: string[];
     confirmedAt: string | null;
+    /** The completion money sent to the seller's solicitor: the CHAPS reference and when. */
+    paymentSent?: { reference: string; at: string } | null;
   };
   postCompletion: { sdltSubmittedAt: string | null; ap1SubmittedAt: string | null; ap1ConfirmedAt: string | null; requisitions: Array<{ eventId: string; receivedAt: string; respondedAt: string | null; deadline: string | null }>; noticeOfAssignmentAt: string | null };
   /** Proof of funds (docs/proof-of-funds.md). */
@@ -1746,7 +1752,7 @@ export interface MatterState {
   contractPack: { sentAt: string | null; requestedAt?: string | null };
   /** Sale: the buyer's solicitor's enquiries on us. */
   inboundEnquiries: Record<string, InboundEnquiryState>;
-  redemption: { status: 'not_required' | 'not_started' | 'requested' | 'received' | 'redeemed' | 'discharged'; lender: string | null; redemptionPennies: number | null; validUntil: string | null; documentId: string | null; redeemedAt: string | null; dischargedAt: string | null };
+  redemption: { status: 'not_required' | 'not_started' | 'requested' | 'received' | 'redeemed' | 'discharged'; lender: string | null; redemptionPennies: number | null; validUntil: string | null; documentId: string | null; redeemedAt: string | null; dischargedAt: string | null; /** Interest a day on the figure, and the day the figure is to: moving completion moves the figure. */ dailyInterestPennies?: number | null; figureDate?: string | null };
   lenderConsent: { status: 'not_required' | 'not_started' | 'requested' | 'received'; lender: string | null; receivedAt: string | null; conditions: string | null };
   deeds: { mortgageDeedAt: string | null; certificateOfTitleAt: string | null; transferDeedAt: string | null; deedOfTrustAt: string | null; /** A purchase: when the seller's signed TR1 was asked for. */ transferRequestedAt?: string | null };
   sdltNotRequiredAt: string | null;

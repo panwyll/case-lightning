@@ -133,6 +133,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
         sdlt: () => run({ type: 'sdlt_submitted', reference: 'SDLT-1' }),
         ap1: () => run({ type: 'ap1_submitted' }),
         notice_of_assignment: () => run({ type: 'notice_of_assignment_served', servedOn: 'the landlord', reference: 'NOA-1' }),
+        completion_payment_sent: () => run({ type: 'completion_payment_sent', reference: 'CHAPS-1' }),
         contributions: () => run({ type: 'record_contributions', model: 'CONTRIBUTION', contributions: (s.partyNames?.length ? s.partyNames : ['A', 'B']).map((n, i) => ({ party: n, pennies: (i + 1) * 1_000_000 })) }),
         register_check: () => run({ type: 'register_checked', lenderTold: true }),
         sdlt_facts: () => run({ type: 'record_sdlt_facts', mainResidence: true, anyEverOwned: true }),

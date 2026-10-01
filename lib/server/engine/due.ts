@@ -146,12 +146,14 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
     add({ key: 'consideration', lane: 'completion', title: 'Confirm the consideration is in from the incoming owner', dueDate: completionDate });
   if (buyer && s.stage === 'pre_completion' && s.completion.fundsReceivedAt && !short && !moneyOf(s).uncleared.length && !paid('seller_solicitor', 'completion_monies'))
     add({ key: 'completion_payment', lane: 'completion', title: "Authorise the completion payment to the seller's solicitor", dueDate: completionDate });
+  if (buyer && s.stage === 'pre_completion' && paid('seller_solicitor', 'completion_monies') && !s.completion.paymentSent)
+    add({ key: 'completion_payment_sent', lane: 'completion', title: "Send the completion money and record the CHAPS reference", dueDate: completionDate });
   if ((seller || remo) && s.redemption.status === 'received' && s.stage === 'pre_completion' && !paid('lender'))
     add({ key: 'redemption_payment', lane: 'redemption', title: 'Authorise the redemption payment to the lender', dueDate: completionDate });
   // Confirm completion only when that is the one thing left (the signed TR1 in, the money in and paid): offered before, it is refused.
   // No money moves on some transfers (a court order, a gift of a share): then completion needs no funds in.
   const fundsExpected = fundsFrom.some((f) => (f === 'lender' && s.hasLender) || f === 'client' || f === 'buyer_solicitor' || f === 'isa_provider' || (f === 'incoming_owner' && (s.considerationPennies ?? 0) > 0));
-  if (s.stage === 'pre_completion' && !completed && (s.completion.fundsReceivedAt || !fundsExpected) && (!buyer || paid('seller_solicitor', 'completion_monies')) && stageBlockers(s).every((b) => b === 'completion not confirmed'))
+  if (s.stage === 'pre_completion' && !completed && (s.completion.fundsReceivedAt || !fundsExpected) && (!buyer || (paid('seller_solicitor', 'completion_monies') && !!s.completion.paymentSent)) && stageBlockers(s).every((b) => b === 'completion not confirmed'))
     add({ key: 'completion', lane: 'completion', title: 'Confirm completion', dueDate: completionDate });
 
   // The tax answers the basis is worked out from (sdlt-facts.ts): the buyers' before exchange, the seller's two CGT questions.

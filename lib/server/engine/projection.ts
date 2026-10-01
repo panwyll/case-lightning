@@ -490,6 +490,16 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null) && payersExpected(s).every((r) => s.completion.receivedFrom.includes(r))) s.completion.fundsReceivedAt = s.completion.fundsReceivedAt ?? e.createdAt;
       break;
     }
+    case 'completion_payment_sent': {
+      const p = e.payload as Payloads['completion_payment_sent'];
+      s.completion = { ...s.completion, paymentSent: { reference: p.reference, at: p.sentAt } };
+      break;
+    }
+    case 'redemption_figure_adjusted': {
+      const p = e.payload as Payloads['redemption_figure_adjusted'];
+      s.redemption = { ...s.redemption, redemptionPennies: p.redemptionPennies, figureDate: s.exchange.completionDate ?? s.redemption.figureDate ?? null };
+      break;
+    }
     case 'contributions_recorded': {
       const p = e.payload as Payloads['contributions_recorded'];
       s.coOwnership = { model: p.model, contributions: p.contributions, ratioPercent: p.ratioPercent, shares: p.shares, recordedAt: e.createdAt };
@@ -1188,7 +1198,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'redemption_statement_received': {
       const p = e.payload as Payloads['redemption_statement_received'];
-      s.redemption = { ...s.redemption, status: 'received', lender: p.lender ?? s.redemption.lender, redemptionPennies: p.redemptionPennies, validUntil: p.validUntil, documentId: e.sourceDocumentId ?? null };
+      s.redemption = { ...s.redemption, status: 'received', lender: p.lender ?? s.redemption.lender, redemptionPennies: p.redemptionPennies, validUntil: p.validUntil, documentId: e.sourceDocumentId ?? null, dailyInterestPennies: p.dailyInterestPennies ?? null, figureDate: s.exchange.completionDate ?? s.targetCompletionDate ?? null };
       closeWait(s, 'redemption', null, e);
       break;
     }

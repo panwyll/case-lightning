@@ -127,6 +127,7 @@ test('§2/§5: a pending change blocks payment events regardless of urgency; pay
   await svc.resolveDecision(TENANT, MATTER, sd3.eventId, SENIOR, 'verify', 'Callback to the number on file since instruction', { method: 'phone_callback_known_number' });
   const pay = await svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: sd3.subject!, amountPennies: 34_650_000, purpose: 'completion_monies' });
   assert.equal(pay.events[0].actor, USER);
+  await svc.run(TENANT, MATTER, { type: 'completion_payment_sent', actor: USER, reference: 'CHAPS-1' });
   const done = await svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER });
   assert.equal(done.state.stage, 'completed');
 

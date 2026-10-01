@@ -802,6 +802,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     if (key.startsWith('shortfall_request:')) { const acc = firmAccounts(); return acc.length ? act('completion', 'funds_requested', 'Ask The Client', { fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: Number(key.slice('shortfall_request:'.length)) }, { primary: true }) : <span className="ep-note">Verify our client account under Bank Details first.</span>; }
     if (key.startsWith('charge_statement:')) return act('redemption', 'charge_statement_received', 'Record Figure', { chargeId: key.slice('charge_statement:'.length) }, { primary: true });
     if (key.startsWith('charge_redeemed:')) return act('redemption', 'charge_redeemed', 'Record Paid Off', { chargeId: key.slice('charge_redeemed:'.length), amountPennies: (s.otherCharges ?? []).find((c) => c.id === key.slice('charge_redeemed:'.length))?.redemptionPennies ?? undefined }, { primary: true });
+    if (key === 'completion_payment_sent') return act('completion', 'completion_payment_sent', 'Record Sent', {}, { primary: true });
     if (key === 'contributions') return <ContributionsForm names={s.partyNames ?? []} busy={busy} onSubmit={(body) => cmd(body)} />;
     if (key === 'register_check') return act('registration', 'register_checked', 'Record Checked', {}, { primary: true });
     if (key.startsWith('requisition_extend:')) return act('registration', 'requisition_extended', 'Record More Time', { requisitionEventId: key.slice('requisition_extend:'.length) });
