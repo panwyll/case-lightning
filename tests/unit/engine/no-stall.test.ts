@@ -16,6 +16,7 @@ import { mockPorts } from '../../../lib/server/engine/mocks';
 import { dueSteps } from '../../../lib/server/engine/due';
 import { stageBlockers } from '../../../lib/server/engine/machine';
 import { ISSUE_KIND_SPEC, RESOLUTION_FIELDS } from '../../../lib/server/engine/issues';
+import { SHAPE_SPEC } from '../../../lib/server/engine/shapes';
 import { profileOf } from '../../../lib/server/engine/transactions';
 import { openIssues, openWaits, surfacedDecisions, type MatterState, type TransactionType } from '../../../lib/server/engine/types';
 import * as F from '../../../lib/server/engine/scenarios/fixtures';
@@ -119,7 +120,8 @@ async function drive(c: Case, policy: Policy = 'approve') {
         certificate_of_title: () => run({ type: 'certificate_of_title_sent', completionDate: completion }),
         bankruptcy_search: () => run({ type: 'bankruptcy_search_clear', subjects: s.partyNames?.length ? s.partyNames : ['Client'], documentId: doc({ content: 'K16' }) }),
         priority_search: () => run({ type: 'priority_search_made', expiresAt: F.completionDate(20), documentId: doc({ content: 'OS1' }) }),
-        funds_request: async () => { const ours = await verified('firm_client_account'); for (const from of profileOf(c.tt).fundsFrom.filter((f) => f === 'lender' || f === 'client').filter((f) => f !== 'lender' || s.hasLender)) await run({ type: 'funds_requested', fromRole: from, bankDetailsId: ours }); },
+        funds_request: async () => { const ours = await verified('firm_client_account'); const roles = [...profileOf(c.tt).fundsFrom, ...(s.shapes ?? []).map((sh) => SHAPE_SPEC[sh]?.fundsFrom).filter(Boolean)] as string[]; for (const from of roles.filter((f, i) => (f === 'client' || f === 'isa_provider') && roles.indexOf(f) === i).filter((f) => !s.waits.some((w) => w.key === 'funds' && w.subject === f))) await run({ type: 'funds_requested', fromRole: from as never, bankDetailsId: ours }); },
+        advance_request: async () => run({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: await verified('firm_client_account') }),
         completion_monies: () => run({ type: 'funds_received', fromRole: 'buyer_solicitor', amountPennies: PRICE }),
         consideration: () => run({ type: 'funds_received', fromRole: 'incoming_owner', amountPennies: 5_000_000 }),
         completion_payment: async () => run({ type: 'payment_authorised', payeeKind: 'seller_solicitor', bankDetailsId: await verified('seller_solicitor'), amountPennies: PRICE, purpose: 'completion_monies' }),

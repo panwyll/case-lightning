@@ -732,16 +732,9 @@ export class EngineService {
       if (side === 'buyer' && s.hasLender && !s.preCompletion.insuranceConfirmedAt && !asked('buildings_insurance_request')) await askClient('buildings_insurance_request');
       if (!s.completion.statementGeneratedAt) await safe('completion statement draft', () => this.draftCompletionStatement(tenantId, matterId));
     }
-    // Completion is coming: the money is called for from everyone who sends it (through our verified client account).
-    if (to === 'pre_completion' && !s.completion.fundsReceivedAt) {
-      const account = Object.values(s.bankDetails).find((b) => b.payeeKind === 'firm_client_account' && b.status === 'verified');
-      if (account) for (const role of profileOf(tt).fundsFrom) {
-        if (role !== 'lender' && role !== 'client' && role !== 'isa_provider') continue;
-        if (role === 'lender' && !s.hasLender) continue;
-        if (role === 'isa_provider' && !s.shapes.some((sh) => SHAPE_SPEC[sh]?.fundsFrom === 'isa_provider')) continue;
-        await safe(`funds request (${role})`, () => this.run(tenantId, matterId, { type: 'funds_requested', actor: SYSTEM, fromRole: role, bankDetailsId: account.id }));
-      }
-    }
+    // Completion money is requested by a person (it names our verified client account: never automation); the Tasks list asks for it.
+    // A remortgage's new lender needs buildings insurance confirmed: the client is asked once the case reaches pre-completion.
+    if (to === 'pre_completion' && tt === 'remortgage' && s.hasLender && !s.preCompletion.insuranceConfirmedAt && !asked('buildings_insurance_request')) await askClient('buildings_insurance_request');
     if (e.type === 'funds_requested' && (e.payload as { fromRole?: string }).fromRole === 'client') await askClient('balance_request');
     if (e.type === 'mortgage_redeemed') await this.sendFirstRequest(tenantId, matterId, subflows, { to: 'lender', template: 'request_discharge' }, e);
   }

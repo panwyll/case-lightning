@@ -4,6 +4,7 @@
  * emails, drafts); what is left is here, and on the Tasks tab, each with the form that records it.
  * Things owed by the client or a third party are waits (chased, with a Confirm on the tab), not these.
  */
+import { certificateOfTitleUnmet } from './machine';
 import { stageBlockers } from './machine';
 import { profileOf } from './transactions';
 import { SHAPE_SPEC } from './shapes';
@@ -104,16 +105,25 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   // ── Exchange to completion ──
   if (exchanged && !s.completion.statementGeneratedAt && !completed)
     add({ key: 'completion_statement', lane: 'exchange', title: 'Check the completion statement and send it to the client' });
-  if (s.hasLender && (buyer || remo) && isResolved(s.mortgage.status) && !s.deeds.certificateOfTitleAt && !completed && (exchanged || remo)) {
+  // The certificate of title, only once it can be given unqualified (the checks below done, the client's money in), due the lender's notice before completion.
+  if (s.hasLender && (buyer || remo) && isResolved(s.mortgage.status) && !s.deeds.certificateOfTitleAt && !completed && (exchanged || remo) && certificateOfTitleUnmet(s, now).length === 0) {
     const due = completionDate ? day(subtractWorkingDays(new Date(completionDate), 5, EW_CALENDAR)) : null;
     add({ key: 'certificate_of_title', lane: 'pre_completion_checks', title: 'Send the certificate of title to the lender', dueDate: due });
   }
   const lenderChecks = s.hasLender && (buyer || remo) && !completed && (exchanged || (remo && s.stage === 'pre_completion'));
   if (lenderChecks && !s.preCompletion.bankruptcySearchAt) add({ key: 'bankruptcy_search', lane: 'pre_completion_checks', title: 'Bankruptcy search (K16) against every borrower' });
   const os1Expired = !!(s.preCompletion.prioritySearchExpiresAt && Date.parse(s.preCompletion.prioritySearchExpiresAt) < now.getTime());
-  if (lenderChecks && (!s.preCompletion.prioritySearchAt || os1Expired)) add({ key: 'priority_search', lane: 'pre_completion_checks', title: os1Expired ? 'Priority search (OS1) has expired: make a new one' : 'Priority search (OS1)' });
-  if (s.stage === 'pre_completion' && !s.completion.fundsRequestedAt && !s.completion.fundsReceivedAt && fundsFrom.some((f) => f === 'lender' || f === 'client' || f === 'isa_provider'))
-    add({ key: 'funds_request', lane: 'completion', title: 'Request the completion funds', detail: "Needs our client account's bank details verified." });
+  // Every purchase needs a priority search (a cash buyer's registration is protected the same way); a remortgage, for its lender.
+  const os1Due = !completed && ((buyer && exchanged) || (remo && s.hasLender && s.stage === 'pre_completion'));
+  if (os1Due && (!s.preCompletion.prioritySearchAt || os1Expired)) add({ key: 'priority_search', lane: 'pre_completion_checks', title: os1Expired ? 'Priority search (OS1) has expired: make a new one' : 'Priority search (OS1)' });
+  // The client's money is asked for once the completion statement is out; the lender's advance only against the certificate of title.
+  const asked = (role: string) => s.waits.some((w) => w.key === 'funds' && w.subject === role);
+  const received = (role: string) => (s.completion.receivedFrom ?? []).includes(role as never);
+  const clientRoles = fundsFrom.filter((f) => f === 'client' || f === 'isa_provider');
+  if (s.stage === 'pre_completion' && clientRoles.some((r) => !asked(r) && !received(r)))
+    add({ key: 'funds_request', lane: 'completion', title: "Request the client's completion money", detail: "Needs our client account's bank details verified." });
+  if (s.stage === 'pre_completion' && s.hasLender && fundsFrom.includes('lender') && s.deeds.certificateOfTitleAt && !asked('lender') && !received('lender'))
+    add({ key: 'advance_request', lane: 'completion', title: 'Request the mortgage advance from the lender', dueDate: completionDate ? day(subtractWorkingDays(new Date(completionDate), 3, EW_CALENDAR)) : null });
   if (s.stage === 'pre_completion' && fundsFrom.includes('buyer_solicitor') && !s.completion.fundsReceivedAt)
     add({ key: 'completion_monies', lane: 'completion', title: "Confirm the completion monies are in from the buyer's solicitor", dueDate: completionDate });
   if (s.stage === 'pre_completion' && fundsFrom.includes('incoming_owner') && (s.considerationPennies ?? 0) > 0 && !s.completion.fundsReceivedAt)
@@ -132,7 +142,7 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   if (seller && completed && !paid('client')) add({ key: 'balance_to_client', lane: 'completion', title: 'Authorise the balance to the client' });
   if (completed && (seller || remo) && s.redemption.status === 'received') add({ key: 'mortgage_redeemed', lane: 'redemption', title: 'Record the mortgage as redeemed' });
   if (completed && p.registration === 'ap1' && (buyer || toe) && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt)
-    add({ key: 'sdlt', lane: 'registration', title: 'File the SDLT return', dueDate: day(addWorkingDays(new Date(s.completion.confirmedAt!), 10, EW_CALENDAR)) });
+    add({ key: 'sdlt', lane: 'registration', title: 'File the SDLT return', dueDate: day(new Date(Date.parse(s.completion.confirmedAt!) + 14 * 86_400_000)) });
   const sdltDone = !(buyer || toe) || !!s.postCompletion.sdltSubmittedAt || !!s.sdltNotRequiredAt;
   if (completed && p.registration === 'ap1' && sdltDone && !s.postCompletion.ap1SubmittedAt)
     add({ key: 'ap1', lane: 'registration', title: 'Lodge the AP1 at HM Land Registry', dueDate: s.preCompletion.prioritySearchExpiresAt ?? null });

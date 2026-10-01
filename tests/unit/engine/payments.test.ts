@@ -97,6 +97,7 @@ test('§2/§5: a pending change blocks payment events regardless of urgency; pay
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: 'ai', fromRole: 'client', bankDetailsId: fd.subject! }), /by a person/);
   await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: fd.subject! });
   await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'client' });
+  await svc.run(TENANT, MATTER, { type: 'priority_search_made', actor: USER, expiresAt: '2027-12-31' });
 
   // seller's solicitor: verified details, then a last-minute change → everything stops
   const s1 = await svc.recordBankDetails(TENANT, MATTER, { actor: 'external', payeeKind: 'seller_solicitor', details: details('11111111'), sourceChannel: 'letter', sourceDocumentId: h.doc({ content: 'client care letter' }) });

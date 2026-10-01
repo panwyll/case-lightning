@@ -109,29 +109,32 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /mortgage deed has not been executed/);
   await svc.run(TENANT, MATTER, { type: 'mortgage_deed_executed', actor: USER, witnessed: true });
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /certificate of title has not been sent/);
-  await svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER });
+  // The certificate is unqualified or not at all: it waits for the searches, the insurance and the client's money.
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER }), /only be given unqualified: a clear bankruptcy search \(K16\)/);
   // Addendum 2: bank details are versioned hard-stops — ours (what the client pays into) and the seller's solicitor's (what we pay).
   const firm = await svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind: 'firm_client_account', payeeRef: 'Firm LLP client account', details: { sortCode: '401234', accountNumber: '12345678', accountName: 'Firm LLP Client Account', firmName: 'Firm LLP' }, sourceChannel: 'manual' });
   const firmDecision = Object.values(firm.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;
   const firmId = firmDecision.subject!;
-  await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId }), /HARD STOP/);
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: firmId }), /HARD STOP/);
   await svc.openDecisionSource(TENANT, MATTER, firmDecision.eventId, USER);
   await assert.rejects(svc.resolveDecision(TENANT, MATTER, firmDecision.eventId, USER, 'verify', null, { method: 'email_reply' }), /not verification/);
   await svc.resolveDecision(TENANT, MATTER, firmDecision.eventId, USER, 'verify', 'Matches the firm bank mandate', { method: 'in_person' });
-  await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: 'system', fromRole: 'lender', bankDetailsId: firmId }), /by a person/);
-  await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId });
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: 'system', fromRole: 'client', bankDetailsId: firmId }), /by a person/);
+  // The advance only against the certificate of title.
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId }), /certificate of title first/);
   await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: firmId });
-  // The Lenders' Handbook's pre-completion checks, each refused until recorded.
-  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /bankruptcy search \(K16\)/);
-  await svc.run(TENANT, MATTER, { type: 'bankruptcy_search_clear', actor: USER, subjects: ['Priya Shah'] });
-  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /No priority search \(OS1\)/);
-  await svc.run(TENANT, MATTER, { type: 'priority_search_made', actor: USER, expiresAt: '2027-01-15' });
-  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /Buildings insurance has not been confirmed/);
-  await svc.run(TENANT, MATTER, { type: 'buildings_insurance_confirmed', actor: USER, insurer: 'Aviva' });
-  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /Funds have not been received/);
-  await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'lender' });
   r = await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'client' });
   assert.ok(r.state.completion.fundsReceivedAt);
+  // The Lenders' Handbook's pre-completion checks: the certificate names what is still missing, one by one.
+  await svc.run(TENANT, MATTER, { type: 'priority_search_made', actor: USER, expiresAt: '2027-01-15' });
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER }), /unqualified: a clear bankruptcy search \(K16\) against every borrower; buildings insurance confirmed\./);
+  await svc.run(TENANT, MATTER, { type: 'bankruptcy_search_clear', actor: USER, subjects: ['Priya Shah'] });
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER }), /unqualified: buildings insurance confirmed\./);
+  await svc.run(TENANT, MATTER, { type: 'buildings_insurance_confirmed', actor: USER, insurer: 'Aviva' });
+  await svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER });
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /advance has not been received/);
+  await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId });
+  await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'lender' });
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /No authorised completion payment/);
   const seller = await svc.recordBankDetails(TENANT, MATTER, { actor: 'external', payeeKind: 'seller_solicitor', payeeRef: 'Smith & Co', details: { sortCode: '201122', accountNumber: '87654321', accountName: 'Smith & Co Client Account', firmName: 'Smith & Co' }, sourceChannel: 'email', sourceDocumentId: h.doc({ content: 'Completion statement email from Smith & Co with client account details' }) });
   const sellerDecision = Object.values(seller.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;

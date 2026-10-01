@@ -249,6 +249,11 @@ test('remortgage end to end: no exchange — title, offer and redemption figure 
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'mortgage_deed_executed', actor: USER, witnessed: false }), /must be witnessed/);
   await h.svc.run(TENANT, MATTER, { type: 'mortgage_deed_executed', actor: USER, witnessed: true });
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: 'system' }), /person/);
+  // The new lender's checks before the certificate can be given unqualified.
+  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER, completionDate: '2026-11-27' }), /unqualified: a clear bankruptcy search/);
+  await h.svc.run(TENANT, MATTER, { type: 'bankruptcy_search_clear', actor: USER });
+  await h.svc.run(TENANT, MATTER, { type: 'priority_search_made', actor: USER, expiresAt: '2026-12-20' });
+  await h.svc.run(TENANT, MATTER, { type: 'buildings_insurance_confirmed', actor: USER });
   await h.svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER, completionDate: '2026-11-27' });
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /advance has not been received/);
 
@@ -375,7 +380,7 @@ test('transfer of equity for no consideration and no charge: nothing to consent 
   assert.ok(s.sdltNotRequiredAt);
 });
 
-test('joint purchase: the clients decide how they hold; a declaration of trust is refused for joint tenants and required for tenants in common; the mortgage deed and transfer deed are recorded (advisory on a purchase)', async () => {
+test('joint purchase: the clients decide how they hold; a declaration of trust is refused for joint tenants and required for tenants in common; the mortgage deed and transfer deed are recorded (required before completion)', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, transactionType: 'freehold_purchase', hasLender: true, parties: 2, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
   await idCleared(h);
@@ -397,7 +402,7 @@ test('joint purchase: the clients decide how they hold; a declaration of trust i
   s = await h.svc.getState(TENANT, MATTER);
   assert.ok(s.deeds.deedOfTrustAt && s.deeds.mortgageDeedAt && s.deeds.transferDeedAt);
   const mortgageDeed = requirements(s).find((r) => r.id === 'mortgage_deed');
-  assert.equal(mortgageDeed?.advisory, true, 'advisory on a purchase: the lender\'s deed is signed at the same time as the contract in practice');
+  assert.ok(mortgageDeed && !mortgageDeed.advisory, 'required on a purchase too: the machine refuses completion without it, and the list says the same');
   // Single-party purchase: no co-ownership decision arises.
   const h2 = harness();
   await h2.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, transactionType: 'freehold_purchase', hasLender: false, parties: 1, requireProofOfFunds: false, requireExchangeAuthority: false });

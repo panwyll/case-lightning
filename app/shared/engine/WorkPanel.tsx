@@ -812,7 +812,14 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       case 'funds_request': {
         const acc = firmAccounts();
         if (!acc.length) return <span className="ep-note">Verify our client account under Bank Details first.</span>;
-        return <>{p.fundsFrom.filter((f) => f === 'lender' || f === 'client' || f === 'isa_provider').filter((f) => f !== 'lender' || s.hasLender).map((f) => <button key={f} className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: f, bankDetailsId: payFrom.firm_client_account ?? acc[0].id })}>Request From {pretty(f).replace(/^./, (c) => c.toUpperCase())}</button>)}</>;
+        // The client's money (and an ISA bonus): the lender's advance is its own step, after the certificate of title.
+        const asked = (f: string) => (s.waits ?? []).some((w: { key: string; subject: string }) => w.key === 'funds' && w.subject === f);
+        return <>{[...p.fundsFrom, ...(s.shapes ?? []).map((sh: string) => (sh === 'lifetime_isa' || sh === 'help_to_buy_isa' ? 'isa_provider' : null)).filter(Boolean)].filter((f, i, all) => (f === 'client' || f === 'isa_provider') && all.indexOf(f) === i && !asked(f as string)).map((f) => <button key={f as string} className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: f, bankDetailsId: payFrom.firm_client_account ?? acc[0].id })}>{f === 'client' ? 'Request From The Client' : 'Request The ISA Bonus'}</button>)}</>;
+      }
+      case 'advance_request': {
+        const acc = firmAccounts();
+        if (!acc.length) return <span className="ep-note">Verify our client account under Bank Details first.</span>;
+        return <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: payFrom.firm_client_account ?? acc[0].id })}>Request The Advance</button>;
       }
       case 'completion_monies': return act('completion', 'funds_received', 'Record Received', { fromRole: 'buyer_solicitor' }, { primary: true });
       case 'consideration': return act('completion', 'funds_received', 'Record Received', { fromRole: 'incoming_owner' }, { primary: true });

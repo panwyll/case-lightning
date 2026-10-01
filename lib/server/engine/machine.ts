@@ -440,6 +440,28 @@ export function assertDecisionSpec(d: DecisionSpec): void {
 /** Nobody exchanges without an approved contract and our own client's signed part on file. */
 const contractReady = (s: MatterState): boolean => !!s.readiness.contractApprovedAt && !!s.readiness.signedContractHeldAt;
 
+/** The lender's pre-completion checks (Lenders' Handbook Part 1): a clear bankruptcy search against every borrower, a live priority search, buildings insurance. */
+export function lenderChecksUnmet(s: MatterState, now: Date): string[] {
+  const out: string[] = [];
+  if (!s.preCompletion.bankruptcySearchAt) out.push('The bankruptcy search (K16) against every borrower has not been recorded as clear; the lender requires it before completion.');
+  if (!s.preCompletion.prioritySearchAt) out.push('No priority search (OS1) has been made; the lender requires completion inside the priority period.');
+  else if (s.preCompletion.prioritySearchExpiresAt && Date.parse(s.preCompletion.prioritySearchExpiresAt) < now.getTime() - 86_400_000) out.push(`The priority period of the OS1 expired on ${s.preCompletion.prioritySearchExpiresAt}; make a fresh priority search.`);
+  if (!s.preCompletion.insuranceConfirmedAt) out.push('Buildings insurance has not been confirmed; the lender requires cover on its terms.');
+  return out;
+}
+
+/** What must be true before a certificate of title can be given unqualified (and the advance requested against it). */
+export function certificateOfTitleUnmet(s: MatterState, now: Date): string[] {
+  const out: string[] = [];
+  if (!s.deeds.mortgageDeedAt) out.push('the mortgage deed signed, witnessed and held');
+  if (!s.preCompletion.bankruptcySearchAt) out.push('a clear bankruptcy search (K16) against every borrower');
+  if (!s.preCompletion.prioritySearchAt || (s.preCompletion.prioritySearchExpiresAt && Date.parse(s.preCompletion.prioritySearchExpiresAt) < now.getTime() - 86_400_000)) out.push('a live priority search (OS1)');
+  if (!s.preCompletion.insuranceConfirmedAt) out.push('buildings insurance confirmed');
+  // On a purchase the lender relies on the buyer's own money being with us: the certificate confirms it.
+  if (profile(s).side === 'buyer' && !(s.completion.receivedFrom ?? []).some((r) => r === 'client' || r === 'isa_provider')) out.push("the client's balance received");
+  return out;
+}
+
 export function stageBlockers(s: MatterState): string[] {
   if (!s.enrolled) return ['not enrolled'];
   if (s.abandoned) return [`matter abandoned (${s.abandoned.reason.replace(/_/g, ' ')})`];
@@ -493,7 +515,7 @@ export function stageBlockers(s: MatterState): string[] {
         if (s.hasLender && !s.deeds.mortgageDeedAt) b.push('mortgage deed not executed');
         if (s.hasLender && !s.deeds.certificateOfTitleAt) b.push('certificate of title not sent');
         if (s.hasLender && !s.preCompletion.bankruptcySearchAt) b.push('bankruptcy search (K16) not recorded');
-        if (s.hasLender && !s.preCompletion.prioritySearchAt) b.push('priority search (OS1) not made');
+        if (!s.preCompletion.prioritySearchAt) b.push('priority search (OS1) not made');
         if (s.hasLender && !s.preCompletion.insuranceConfirmedAt) b.push('buildings insurance not confirmed');
         if (s.hasLender && !(s.completion.receivedFrom ?? []).includes('lender')) b.push('mortgage advance not received');
         if (!(s.completion.receivedFrom ?? []).some((r) => r === 'client' || r === 'isa_provider')) b.push("client's balance not received");
@@ -599,6 +621,9 @@ function ownerBlockers(s: MatterState, p: TransactionProfile): string[] {
         b.push(...issueBlockers(s, 'completion'));
         if (remo && !s.deeds.mortgageDeedAt) b.push('mortgage deed not executed');
         if (remo && !s.deeds.certificateOfTitleAt) b.push('certificate of title not sent to the lender');
+        if (remo && !s.preCompletion.bankruptcySearchAt) b.push('bankruptcy search (K16) not recorded');
+        if (remo && !s.preCompletion.prioritySearchAt) b.push('priority search (OS1) not made');
+        if (remo && !s.preCompletion.insuranceConfirmedAt) b.push('buildings insurance not confirmed');
         if (remo && !s.completion.fundsReceivedAt) b.push('advance not received from the new lender');
         if (remo && s.hasExistingMortgage && !s.payments.some((x) => x.payeeKind === 'lender')) b.push('redemption payment not authorised against verified lender details');
         if (!remo && !s.deeds.transferDeedAt) b.push('transfer deed not executed by every party');
@@ -1231,6 +1256,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireStage(s, 'pre_completion', 'Requesting funds');
       requireSide(s, ['buyer', 'owner'], 'Requesting completion funds');
       if (cmd.fromRole === 'lender' && !s.hasLender) reject('No lender on this matter to request funds from.');
+      // The advance is requested by the certificate of title: never before it.
+      if (cmd.fromRole === 'lender' && !s.deeds.certificateOfTitleAt) reject('Send the certificate of title first: the lender releases the advance against it.');
       if (s.waits.some((w) => w.key === 'funds' && w.subject === cmd.fromRole && w.closedAt === null)) reject(`Funds already requested from ${cmd.fromRole}.`);
       // Addendum 2 §5: a person, and the account the payer is told to use must be our VERIFIED client account.
       if (!isUserActor(cmd.actor)) reject('A funds request must be made by a person, never by automation.', 403);
@@ -1268,6 +1295,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         if (p.side === 'seller' && !s.completion.fundsReceivedAt) reject("Completion monies have not been received from the buyer's solicitor.");
         if (remo && !s.completion.fundsReceivedAt) reject('The advance has not been received from the lender.');
         if (remo && (!s.deeds.mortgageDeedAt || !s.deeds.certificateOfTitleAt)) reject('The mortgage deed must be executed and the certificate of title sent before completion.');
+        // The new lender's pre-completion checks are the same as on a purchase: bankruptcy search, priority search, insurance.
+        if (remo) for (const why of lenderChecksUnmet(s, ctx.now)) reject(why);
         if (p.type === 'transfer_of_equity' && !s.deeds.transferDeedAt) reject('The transfer deed has not been executed by every party.');
         if (p.type === 'transfer_of_equity' && deedOfTrustApplies(s) && !s.deeds.deedOfTrustAt) reject('The clients hold as tenants in common: the declaration of trust must be executed before completion.');
         if (p.type === 'transfer_of_equity' && (s.considerationPennies ?? 0) > 0 && !s.completion.fundsReceivedAt) reject('The consideration has not been received from the incoming owner.');
@@ -1289,10 +1318,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.parties > 1 && !s.clientDecisions.ownership_basis) reject('The clients have not decided how they hold (joint tenants or tenants in common); record the ownership_basis decision before completion.');
       if (deedOfTrustApplies(s) && !s.deeds.deedOfTrustAt) reject('The clients hold as tenants in common: the declaration of trust must be executed before completion.');
       // The Lenders' Handbook's pre-completion checks on a lender-funded purchase: bankruptcy search against every borrower, the priority search, insurance from exchange.
-      if (s.hasLender && !s.preCompletion.bankruptcySearchAt) reject('The bankruptcy search (K16) against the borrower has not been recorded as clear; the lender requires it before completion.');
-      if (s.hasLender && !s.preCompletion.prioritySearchAt) reject('No priority search (OS1) has been made; the lender requires completion inside the priority period.');
-      if (s.hasLender && s.preCompletion.prioritySearchExpiresAt && Date.parse(s.preCompletion.prioritySearchExpiresAt) < ctx.now.getTime() - 86_400_000) reject(`The priority period of the OS1 expired on ${s.preCompletion.prioritySearchExpiresAt}; make a fresh priority search before completing.`);
-      if (s.hasLender && !s.preCompletion.insuranceConfirmedAt) reject("Buildings insurance has not been confirmed; the lender requires cover in place from exchange, on its terms.");
+      // Every purchase completes inside a priority period, so nothing can be registered against the title before our application (cash buyers too).
+      if (!s.preCompletion.prioritySearchAt) reject('No priority search (OS1) has been made; completion must fall inside its priority period so the purchase registers first.');
+      if (s.preCompletion.prioritySearchExpiresAt && Date.parse(s.preCompletion.prioritySearchExpiresAt) < ctx.now.getTime() - 86_400_000) reject(`The priority period of the OS1 expired on ${s.preCompletion.prioritySearchExpiresAt}; make a fresh priority search before completing.`);
+      if (s.hasLender) for (const why of lenderChecksUnmet(s, ctx.now)) reject(why);
       // Then the money: the advance from the lender where there is one, and the client's balance (an ISA bonus counts as the client's).
       const from = s.completion.receivedFrom ?? [];
       if (!s.completion.fundsReceivedAt) reject('Funds have not been received.');
@@ -1331,7 +1360,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.postCompletion.ap1SubmittedAt) reject('AP1 already submitted.');
       // HM Land Registry needs the SDLT5 (or a return that was not required) with an application for a transfer; a remortgage has none.
       if ((profile(s).side === 'buyer' || s.transactionType === 'transfer_of_equity') && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt) reject('The SDLT return has not been filed, nor recorded as not required; HM Land Registry needs the SDLT5 with the AP1.');
-      return [{ type: 'ap1_submitted', actor: cmd.actor, payload: { reference: cmd.reference ?? null } }];
+      const lodged: NewEvent[] = [{ type: 'ap1_submitted', actor: cmd.actor, payload: { reference: cmd.reference ?? null } }];
+      // Lodged after the priority period ended: anything registered in between ranks ahead. Not refused (it must still go in), but a person looks now.
+      const exp = s.preCompletion.prioritySearchExpiresAt;
+      if (exp && Date.parse(exp) < ctx.now.getTime() - 86_400_000) lodged.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'title_defect', title: `AP1 lodged after the priority period ended (${exp})`, detail: 'The OS1 priority period had expired when the application was lodged. Check the register for anything entered since the search and, with a lender, tell them: their charge may not rank first.', gate: 'none', stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: 'critical', causedBy: null } });
+      return lodged;
     }
     case 'ap1_confirmed': {
       requireEnrolled(s);
@@ -2192,6 +2225,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!isUserActor(cmd.actor)) reject('The certificate of title is a solicitor\'s certificate; a person sends it.', 403);
       if (!isResolved(s.mortgage.status)) reject(`The mortgage offer is ${s.mortgage.status}; the certificate follows a resolved offer.`);
       if (s.deeds.certificateOfTitleAt) reject('The certificate of title has already been sent.');
+      // The certificate is unqualified (Lenders' Handbook Part 1 s.10): everything the lender relies on is in place before it goes, and the advance is released against it.
+      const unmet = certificateOfTitleUnmet(s, ctx.now);
+      if (unmet.length) reject(`The certificate of title can only be given unqualified: ${unmet.join('; ')}.`);
       return [{ type: 'certificate_of_title_sent', actor: cmd.actor, payload: { lender: cmd.lender ?? s.mortgage.facts?.lender ?? null, completionDate: cmd.completionDate ?? s.exchange.completionDate ?? s.targetCompletionDate ?? null } }];
     }
     case 'request_lender_consent': {

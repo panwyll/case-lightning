@@ -234,28 +234,33 @@ const exchangeBuyer = (price: number, deposit: number, advance: number | null): 
     const { documentId } = await c.svc.draftCompletionStatement(c.tenantId, c.matterId);
     await c.run({ type: 'completion_statement_generated', documentId });
   }),
-  ...(advance != null ? [
-    step('mortgage_deed', 'Mortgage deed executed and witnessed', async (c) => { await c.run({ type: 'mortgage_deed_executed', witnessed: true }); }),
-    step('certificate', 'Certificate of title sent to the lender', async (c) => { await c.run({ type: 'certificate_of_title_sent', completionDate: F.completionDate() }); }),
-    step('pre_completion_checks', "The lender's pre-completion checks: bankruptcy search clear, priority search made, buildings insurance confirmed", async (c) => {
-      const k16 = await c.doc({ docType: 'SEARCH_RESULT', fileName: 'k16-bankruptcy-search.txt', facts: { content: 'sandbox K16' }, body: F.body('K16 bankruptcy search', ['Subject: Sandbox Buyer', 'Result: NO ENTRIES']) });
-      await c.run({ type: 'bankruptcy_search_clear', subjects: ['Sandbox Buyer'], documentId: k16 });
-      const os1 = await c.doc({ docType: 'SEARCH_RESULT', fileName: 'os1-priority-search.txt', facts: { content: 'sandbox OS1' }, body: F.body('OS1 official search with priority', ['Title AB123456', `Priority expires ${F.completionDate(3)}`]) });
-      await c.run({ type: 'priority_search_made', expiresAt: F.completionDate(3), documentId: os1 });
-      await c.run({ type: 'buildings_insurance_confirmed', insurer: 'Sandbox Insurance plc', fromDate: F.exchangeDate() });
-    }),
-  ] : []),
-  step('transfer_deed', 'Transfer deed (TR1) executed', async (c) => { await c.run({ type: 'transfer_deed_executed', parties: ['Sandbox Buyer'] }); }),
-  step('funds', advance != null ? 'Advance and the client\'s balance requested and received' : 'The client\'s balance requested and received', async (c) => {
+  // The order lenders work to: the client's money in, the searches and insurance done, the deed signed; then the certificate of title, and the advance against it.
+  step('balance', "The client's balance requested and received", async (c) => {
     const ours = await c.verifiedDetails('firm_client_account', '99990000', 'Firm client account');
     const balance = price - deposit - (advance ?? 0);
-    if (advance != null) {
-      await c.run({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: ours, amountPennies: advance });
-      await c.run({ type: 'funds_received', fromRole: 'lender', amountPennies: advance });
-    }
     await c.run({ type: 'funds_requested', fromRole: 'client', bankDetailsId: ours, amountPennies: balance });
     await c.run({ type: 'funds_received', fromRole: 'client', amountPennies: balance });
   }),
+  step('pre_completion_checks', advance != null ? "Pre-completion checks: bankruptcy search clear, priority search made, buildings insurance confirmed" : 'Priority search (OS1) made', async (c) => {
+    if (advance != null) {
+      const k16 = await c.doc({ docType: 'SEARCH_RESULT', fileName: 'k16-bankruptcy-search.txt', facts: { content: 'sandbox K16' }, body: F.body('K16 bankruptcy search', ['Subject: Sandbox Buyer', 'Result: NO ENTRIES']) });
+      await c.run({ type: 'bankruptcy_search_clear', subjects: ['Sandbox Buyer'], documentId: k16 });
+    }
+    const os1 = await c.doc({ docType: 'SEARCH_RESULT', fileName: 'os1-priority-search.txt', facts: { content: 'sandbox OS1' }, body: F.body('OS1 official search with priority', ['Title AB123456', `Priority expires ${F.completionDate(3)}`]) });
+    await c.run({ type: 'priority_search_made', expiresAt: F.completionDate(3), documentId: os1 });
+    if (advance != null) await c.run({ type: 'buildings_insurance_confirmed', insurer: 'Sandbox Insurance plc', fromDate: F.exchangeDate() });
+  }),
+  ...(advance != null ? [
+    step('mortgage_deed', 'Mortgage deed executed and witnessed', async (c) => { await c.run({ type: 'mortgage_deed_executed', witnessed: true }); }),
+    step('certificate', 'Certificate of title sent to the lender', async (c) => { await c.run({ type: 'certificate_of_title_sent', completionDate: F.completionDate() }); }),
+    step('advance', 'Advance requested against the certificate and received', async (c) => {
+      const st = await c.svc.getState(c.tenantId, c.matterId);
+      const ours = Object.values(st.bankDetails).find((b) => b.payeeKind === 'firm_client_account' && b.status === 'verified')?.id ?? (await c.verifiedDetails('firm_client_account', '99990000', 'Firm client account'));
+      await c.run({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: ours, amountPennies: advance });
+      await c.run({ type: 'funds_received', fromRole: 'lender', amountPennies: advance });
+    }),
+  ] : []),
+  step('transfer_deed', 'Transfer deed (TR1) executed', async (c) => { await c.run({ type: 'transfer_deed_executed', parties: ['Sandbox Buyer'] }); }),
   step('pay_seller', 'Completion monies authorised against verified seller\'s-solicitor details', async (c) => {
     const theirs = await c.verifiedDetails('seller_solicitor', '11112222', 'Seller Solicitors LLP client account');
     await c.run({ type: 'payment_authorised', payeeKind: 'seller_solicitor', bankDetailsId: theirs, amountPennies: price - deposit, purpose: 'completion_monies' });
@@ -416,6 +421,11 @@ export const SCENARIOS: Scenario[] = [
       step('redemption_request', 'Redemption statement requested from the old lender', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.redemption.status === 'not_started') await c.run({ type: 'request_redemption_statement', lender: 'Old Lender plc' }); }),
       step('redemption', 'Redemption statement received', async (c) => { await c.run({ type: 'redemption_statement_received', redemptionPennies: 12_000_000, validUntil: F.completionDate(5) }); }),
       step('deed', 'Mortgage deed executed and witnessed', async (c) => { await c.run({ type: 'mortgage_deed_executed', witnessed: true }); }),
+      step('pre_completion_checks', "The new lender's checks: bankruptcy search clear, priority search made, buildings insurance confirmed", async (c) => {
+        await c.run({ type: 'bankruptcy_search_clear', subjects: ['Sandbox Owner'] });
+        await c.run({ type: 'priority_search_made', expiresAt: F.completionDate(3) });
+        await c.run({ type: 'buildings_insurance_confirmed', insurer: 'Sandbox Insurance plc' });
+      }),
       step('certificate', 'Certificate of title sent to the new lender', async (c) => { await c.run({ type: 'certificate_of_title_sent', completionDate: F.completionDate() }); }),
       step('advance', 'Advance requested and received', async (c) => { const ours = await c.verifiedDetails('firm_client_account', '99990000', 'Firm client account'); await c.run({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: ours, amountPennies: 25_000_000 }); await c.run({ type: 'funds_received', fromRole: 'lender', amountPennies: 25_000_000 }); }),
       step('redeem_pay', 'Old lender paid against verified details', async (c) => { const old = await c.verifiedDetails('lender', '12121212', 'Old Lender plc'); await c.run({ type: 'payment_authorised', payeeKind: 'lender', bankDetailsId: old, amountPennies: 12_000_000, purpose: 'other' }); }),

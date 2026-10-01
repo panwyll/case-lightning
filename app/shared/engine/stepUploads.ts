@@ -45,7 +45,7 @@ export async function uploadFor(api: Api, matterId: string, spec: { wants: strin
 export const STEP_ACTION_LABEL: Record<string, string> = {
   contract_pack: 'Record Sent', management_pack_sale: 'Record Requested', contract_approved_sale: 'Record Approved', contract_approve: 'Approve Contract', proof_of_funds_request: 'Send The Form', report_on_title_redraft: 'Draft Again', buyer_enquiries: 'Record Replies Sent',
   exchange: 'Contracts Exchanged', completion_statement: 'Send To Client', certificate_of_title: 'Record Sent', bankruptcy_search: 'Record Clear',
-  priority_search: 'Record Made', funds_request: 'Request Funds', completion_monies: 'Record Received', consideration: 'Record Received',
+  priority_search: 'Record Made', funds_request: 'Request Funds', advance_request: 'Request The Advance', completion_monies: 'Record Received', consideration: 'Record Received',
   completion_payment: 'Authorise', redemption_payment: 'Authorise', completion: 'Confirm Completion', balance_to_client: 'Authorise',
   mortgage_redeemed: 'Record Redeemed', sdlt: 'Record Filed', ap1: 'Record Lodged', notice_of_assignment: 'Record Served', close_file: 'Close File',
 };

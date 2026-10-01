@@ -160,16 +160,16 @@ test('deadlines we owe: mortgage offer expiry before exchange and the 14-day SDL
   const st = await h.svc.getState(TENANT, MATTER);
   const firmId = Object.values(st.bankDetails).find((b) => b.payeeKind === 'firm_client_account')!.id;
   const solId = Object.values(st.bankDetails).find((b) => b.payeeKind === 'seller_solicitor')!.id;
-  await h.svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId });
-  await h.svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'lender' });
   await h.svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: firmId });
   await h.svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'client' });
   await h.svc.run(TENANT, MATTER, { type: 'transfer_deed_executed', actor: USER, parties: ['Buyer'] });
   await h.svc.run(TENANT, MATTER, { type: 'mortgage_deed_executed', actor: USER, witnessed: true });
-  await h.svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER });
   await h.svc.run(TENANT, MATTER, { type: 'bankruptcy_search_clear', actor: USER });
   await h.svc.run(TENANT, MATTER, { type: 'priority_search_made', actor: USER, expiresAt: '2026-11-10' });
   await h.svc.run(TENANT, MATTER, { type: 'buildings_insurance_confirmed', actor: USER });
+  await h.svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER });
+  await h.svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId });
+  await h.svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'lender' });
   await h.svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: solId, purpose: 'completion_monies' });
   h.ports.setNow(new Date('2026-10-02T14:00:00Z'));
   const done = await h.svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER });
@@ -248,6 +248,7 @@ test('post-completion: an HMLR requisition is a decision citing the letter, bloc
   await h2.svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: firmId });
   await h2.svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'client' });
   await h2.svc.run(TENANT, MATTER, { type: 'transfer_deed_executed', actor: USER, parties: ['Buyer'] });
+  await h2.svc.run(TENANT, MATTER, { type: 'priority_search_made', actor: USER, expiresAt: '2026-12-10' });
   await h2.svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: solId, purpose: 'completion_monies' });
   await h2.svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER });
   await h2.svc.run(TENANT, MATTER, { type: 'sdlt_submitted', actor: USER });
