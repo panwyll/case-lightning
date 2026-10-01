@@ -79,6 +79,7 @@ const CSS = `
 .cp details[open] summary svg{transform:rotate(90deg)}
 .cp details p{margin:0 0 14px 26px;font-size:15px;color:#334155;line-height:1.6}
 .cp .more{margin-top:8px}
+.cp .topic{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin:16px 0 2px}
 .cp textarea{width:100%;font:inherit;font-size:16px;padding:11px 14px;border:1.5px solid #cbd5e1;border-radius:10px;min-height:110px;resize:vertical;margin:4px 0 10px}
 .cp textarea:focus{outline:none;border-color:#5A27E0;box-shadow:0 0 0 3px #ede9fe}
 .cp .scores{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}
@@ -107,7 +108,7 @@ interface Doc { id: string; name: string; at: string; from: 'us' | 'you' }
 interface Faq { id: string; topic: string; q: string; a: string }
 type Ctx =
   | { status: 'locked'; firmName: string; propertyAddress: string; codeTo: string[] }
-  | { status: 'open'; firmName: string; propertyAddress: string; clientNames: string | null; handler: { name: string | null; email: string | null; phone: string | null }; firmPhone: string | null; view: View | null; documents: Doc[]; faqs: Faq[]; feedback: { milestone: string; kind: 'csat' | 'nps' } | null }
+  | { status: 'open'; firmName: string; propertyAddress: string; clientNames: string | null; handler: { name: string | null; email: string | null; phone: string | null }; firmPhone: string | null; view: View | null; documents: Doc[]; help: { now: Faq[]; all: Faq[] }; feedback: { milestone: string; kind: 'csat' | 'nps' } | null }
   | { status: 'gone' }
   | { status: 'error' };
 
@@ -355,10 +356,17 @@ export default function ClientPortal() {
         ))}
       </div>
 
-      {ctx.faqs.length > 0 && (() => {
+      {(ctx.help.now.length > 0 || ctx.help.all.length > 0) && (() => {
         const term = q.trim().toLowerCase();
-        const hits = term ? ctx.faqs.filter((f) => `${f.q} ${f.a}`.toLowerCase().includes(term)) : ctx.faqs;
-        const shown = term || allFaqs ? hits : hits.slice(0, 6);
+        const every = [...ctx.help.now, ...ctx.help.all];
+        const hits = term ? every.filter((f) => `${f.q} ${f.a}`.toLowerCase().includes(term)) : [];
+        const qa = (f: Faq) => (
+          <details key={f.id}>
+            <summary><ChevronRight size={16} />{f.q}</summary>
+            <p>{f.a}</p>
+          </details>
+        );
+        const topics = Array.from(new Set(ctx.help.all.map((f) => f.topic)));
         return (
           <div className="card">
             <h2>Help</h2>
@@ -366,14 +374,19 @@ export default function ClientPortal() {
               <input className="search" placeholder="Search questions" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search questions" style={{ paddingLeft: 40 }} />
               <Search size={18} style={{ position: 'absolute', left: 14, top: 14, color: '#94a3b8' }} />
             </div>
-            {shown.map((f) => (
-              <details key={f.id}>
-                <summary><ChevronRight size={16} />{f.q}</summary>
-                <p>{f.a}</p>
-              </details>
-            ))}
-            {term && hits.length === 0 && <div className="line">No answer for that here. Ask us below.</div>}
-            {!term && !allFaqs && hits.length > shown.length && <button className="link more" onClick={() => setAllFaqs(true)}>Show All {hits.length} Questions</button>}
+            {term ? (
+              hits.length ? hits.map(qa) : <div className="line">No answer for that here. Ask us below.</div>
+            ) : (
+              <>
+                {ctx.help.now.map(qa)}
+                {allFaqs ? topics.map((t) => (
+                  <div key={t}>
+                    <div className="topic">{t}</div>
+                    {ctx.help.all.filter((f) => f.topic === t).map(qa)}
+                  </div>
+                )) : ctx.help.all.length > 0 && <button className="link more" onClick={() => setAllFaqs(true)}>More Questions</button>}
+              </>
+            )}
           </div>
         );
       })()}

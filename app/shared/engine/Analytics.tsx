@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react';
 import type { AnalyticsReport, PersonRow, Stat, TeamMetric } from '@/lib/server/analytics/kpis';
 
 const CSS = `
-.an{max-width:1360px;color:#0f172a}
+.an{max-width:1360px;color:#0f172a;container-type:inline-size}
 .an-top{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .an-top h1{font-size:20px;font-weight:800;margin:0 auto 0 0}
 .an-sel{border:1px solid #cbd5e1;border-radius:8px;padding:7px 36px 7px 10px;font:inherit;font-size:13px;background:#fff}
@@ -66,9 +66,9 @@ const CSS = `
 .an-chips span{font-size:12px;background:#f8fafc;border:1px solid #e6e8ee;border-radius:99px;padding:2px 9px;color:#475569}
 .an-q{font-size:13.5px;line-height:1.5;border-left:3px solid #e2e8f0;padding:2px 0 2px 10px;margin:0 0 10px}
 .an-q small{display:block;color:#94a3b8;font-size:12px}
-@media (max-width:1250px){.an-g5{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (max-width:1100px){.an-g4,.an-g5{grid-template-columns:repeat(2,minmax(0,1fr))}.an-g3,.an-g2{grid-template-columns:1fr}}
-@media (max-width:640px){.an-g4,.an-g5{grid-template-columns:1fr}.an-leg{grid-template-columns:1fr}.an-kv{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container (max-width:1180px){.an-g5{grid-template-columns:repeat(6,minmax(0,1fr))}.an-g5>:nth-child(-n+3){grid-column:span 2}.an-g5>:nth-child(n+4){grid-column:span 3}}
+@container (max-width:900px){.an-g4,.an-g5{grid-template-columns:repeat(2,minmax(0,1fr))}.an-g5>*{grid-column:auto!important}.an-g3,.an-g2{grid-template-columns:1fr}}
+@container (max-width:560px){.an-g4,.an-g5{grid-template-columns:1fr}.an-leg{grid-template-columns:1fr}.an-kv{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `;
 
 const COLOUR: Record<string, string> = { us: '#5A27E0', client: '#0ea5e9', other_side: '#f59e0b', lender: '#10b981', searches: '#ec4899', land_registry: '#64748b', other: '#94a3b8', none: '#e2e8f0' };

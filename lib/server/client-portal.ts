@@ -74,7 +74,8 @@ export async function portalDocuments(row: { tenant_id: string; matter_id: strin
   return runAsSystem(async () => {
     const sent = await query<{ id: string; name: string; at: Date }>(
       `select distinct on (u.id) u.id, u.name, s.created_at as at
-         from file_share s, unnest(s.document_ids, s.file_names) as u(id, name)
+         from file_share s
+         cross join lateral unnest(s.document_ids, s.file_names) as u(id, name)
          join document d on d.id = u.id and d.tenant_id = s.tenant_id
         where s.tenant_id = $1 and s.matter_id = $2
         order by u.id, s.created_at asc`,

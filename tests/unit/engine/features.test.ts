@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { resolveFeatures } from '../../../lib/server/features';
 import { FirmInfoTrackRouter, MemoryOrderStore } from '../../../lib/server/integrations/infotrack';
 import { MockIdCheckProvider, MockSearchProvider } from '../../../lib/server/engine/mocks';
-import { clientFaqs } from '../../../lib/server/engine/client-faq';
+import { clientHelp } from '../../../lib/server/engine/client-faq';
 import { clientPortalView } from '../../../lib/server/engine/client-portal';
 import { harness, TENANT, MATTER, USER } from './helpers';
 
@@ -39,15 +39,34 @@ test('ordered in the practice system: recorded as such, the handler told, no pla
   assert.deepEqual(told, ['InTouch: the CON29 search', 'InTouch: the ID check']);
 });
 
-test('help answers are for the client\'s side, the case answers "why haven\'t I heard", and the stage\'s questions come first', async () => {
+test('help: the questions asked at the client\'s stage come first, for their side, answered from the case; never a negative question', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: ['LLC1'], requireProofOfFunds: false, requireExchangeAuthority: false });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   const v = clientPortalView(await h.svc.getState(TENANT, MATTER), h.ports.now());
-  const faqs = clientFaqs(v);
-  const ids = faqs.map((f) => f.id);
-  assert.ok(ids.includes('searches') && ids.includes('id_pof') && !ids.includes('move_out') && !ids.includes('id'), ids.join(', '));
-  assert.ok(ids.indexOf('quiet') < ids.indexOf('keys'), 'what is asked at the start comes before completion-day questions');
-  assert.match(faqs.find((f) => f.id === 'quiet')!.a, /We also need your identity check/i);
-  for (const f of faqs) assert.doesNotMatch(f.a, /issue|flag|decision/i);
+  const help = clientHelp(v);
+  const first = help.now.map((f) => f.id);
+  assert.ok(first.length >= 3 && first.length <= 5, first.join(', '));
+  assert.equal(first[0], 'now');
+  assert.match(help.now[0].q, /What's happening on my purchase now\?/);
+  assert.match(help.now.find((f) => f.id === 'todo')!.a, /identity check/i, 'what they need to do comes from the case');
+  const every = [...help.now, ...help.all];
+  const ids = every.map((f) => f.id);
+  assert.ok(!ids.includes('move_out') && !ids.includes('first_sale'), 'seller questions are not shown to a buyer');
+  assert.ok(!first.includes('keys'), 'completion-day questions are not first at the start');
+  for (const f of every) {
+    assert.doesNotMatch(f.q, /haven't|why (is|has)|delay|slow|wrong/i, `a question that invites worry: ${f.q}`);
+    assert.doesNotMatch(f.a, /issue|flag|decision/i);
+  }
+  assert.equal(new Set(ids).size, ids.length, 'no question twice');
+});
+
+test('help follows the stage: after exchange a buyer is first asked about completion day and the keys; a seller about moving out', () => {
+  const base = { transaction: 'Freehold purchase', lifecycle: 'exchanged', leasehold: false, hasLender: true, closed: false, journey: [], stageLabel: 'Exchanged', progress: [], tasks: [], waitingOnOthers: [], dates: { targetExchange: null, exchanged: '2026-10-01', completion: '2026-10-29', targetCompletion: null, completed: null } };
+  const buyer = clientHelp({ ...base, side: 'buyer' } as never).now.map((f) => f.id);
+  assert.deepEqual(buyer.slice(0, 3), ['completion_day', 'keys', 'balance']);
+  const seller = clientHelp({ ...base, side: 'seller' } as never).now.map((f) => f.id);
+  assert.deepEqual(seller.slice(0, 3), ['completion_day', 'move_out', 'sale_money']);
+  const done = clientHelp({ ...base, side: 'buyer', lifecycle: 'completed' } as never).now.map((f) => f.id);
+  assert.equal(done[0], 'after');
 });

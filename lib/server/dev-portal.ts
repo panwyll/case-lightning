@@ -1,7 +1,7 @@
 /** Local development only: the client portal over the dev harness's in-memory case, on /portal/dev-preview-portal-000000 (code 123456). */
 import { devHarness, DEV_MATTER, DEV_TENANT } from './dev-harness';
 import { clientPortalView } from './engine/client-portal';
-import { clientFaqs } from './engine/client-faq';
+import { clientHelp } from './engine/client-faq';
 
 export const DEV_PORTAL_TOKEN = 'dev-preview-portal-000000';
 export const DEV_PORTAL_CODE = '123456';
@@ -16,7 +16,7 @@ export async function devPortalContext() {
   const state = await h.svc.getState(DEV_TENANT, DEV_MATTER);
   const view = clientPortalView(state, new Date(), { idProviderSendsLink: false });
   return {
-    faqs: clientFaqs(view),
+    help: clientHelp(view),
     feedback: g.__devFeedback ? null : { milestone: 'exchanged' as const, kind: 'csat' as const },
     status: 'open',
     firmName: 'Your Firm LLP',

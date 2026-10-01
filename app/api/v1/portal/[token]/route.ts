@@ -9,7 +9,7 @@ import { getFirmProfile } from '@/lib/server/firm';
 import { getSignaturePerson } from '@/lib/server/signature';
 import { engine } from '@/lib/server/engine/adapters';
 import { clientPortalView } from '@/lib/server/engine/client-portal';
-import { clientFaqs } from '@/lib/server/engine/client-faq';
+import { clientHelp } from '@/lib/server/engine/client-faq';
 import { infotrackClientFor } from '@/lib/server/integrations/infotrack-adapters';
 import { PORTAL_HOURS, feedbackDue, countPortalOpen, openPortal, portalAccess, portalCookie, portalCookieName, portalDocuments, sendPortalCode, verifyPortalCode } from '@/lib/server/client-portal';
 import { DEV_PORTAL_CODE, devPortalContext, isDevPortal } from '@/lib/server/dev-portal';
@@ -51,7 +51,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     const view = enrolled ? clientPortalView(state, new Date(), infotrack ? { idProviderSendsLink: true, idProviderLabel: 'InfoTrack' } : {}) : null;
     return ok({
       status: 'open',
-      faqs: view ? clientFaqs(view) : [],
+      help: view ? clientHelp(view) : { now: [], all: [] },
       feedback: view ? await feedbackDue(row, view.lifecycle) : null,
       firmName: info.firmName,
       propertyAddress: info.propertyAddress,
