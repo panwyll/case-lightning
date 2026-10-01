@@ -30,7 +30,7 @@ export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEma
   analyticsTargets: { monthlyCompletions: null, perPerson: {} },
   /** Where a client who would recommend us is asked to leave a review (ReviewSolicitors, Trustpilot, Google). */
   reviewUrl: null,
-  /** Null until the firm sets its fees (Firm > How CONVEYi Runs > Fees). */
+  /** Null until the firm sets its fees (Firm > Fees). */
   feeScale: null,
 };
 export type PolicyKey = keyof typeof POLICY_DEFAULTS;

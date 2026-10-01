@@ -48,6 +48,6 @@ test('help answers are for the client\'s side, the case answers "why haven\'t I 
   const ids = faqs.map((f) => f.id);
   assert.ok(ids.includes('searches') && ids.includes('id_pof') && !ids.includes('move_out') && !ids.includes('id'), ids.join(', '));
   assert.ok(ids.indexOf('quiet') < ids.indexOf('keys'), 'what is asked at the start comes before completion-day questions');
-  assert.match(faqs.find((f) => f.id === 'quiet')!.a, /identity check from you/i);
+  assert.match(faqs.find((f) => f.id === 'quiet')!.a, /We also need your identity check/i);
   for (const f of faqs) assert.doesNotMatch(f.a, /issue|flag|decision/i);
 });

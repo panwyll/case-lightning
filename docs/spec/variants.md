@@ -38,7 +38,7 @@ The core flow (code) is the product. A firm changes it only through **declared v
 
 ## System mode (`lib/server/features.ts`)
 
-A firm runs CONVEYi either as **The Whole Case System** (`standalone`) or **Alongside LEAP Or InTouch** (`alongside`). The mode sets each feature's default; an admin can turn any feature on or off against it (Firm → How CONVEYi Runs). It is stored as firm policy: `systemMode`, plus `features` for the overrides.
+A firm runs CONVEYi either as **The Whole Case System** (`standalone`) or **Alongside LEAP Or InTouch** (`alongside`). The mode sets each feature's default; the platform (the people who run CONVEYi, not the firm) sets it and can turn any feature on or off against it, on Tools → Firms (`/api/v1/platform/firms/:id/features`). It may follow the firm's plan later. It is stored as firm policy: `systemMode`, plus `features` for the overrides.
 
 | Feature | Whole system | Alongside | What it changes |
 | --- | --- | --- | --- |

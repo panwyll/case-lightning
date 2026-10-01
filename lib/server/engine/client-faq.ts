@@ -21,9 +21,8 @@ const FAQS: FaqSpec[] = [
       const others = v.waitingOnOthers.map((w) => `${w.who} (${list(w.what)})`);
       const mine = v.tasks.map((t) => t.title.toLowerCase());
       return [
-        others.length ? `Right now we are waiting for ${list(others)}. We chase them for you and will be in touch as soon as anything changes.` : 'Nothing is held up with anyone else at the moment; we are working on the next step.',
-        mine.length ? `We are also waiting for ${list(mine)} from you; see For You above.` : '',
-        'Conveyancing has long quiet stretches while searches and the other side catch up. Quiet does not mean stuck.',
+        others.length ? `Right now we are waiting for ${list(others)}. We chase them for you and will be in touch as soon as anything changes.` : 'Nothing is with anyone else right now: the next step is ours.',
+        mine.length ? `We also need your ${list(mine)} (For You, above).` : '',
       ].filter(Boolean).join(' ');
     },
   },

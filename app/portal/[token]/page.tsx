@@ -245,7 +245,7 @@ export default function ClientPortal() {
 
   return shell(
     <>
-      <p className="firm">{ctx.firmName}{v && <span className="stage"><CircleDot size={16} />{v.stageLabel}</span>}</p>
+      <p className="firm">{ctx.firmName}</p>
       <h1 style={{ marginBottom: 18 }}>{ctx.propertyAddress}</h1>
       <input ref={picker} type="file" multiple hidden accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.doc,.docx" onChange={(e) => { const { role, task } = pickRole.current; void upload(e.target.files, role, task); e.target.value = ''; }} />
       {err && <div className="err">{err}</div>}

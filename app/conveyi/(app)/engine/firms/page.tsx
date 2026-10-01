@@ -1,10 +1,12 @@
 'use client';
-/** Every firm and where it stands on billing; comp one (free, full service), with or without an end date. For the people who run CONVEYi. */
-import { useCallback, useEffect, useState } from 'react';
+/** Every firm and where it stands on billing; comp one (free, full service), with or without an end date; and how CONVEYi runs for it (system mode and features). For the people who run CONVEYi. */
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { BackLink } from '@/app/shared/BackLink';
 
+type Flag = { key: string; label: string; on: boolean; byDefault: boolean; overridden: boolean };
+type Setup = { mode: string; features: Flag[] };
 interface Firm { id: string; name: string; created_at: string; users: number; cases: number; comp_plan: string | null; comp_until: string | null; status: string; entitled: boolean; trialEndsAt: string | null; graceEndsAt: string | null }
 
 const CSS = `
@@ -17,6 +19,9 @@ const CSS = `
 .pf input[type=date]{border:1px solid #d0d5dd;border-radius:7px;padding:4px 6px;font:inherit;font-size:12.5px}
 .pf button{border:1px solid #5A27E0;background:#fff;color:#5A27E0;border-radius:7px;padding:4px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
 .pf button.go{background:#5A27E0;color:#fff}
+.pf .pf-sel{border:1px solid #d0d5dd;border-radius:7px;padding:4px 30px 4px 8px;font:inherit;font-size:12.5px}
+.pf .pf-on{border:1px solid #cbd5e1;color:#64748b;border-radius:99px;min-width:48px}
+.pf .pf-on.yes{background:#dcfce7;border-color:#86efac;color:#166534}
 .pf button:disabled{opacity:.5;cursor:default}
 `;
 
@@ -44,6 +49,19 @@ export default function FirmsPage() {
     if (f.entitled) return <span className="st ok">Paying</span>;
     return <span className="st bad">Suspended</span>;
   };
+  const [setup, setSetup] = useState<Record<string, Setup>>({});
+  const [open, setOpen] = useState<string | null>(null);
+  useEffect(() => {
+    if (!firms) return;
+    for (const f of firms) if (!setup[f.id]) api<Setup>(`/platform/firms/${f.id}/features`).then((r) => setSetup((s) => ({ ...s, [f.id]: r }))).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firms]);
+  const change = async (id: string, body: Record<string, unknown>, key: string) => {
+    setBusy(`${id}:${key}`); setErr(null);
+    try { const r = await api<Setup>(`/platform/firms/${id}/features`, { method: 'PATCH', body: JSON.stringify(body) }); setSetup((s) => ({ ...s, [id]: r })); }
+    catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not save.'); }
+    finally { setBusy(null); }
+  };
   const shown = (firms ?? []).filter((f) => !q.trim() || f.name.toLowerCase().includes(q.trim().toLowerCase()));
   return (
     <div className="eg">
@@ -53,12 +71,13 @@ export default function FirmsPage() {
       <input className="pf-q" placeholder="Search firms" value={q} onChange={(e) => setQ(e.target.value)} />
       {firms === null ? <div className="eg-sub">Loading…</div> : (
         <table className="pf">
-          <thead><tr><th>Firm</th><th>Since</th><th>Users</th><th>Cases</th><th>Billing</th><th>Comp</th></tr></thead>
+          <thead><tr><th>Firm</th><th>Since</th><th>Users</th><th>Cases</th><th>Billing</th><th>Comp</th><th>Runs As</th></tr></thead>
           <tbody>
             {shown.map((f) => {
               const comped = !!f.comp_plan && (!f.comp_until || new Date(f.comp_until) > new Date());
               return (
-                <tr key={f.id}>
+                <Fragment key={f.id}>
+                <tr>
                   <td style={{ fontWeight: 700 }}>{f.name}</td>
                   <td>{day(f.created_at)}</td>
                   <td>{f.users}</td>
@@ -71,7 +90,33 @@ export default function FirmsPage() {
                         : <><input type="date" aria-label="Comp until (blank: no end)" value={until[f.id] ?? ''} onChange={(e) => setUntil({ ...until, [f.id]: e.target.value })} /><button type="button" className="go" disabled={busy === f.id} onClick={() => void comp(f, true)}>Comp</button></>}
                     </span>
                   </td>
+                  <td>
+                    {setup[f.id] ? (
+                      <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                        <select className="pf-sel" value={setup[f.id].mode} disabled={busy === `${f.id}:mode`} onChange={(e) => void change(f.id, { mode: e.target.value }, 'mode')}>
+                          <option value="standalone">Whole Case System</option>
+                          <option value="alongside">Alongside LEAP Or InTouch</option>
+                        </select>
+                        <button type="button" onClick={() => setOpen(open === f.id ? null : f.id)}>{open === f.id ? 'Close' : 'Features'}</button>
+                      </span>
+                    ) : <span className="eg-sub">Loading…</span>}
+                  </td>
                 </tr>
+                {open === f.id && setup[f.id] && (
+                  <tr>
+                    <td colSpan={7} style={{ background: '#fafbfc' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 18px' }}>
+                        {setup[f.id].features.map((x) => (
+                          <span key={x.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            <button type="button" className={`pf-on${x.on ? ' yes' : ''}`} disabled={busy === `${f.id}:${x.key}`} onClick={() => void change(f.id, { feature: { key: x.key, on: !x.on } }, x.key)}>{x.on ? 'On' : 'Off'}</button>
+                            {x.label}{x.overridden && <span className="eg-sub" style={{ fontSize: 11.5 }}>(Default {x.byDefault ? 'On' : 'Off'})</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
               );
             })}
           </tbody>

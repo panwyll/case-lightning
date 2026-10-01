@@ -35,7 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);
     const { action } = z.object({ action: z.enum(['link', 'reset']) }).parse(await req.json());
-    if (!(await featureOn(user.tenantId, 'clientPortal'))) throw Object.assign(new Error('The client portal is turned off for this firm (Firm > How CONVEYi Runs).'), { status: 409 });
+    if (!(await featureOn(user.tenantId, 'clientPortal'))) throw Object.assign(new Error('The client portal is not turned on for this firm.'), { status: 409 });
     const url = action === 'reset' ? await resetPortal(user.tenantId, matterId) : await ensurePortal(user.tenantId, matterId);
     if (action === 'reset') await writeAudit({ tenantId: user.tenantId, actorUserId: user.userId, matterId, actionType: 'CLIENT_PORTAL_RESET', actionStatus: 'SUCCESS', payload: {} }).catch(() => {});
     return ok({ url, portal: await portalSummary(user.tenantId, matterId) });

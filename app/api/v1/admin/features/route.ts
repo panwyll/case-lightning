@@ -4,14 +4,14 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { ok, fail } from '@/lib/server/http';
 import { writeAudit } from '@/lib/server/audit';
-import { FEATURES, FEATURE_KEYS, SYSTEM_MODE_LABEL, firmFeatures, setFeature, setSystemMode, type FeatureKey } from '@/lib/server/features';
+import { FEATURES, FEATURE_KEYS, SYSTEM_MODE_LABEL, firmFeatures } from '@/lib/server/features';
 import { getPolicy, setPolicy } from '@/lib/server/policy';
 import { COMMON_EXTRAS, FEE_CONDITIONS } from '@/lib/server/analytics/fees';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** How the firm runs CONVEYi (the mode and each feature against its default) and its analytics targets. Anyone reads; admins change. */
+/** The firm's targets, review page and fees (admins change them), and, read-only, how CONVEYi is set up for it (set by the platform: /platform/firms). */
 export async function GET() {
   try {
     assertFeature('auth');
@@ -35,8 +35,6 @@ export async function GET() {
 
 const Band = z.object({ upTo: z.number().min(0).max(100_000_000).nullable(), fee: z.number().min(0).max(100000) });
 const Body = z.object({
-  mode: z.enum(['standalone', 'alongside']).optional(),
-  feature: z.object({ key: z.enum(FEATURE_KEYS as [FeatureKey, ...FeatureKey[]]), on: z.boolean() }).optional(),
   fees: z.object({
     purchase: z.array(Band).max(20), sale: z.array(Band).max(20), remortgage: z.array(Band).max(20), transfer: z.array(Band).max(20),
     extras: z.array(z.object({ id: z.string().max(40), label: z.string().trim().min(1).max(80), fee: z.number().min(0).max(100000), when: z.string().refine((w) => w in FEE_CONDITIONS), sides: z.array(z.enum(['purchase', 'sale', 'remortgage', 'transfer'])) })).max(40),
@@ -49,10 +47,8 @@ export async function PATCH(req: NextRequest) {
   try {
     assertFeature('auth');
     const user = await requireUser();
-    if (user.role !== 'ADMIN') throw Object.assign(new Error('Only an admin changes how the firm runs CONVEYi.'), { status: 403 });
+    if (user.role !== 'ADMIN') throw Object.assign(new Error('Only an admin changes the targets and fees.'), { status: 403 });
     const b = Body.parse(await req.json());
-    if (b.mode) await setSystemMode(user.tenantId, b.mode, user.userId);
-    if (b.feature) await setFeature(user.tenantId, b.feature.key, b.feature.on, user.userId);
     if (b.targets) await setPolicy(user.tenantId, 'analyticsTargets', b.targets, user.userId);
     if (b.fees) await setPolicy(user.tenantId, 'feeScale', b.fees, user.userId);
     if (b.reviewUrl !== undefined) await setPolicy(user.tenantId, 'reviewUrl', b.reviewUrl, user.userId);

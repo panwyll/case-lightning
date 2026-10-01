@@ -38,7 +38,7 @@ Built the way target-driven teams such as sales operations and kanban flow teams
 | **Client satisfaction** | Asked on the client portal ("Ask Clients How We Did", migration 122). **CSAT:** 1–5 after exchange; the score is the share giving 4–5. **NPS:** 0–10 after completion; promoters minus detractors. A client who scores 9–10 is offered the firm's review page (`reviewUrl` policy). Response rate = NPS answers ÷ completions. |
 | **Read first** | Up to six sentences picked from the above, most important first: pace against target, a record month, the biggest wait, our share, cycle time against last year and the industry, the oldest cases, instructions against last year, fall-through, chases. |
 
-Targets are set under Firm → How CONVEYi Runs → Targets: completions a month for the firm, and for each person.
+Targets are set under Firm → Targets And Reviews: completions a month for the firm, and for each person.
 
 ## Reference figures
 

@@ -193,7 +193,7 @@ const FEE_CSS = `
 @media (max-width:760px){.fe-x{grid-template-columns:1fr 90px}.fe-row{grid-template-columns:1fr}}
 `;
 
-/** How the firm runs CONVEYi: the whole case system, or alongside LEAP or InTouch; each feature against the mode's default; and the targets analytics measures against. */
+/** The targets analytics measures against, and where happy clients are asked to leave a review. (How CONVEYi runs for the firm is set on the platform's Firms page.) */
 export function FirmSetup() {
   const [f, setF] = useState<Features | null>(null);
   const [people, setPeople] = useState<Array<{ id: string; name: string }>>([]);
@@ -219,22 +219,7 @@ export function FirmSetup() {
   return (
     <div className="fd">
       <style>{CSS + '.fd-flag{display:flex;align-items:center;gap:10px;font-size:13px;padding:5px 0}.fd-flag b{font-weight:600;min-width:240px}.fd-dflt{font-size:11.5px;color:#94a3b8}.fd-on{border:1px solid #cbd5e1;border-radius:999px;padding:3px 12px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#64748b;min-width:56px}.fd-on.yes{background:#dcfce7;border-color:#86efac;color:#166534}.fd-on:disabled{opacity:.6;cursor:default}'}</style>
-      <div className="fd-h">How CONVEYi Runs</div>
-      <label className="fd-row"><span>Runs As</span>
-        <select className="fd-in" value={f.mode} disabled={!f.canEdit || !!busy} onChange={(e) => void patch('mode', { mode: e.target.value })} style={{ maxWidth: 280 }}>
-          {f.modes.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-        </select>
-      </label>
-      <div style={{ marginTop: 8 }}>
-        {f.features.map((x) => (
-          <div key={x.key} className="fd-flag">
-            <b>{x.label}</b>
-            <button className={`fd-on${x.on ? ' yes' : ''}`} disabled={!f.canEdit || !!busy} onClick={() => void patch(x.key, { feature: { key: x.key, on: !x.on } })}>{busy === x.key ? <Spin>…</Spin> : x.on ? 'On' : 'Off'}</button>
-            <span className="fd-dflt">{x.overridden ? `Default ${x.byDefault ? 'On' : 'Off'}` : 'Default'}</span>
-          </div>
-        ))}
-      </div>
-      <div className="fd-h" style={{ marginTop: 14 }}>Targets And Reviews</div>
+      <div className="fd-h">Targets And Reviews</div>
       <div className="fd-grid">
         <label className="fd-row"><span>Review Page</span><input className="fd-in" type="url" placeholder="https://" value={review} onChange={(e) => setReview(e.target.value)} disabled={!f.canEdit} /></label>
         <label className="fd-row"><span>Completions A Month</span><input className="fd-in" inputMode="numeric" value={target} onChange={(e) => setTarget(e.target.value.replace(/\D/g, ''))} disabled={!f.canEdit} style={{ maxWidth: 120 }} /></label>
