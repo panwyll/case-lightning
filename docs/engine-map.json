@@ -1,5 +1,5 @@
 {
-  "version": "6b8e045a16fa",
+  "version": "234699e11e0b",
   "generatedFrom": "lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)",
   "transactionTypes": [
     {
@@ -3065,6 +3065,12 @@
     },
     {
       "type": "client_decision_recorded",
+      "category": "case model",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "client_decision_lapsed",
       "category": "case model",
       "decision": false,
       "humanGated": false
@@ -6538,6 +6544,42 @@
         "escalateAfterWorkingDays": 5
       },
       {
+        "kind": "client_change",
+        "group": "parties_chain",
+        "label": "Change to the clients",
+        "arisesFrom": "a client added or taken off the case, before or after exchange: the contract and transfer parties, the lender, the funds and the tax all rest on who the clients are",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Before exchange: amend the draft contract and the TR1, re-take instructions on how they will own it. After exchange: the contract binds every original buyer, so a change needs the seller's agreement (a deed of variation or assignment) and the lender's consent.",
+        "severity": "critical",
+        "workstreams": [
+          "contract"
+        ],
+        "threatens": [
+          "exchange",
+          "completion"
+        ],
+        "actions": [
+          "Amend the draft contract and the transfer (TR1) to the new parties",
+          "Take instructions from every client on how they will own it",
+          "Agree the change with the other side (after exchange: a deed of variation or assignment)"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 3
+      },
+      {
         "kind": "transaction_at_risk",
         "group": "parties_chain",
         "label": "Transaction at risk",
@@ -7906,6 +7948,7 @@
       "file_locked"
     ],
     "chips": {
+      "client_change": "Client Change",
       "company_buyer_checks": "Company Buyer",
       "buy_to_let_conditions": "Buy To Let",
       "new_build_pack": "New Build",
@@ -8871,6 +8914,25 @@
           "kind": "message",
           "label": "Update The Client",
           "to": "client"
+        }
+      ],
+      "client_change": [
+        {
+          "id": "msg:seller_solicitor:write_to_the_other_side",
+          "kind": "message",
+          "label": "Write To The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "msg:client:update_the_client",
+          "kind": "message",
+          "label": "Update The Client",
+          "to": "client"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
         }
       ],
       "transaction_at_risk": [
@@ -10055,6 +10117,25 @@
           "kind": "message",
           "label": "Update The Client",
           "to": "client"
+        }
+      ],
+      "client_change": [
+        {
+          "id": "msg:client:ask_the_client",
+          "kind": "message",
+          "label": "Ask The Client",
+          "to": "client"
+        },
+        {
+          "id": "msg:seller_solicitor:update_the_other_side",
+          "kind": "message",
+          "label": "Update The Other Side",
+          "to": "seller_solicitor"
+        },
+        {
+          "id": "negotiating",
+          "kind": "negotiating",
+          "label": "Mark Negotiating"
         }
       ],
       "transaction_at_risk": [

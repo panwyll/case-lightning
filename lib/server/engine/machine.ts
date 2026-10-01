@@ -1451,6 +1451,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const out: NewEvent[] = [{ type: 'clients_updated', actor: cmd.actor, payload: { partyNames: names, previous: was, role, reason: cmd.reason?.trim() || null } }];
       // Every client beyond the first is identified in their own right, as at enrolment.
       for (const name of names.slice(1)) if (!s.partyChecks[partyId(role, name)]) out.push({ type: 'id_party_added', actor: cmd.actor, payload: { party: partyId(role, name), label: name, role } });
+      // A name typed differently is not a change of client; adding or removing someone is.
+      if (s.enrolled && was.length && (names.some((n) => !was.includes(n)) || was.some((n) => !names.includes(n))) && !(names.length === was.length && cmd.reason && /spell|typo|name change|married|correct/i.test(cmd.reason))) out.push(...consequencesOfClientChange(s, names, was));
       return out;
     }
     case 'set_target_dates': {
@@ -1506,7 +1508,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.exchange.exchangedAt) reject('Contracts are exchanged; the funding is fixed.');
       if (!!s.hasLender === cmd.hasLender) reject(cmd.hasLender ? 'This purchase already has a mortgage.' : 'This is already a cash purchase.');
       if (!cmd.reason?.trim()) reject('Say why the funding changed.', 400);
-      return [{ type: 'funding_changed', actor: cmd.actor, payload: { hasLender: cmd.hasLender, reason: cmd.reason.trim() } }];
+      const funded: NewEvent[] = [{ type: 'funding_changed', actor: cmd.actor, payload: { hasLender: cmd.hasLender, reason: cmd.reason.trim() } }];
+      // The funds were evidenced for the old plan: a mortgage dropped means the whole price from the clients' own money; one added means the lender must know where the deposit comes from.
+      if (s.proofOfFunds.status !== 'not_started' && !openOf(s, 'source_of_funds', 'Funds: re-evidence')) funded.push(issue(s, nextIssueId(s), 'source_of_funds', `Funds: re-evidence for ${cmd.hasLender ? 'a mortgage purchase' : 'a cash purchase'}`, cmd.hasLender ? 'The purchase now has a mortgage: the deposit and costs are still the clients\' own money to evidence, and the lender will ask where the deposit comes from.' : 'The purchase is now cash: the whole price, SDLT and costs come from the clients\' own money. Evidence the new total with a further proof-of-funds round.', 'exchange'));
+      funded.push(...lapseExchangeAuthority(s, cmd.hasLender ? 'the purchase is now funded by a mortgage' : 'the purchase is now a cash purchase'));
+      return funded;
     }
     case 'record_survey_plan': {
       requireEnrolled(s);
@@ -1551,7 +1557,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.completion.confirmedAt) reject('Completion has already been confirmed.');
       if (Number.isNaN(Date.parse(cmd.completionDate))) reject('A valid completion date is required.', 400);
       if (cmd.completionDate === s.exchange.completionDate) reject('The completion date is unchanged.');
-      return [{ type: 'completion_date_changed', actor: cmd.actor, payload: { from: s.exchange.completionDate ?? '', to: cmd.completionDate, reason: cmd.reason ?? null } }];
+      const moved: NewEvent[] = [{ type: 'completion_date_changed', actor: cmd.actor, payload: { from: s.exchange.completionDate ?? '', to: cmd.completionDate, reason: cmd.reason ?? null } }];
+      // Everything dated to the old completion day follows it: the statement's apportionments and daily interest, the lender's certificate, the advance already sent, the linked case.
+      const next = issueIds(s);
+      if (s.completion.statementGeneratedAt) moved.push(issue(s, next(), 'completion_funds_shortfall', `Completion statement: re-issue for ${cmd.completionDate}`, 'Apportionments, the redemption figure\'s daily interest and any interest on the deposit were worked to the old date. Re-issue the statement and tell the client if the balance changed.', 'completion'));
+      if (s.deeds.certificateOfTitleAt) moved.push(issue(s, next(), 'lender_funds_delayed', `Tell the lender: completion moved to ${cmd.completionDate}`, (s.completion.receivedFrom ?? []).includes('lender') ? 'The advance is already with us for the old date. Most lenders want it returned if completion slips beyond their Part 2 period (often one to five working days), or interest is charged: check the lender\'s instructions and return it or get consent to hold it.' : 'The certificate of title named the old date: send the lender the new date so the advance is released for it.', 'completion'));
+      if (s.relatedMatter) moved.push(issue(s, next(), 'chain_dependency', `Linked case: move its completion date to ${cmd.completionDate} too`, 'The client\'s sale and purchase complete on the same day: the other case\'s date must move with this one, with its other side\'s agreement.', 'completion'));
+      return moved;
     }
     case 'notice_to_complete_served': {
       requireEnrolled(s);
@@ -1845,6 +1857,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.hasLender && s.purchasePricePennies !== null) out.push(lenderApprovalIssue(s, `price:${s.lastSeq + 1}:lender`, `Tell the lender: price changed to £${(cmd.toPennies / 100).toLocaleString('en-GB')} (${cmd.reason.trim()})`, null, null));
       const short = pofShortfallIssue(s, cmd.toPennies);
       if (short) out.push(short);
+      out.push(...lapseExchangeAuthority(s, `the price changed to £${(cmd.toPennies / 100).toLocaleString('en-GB')}`));
       return out;
     }
     case 'contract_approved': {
@@ -2463,6 +2476,48 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
 // ───────────────────────────── issues helpers ─────────────────────────────
 
 /** ISS-1, ISS-2… per matter (deterministic from the state, so a replay agrees). */
+// ───────────────────────────── consequences: a fact changed, so what rested on it is done again ─────────────────────────────
+
+/** Issue ids for several issues raised by one command (nextIssueId only sees issues already on the state). */
+function issueIds(s: MatterState): () => string {
+  let n = Object.keys(s.issues).length;
+  return () => { do { n += 1; } while (s.issues[`ISS-${n}`]); return `ISS-${n}`; };
+}
+const issue = (s: MatterState, id: string, kind: IssueKind, title: string, detail: string, gate: IssueGate): NewEvent => ({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: id, kind, title, detail, gate, stage: s.stage, sourceDocumentId: null, origin: null, party: null, causedBy: null } });
+const openOf = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).some((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
+
+/** The client's authority to exchange was given on the deal as it stood: a change to the price, the date or the parties means asking again. */
+function lapseExchangeAuthority(s: MatterState, why: string): NewEvent[] {
+  if (s.exchange.exchangedAt || s.clientDecisions.exchange_authority?.decision !== 'authorised') return [];
+  return [{ type: 'client_decision_lapsed', actor: SYSTEM, payload: { subject: 'exchange_authority', reason: why } }];
+}
+
+/**
+ * Who the clients are changed (one pulls out and the other buys alone, a partner joins, a separation): everything that
+ * rests on the clients is done again. The lender underwrote the old borrowers; the funds were evidenced for them; the
+ * SDLT basis is every buyer's; how they own it was their joint answer; the contract and the transfer name them; their
+ * authority to exchange was given together. After exchange the contract binds every original buyer.
+ */
+function consequencesOfClientChange(s: MatterState, names: string[], previous: string[]): NewEvent[] {
+  const next = issueIds(s);
+  const out: NewEvent[] = [];
+  const added = names.filter((n) => !previous.includes(n));
+  const removed = previous.filter((n) => !names.includes(n));
+  const what = [added.length && `${added.join(' and ')} added`, removed.length && `${removed.join(' and ')} no longer a party`].filter(Boolean).join('; ') || 'clients changed';
+  const buyer = profileOf(s.transactionType).side === 'buyer';
+  if (s.exchange.exchangedAt) {
+    out.push(issue(s, next(), 'client_change', `After exchange: ${what}`, 'The contract binds every buyer who signed it. A buyer leaving or joining now needs the seller\'s agreement (a deed of variation, or an assignment), the lender\'s consent to the new borrowers, a fresh transfer, and the funds and SDLT worked out again for the new buyers. Until that is agreed in writing, completion is held.', 'completion'));
+    return out;
+  }
+  out.push(issue(s, next(), 'client_change', `Clients changed: ${what}`, 'Amend the draft contract and the transfer (TR1) to name the clients now on the case, and confirm the change with the other side. The report on title and every letter go to the new clients.', 'exchange'));
+  if (s.hasLender && s.mortgage.status !== 'not_required') out.push(issue(s, next(), 'lender_approval', `Tell the lender: the borrowers have changed (${what})`, 'The lender underwrote the borrowers on the application. It must re-approve on the new borrowers (affordability, credit, a fresh offer in their names) before exchange.', 'exchange'));
+  if (buyer && s.proofOfFunds.status !== 'not_started') out.push(issue(s, next(), 'source_of_funds', `Funds: re-evidence for the clients now buying (${what})`, 'The source of funds was evidenced for the buyers as they were. Ask where the money now comes from (a buyer leaving takes their share with them) and evidence it with a further proof-of-funds round.', 'exchange'));
+  if (buyer) out.push(issue(s, next(), 'sdlt_basis', `SDLT: re-confirm the basis for the buyers now on the case (${what})`, 'The basis is every buyer\'s: one buyer who owns another home makes the whole purchase a higher-rates purchase; first-time buyer relief needs every buyer to qualify. Ask each buyer again and recalculate.', 'none'));
+  if (s.clientDecisions.ownership_basis && names.length !== previous.length) out.push({ type: 'client_decision_lapsed', actor: SYSTEM, payload: { subject: 'ownership_basis', reason: `the clients changed (${what})` } });
+  out.push(...lapseExchangeAuthority(s, `the clients changed (${what})`));
+  return out;
+}
+
 function nextIssueId(s: MatterState): string {
   let n = Object.keys(s.issues).length + 1;
   while (s.issues[`ISS-${n}`]) n += 1;

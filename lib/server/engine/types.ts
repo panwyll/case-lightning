@@ -194,6 +194,7 @@ export const EVENT_TYPES = [
   'survey_received',
   'specialist_report_received',
   'client_decision_recorded',
+  'client_decision_lapsed',
   'issue_severity_changed',
   'matter_closed',
   // transaction types (docs/transaction-types.md): sale, remortgage, transfer of equity, co-ownership
@@ -1076,6 +1077,8 @@ export interface Payloads {
   specialist_report_received: { facts: SurveyFacts; forIssueId: string | null; extractor: string; furtherInvestigation: boolean };
   /** The client's decision on something only the client decides — recorded by a person, never inferred. */
   /** approvedEventId: the note_actions_applied event a person approved it in, when it came from a note (the database checks it). */
+  /** An answer the client gave no longer holds: what it rested on changed (the price, the date, who the clients are). They are asked again. */
+  client_decision_lapsed: { subject: ClientDecisionSubject; reason: string };
   client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; /** further_investigation: the investigations this applies to (issue ids); absent = all open ones. */ scope?: string[] | null };
   /** Severity moved (by a person, or by the timer as a deadline nears). */
   issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };

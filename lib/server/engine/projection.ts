@@ -1010,6 +1010,10 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       void p.furtherInvestigation;
       break;
     }
+    case 'client_decision_lapsed': {
+      delete s.clientDecisions[(e.payload as Payloads['client_decision_lapsed']).subject];
+      break;
+    }
     case 'client_decision_recorded': {
       const p = e.payload as Payloads['client_decision_recorded'];
       s.clientDecisions[p.subject] = { decision: p.decision, at: e.createdAt, by: e.actor, note: p.note ?? null };

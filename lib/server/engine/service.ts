@@ -726,6 +726,12 @@ export class EngineService {
     if (to === 'pre_exchange' && s.requireExchangeAuthority && s.clientDecisions.exchange_authority?.decision !== 'authorised' && !asked('exchange_authority_request')) {
       await askClient('exchange_authority_request', { completionLine: s.targetCompletionDate ? `, with completion on ${s.targetCompletionDate} or the date we agree with you` : '' });
     }
+    // An answer that lapsed (the price, the date or the clients changed) is asked for again, with what changed.
+    if (e.type === 'client_decision_lapsed') {
+      const p = e.payload as { subject: string; reason: string };
+      if (p.subject === 'exchange_authority' && s.requireExchangeAuthority && !s.exchange.exchangedAt) await askClient('exchange_authority_request', { completionLine: s.targetCompletionDate ? `, with completion on ${s.targetCompletionDate} or the date we agree with you` : '', noteToClient: `We are asking again because ${p.reason}.` });
+      if (p.subject === 'ownership_basis' && s.parties > 1) await askClient('ownership_basis_request', { noteToClient: `We are asking again because ${p.reason}.` });
+    }
     // Approved is the check: the report goes to the client as soon as it is signed off.
     if (e.type === 'report_on_title_approved' && s.reportOnTitle.status === 'approved') await safe('report on title send', () => this.sendReportOnTitle(tenantId, matterId, e.actor));
     if (e.type === 'contracts_exchanged') {
