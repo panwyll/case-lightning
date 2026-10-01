@@ -38,6 +38,9 @@ const CSS = `
 .an-t .num{text-align:right}
 .an-t a,.an-link{color:#5A27E0;font-weight:700;text-decoration:none;cursor:pointer;background:none;border:0;padding:0;font:inherit}
 .an-thin{color:#94a3b8}
+.an-best{color:#15803d;font-weight:800}
+.an-sort{border:0;background:none;font:inherit;color:inherit;cursor:pointer;padding:0;white-space:nowrap}
+.an-sort.on{color:#0f172a}
 .an-mini{display:inline-block;width:64px;height:6px;background:#f1f5f9;border-radius:99px;position:relative;vertical-align:middle;margin-right:6px}
 .an-mini i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:#5A27E0}
 .an-kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(58px,1fr));gap:8px;margin-top:12px}
@@ -203,40 +206,49 @@ function TeamChart({ team }: { team: AnalyticsReport['team'] }) {
   );
 }
 
+/** Each column: its value, and whether higher is better (for sorting best first and marking the best). */
+type Col = { key: string; label: string; get: (p: PersonRow) => number | null; show: (p: PersonRow) => React.ReactNode; higher: boolean; thin?: (p: PersonRow) => boolean };
+
+/** Who is doing best: every column sorts (best first), and the best figure in each is marked. Thin figures are greyed and never marked. */
 function PeopleTable({ people, onPick, fees }: { people: PersonRow[]; onPick?: (id: string) => void; fees: boolean }) {
+  const cols: Col[] = [
+    { key: 'done', label: 'This Month', get: (p) => p.completionsThisMonth + p.bookedThisMonth, higher: true, show: (p) => <>{p.target ? <span className="an-mini"><i style={{ width: `${Math.min(100, ((p.completionsThisMonth + p.bookedThisMonth) / p.target) * 100)}%`, background: p.completionsThisMonth + p.bookedThisMonth >= p.target ? '#16a34a' : '#5A27E0' }} /></span> : null}{p.completionsThisMonth}{p.bookedThisMonth ? <span className="an-thin"> +{p.bookedThisMonth}</span> : null}{p.target ? <span className="an-thin"> / {p.target}</span> : null}</> },
+    { key: 'c12', label: 'Completions 12 Months', get: (p) => p.completions12m, higher: true, show: (p) => p.completions12m },
+    ...(fees ? [{ key: 'f12', label: 'Fees 12 Months', get: (p: PersonRow) => p.fees12m, higher: true, show: (p: PersonRow) => gbp(p.fees12m) }] : []),
+    { key: 'avg', label: 'Monthly Average', get: (p) => p.monthlyAverage6m, higher: true, show: (p) => p.monthlyAverage6m },
+    { key: 'active', label: 'Active Cases', get: (p) => p.active, higher: true, show: (p) => p.active },
+    { key: 'days', label: 'Days To Complete', get: (p) => p.cycle.p50, higher: false, thin: (p) => p.cycle.thin, show: (p) => <S s={p.cycle} /> },
+    { key: 'resp', label: 'Response Time', get: (p) => p.taskHours.p50, higher: false, thin: (p) => p.taskHours.thin, show: (p) => <S s={p.taskHours} unit="h" /> },
+    { key: 'csat', label: 'Satisfaction', get: (p) => p.csat.pct, higher: true, thin: (p) => p.csat.n < 5, show: (p) => <span title={`${p.csat.n} responses`}>{pc(p.csat.pct)}</span> },
+    { key: 'nps', label: 'NPS', get: (p) => p.nps.score, higher: true, thin: (p) => p.nps.n < 5, show: (p) => <span title={`${p.nps.n} responses`}>{p.nps.score ?? '–'}</span> },
+    { key: 'fall', label: 'Fall-Through', get: (p) => p.fallThrough.rate, higher: false, thin: (p) => p.fallThrough.n < 5, show: (p) => <span title={`${p.fallThrough.n} cases`}>{pc(p.fallThrough.rate)}</span> },
+  ];
+  const [sort, setSort] = useState('c12');
+  const col = cols.find((c) => c.key === sort) ?? cols[1];
+  const rank = (c: Col, p: PersonRow) => { const v = c.get(p); return v == null || c.thin?.(p) ? -Infinity : c.higher ? v : -v; };
+  const rows = [...people].sort((a, b) => rank(col, b) - rank(col, a) || a.name.localeCompare(b.name));
+  const best = (c: Col) => { if (people.length < 2) return null; const top = Math.max(...people.map((p) => rank(c, p))); return top === -Infinity ? null : top; };
+  const bests = Object.fromEntries(cols.map((c) => [c.key, best(c)]));
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="an-t">
         <thead>
           <tr>
-            <th>Person</th><th className="num">Active</th><th>This Month</th><th className="num">6-Month Average</th><th className="num">Last 12 Months</th>{fees && <th className="num">Fees 12 Months</th>}
-            <th className="num">Days To Complete</th><th className="num">Task Turnaround</th><th className="num">Overdue</th><th className="num">With Us</th><th className="num">CSAT</th><th className="num">NPS</th><th className="num">Fall-Through</th>
+            <th>Person</th>
+            {cols.map((c) => <th key={c.key} className={c.key === 'done' ? undefined : 'num'}><button className={`an-sort${sort === c.key ? ' on' : ''}`} onClick={() => setSort(c.key)}>{c.label}{sort === c.key ? ' ↓' : ''}</button></th>)}
           </tr>
         </thead>
         <tbody>
-          {people.map((p) => {
-            const done = p.completionsThisMonth + p.bookedThisMonth;
-            return (
-              <tr key={p.id}>
-                <td>{onPick ? <button className="an-link" onClick={() => onPick(p.id)}>{p.name}</button> : p.name}</td>
-                <td className="num">{p.active}</td>
-                <td style={{ whiteSpace: 'nowrap' }}>
-                  {p.target ? <span className="an-mini"><i style={{ width: `${Math.min(100, (done / p.target) * 100)}%`, background: done >= p.target ? '#16a34a' : '#5A27E0' }} /></span> : null}
-                  {p.completionsThisMonth}{p.bookedThisMonth ? <span className="an-thin"> +{p.bookedThisMonth}</span> : null}{p.target ? <span className="an-thin"> / {p.target}</span> : null}
-                </td>
-                <td className="num">{p.monthlyAverage6m}</td>
-                <td className="num">{p.completions12m}</td>
-                {fees && <td className="num">{gbp(p.fees12m)}</td>}
-                <td className="num"><S s={p.cycle} /></td>
-                <td className="num"><S s={p.taskHours} unit="h" /></td>
-                <td className="num" style={p.overdueTasks ? { color: '#b91c1c', fontWeight: 700 } : undefined}>{p.overdueTasks}</td>
-                <td className="num">{pc(p.withUsShare)}</td>
-                <td className="num"><span className={p.csat.n < 5 ? 'an-thin' : undefined} title={`${p.csat.n} responses`}>{pc(p.csat.pct)}</span></td>
-                <td className="num"><span className={p.nps.n < 5 ? 'an-thin' : undefined} title={`${p.nps.n} responses`}>{p.nps.score ?? '–'}</span></td>
-                <td className="num"><span className={p.fallThrough.n < 5 ? 'an-thin' : undefined} title={`${p.fallThrough.n} cases`}>{pc(p.fallThrough.rate)}</span></td>
-              </tr>
-            );
-          })}
+          {rows.map((p) => (
+            <tr key={p.id}>
+              <td>{onPick ? <button className="an-link" onClick={() => onPick(p.id)}>{p.name}</button> : p.name}</td>
+              {cols.map((c) => {
+                const thin = c.thin?.(p);
+                const isBest = !thin && bests[c.key] != null && rank(c, p) === bests[c.key];
+                return <td key={c.key} className={`${c.key === 'done' ? '' : 'num'}${thin ? ' an-thin' : ''}${isBest ? ' an-best' : ''}`} style={c.key === 'done' ? { whiteSpace: 'nowrap' } : undefined}>{c.show(p)}</td>;
+              })}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -329,14 +341,14 @@ export function AnalyticsView(props: {
         <div className="an-card">
           <div className="an-h">What Cases Wait For<Chip>12 Months</Chip></div>
           <table className="an-t">
-            <thead><tr><th>Waiting For</th><th>Share</th><th className="num">Median</th><th className="num">Open</th></tr></thead>
+            <thead><tr><th>Waiting For</th><th>Share</th><th className="num">Median</th><th className="num">Waits</th></tr></thead>
             <tbody>
               {r.delays.slice(0, 8).map((d) => (
                 <tr key={d.key}>
                   <td><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: COLOUR[d.party], marginRight: 8 }} />{d.label}</td>
                   <td><span className="an-mini" style={{ width: 90 }}><i style={{ width: `${(d.share / delayMax) * 100}%`, background: COLOUR[d.party] }} /></span>{pc(d.share)}</td>
                   <td className="num"><span className={d.n < 5 ? 'an-thin' : undefined} title={`${d.n} finished`}>{d.p50 == null ? '–' : `${d.p50}d`}</span></td>
-                  <td className="num">{d.open}</td>
+                  <td className="num">{d.n}</td>
                 </tr>
               ))}
             </tbody>
@@ -347,7 +359,7 @@ export function AnalyticsView(props: {
       <div className="an-grid an-g2">
         <div className="an-card">
           <div className="an-h">Our Turnaround<Chip>90 Days</Chip></div>
-          <KV big items={[['Median', <S key="m" s={r.tasks.turnaroundHours} unit="h" />], ['85% Within', <S key="p" s={r.tasks.turnaroundHours} unit="h" p="p85" />], ['Waiting', r.tasks.pending], ['Overdue', <span key="o" style={r.tasks.overdue ? { color: '#b91c1c' } : undefined}>{r.tasks.overdue}</span>]]} />
+          <KV big items={[['Median', <S key="m" s={r.tasks.turnaroundHours} unit="h" />], ['85% Within', <S key="p" s={r.tasks.turnaroundHours} unit="h" p="p85" />], ['Tasks Cleared', r.tasks.turnaroundHours.n]]} />
           {r.tasks.slowestKinds.length > 0 && (
             <table className="an-t" style={{ marginTop: 10 }}>
               <thead><tr><th>Slowest To Clear</th><th className="num">Median</th><th className="num">Tasks</th></tr></thead>
@@ -366,21 +378,6 @@ export function AnalyticsView(props: {
           <KV items={[['Sent', r.chases.sent], ['Answered In 3 Days', pc(r.chases.answeredWithin3Days)], ['Median Reply', r.chases.medianDaysToReply == null ? '–' : `${r.chases.medianDaysToReply}d`]]} />
         </div>
       </div>
-
-      {r.ageing.cases.length > 0 && (
-        <div className="an-card" style={{ marginBottom: 14 }}>
-          <div className="an-h">Cases To Look At<Chip>{r.ageing.overSle} Over {r.cycle.sle ?? Math.round(r.cycle.industry.value * 1.3)} Days</Chip></div>
-          <table className="an-t">
-            <thead><tr><th>Case</th><th>Handler</th><th className="num">Days Open</th><th>Stage</th><th>Waiting On</th></tr></thead>
-            <tbody>
-              {r.ageing.cases.map((c) => {
-                const href = props.caseHref(c.id);
-                return <tr key={c.id}><td>{href ? <a href={href}>{c.ref}</a> : c.ref}</td><td>{c.handler ?? '–'}</td><td className="num">{c.ageDays}</td><td>{c.step}</td><td>{c.waitingOn}</td></tr>;
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
 
       {r.team.people.length > 0 && <TeamChart team={r.team} />}
 

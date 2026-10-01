@@ -417,10 +417,9 @@ export function insights(r: AnalyticsReport): string[] {
   if (p.record && p.forecast > p.record.completions) out.push(`On course for a record month: the best so far is ${p.record.completions} in ${MONTH_LABEL(p.record.month)}.`);
   const top = r.delays.find((d) => d.n >= MIN_SAMPLE);
   if (top && top.share >= 0.15) out.push(`${top.label} take the most waiting: ${P(top.share)} of all waiting time, ${top.p50} days at the median.`);
-  if (r.flow.withUsOfOutstanding !== null && r.flow.caseDays > 30) out.push(`When something is outstanding on a case, it is with us ${P(r.flow.withUsOfOutstanding)} of the time${r.tasks.overdue ? `, and ${plural(r.tasks.overdue, 'task')} ${r.tasks.overdue === 1 ? 'has' : 'have'} waited over two working days` : ''}.`);
+  if (r.flow.withUsOfOutstanding !== null && r.flow.caseDays > 30) out.push(`When something is outstanding on a case, it is with us ${P(r.flow.withUsOfOutstanding)} of the time.`);
   const c = r.cycle.instructionToCompletion, ly = r.cycle.lastYearInstructionToCompletion;
   if (!c.thin && c.p50 !== null) out.push(`Instruction to completion takes ${c.p50} days at the median${!ly.thin && ly.p50 !== null && ly.p50 !== c.p50 ? `, ${Math.abs(ly.p50 - c.p50)} days ${c.p50 < ly.p50 ? 'faster' : 'slower'} than the year before` : ''} (industry ${r.cycle.industry.value}).`);
-  if (r.ageing.overSle && r.ageing.cases[0]) out.push(`${plural(r.ageing.overSle, 'open case is', 'open cases are')} older than ${r.cycle.sle ? '85% of completed cases took' : 'is usual'}; the oldest, ${r.ageing.cases[0].ref}, is at ${r.ageing.cases[0].ageDays} days, ${r.ageing.cases[0].waitingOn.toLowerCase()}.`);
   const i = r.instructions;
   if (i.same4WeeksLastYear >= MIN_SAMPLE) { const ch = (i.last4Weeks - i.same4WeeksLastYear) / i.same4WeeksLastYear; if (Math.abs(ch) >= 0.15) out.push(`Instructions are ${ch > 0 ? 'up' : 'down'} ${P(Math.abs(ch))} on the same four weeks last year: completions three to four months from now will follow.`); }
   if (r.fallThrough.rate !== null && r.fallThrough.n >= 10) out.push(`${P(r.fallThrough.rate)} of cases fell through in the last year (industry ${P(r.fallThrough.industry.value)})${r.fallThrough.reasons[0] ? `, most often: ${r.fallThrough.reasons[0].reason.toLowerCase()}` : ''}.`);

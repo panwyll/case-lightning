@@ -17,7 +17,8 @@ Built the way target-driven teams such as sales operations and kanban flow teams
 - **Leading beside lagging.**
   - Instructions now become completions three to four months later.
   - Exchanges with a date are completions already booked.
-- **People are listed by name, never ranked.** Each person is shown against their own target and their own six-month average. Research on forced rankings shows they demotivate the middle and the bottom of a team.
+- **It looks back, it does not firefight.** How the firm is doing and who is doing best; what needs doing today is the Tasks list's job, so there are no overdue or ageing-case lists here.
+- **People sort by any column, best first** (12-month completions by default), and the best figure in each column is marked. A figure on too few cases is greyed and never marked best.
 
 ## Figures
 
@@ -27,14 +28,13 @@ Built the way target-driven teams such as sales operations and kanban flow teams
 | **Instructions** | The last 4 weeks against the same 4 weeks last year. Also this month, and year-to-date completions against last year's. |
 | **Instruction to completion** | p50 and p85 days over completions in the last 12 months, against the 12 months before. The p85 is the firm's service level: "85% complete within N days". Also instruction to exchange, and exchange to completion. |
 | **Where cases wait** | The last 90 days of every case, attributed as above. "With us of outstanding time" is our share of the time something was open. |
-| **What cases wait for** | By wait (searches, enquiry replies, mortgage offer and so on): share of all waiting time, the median length of finished waits, and how many are open now. Last 12 months. |
-| **Our turnaround** | Tasks (decisions) finished in the last 90 days: p50 and p85 from raised to done. Also tasks waiting now, how many have waited over 2 working days, and the slowest kinds to clear. |
+| **What cases wait for** | By wait (searches, enquiry replies, mortgage offer and so on): share of all waiting time, the median length of finished waits, and how many finished. Last 12 months. |
+| **Our turnaround** | Tasks (decisions) finished in the last 90 days: p50 and p85 from raised to done, how many were cleared, and the slowest kinds to clear. |
 | **Chases** | Share of chases followed by the answer within 3 days, the median reply time after a chase, and the same by party. |
 | **Fee income** | Counted on completion, ex VAT, from the firm's fee scale (Firm → Fees, `analytics/fees.ts`). Each case's fee is the legal fee for its kind of case in the band its price falls in, plus every add-on that applies: per person ID checked, per gift donor, leasehold, acting for the lender, or a case shape (new build, ISA, buy to let, company client, auction, shared ownership, right to buy, second charge), limited to the kinds of case chosen. The tile shows done and booked this month against last year's month, year to date, the average per case and the value of the open pipeline. People get fees over 12 months. Until fees are set, an admin sees Set Your Fees instead. |
 | **Pipeline** | Open cases before exchange, cases exchanged and awaiting completion, and cases completing in the next 30 days. |
 | **Fall-through** | Cases abandoned ÷ (completed + abandoned) over the last 12 months, by reason. |
 | **Team** | Clustered bars: each person, month by month over the last 6 or 12 whole months (the month in progress is left out), with the team's line over them. Click a name to hide or show them. Metrics and their team line: **Completions** and **Instructions** (team total, on its own right-hand scale); **Response Time** (median hours to clear a task; team median); **Satisfaction** (% scoring 4–5 of 5 or 9–10 of 10); **Surveys** (answers; team total); **Survey Rate** (answers ÷ the exchanges and completions in the month, the two moments clients are asked). Someone who is not an admin sees their own bars against the team line. |
-| **Cases to look at** | Open cases older than the firm's p85 instruction-to-completion time. Until the firm has 5 completions, the threshold is the industry figure × 1.3. Each shows who it is waiting on now. |
 | **Client satisfaction** | Asked on the client portal ("Ask Clients How We Did", migration 122). **CSAT:** 1–5 after exchange; the score is the share giving 4–5. **NPS:** 0–10 after completion; promoters minus detractors. A client who scores 9–10 is offered the firm's review page (`reviewUrl` policy). Response rate = NPS answers ÷ completions. |
 | **Read first** | Up to six sentences picked from the above, most important first: pace against target, a record month, the biggest wait, our share, cycle time against last year and the industry, the oldest cases, instructions against last year, fall-through, chases. |
 
