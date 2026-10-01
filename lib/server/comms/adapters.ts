@@ -101,6 +101,8 @@ export function productionCommsDeps(): CommsDeps {
   return {
     contactInfo,
     portalLink: async (tenantId, matterId) => {
+      const { featureOn } = await import('../features');
+      if (!(await featureOn(tenantId, 'clientPortal'))) return null;
       const { ensurePortal } = await import('../client-portal');
       return ensurePortal(tenantId, matterId);
     },

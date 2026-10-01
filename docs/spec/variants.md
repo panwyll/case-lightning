@@ -35,3 +35,16 @@ The core flow (code) is the product. A firm changes it only through **declared v
 2. `no-stall.test.ts` takes a profile; `tests/firms/<firm>.json` fixtures (exported from Firm settings) run in CI.
 3. Save-time validation on Firm > Rules against the contract above (gate ⇒ clearer; send ⇒ template + level).
 4. A firm variant that needs real code is added to the core behind a declared switch, with its tasks, waits and simulator answers — so every firm's variant is tested for every firm.
+
+## System mode (`lib/server/features.ts`)
+
+A firm runs CONVEYi either as **The Whole Case System** (`standalone`) or **Alongside LEAP Or InTouch** (`alongside`). The mode sets each feature's default; an admin can turn any feature on or off against it (Firm → How CONVEYi Runs). It is stored as firm policy: `systemMode`, plus `features` for the overrides.
+
+| Feature | Whole system | Alongside | What it changes |
+| --- | --- | --- | --- |
+| Client Portal | On | Off | Off means no portal link in client messages, existing links stop working, and the case card is hidden. Alongside, the practice system usually has its own portal. |
+| Order Searches From CONVEYi | On | Off | Off means searches are ordered in the practice system. The step always comes to a person (`search_order` is forced to propose). Approving it records the search as ordered in LEAP or InTouch, the handler is told, and the result comes back through the practice system's mirror. No placeholder ever stands in. |
+| Order ID Checks From CONVEYi | On | Off | Off means the ID check is started in the practice system, which sends the client their link. The result comes back through the mirror. |
+| Ask Clients How We Did | On | On | The CSAT and NPS questions on the portal (docs/analytics.md). |
+
+InfoTrack is one account per firm, as in LEAP and InTouch. InfoTrack gives each user a profile under the firm's account, and costs go to the matter. CONVEYi sends the case handler with each order (`orderedBy`) so InfoTrack can attribute it, and sends the case reference so the cost lands on the right matter.

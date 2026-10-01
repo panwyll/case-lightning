@@ -44,7 +44,12 @@
   - **Call Us** for any money. Bank details are never shown, with the "we never change bank details by email" warning.
 - **Progress:** their steps (Getting Started → … → Completed), each workstream as Done, In Progress, With You or Not Started, what we are waiting on from others, and the key dates.
 - **Documents:** what we have sent them by secure link, and what they have given us. Only listed files can be downloaded.
-- **Your Conveyancer:** phone and email.
+- **Help:** answers to what clients ask most (`engine/client-faq.ts`), searchable.
+  - The questions shown are the ones for the client's side; those most asked at their stage come first.
+  - Where the case can answer, the answer is the case's own: "Why haven't I heard anything?" says who we are waiting on; "How long will it take?" gives the target date.
+  - Answers are general information, never advice and never an issue.
+- **Still Need Help?:** Contact Us opens a message box and the conveyancer's phone and email. A message is read like an email from the client and becomes a reply task on the Tasks list. Ten a day.
+- **How Are We Doing?** (Ask Clients How We Did): CSAT after exchange, NPS after completion, once each. A promoter is offered the firm's review page.
 
 **Never shown:** an issue, a decision, a flag or an internal code. A step held by an issue reads In Progress; the conveyancer tells the client about a problem, the page does not.
 

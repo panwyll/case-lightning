@@ -17,6 +17,7 @@ export const paths = {
   /** The one work list: tasks, drafts, chases, decisions. */
   tasks: `${APP_BASE}/admin?tab=mywork`,
   integrations: `${APP_BASE}/integrations`,
+  analytics: `${APP_BASE}/analytics`,
   email: `${APP_BASE}/email`,
   decision: (eventId: string) => `${APP_BASE}/decisions/${eventId}`,
   /** Every open case as a list, to pick one from. */

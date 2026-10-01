@@ -2,7 +2,7 @@
 import { REFERRALS_ENABLED } from '@/lib/flags';
 import { Spin } from '@/app/shared/engine/BusyButton';
 import { BackLink } from '@/app/shared/BackLink';
-import { BaselineCard, FirmDetails, MySignature } from './FirmDetails';
+import { BaselineCard, FirmDetails, FirmSetup, MySignature } from './FirmDetails';
 import { RefreshButton } from '@/app/shared/RefreshButton';
 import { RulesPanel } from './RulesPanel';
 
@@ -1221,7 +1221,7 @@ function AdminPageInner() {
                 <button key={k} role="tab" aria-selected={firmTab === k} onClick={() => setFirmTab(k)} style={{ padding: '8px 12px', fontSize: 13, fontWeight: 600, color: firmTab === k ? '#5A27E0' : '#64748b', border: 0, background: 'none', cursor: 'pointer', borderBottom: `2px solid ${firmTab === k ? '#5A27E0' : 'transparent'}`, marginBottom: -1, fontFamily: 'inherit' }}>{l}</button>
               ))}
             </div>
-            {firmTab === 'details' ? <><FirmDetails canEdit={me?.role === 'ADMIN'} /><BaselineCard canEdit={me?.role === 'ADMIN'} /></> : <MySignature />}
+            {firmTab === 'details' ? <><FirmDetails canEdit={me?.role === 'ADMIN'} /><FirmSetup /><BaselineCard canEdit={me?.role === 'ADMIN'} /></> : <MySignature />}
           </>
         )}
         {tab === 'rules' && <RulesPanel canApprove={me?.role === 'ADMIN'} canPropose={me?.role === 'ADMIN' || me?.role === 'CONVEYANCER'} />}

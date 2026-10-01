@@ -6,6 +6,7 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { ok, fail } from '@/lib/server/http';
 import { writeAudit } from '@/lib/server/audit';
 import { ensurePortal, portalSummary, resetPortal } from '@/lib/server/client-portal';
+import { featureOn } from '@/lib/server/features';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,7 +18,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
     const user = await requireUser();
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);
-    return ok({ portal: await portalSummary(user.tenantId, matterId) });
+    if (!(await featureOn(user.tenantId, 'clientPortal'))) return ok({ enabled: false, portal: null });
+    return ok({ enabled: true, portal: await portalSummary(user.tenantId, matterId) });
   } catch (error) {
     return fail(error);
   }
@@ -31,6 +33,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);
     const { action } = z.object({ action: z.enum(['link', 'reset']) }).parse(await req.json());
+    if (!(await featureOn(user.tenantId, 'clientPortal'))) throw Object.assign(new Error('The client portal is turned off for this firm (Firm > How CONVEYi Runs).'), { status: 409 });
     const url = action === 'reset' ? await resetPortal(user.tenantId, matterId) : await ensurePortal(user.tenantId, matterId);
     if (action === 'reset') await writeAudit({ tenantId: user.tenantId, actorUserId: user.userId, matterId, actionType: 'CLIENT_PORTAL_RESET', actionStatus: 'SUCCESS', payload: {} }).catch(() => {});
     return ok({ url, portal: await portalSummary(user.tenantId, matterId) });

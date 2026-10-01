@@ -497,6 +497,13 @@ export class PgEventStore implements EventStore {
     const rows = await dbQuery<{ action: string; level: TrustLevel }>(`select action, level from engine_action_level where tenant_id = $1`, [tenantId]).catch(() => []);
     const cfg: LevelConfig = { ...DEFAULT_LEVELS };
     for (const r of rows) if ((ENGINE_ACTIONS as readonly string[]).includes(r.action.split(':')[0]) && (TRUST_LEVELS as readonly string[]).includes(r.level)) cfg[r.action] = r.level;
+    // A firm that orders searches in its practice system places each one itself: the step always comes to a person,
+    // whose approval says it has been ordered there (lib/server/features.ts).
+    const { featureOn } = await import('../features');
+    if (!(await featureOn(tenantId, 'orderSearches').catch(() => true))) {
+      cfg.search_order = 'propose';
+      for (const k of Object.keys(cfg)) if (k.startsWith('search_order:')) cfg[k] = 'propose';
+    }
     return cfg;
   }
 

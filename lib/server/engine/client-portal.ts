@@ -25,6 +25,10 @@ export interface PortalProgress { id: string; label: string; state: 'done' | 'in
 export interface ClientPortalView {
   side: 'buyer' | 'seller' | 'owner';
   transaction: string;
+  /** The engine's lifecycle key (instructed, pre_exchange, exchanged, …), for what the page asks and answers. */
+  lifecycle: string;
+  leasehold: boolean;
+  hasLender: boolean;
   closed: boolean;
   journey: PortalStep[];
   stageLabel: string;
@@ -121,6 +125,9 @@ export function clientPortalView(s: MatterState, now: Date = new Date(), opts: P
   return {
     side,
     transaction: b.transactionLabel,
+    lifecycle: lc,
+    leasehold: isLeasehold(s),
+    hasLender: !!s.hasLender,
     closed: lc === 'aborted' || lc === 'closed',
     journey,
     stageLabel: lc === 'aborted' ? 'Closed' : (labels[at] ?? b.lifecycleLabel),

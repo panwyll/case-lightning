@@ -172,11 +172,12 @@ export class InfoTrackClient {
     }
   }
 
-  async orderSearch(input: { matterRef: string; searchType: SearchType; address: string; uprn?: string | null }): Promise<OrderResult> {
+  async orderSearch(input: { matterRef: string; searchType: SearchType; address: string; uprn?: string | null; orderedBy?: { name: string | null; email: string | null } | null }): Promise<OrderResult> {
     const r = await this.request<{ orderId: string; status: string; estimatedCompletion?: string }>('POST', ENDPOINTS.orderSearch, {
       product: SEARCH_PRODUCT[input.searchType],
       clientReference: input.matterRef,
       property: { address: input.address, uprn: input.uprn ?? undefined },
+      ...(input.orderedBy?.email ? { orderedBy: { name: input.orderedBy.name ?? undefined, email: input.orderedBy.email } } : {}),
       callbackUrl: this.cfg.callbackUrl,
     });
     return { reference: r.orderId, status: r.status, estimatedReturn: r.estimatedCompletion ?? null };
@@ -193,11 +194,12 @@ export class InfoTrackClient {
     return { reference: r.orderId, status: r.status };
   }
 
-  async orderIdCheck(input: { matterRef: string; party: { name: string; email?: string | null; phone?: string | null } }): Promise<OrderResult> {
+  async orderIdCheck(input: { matterRef: string; party: { name: string; email?: string | null; phone?: string | null }; orderedBy?: { name: string | null; email: string | null } | null }): Promise<OrderResult> {
     const r = await this.request<{ orderId: string; status: string; link?: string; url?: string; clientUrl?: string; inviteUrl?: string }>('POST', ENDPOINTS.orderIdCheck, {
       clientReference: input.matterRef,
       subject: input.party,
       checks: ['IDENTITY', 'PEP_SANCTIONS', 'ADDRESS'],
+      ...(input.orderedBy?.email ? { orderedBy: { name: input.orderedBy.name ?? undefined, email: input.orderedBy.email } } : {}),
       callbackUrl: this.cfg.callbackUrl,
     });
     const link = [r.clientUrl, r.inviteUrl, r.link, r.url].find((u) => typeof u === 'string' && /^https:\/\//.test(u)) ?? null;
@@ -287,7 +289,7 @@ export class MemoryOrderStore implements IntegrationOrderStore {
 
 /** What the providers need to know about a matter to place an order. */
 export interface MatterLookup {
-  (tenantId: string, matterId: string): Promise<{ matterRef: string; address: string; buyerNames: string[]; clientEmail?: string | null; clientPhone?: string | null; titleNumber?: string | null }>;
+  (tenantId: string, matterId: string): Promise<{ matterRef: string; address: string; buyerNames: string[]; clientEmail?: string | null; clientPhone?: string | null; titleNumber?: string | null; /** The case handler: InfoTrack attributes the order to them (a user profile under the firm's account). */ handler?: { name: string | null; email: string | null } | null }>;
 }
 
 // ───────────────────────────── engine ports ─────────────────────────────
@@ -301,7 +303,7 @@ export class InfoTrackSearchProvider implements SearchProvider {
   ) {}
   async orderSearch(input: { tenantId: string; matterId: string; searchType: SearchType }): Promise<{ reference: string }> {
     const m = await this.lookup(input.tenantId, input.matterId);
-    const r = await this.client.orderSearch({ matterRef: m.matterRef, searchType: input.searchType, address: m.address });
+    const r = await this.client.orderSearch({ matterRef: m.matterRef, searchType: input.searchType, address: m.address, orderedBy: m.handler ?? null });
     await this.orders.record({ tenantId: input.tenantId, matterId: input.matterId, provider: 'infotrack', kind: 'search', subject: input.searchType, providerRef: r.reference, status: 'ORDERED' }, { searchType: input.searchType, address: m.address });
     return { reference: r.reference };
   }
@@ -321,7 +323,7 @@ export class InfoTrackIdCheckProvider implements IdCheckProvider {
     const named = input.party && input.label ? input.label.replace(/\s*\([^)]*\)\s*$/, '').trim() : '';
     const name = named || m.buyerNames[0];
     if (!name) throw new InfoTrackError('No buyer name on the matter to run an ID check for.', 400, false);
-    const r = await this.client.orderIdCheck({ matterRef: m.matterRef, party: { name, email: named ? null : m.clientEmail ?? null, phone: named ? null : m.clientPhone ?? null } });
+    const r = await this.client.orderIdCheck({ matterRef: m.matterRef, party: { name, email: named ? null : m.clientEmail ?? null, phone: named ? null : m.clientPhone ?? null }, orderedBy: m.handler ?? null });
     await this.orders.record({ tenantId: input.tenantId, matterId: input.matterId, provider: 'infotrack', kind: 'id_check', subject: name, providerRef: r.reference, status: 'ORDERED' }, { name });
     return { reference: r.reference, link: r.link ?? null };
   }
@@ -348,6 +350,13 @@ export class InfoTrackTitleProvider {
 /** Each firm's own InfoTrack account (its credentials, its billing); null for a firm that has not connected one. */
 export interface InfoTrackAccounts {
   clientFor(tenantId: string): Promise<InfoTrackClient | null>;
+  /**
+   * Where the firm orders this kind of thing: from CONVEYi, or in its practice system (LEAP, InTouch), whose
+   * mirror brings the result back (lib/server/features.ts). Absent: always from CONVEYi.
+   */
+  orderedIn?(tenantId: string, kind: 'search' | 'id_check'): Promise<{ via: 'conveyi' } | { via: 'practice'; system: string }>;
+  /** Tell the handler to place an order in the practice system. */
+  practiceOrder?(input: { tenantId: string; matterId: string; system: string; what: string }): Promise<void>;
 }
 
 /** What stands in for a firm with no InfoTrack account: a placeholder search, and our own ID check request. */
@@ -365,6 +374,8 @@ export class FirmInfoTrackRouter implements SearchProvider, IdCheckProvider {
   readonly name = 'infotrack';
   /** Firms looked up so far, so the words a chase uses can be chosen without a round trip. */
   private connected = new Map<string, boolean>();
+  /** Firms whose ID checks run in their practice system (InTouch sends the client its own link). */
+  private practiceId = new Map<string, string>();
   constructor(
     private accounts: InfoTrackAccounts,
     private orders: IntegrationOrderStore,
@@ -378,7 +389,18 @@ export class FirmInfoTrackRouter implements SearchProvider, IdCheckProvider {
     return c;
   }
 
+  /** Ordered in the practice system: recorded as such, never a placeholder; its result comes back through the practice system's mirror. */
+  private async practice(input: { tenantId: string; matterId: string }, kind: 'search' | 'id_check', what: string): Promise<{ reference: string; provider: string } | null> {
+    const where = this.accounts.orderedIn ? await this.accounts.orderedIn(input.tenantId, kind) : { via: 'conveyi' as const };
+    if (where.via === 'conveyi') return null;
+    if (kind === 'id_check') this.practiceId.set(input.tenantId, where.system);
+    await this.accounts.practiceOrder?.({ tenantId: input.tenantId, matterId: input.matterId, system: where.system, what }).catch(() => {});
+    return { reference: `${PRACTICE}${kind}:${Date.now().toString(36)}`, provider: `${where.system} (ordered by the firm)` };
+  }
+
   async orderSearch(input: { tenantId: string; matterId: string; searchType: SearchType }): Promise<{ reference: string; provider: string }> {
+    const viaPractice = await this.practice(input, 'search', `the ${input.searchType} search`);
+    if (viaPractice) return viaPractice;
     const c = await this.client(input.tenantId);
     if (!c) {
       const r = await this.standIn.search.orderSearch(input);
@@ -395,6 +417,8 @@ export class FirmInfoTrackRouter implements SearchProvider, IdCheckProvider {
   }
 
   async requestCheck(input: { tenantId: string; matterId: string; party?: string | null; label?: string | null }): Promise<{ reference: string; link?: string | null; provider: string }> {
+    const viaPractice = await this.practice(input, 'id_check', `the ID check${input.label ? ` for ${input.label}` : ''}`);
+    if (viaPractice) return viaPractice;
     const c = await this.client(input.tenantId);
     if (!c) return { ...(await this.standIn.idCheck.requestCheck(input)), provider: this.standIn.idCheck.name };
     const r = await new InfoTrackIdCheckProvider(c, this.orders, this.lookup).requestCheck(input);
@@ -402,6 +426,8 @@ export class FirmInfoTrackRouter implements SearchProvider, IdCheckProvider {
   }
 
   forFirm(tenantId: string): { sendsClientLink: boolean; label: string } | null {
+    const practice = this.practiceId.get(tenantId);
+    if (practice) return { sendsClientLink: true, label: practice };
     const on = this.connected.get(tenantId);
     if (on === undefined) return null;
     return on ? { sendsClientLink: true, label: 'InfoTrack' } : { sendsClientLink: !!this.standIn.idCheck.sendsClientLink, label: this.standIn.idCheck.name };
@@ -410,6 +436,8 @@ export class FirmInfoTrackRouter implements SearchProvider, IdCheckProvider {
 
 /** Marks a reference the stand-in issued, so its placeholder is never mistaken for (or substituted for) a real order. */
 const STAND_IN = 'STANDIN:';
+/** Marks an order the firm places in its practice system. */
+const PRACTICE = 'PRACTICE:';
 
 // ───────────────────────────── webhook → engine ─────────────────────────────
 

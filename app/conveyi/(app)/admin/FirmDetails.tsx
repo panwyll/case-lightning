@@ -172,3 +172,57 @@ export function StorageCard() {
     </div>
   );
 }
+
+type Features = { mode: string; modes: Array<{ value: string; label: string }>; features: Array<{ key: string; label: string; on: boolean; byDefault: boolean; overridden: boolean }>; targets: { monthlyCompletions: number | null; perPerson: Record<string, number> }; canEdit: boolean };
+
+/** How the firm runs CONVEYi: the whole case system, or alongside LEAP or InTouch; each feature against the mode's default; and the targets analytics measures against. */
+export function FirmSetup() {
+  const [f, setF] = useState<Features | null>(null);
+  const [people, setPeople] = useState<Array<{ id: string; name: string }>>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [target, setTarget] = useState('');
+  const [per, setPer] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api<Features>('/admin/features').then((r) => { setF(r); setTarget(r.targets.monthlyCompletions?.toString() ?? ''); setPer(Object.fromEntries(Object.entries(r.targets.perPerson).map(([k, v]) => [k, String(v)]))); }).catch(() => setF(null));
+    api<{ users: Array<{ id: string; email: string; display_name: string | null }> }>('/admin/users').then((r) => setPeople(r.users.map((u) => ({ id: u.id, name: u.display_name || u.email })))).catch(() => setPeople([]));
+  }, []);
+  useEffect(() => { if (!note) return; const t = setTimeout(() => setNote(null), 4000); return () => clearTimeout(t); }, [note]);
+  if (!f) return null;
+  const patch = async (label: string, body: Record<string, unknown>) => {
+    setBusy(label);
+    try { setF(await api<Features>('/admin/features', { method: 'PATCH', body: JSON.stringify(body) })); setNote('Saved'); }
+    catch (e: unknown) { setNote(e instanceof Error ? e.message : 'Could not save.'); }
+    finally { setBusy(null); }
+  };
+  const num = (v: string) => (v.trim() === '' ? null : Math.max(0, Math.round(Number(v))));
+  const saveTargets = () => patch('targets', { targets: { monthlyCompletions: num(target), perPerson: Object.fromEntries(Object.entries(per).map(([k, v]) => [k, num(v)]).filter(([, v]) => v !== null)) } });
+  return (
+    <div className="fd">
+      <style>{CSS + '.fd-flag{display:flex;align-items:center;gap:10px;font-size:13px;padding:5px 0}.fd-flag b{font-weight:600;min-width:240px}.fd-dflt{font-size:11.5px;color:#94a3b8}.fd-on{border:1px solid #cbd5e1;border-radius:999px;padding:3px 12px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#64748b;min-width:56px}.fd-on.yes{background:#dcfce7;border-color:#86efac;color:#166534}.fd-on:disabled{opacity:.6;cursor:default}'}</style>
+      <div className="fd-h">How CONVEYi Runs</div>
+      <label className="fd-row"><span>Runs As</span>
+        <select className="fd-in" value={f.mode} disabled={!f.canEdit || !!busy} onChange={(e) => void patch('mode', { mode: e.target.value })} style={{ maxWidth: 280 }}>
+          {f.modes.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+        </select>
+      </label>
+      <div style={{ marginTop: 8 }}>
+        {f.features.map((x) => (
+          <div key={x.key} className="fd-flag">
+            <b>{x.label}</b>
+            <button className={`fd-on${x.on ? ' yes' : ''}`} disabled={!f.canEdit || !!busy} onClick={() => void patch(x.key, { feature: { key: x.key, on: !x.on } })}>{busy === x.key ? <Spin>…</Spin> : x.on ? 'On' : 'Off'}</button>
+            <span className="fd-dflt">{x.overridden ? `Default ${x.byDefault ? 'On' : 'Off'}` : 'Default'}</span>
+          </div>
+        ))}
+      </div>
+      <div className="fd-h" style={{ marginTop: 14 }}>Targets</div>
+      <div className="fd-grid">
+        <label className="fd-row"><span>Completions A Month</span><input className="fd-in" inputMode="numeric" value={target} onChange={(e) => setTarget(e.target.value.replace(/\D/g, ''))} disabled={!f.canEdit} style={{ maxWidth: 120 }} /></label>
+        {people.map((p) => (
+          <label key={p.id} className="fd-row"><span>{p.name}</span><input className="fd-in" inputMode="numeric" value={per[p.id] ?? ''} onChange={(e) => setPer({ ...per, [p.id]: e.target.value.replace(/\D/g, '') })} disabled={!f.canEdit} style={{ maxWidth: 120 }} /></label>
+        ))}
+      </div>
+      {f.canEdit && <div className="fd-a"><button className="fd-btn" disabled={!!busy} onClick={() => void saveTargets()}>{busy === 'targets' ? <Spin>Saving…</Spin> : 'Save Targets'}</button>{note && <span className="fd-note">{note}</span>}</div>}
+    </div>
+  );
+}

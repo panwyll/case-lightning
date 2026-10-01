@@ -9,8 +9,9 @@ import { getFirmProfile } from '@/lib/server/firm';
 import { getSignaturePerson } from '@/lib/server/signature';
 import { engine } from '@/lib/server/engine/adapters';
 import { clientPortalView } from '@/lib/server/engine/client-portal';
+import { clientFaqs } from '@/lib/server/engine/client-faq';
 import { infotrackClientFor } from '@/lib/server/integrations/infotrack-adapters';
-import { PORTAL_HOURS, countPortalOpen, openPortal, portalAccess, portalCookie, portalCookieName, portalDocuments, sendPortalCode, verifyPortalCode } from '@/lib/server/client-portal';
+import { PORTAL_HOURS, feedbackDue, countPortalOpen, openPortal, portalAccess, portalCookie, portalCookieName, portalDocuments, sendPortalCode, verifyPortalCode } from '@/lib/server/client-portal';
 import { DEV_PORTAL_CODE, devPortalContext, isDevPortal } from '@/lib/server/dev-portal';
 
 export const runtime = 'nodejs';
@@ -47,15 +48,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     await countPortalOpen(row.id);
     // Whether the client's ID link comes from InfoTrack (the firm's own account) or from us.
     const infotrack = await infotrackClientFor(row.tenant_id).catch(() => null);
+    const view = enrolled ? clientPortalView(state, new Date(), infotrack ? { idProviderSendsLink: true, idProviderLabel: 'InfoTrack' } : {}) : null;
     return ok({
       status: 'open',
+      faqs: view ? clientFaqs(view) : [],
+      feedback: view ? await feedbackDue(row, view.lifecycle) : null,
       firmName: info.firmName,
       propertyAddress: info.propertyAddress,
       clientNames: info.clientFirstName,
       handler: { name: person.name, email: person.email, phone: person.phone },
       firmPhone: firm.phone ?? null,
       // A case the engine does not run has no status to show yet: documents and contact only.
-      view: enrolled ? clientPortalView(state, new Date(), infotrack ? { idProviderSendsLink: true, idProviderLabel: 'InfoTrack' } : {}) : null,
+      view,
       documents,
     });
   } catch (error) {

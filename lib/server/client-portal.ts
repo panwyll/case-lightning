@@ -9,6 +9,7 @@ import { query, queryOne, runAsSystem } from './db';
 import { config } from './config';
 import { decryptSecret, encryptSecret } from './crypto';
 import { putBlob } from './blob-store';
+import { featureOn } from './features';
 import { sendAccessCode, verifyAccessCode, accessCookieValue, cookieGrantsAccess, type CodeRow } from './access-code';
 
 const hash = (x: string) => crypto.createHash('sha256').update(x).digest('hex');
@@ -46,7 +47,10 @@ export async function portalSummary(tenantId: string, matterId: string): Promise
 /** The live portal behind a link, or null (unknown or reset). */
 export async function openPortal(token: string): Promise<PortalRow | null> {
   if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return null;
-  return runAsSystem(() => queryOne<PortalRow>(`select * from client_portal where token_hash = $1 and revoked_at is null`, [hash(token)]));
+  const row = await runAsSystem(() => queryOne<PortalRow>(`select * from client_portal where token_hash = $1 and revoked_at is null`, [hash(token)])).catch(() => null);
+  // A firm that has turned the portal off: its links stop working too.
+  if (!row || !(await runAsSystem(() => featureOn(row.tenant_id, 'clientPortal')).catch(() => true))) return null;
+  return row;
 }
 
 export const sendPortalCode = (row: PortalRow) => sendAccessCode('client_portal', row, 'your case');
@@ -104,4 +108,25 @@ export async function storePortalUpload(row: PortalRow, input: { fileName: strin
     await query(`update client_portal set uploads = uploads + 1 where id = $1`, [row.id]);
     return { id: doc!.id, fileName: safeName };
   });
+}
+
+export type FeedbackAsk = { milestone: 'exchanged' | 'completed'; kind: 'csat' | 'nps' };
+
+/** What the portal asks the client now, if anything: after exchange how we are doing, after completion whether they would recommend us. Once each. */
+export async function feedbackDue(row: { tenant_id: string; matter_id: string }, lifecycle: string): Promise<FeedbackAsk | null> {
+  const ask: FeedbackAsk | null = ['completed', 'post_completion', 'closed'].includes(lifecycle) ? { milestone: 'completed', kind: 'nps' } : ['exchanged', 'pre_completion'].includes(lifecycle) ? { milestone: 'exchanged', kind: 'csat' } : null;
+  if (!ask || !(await runAsSystem(() => featureOn(row.tenant_id, 'satisfactionSurveys')).catch(() => false))) return null;
+  const given = await runAsSystem(() => queryOne<{ id: string }>(`select id from client_feedback where matter_id = $1 and milestone = $2`, [row.matter_id, ask.milestone])).catch(() => ({ id: 'unknown' }));
+  return given ? null : ask;
+}
+
+export async function saveFeedback(row: { tenant_id: string; matter_id: string }, ask: FeedbackAsk, score: number, comment: string | null): Promise<void> {
+  const max = ask.kind === 'nps' ? 10 : 5;
+  if (!Number.isInteger(score) || score < (ask.kind === 'nps' ? 0 : 1) || score > max) throw Object.assign(new Error('Choose a score.'), { status: 400 });
+  await runAsSystem(() => query(
+    `insert into client_feedback (tenant_id, matter_id, milestone, kind, score, comment, handler_id)
+     select $1, $2, $3, $4, $5, $6, coalesce(m.assigned_to, m.created_by) from matter m where m.id = $2
+     on conflict (matter_id, milestone) do nothing`,
+    [row.tenant_id, row.matter_id, ask.milestone, ask.kind, score, comment?.trim().slice(0, 2000) || null]
+  ));
 }

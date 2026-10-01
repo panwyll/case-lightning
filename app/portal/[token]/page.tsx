@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Check, CheckCircle, Circle, CircleDot, Clock, FileText, Loader, Lock, Mail, Phone, Upload } from '@/app/shared/icons';
+import { Check, CheckCircle, ChevronRight, Circle, CircleDot, Clock, FileText, Loader, Lock, Mail, Phone, Search, Upload } from '@/app/shared/icons';
 
 /**
  * The client's portal (lib/server/client-portal.ts): where the case is, what we need from them, and
@@ -60,6 +60,23 @@ const CSS = `
 .cp .drop{border:2px dashed #cbd5e1;border-radius:12px;padding:18px;text-align:center;font-size:15px;color:#475569;margin-bottom:12px;cursor:pointer}
 .cp .drop.over{border-color:#5A27E0;background:#f5f3ff}
 .cp .who{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+
+.cp .search{width:100%;font:inherit;font-size:16px;padding:11px 14px;border:1.5px solid #cbd5e1;border-radius:10px;margin-bottom:10px}
+.cp .search:focus{outline:none;border-color:#5A27E0;box-shadow:0 0 0 3px #ede9fe}
+.cp details{border-top:1px solid #f1f5f9}
+.cp details:first-of-type{border-top:0}
+.cp summary{cursor:pointer;list-style:none;padding:13px 0;font-size:16px;font-weight:600;display:flex;align-items:center;gap:10px}
+.cp summary::-webkit-details-marker{display:none}
+.cp summary svg{flex:none;color:#94a3b8;transition:transform .15s}
+.cp details[open] summary svg{transform:rotate(90deg)}
+.cp details p{margin:0 0 14px 26px;font-size:15px;color:#334155;line-height:1.6}
+.cp .more{margin-top:8px}
+.cp textarea{width:100%;font:inherit;font-size:16px;padding:11px 14px;border:1.5px solid #cbd5e1;border-radius:10px;min-height:110px;resize:vertical;margin:4px 0 10px}
+.cp textarea:focus{outline:none;border-color:#5A27E0;box-shadow:0 0 0 3px #ede9fe}
+.cp .scores{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}
+.cp .score{min-width:44px;height:44px;border:1.5px solid #cbd5e1;border-radius:10px;background:#fff;font:inherit;font-size:16px;font-weight:700;cursor:pointer;color:#0f172a}
+.cp .score.on{background:#5A27E0;border-color:#5A27E0;color:#fff}
+.cp .ends{display:flex;justify-content:space-between;font-size:13px;color:#64748b;max-width:540px}
 @keyframes cp-spin{to{transform:rotate(360deg)}}
 .cp .spin{animation:cp-spin .8s linear infinite}
 @media (max-width:560px){
@@ -82,9 +99,10 @@ interface View {
   dates: { targetExchange: string | null; exchanged: string | null; completion: string | null; targetCompletion: string | null; completed: string | null };
 }
 interface Doc { id: string; name: string; at: string; from: 'us' | 'you' }
+interface Faq { id: string; topic: string; q: string; a: string }
 type Ctx =
   | { status: 'locked'; firmName: string; propertyAddress: string; codeTo: string[] }
-  | { status: 'open'; firmName: string; propertyAddress: string; clientNames: string | null; handler: { name: string | null; email: string | null; phone: string | null }; firmPhone: string | null; view: View | null; documents: Doc[] }
+  | { status: 'open'; firmName: string; propertyAddress: string; clientNames: string | null; handler: { name: string | null; email: string | null; phone: string | null }; firmPhone: string | null; view: View | null; documents: Doc[]; faqs: Faq[]; feedback: { milestone: string; kind: 'csat' | 'nps' } | null }
   | { status: 'gone' }
   | { status: 'error' };
 
@@ -116,6 +134,14 @@ export default function ClientPortal() {
   const [done, setDone] = useState<string | null>(null);
   const [devCode, setDevCode] = useState<string | null>(null);
   const [over, setOver] = useState(false);
+  const [q, setQ] = useState('');
+  const [allFaqs, setAllFaqs] = useState(false);
+  const [contact, setContact] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [sent, setSent] = useState(false);
+  const [score, setScore] = useState<number | null>(null);
+  const [comment, setComment] = useState('');
+  const [rated, setRated] = useState<{ reviewUrl: string | null } | null>(null);
   const codeInput = useRef<HTMLInputElement | null>(null);
   const picker = useRef<HTMLInputElement | null>(null);
   const pickRole = useRef<{ role: string | null; task: string | null }>({ role: null, task: null });
@@ -155,6 +181,18 @@ export default function ClientPortal() {
     }
     setDone(list.length === 1 ? `Uploaded ${list[0].name}. We have it.` : `Uploaded ${list.length} files. We have them.`);
     await load();
+  });
+  const sendMessage = () => run('msg', async () => {
+    const r = await fetch(`/api/v1/portal/${token}/message`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: msg }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j?.error?.message ?? j?.error ?? 'It did not send. Please try again.');
+    setSent(true); setMsg('');
+  });
+  const rate = () => run('rate', async () => {
+    const r = await fetch(`/api/v1/portal/${token}/feedback`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ score, comment: comment.trim() || undefined }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j?.error?.message ?? j?.error ?? 'It did not send. Please try again.');
+    setRated({ reviewUrl: j.reviewUrl ?? null });
   });
   const choose = (role: string | null, task: string | null) => { pickRole.current = { role, task }; picker.current?.click(); };
 
@@ -224,6 +262,33 @@ export default function ClientPortal() {
         </div>
       )}
 
+      {ctx.feedback && (
+        <div className="card">
+          {rated ? (
+            <>
+              <div className="none"><CheckCircle size={18} />Thank you. It helps us do better.</div>
+              {rated.reviewUrl && <div style={{ marginTop: 12 }}><a className="btn primary" href={rated.reviewUrl} target="_blank" rel="noreferrer">Leave Us A Review</a></div>}
+            </>
+          ) : (
+            <>
+              <h2>{ctx.feedback.kind === 'nps' ? 'Would You Recommend Us?' : 'How Are We Doing?'}</h2>
+              <div className="scores">
+                {Array.from({ length: ctx.feedback.kind === 'nps' ? 11 : 5 }, (_, i) => (ctx.feedback!.kind === 'nps' ? i : i + 1)).map((n) => (
+                  <button key={n} className={`score${score === n ? ' on' : ''}`} onClick={() => setScore(n)} aria-label={`Score ${n}`}>{n}</button>
+                ))}
+              </div>
+              <div className="ends"><span>{ctx.feedback.kind === 'nps' ? 'Not Likely' : 'Poor'}</span><span>{ctx.feedback.kind === 'nps' ? 'Very Likely' : 'Excellent'}</span></div>
+              {score !== null && (
+                <>
+                  <textarea placeholder="Anything you would like to tell us? (optional)" value={comment} onChange={(e) => setComment(e.target.value)} style={{ minHeight: 80, marginTop: 12 }} />
+                  <button className="btn primary" disabled={!!busy} onClick={() => void rate()}>{busy === 'rate' ? <><Loader size={18} className="spin" />Sending…</> : 'Send'}</button>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {v && (
         <div className="card">
           <h2>Progress</h2>
@@ -276,13 +341,50 @@ export default function ClientPortal() {
         ))}
       </div>
 
+      {ctx.faqs.length > 0 && (() => {
+        const term = q.trim().toLowerCase();
+        const hits = term ? ctx.faqs.filter((f) => `${f.q} ${f.a}`.toLowerCase().includes(term)) : ctx.faqs;
+        const shown = term || allFaqs ? hits : hits.slice(0, 6);
+        return (
+          <div className="card">
+            <h2>Help</h2>
+            <div style={{ position: 'relative' }}>
+              <input className="search" placeholder="Search questions" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search questions" style={{ paddingLeft: 40 }} />
+              <Search size={18} style={{ position: 'absolute', left: 14, top: 14, color: '#94a3b8' }} />
+            </div>
+            {shown.map((f) => (
+              <details key={f.id}>
+                <summary><ChevronRight size={16} />{f.q}</summary>
+                <p>{f.a}</p>
+              </details>
+            ))}
+            {term && hits.length === 0 && <div className="line">No answer for that here. Ask us below.</div>}
+            {!term && !allFaqs && hits.length > shown.length && <button className="link more" onClick={() => setAllFaqs(true)}>Show All {hits.length} Questions</button>}
+          </div>
+        );
+      })()}
+
       <div className="card">
-        <h2>Your Conveyancer</h2>
-        <div style={{ fontSize: 16, fontWeight: 700 }}>{ctx.handler.name ?? ctx.firmName}</div>
-        <div className="who">
-          {phone && <a className="btn small" href={`tel:${phone.replace(/[^\d+]/g, '')}`}><Phone size={16} />{phone}</a>}
-          {ctx.handler.email && <a className="btn small" href={`mailto:${ctx.handler.email}`}><Mail size={16} />{ctx.handler.email}</a>}
-        </div>
+        <h2>Still Need Help?</h2>
+        {!contact ? (
+          <button className="btn" onClick={() => setContact(true)}><Mail size={18} />Contact Us</button>
+        ) : (
+          <>
+            {sent ? (
+              <div className="ok"><Check size={18} />Sent. {ctx.handler.name ?? 'We'} will reply by email.</div>
+            ) : (
+              <>
+                <textarea placeholder={`Your message to ${ctx.handler.name ?? ctx.firmName}`} value={msg} onChange={(e) => setMsg(e.target.value)} />
+                <button className="btn primary" disabled={!!busy || msg.trim().length < 10} onClick={() => void sendMessage()}>{busy === 'msg' ? <><Loader size={18} className="spin" />Sending…</> : 'Send Message'}</button>
+              </>
+            )}
+            <div className="who" style={{ marginTop: 14 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, alignSelf: 'center', marginRight: 4 }}>{ctx.handler.name ?? ctx.firmName}</span>
+              {phone && <a className="btn small" href={`tel:${phone.replace(/[^\d+]/g, '')}`}><Phone size={16} />{phone}</a>}
+              {ctx.handler.email && <a className="btn small" href={`mailto:${ctx.handler.email}`}><Mail size={16} />{ctx.handler.email}</a>}
+            </div>
+          </>
+        )}
       </div>
     </>
   );

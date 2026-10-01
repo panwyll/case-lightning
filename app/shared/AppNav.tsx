@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { paths, APP_BASE } from '@/lib/paths';
 import type { ComponentType } from 'react';
-import { Mail, ClipboardList, Home, MailPlus, FileText, Users, Building, Scale, Wrench, CreditCard, LifeBuoy } from '@/app/shared/icons';
+import { Mail, ClipboardList, Home, MailPlus, FileText, Users, Building, Scale, Wrench, CreditCard, LifeBuoy, BarChart } from '@/app/shared/icons';
 
 /**
  * The CONVEYi app shell: a top bar and a full-height sidebar, one piece, on every page.
@@ -44,6 +44,7 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
     label: 'Cases',
     items: [
       { key: 'matters', label: 'Case View', icon: Home, href: paths.matters, match: (p) => p.startsWith(paths.matters) || /\/engine\/[0-9a-f-]{36}/i.test(p) },
+      { key: 'analytics', label: 'Analytics', icon: BarChart, href: paths.analytics, match: (p) => p.startsWith(paths.analytics) },
     ],
   },
   {

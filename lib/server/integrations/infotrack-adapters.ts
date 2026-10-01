@@ -41,7 +41,8 @@ export const pgMatterLookup: MatterLookup = async (tenantId, matterId) => {
     [matterId, tenantId]
   ).catch(() => null);
   const title = await queryOne<{ title_number: string | null }>(`select state->'title'->'facts'->>'titleNumber' as title_number from matter_engine_state where matter_id = $1`, [matterId]).catch(() => null);
-  return { matterRef: m.matter_ref, address: m.property_address, buyerNames: m.buyer_names ?? [], clientEmail: client?.email ?? null, clientPhone: client?.phone ?? null, titleNumber: title?.title_number ?? null };
+  const handler = await queryOne<{ name: string | null; email: string | null }>(`select u.display_name as name, u.email from matter m join app_user u on u.id = coalesce(m.assigned_to, m.created_by) where m.id = $1`, [matterId]).catch(() => null);
+  return { matterRef: m.matter_ref, address: m.property_address, buyerNames: m.buyer_names ?? [], clientEmail: client?.email ?? null, clientPhone: client?.phone ?? null, titleNumber: title?.title_number ?? null, handler };
 };
 
 /** File a provider download like any other matter document: OneDrive first, document_blob as the safety net. */
@@ -202,7 +203,37 @@ export function infotrackClient(): InfoTrackClient {
 
 /** The engine's search and ID check port: each firm on its own InfoTrack account, the stand-in for a firm with none. */
 export function infotrackRouter(standIn: InfoTrackStandIn): FirmInfoTrackRouter {
-  return new FirmInfoTrackRouter({ clientFor: infotrackClientFor }, new PgOrderStore(), pgMatterLookup, standIn);
+  return new FirmInfoTrackRouter({ clientFor: infotrackClientFor, orderedIn, practiceOrder }, new PgOrderStore(), pgMatterLookup, standIn);
+}
+
+/** The practice system a firm runs alongside: the one it has connected, else a general name. */
+export async function practiceSystemName(tenantId: string): Promise<string> {
+  const r = await runAsSystem(() => queryOne<{ intouch: boolean; leap: boolean }>(
+    `select exists(select 1 from intouch_connection where tenant_id = $1 and status = 'CONNECTED') as intouch,
+            exists(select 1 from matter where tenant_id = $1 and leap_matter_id is not null) as leap`,
+    [tenantId]
+  )).catch(() => null);
+  return r?.intouch ? 'InTouch' : r?.leap ? 'LEAP' : 'your practice system';
+}
+
+/** From CONVEYi, or in the practice system when the firm has turned ordering from CONVEYi off (lib/server/features.ts). */
+async function orderedIn(tenantId: string, kind: 'search' | 'id_check'): Promise<{ via: 'conveyi' } | { via: 'practice'; system: string }> {
+  const { featureOn } = await import('../features');
+  const on = await runAsSystem(() => featureOn(tenantId, kind === 'search' ? 'orderSearches' : 'orderIdChecks')).catch(() => true);
+  return on ? { via: 'conveyi' } : { via: 'practice', system: await practiceSystemName(tenantId) };
+}
+
+/** The handler hears it on the case: place this order in the practice system (its result comes back through the mirror). */
+async function practiceOrder(input: { tenantId: string; matterId: string; system: string; what: string }): Promise<void> {
+  const { emitMatterEvent } = await import('../events');
+  await runAsSystem(() => emitMatterEvent({
+    tenantId: input.tenantId,
+    matterId: input.matterId,
+    eventType: 'PRACTICE_ORDER',
+    title: `Order ${input.what} in ${input.system}`,
+    details: `This firm orders from ${input.system}; the result comes back to the case from there.`,
+    notify: { kind: 'DOC_RECEIVED', headline: `Order ${input.what} in ${input.system}`, did: `Recorded it as ordered in ${input.system}`, action: `Place the order in ${input.system}`, dedupKey: `practice-order:${input.matterId}:${input.what}` },
+  }));
 }
 
 /** Idempotency for provider retries: returns false if this delivery was already handled. */

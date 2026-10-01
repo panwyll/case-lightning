@@ -14,10 +14,11 @@ interface Portal { url: string; createdAt: string; firstOpenedAt: string | null;
 
 export function PortalCard({ matterId, api }: { matterId: string; api: Api }) {
   const [p, setP] = useState<Portal | null | undefined>(undefined);
+  const [enabled, setEnabled] = useState(true);
   const [busy, setBusy] = useState<'copy' | 'reset' | null>(null);
   const [done, setDone] = useState<'copy' | 'reset' | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  useEffect(() => { api<{ portal: Portal | null }>(`/matters/${matterId}/portal`).then((r) => setP(r.portal)).catch(() => setP(null)); }, [api, matterId]);
+  useEffect(() => { api<{ enabled: boolean; portal: Portal | null }>(`/matters/${matterId}/portal`).then((r) => { setEnabled(r.enabled !== false); setP(r.portal); }).catch(() => setP(null)); }, [api, matterId]);
 
   const go = async (action: 'link' | 'reset') => {
     const key = action === 'link' ? 'copy' : 'reset';
@@ -35,6 +36,7 @@ export function PortalCard({ matterId, api }: { matterId: string; api: Api }) {
     }
   };
 
+  if (!enabled) return null;
   const used = p?.lastOpenedAt ? `Opened ${p.opens} time${p.opens === 1 ? '' : 's'} · last ${fmtDay(p.lastOpenedAt)}${p.uploads ? ` · ${p.uploads} upload${p.uploads === 1 ? '' : 's'}` : ''}` : p ? 'Not opened yet' : null;
   return (
     <div style={{ marginTop: 12 }}>

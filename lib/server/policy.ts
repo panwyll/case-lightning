@@ -2,7 +2,10 @@
 import { query, queryOne } from './db';
 
 export type SigningProvider = 'none' | 'infotrack' | 'intouch' | 'leap' | 'mock';
-export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEmail: boolean; signingProvider: SigningProvider; clientReminderHours: number } = {
+export type SystemModePolicy = 'standalone' | 'alongside';
+/** Targets the firm sets for its analytics: completions a month, for the firm and per person (by user id). */
+export interface AnalyticsTargets { monthlyCompletions: number | null; perPerson: Record<string, number> }
+export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEmail: boolean; signingProvider: SigningProvider; clientReminderHours: number; systemMode: SystemModePolicy; features: Record<string, boolean>; analyticsTargets: AnalyticsTargets; reviewUrl: string | null } = {
   /** Outgoing files go as a password-protected zip, with the password sent separately (WhatsApp where the client has opted in, otherwise its own message). */
   protectOutgoingFiles: false,
   /** Email filed to a case or set aside here is archived in the mailbox, so the Outlook inbox matches the Email tab. */
@@ -11,6 +14,13 @@ export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEma
   signingProvider: 'none',
   /** A client update mentions what the client still owes us only if nobody has asked them about it (an update, a chase, the request itself) in this many hours. */
   clientReminderHours: 24,
+  /** CONVEYi as the whole case system, or alongside the firm's practice system (lib/server/features.ts). */
+  systemMode: 'standalone',
+  /** Features turned on or off against the mode's default (lib/server/features.ts). */
+  features: {},
+  analyticsTargets: { monthlyCompletions: null, perPerson: {} },
+  /** Where a client who would recommend us is asked to leave a review (ReviewSolicitors, Trustpilot, Google). */
+  reviewUrl: null,
 };
 export type PolicyKey = keyof typeof POLICY_DEFAULTS;
 
