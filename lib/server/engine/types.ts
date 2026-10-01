@@ -210,6 +210,7 @@ export const EVENT_TYPES = [
   'longstop_date_recorded',
   'sdlt_facts_recorded',
   'party_event_recorded',
+  'contributions_recorded',
   'ap1_cancelled',
   'requisition_extended',
   'register_checked',
@@ -1132,6 +1133,7 @@ export interface Payloads {
   /** The seller's solicitor's replies to completion information (TA13): the undertaking to redeem the seller's charges. */
   completion_information_received: { undertakingToRedeem: boolean; documentId: string | null };
   longstop_date_recorded: { date: string };
+  contributions_recorded: { model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent: Record<string, number> | null; shares: Array<{ party: string; shareBp: number }> };
   ap1_cancelled: { reason: string };
   requisition_extended: { requisitionEventId: string; deadline: string; note: string };
   register_checked: { ok: boolean; note: string | null; lenderTold: boolean };
@@ -1644,6 +1646,8 @@ export interface MatterState {
     interimSentAt?: string | null;
   };
   deposit: { received: boolean; at: string | null; /** What has come in towards it, and what the contract says it is. */ amountPennies?: number | null; contractPennies?: number | null };
+  /** What each buyer puts in and the declaration of trust's model, with each owner's share at purchase (co-owners.ts). */
+  coOwnership?: { model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent: Record<string, number> | null; shares: Array<{ party: string; shareBp: number }>; recordedAt: string } | null;
   /** After registration: the new register read against what it should say, and when (theme H). */
   registerCheckedAt?: string | null;
   /** When the file may be destroyed, and the CDD records, stamped on closing. */

@@ -241,6 +241,7 @@ export interface EngineState {
   matterId: string;
   tenantId?: string;
   enrolled: boolean;
+  coOwnership?: { model: string; contributions: Array<{ party: string; pennies: number }>; ratioPercent: Record<string, number> | null; shares: Array<{ party: string; shareBp: number }>; recordedAt: string } | null;
   amlHold?: { since: string; noticeEnds: string; status: 'awaiting' | 'granted' | 'refused'; moratoriumEnds: string | null } | null;
   partyEvents?: Array<{ event: string; party: string; at: string; hasAttorney: boolean | null }>;
   otherCharges?: Array<{ id: string; chargee: string; text: string | null; status: string; redemptionPennies: number | null; validUntil: string | null; redeemedAt: string | null; dischargedAt: string | null }>;

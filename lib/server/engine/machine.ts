@@ -31,6 +31,7 @@ import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templat
 import { profileOf, type TransactionProfile } from './transactions';
 import { contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
 import { computeSdlt } from './sdlt';
+import { sharesAtPurchase, sharesText, unequal } from './co-owners';
 import { amlHoldActive, damlNoticeEnds, damlMoratoriumEnds, partyEventConsequences, sanctionsHold, SANCTIONS_PREFIX } from './people';
 import { cgtFlags, chargeableConsideration, deriveSdltBasis, type CgtFacts, type SdltFacts } from './sdlt-facts';
 import { completionDateProblem, staleAtCompletion } from './dates';
@@ -219,6 +220,7 @@ type CommandBody =
   | { type: 'longstop_date_recorded'; actor: Actor; date: string }
   | { type: 'record_party_event'; actor: Actor; event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; hasAttorney?: boolean | null; note?: string | null }
   | { type: 'sar_made'; actor: Actor; note?: string | null }
+  | { type: 'record_contributions'; actor: Actor; model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent?: Record<string, number> | null }
   | { type: 'ap1_cancelled'; actor: Actor; reason: string }
   | { type: 'requisition_extended'; actor: Actor; requisitionEventId: string; deadline: string; note: string }
   | { type: 'register_checked'; actor: Actor; wrong?: boolean | null; note?: string | null; lenderTold?: boolean | null }
@@ -303,6 +305,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'record_party_event',
   'sar_made',
   'daml_response',
+  'record_contributions',
   'ap1_cancelled',
   'requisition_extended',
   'register_checked',
@@ -2359,6 +2362,24 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const out: NewEvent[] = [{ type: 'cgt_facts_recorded', actor: cmd.actor, payload: { mainResidenceThroughout: !!cmd.mainResidenceThroughout, ukResident: !!cmd.ukResident } }];
       const flags = cgtFlags({ mainResidenceThroughout: !!cmd.mainResidenceThroughout, ukResident: !!cmd.ukResident });
       if (flags.length && !openOf(s, 'cgt_flag', 'Capital Gains Tax')) out.push(issue(s, issueIds(s)(), 'cgt_flag', 'Capital Gains Tax: tell the client a 60-day report may be due', `${flags.join(' ')} Never advise on the tax or give a figure: tell the client in writing and suggest they speak to their accountant before completion.`, 'none'));
+      return out;
+    }
+    // ── Co-owners' money (co-owners.ts) ──
+    case 'record_contributions': {
+      requireEnrolled(s);
+      requireSide(s, ['buyer', 'owner'], "The co-owners' contributions");
+      if (s.completion.confirmedAt) reject('The matter has completed: a later change is a variation of the declaration of trust.');
+      const names = (s.partyNames ?? []).map((n) => n.trim().toLowerCase());
+      const cs = (cmd.contributions ?? []).map((c) => ({ party: c.party.trim(), pennies: c.pennies }));
+      if (cs.length < 2) reject('Give what each co-owner puts in (two or more).', 400);
+      if (cs.some((c) => !Number.isInteger(c.pennies) || c.pennies < 0)) reject('Each amount must be a sum in pennies.', 400);
+      if (names.length && cs.some((c) => !names.includes(c.party.toLowerCase()))) reject(`Each name must be one of the clients (${s.partyNames.join(', ')}).`, 400);
+      const ratio = cmd.ratioPercent ?? null;
+      if ((cmd.model === 'FIXED' || cmd.model === 'RING_FENCE') && ratio && Math.abs(Object.values(ratio).reduce((a, b) => a + b, 0) - 100) > 0.01) reject('The shares must add up to 100%.', 400);
+      const shares = sharesAtPurchase(s, cmd.model, cs, ratio, ctx.now.toISOString().slice(0, 10));
+      const out: NewEvent[] = [{ type: 'contributions_recorded', actor: cmd.actor, payload: { model: cmd.model, contributions: cs, ratioPercent: ratio, shares } }];
+      // Unequal money held as joint tenants: the classic trap, raised for advice before exchange.
+      if (s.clientDecisions.ownership_basis?.decision === 'joint_tenants' && unequal(cs) && !openOf(s, 'co_ownership_advice', 'Unequal contributions')) out.push(issue(s, issueIds(s)(), 'co_ownership_advice', 'Unequal contributions, but holding as joint tenants', `${cs.map((c) => `${c.party} ${pounds(c.pennies)}`).join(', ')}. As joint tenants the survivor takes everything on a death, and on a split each is presumed to own half whatever they put in. Advise tenants in common with a declaration of trust (${sharesText(shares)} on these figures), or record that they choose joint tenancy knowing this.`, s.exchange.exchangedAt ? 'completion' : 'exchange'));
       return out;
     }
     // ── After completion (theme H) ──

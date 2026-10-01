@@ -82,6 +82,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('payment_authorised'), payeeKind: z.enum(PAYEE_KINDS), bankDetailsId: z.string().min(1).max(60), amountPennies: z.number().int().nonnegative().nullish(), purpose: z.enum(['completion_monies', 'deposit', 'other']) }),
   z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client', 'buyer_solicitor', 'incoming_owner', 'isa_provider']), remitter: z.string().max(160).nullish(), amountPennies: z.number().int().nonnegative().nullish(), uncleared: z.boolean().nullish() }),
   z.object({ type: z.literal('funds_cleared'), receiptId: z.string().min(1).max(40) }),
+  z.object({ type: z.literal('record_contributions'), model: z.enum(['FIXED', 'RING_FENCE', 'CONTRIBUTION', 'FLOATING']), contributions: z.array(z.object({ party: z.string().min(1).max(160), pennies: z.number().int().nonnegative() })).min(2).max(8), ratioPercent: z.record(z.string(), z.number().min(0).max(100)).nullish() }),
   z.object({ type: z.literal('ap1_cancelled'), reason: z.string().min(1).max(1000) }),
   z.object({ type: z.literal('requisition_extended'), requisitionEventId: z.string().min(1).max(60), deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), note: z.string().min(1).max(1000) }),
   z.object({ type: z.literal('register_checked'), wrong: z.boolean().nullish(), note: z.string().max(1000).nullish(), lenderTold: z.boolean().nullish() }),

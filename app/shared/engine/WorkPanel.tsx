@@ -21,6 +21,7 @@ import { DismissButton, DismissedTasks, dismissTask } from './Dismissed';
 import { UploadButton, BusyButton } from './BusyButton';
 import { STEP_UPLOADS, WAIT_ACTIONS, uploadFor, uploadForStep, type UploadOutcome } from './stepUploads';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
+import { ContributionsForm } from './ContributionsForm';
 import { CompletionSheet } from './CompletionSheet';
 import { ClientDecisionSheet } from './ClientDecisionSheet';
 import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, Mail, User, X, Zap } from '@/app/shared/icons';
@@ -792,6 +793,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const [closing, setClosing] = useState(false);
   // The figure to ask for, from what the file already says: the client's balance from the statement, the advance from the offer.
   const askFor = (role: string): number | undefined => (role === 'lender' ? (s.mortgage.facts as { amountPennies?: number } | null)?.amountPennies : role === 'client' ? s.money?.statementBalancePennies ?? undefined : undefined) ?? undefined;
+  // The declaration's shares, from what each co-owner put in (co-owners.ts), filled in for the person to check.
+  const deedShares = s.coOwnership?.shares?.length ? s.coOwnership.shares.map((x) => `${x.party} ${(x.shareBp / 100).toFixed(x.shareBp % 100 ? 2 : 0)}%`).join(', ') : undefined;
   const firmAccounts = () => Object.values(s.bankDetails).filter((b) => b.payeeKind === 'firm_client_account' && b.status === 'verified');
   const dueAction = (key: string): ReactNode => {
     const unreplied = Object.values(s.inboundEnquiries ?? {}).filter((q) => !q.repliedAt).map((q) => q.id);
@@ -799,6 +802,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     if (key.startsWith('shortfall_request:')) { const acc = firmAccounts(); return acc.length ? act('completion', 'funds_requested', 'Ask The Client', { fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: Number(key.slice('shortfall_request:'.length)) }, { primary: true }) : <span className="ep-note">Verify our client account under Bank Details first.</span>; }
     if (key.startsWith('charge_statement:')) return act('redemption', 'charge_statement_received', 'Record Figure', { chargeId: key.slice('charge_statement:'.length) }, { primary: true });
     if (key.startsWith('charge_redeemed:')) return act('redemption', 'charge_redeemed', 'Record Paid Off', { chargeId: key.slice('charge_redeemed:'.length), amountPennies: (s.otherCharges ?? []).find((c) => c.id === key.slice('charge_redeemed:'.length))?.redemptionPennies ?? undefined }, { primary: true });
+    if (key === 'contributions') return <ContributionsForm names={s.partyNames ?? []} busy={busy} onSubmit={(body) => cmd(body)} />;
     if (key === 'register_check') return act('registration', 'register_checked', 'Record Checked', {}, { primary: true });
     if (key.startsWith('requisition_extend:')) return act('registration', 'requisition_extended', 'Record More Time', { requisitionEventId: key.slice('requisition_extend:'.length) });
     if (key === 'sdlt_facts') return act('exchange', 'record_sdlt_facts', 'Record Answers', {}, { primary: true });
@@ -873,7 +877,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         const SIGN_CMD = { contract: 'signed_contract_held', transfer: 'transfer_deed_executed', mortgage_deed: 'mortgage_deed_executed', deed_of_trust: 'deed_of_trust_executed' } as const;
         const SIGN_LABEL = { contract: 'Signed Contract', transfer: 'Signed TR1', mortgage_deed: 'Signed Mortgage Deed', deed_of_trust: 'Signed Declaration' } as const;
         const signedAt = (d: keyof typeof SIGN_CMD) => (d === 'contract' ? s.readiness.signedContractHeldAt : d === 'transfer' ? s.deeds?.transferDeedAt : d === 'mortgage_deed' ? s.deeds?.mortgageDeedAt : s.deeds?.deedOfTrustAt);
-        const extra = (d: keyof typeof SIGN_CMD): Record<string, unknown> => (d === 'contract' ? {} : d === 'transfer' ? { witnessed: true, parties: s.partyNames?.length ? s.partyNames : undefined } : d === 'mortgage_deed' ? { witnessed: true } : { parties: s.partyNames });
+        const extra = (d: keyof typeof SIGN_CMD): Record<string, unknown> => (d === 'contract' ? {} : d === 'transfer' ? { witnessed: true, parties: s.partyNames?.length ? s.partyNames : undefined } : d === 'mortgage_deed' ? { witnessed: true } : { parties: s.partyNames, shares: deedShares });
         const out = (s.signing?.documents ?? []).filter((d) => !signedAt(d as keyof typeof SIGN_CMD)) as Array<keyof typeof SIGN_CMD>;
         return out.length ? <>{out.map((d) => <span key={d}>{act('signing', SIGN_CMD[d], `Record ${SIGN_LABEL[d]}`, extra(d), { primary: true })}</span>)}</> : null;
       }
@@ -1264,7 +1268,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     const LABEL = { contract: 'Contract', transfer: 'Transfer (TR1)', mortgage_deed: 'Mortgage deed', deed_of_trust: 'Declaration of trust' } as const;
     const CMD = { contract: 'signed_contract_held', transfer: 'transfer_deed_executed', mortgage_deed: 'mortgage_deed_executed', deed_of_trust: 'deed_of_trust_executed' } as const;
     const done = (d: keyof typeof LABEL) => (d === 'contract' ? s.readiness.signedContractHeldAt : d === 'transfer' ? deeds.transferDeedAt : d === 'mortgage_deed' ? deeds.mortgageDeedAt : deeds.deedOfTrustAt);
-    const extra = (d: keyof typeof LABEL): Record<string, unknown> => (d === 'contract' ? {} : d === 'transfer' ? { witnessed: true, parties: s.partyNames?.length ? s.partyNames : undefined } : d === 'mortgage_deed' ? { witnessed: true } : { parties: s.partyNames });
+    const extra = (d: keyof typeof LABEL): Record<string, unknown> => (d === 'contract' ? {} : d === 'transfer' ? { witnessed: true, parties: s.partyNames?.length ? s.partyNames : undefined } : d === 'mortgage_deed' ? { witnessed: true } : { parties: s.partyNames, shares: deedShares });
     if (toSign.length) lane({
       id: 'signing', title: 'Signing', holds: 'Holds Completion', order: 'parallel',
       state: toSign.every((d) => done(d)) ? 'done' : sg.packSentAt ? 'open' : 'idle',

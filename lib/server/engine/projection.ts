@@ -490,6 +490,11 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null) && payersExpected(s).every((r) => s.completion.receivedFrom.includes(r))) s.completion.fundsReceivedAt = s.completion.fundsReceivedAt ?? e.createdAt;
       break;
     }
+    case 'contributions_recorded': {
+      const p = e.payload as Payloads['contributions_recorded'];
+      s.coOwnership = { model: p.model, contributions: p.contributions, ratioPercent: p.ratioPercent, shares: p.shares, recordedAt: e.createdAt };
+      break;
+    }
     case 'ap1_cancelled':
       s.postCompletion = { ...s.postCompletion, ap1SubmittedAt: null };
       closeWait(s, 'registration', null, e);

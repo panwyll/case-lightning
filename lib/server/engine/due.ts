@@ -159,6 +159,9 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   if (seller && !s.cgtFacts && !exchanged) add({ key: 'cgt_facts', lane: 'exchange', title: "Record the client's CGT answers (main home throughout? UK resident?)" });
   // A new build's contract carries a long-stop date: on the case, so its clock is watched (dates.ts).
   if (buyer && s.shapes?.includes('new_build') && !s.longStopDate && !completed && ['contract_review', 'pre_exchange', 'exchanged', 'pre_completion'].includes(s.stage)) add({ key: 'longstop_date', lane: 'exchange', title: 'Record the long-stop date from the new-build contract' });
+  // Tenants in common in unequal shares: the declaration of trust needs the figures (co-owners.ts).
+  if ((buyer || toe) && s.parties > 1 && s.clientDecisions.ownership_basis?.decision === 'tenants_in_common_unequal' && !s.coOwnership && !s.deeds.deedOfTrustAt && !completed) add({ key: 'contributions', lane: 'co_ownership', title: 'Record what each buyer puts in, and how the declaration of trust shares it' });
+
   // ── After registration (theme H): the new register read; a requisition that cannot be met in time ──
   if (s.postCompletion.ap1ConfirmedAt && !s.registerCheckedAt && p.registration === 'ap1') add({ key: 'register_check', lane: 'registration', title: 'Check the new register: proprietors, the charges, any restriction' });
   for (const r of s.postCompletion.requisitions.filter((x) => !x.respondedAt && x.deadline)) {
