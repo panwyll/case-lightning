@@ -125,12 +125,13 @@ export interface ReportDrafter {
 /** Component #4. Placing an order is I/O; the engine records `search_ordered` only after the provider accepts. */
 export interface SearchProvider {
   readonly name: string;
-  orderSearch(input: { tenantId: string; matterId: string; searchType: SearchType }): Promise<{ reference: string }>;
+  /** `provider`: who actually took the order, when the port routes per firm (InfoTrack on the firm's account, or the stand-in). */
+  orderSearch(input: { tenantId: string; matterId: string; searchType: SearchType }): Promise<{ reference: string; provider?: string }>;
   /**
    * A stand-in provider (no search provider connected) hands back a placeholder result at once, so
    * a case is not held on searches nobody will ever send. It says on its face that no search was done.
    */
-  placeholderResult?(input: { searchType: SearchType; reference: string; orderedAt: Date }): { fileName: string; content: string; facts: SearchFacts };
+  placeholderResult?(input: { searchType: SearchType; reference: string; orderedAt: Date }): { fileName: string; content: string; facts: SearchFacts } | null;
 }
 
 export interface IdCheckProvider {
@@ -138,7 +139,9 @@ export interface IdCheckProvider {
   /** True when the provider emails the person their own link (so a chase can say where to look). */
   readonly sendsClientLink?: boolean;
   /** `link`: the person's own link to the check, when the provider gives one back — kept so a chase can send it again. */
-  requestCheck(input: { tenantId: string; matterId: string; /** a named party beyond the first client (co-buyer, donor); absent = the first client */ party?: string | null; label?: string | null }): Promise<{ reference: string; link?: string | null }>;
+  requestCheck(input: { tenantId: string; matterId: string; /** a named party beyond the first client (co-buyer, donor); absent = the first client */ party?: string | null; label?: string | null }): Promise<{ reference: string; link?: string | null; provider?: string }>;
+  /** A provider routed per firm: how it reaches that firm's clients (null until the firm's account has been looked up). */
+  forFirm?(tenantId: string): { sendsClientLink: boolean; label: string } | null;
 }
 
 /** Component #5, status updates only — the safe-to-automate half. Q&A is deliberately NOT a port here. */

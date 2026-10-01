@@ -99,8 +99,18 @@ export function sandboxGuard(base: EnginePorts): EnginePorts {
     reportDrafter: { name: base.reportDrafter.name, draft: async (input) => (await pick(input.state.tenantId, input.state.matterId, base.reportDrafter, drafter)).draft(input) },
     pofSummariser: base.pofSummariser ? { name: base.pofSummariser.name, summarise: async (input) => ((await isSandboxMatter(input.state.tenantId, input.state.matterId)) ? null : base.pofSummariser!.summarise(input)) } : base.pofSummariser,
     noteExtractor: base.noteExtractor ? { name: base.noteExtractor.name, extract: async (input) => (await pick(input.tenantId, input.matterId, base.noteExtractor!, notes)).extract(input) } : base.noteExtractor,
-    searchProvider: { name: base.searchProvider.name, orderSearch: async (input) => (await pick(input.tenantId, input.matterId, base.searchProvider, search)).orderSearch(input) },
-    idCheckProvider: { name: base.idCheckProvider.name, requestCheck: async (input) => (await pick(input.tenantId, input.matterId, base.idCheckProvider, idCheck)).requestCheck(input) },
+    // Optional members are carried over too: a dropped placeholderResult once left every live case's searches waiting on a stand-in that never answers.
+    searchProvider: {
+      name: base.searchProvider.name,
+      orderSearch: async (input) => (await pick(input.tenantId, input.matterId, base.searchProvider, search)).orderSearch(input),
+      ...(base.searchProvider.placeholderResult ? { placeholderResult: (input) => base.searchProvider.placeholderResult!(input) } : {}),
+    },
+    idCheckProvider: {
+      name: base.idCheckProvider.name,
+      sendsClientLink: base.idCheckProvider.sendsClientLink,
+      requestCheck: async (input) => (await pick(input.tenantId, input.matterId, base.idCheckProvider, idCheck)).requestCheck(input),
+      ...(base.idCheckProvider.forFirm ? { forFirm: (tenantId: string) => base.idCheckProvider.forFirm!(tenantId) } : {}),
+    },
     // Every sender the live port has, sent to the case's outbox instead on a sandbox: listed from the port itself,
     // so a method added later (a first request, our enquiries) is never dropped — a dropped optional method reads as "not configured" on every case.
     clientComms: routeEach(base.clientComms, comms as unknown as ClientComms, pick),

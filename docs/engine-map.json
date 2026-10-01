@@ -1,5 +1,5 @@
 {
-  "version": "0852558896ee",
+  "version": "73e54e8d2d68",
   "generatedFrom": "lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)",
   "transactionTypes": [
     {
@@ -3906,7 +3906,7 @@
       "source": "provider",
       "feeds": "ingest",
       "label": "InfoTrack result returned",
-      "description": "Signed webhook; the order record (ours) says which matter and sub-flow; the result is downloaded, filed and routed.",
+      "description": "Each firm's own results URL (its key, and InfoTrack's signature when the firm has a signing secret); the order record (ours, and only that firm's) says which matter and sub-flow; the result is downloaded, filed and routed.",
       "entry": "app/api/v1/integrations/infotrack/webhook",
       "implemented": true,
       "reaches": [

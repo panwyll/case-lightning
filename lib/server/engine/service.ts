@@ -277,7 +277,7 @@ export class EngineService {
       const edited = (detail as { edited?: MessageOverride }).edited ?? null;
       // What the chase puts back in front of them is read from the case now, not from when it was proposed.
       const state = await this.getState(tenantId, matterId);
-      const context = { ...d.context, ...this.chaseExtras(state, d.waitKey, d.subject) };
+      const context = { ...d.context, ...this.chaseExtras(tenantId, state, d.waitKey, d.subject) };
       let sent: { channel: string; messageId: string | null };
       if (d.waitKey === 'signed_documents' && this.ports.signing && unsignedDeeds(state).length) {
         // The deeds themselves, again: the same letter with the unsigned ones re-attached.
@@ -304,7 +304,7 @@ export class EngineService {
       const d = detail as { template: string; context: Record<string, unknown>; triggeredByEventId: string; agentTemplate?: string | null };
       // Where things stand, as of now (not as of when the update was proposed), and a note of what it told the client about.
       const reminderHours = this.ports.clientReminderHours ? await this.ports.clientReminderHours(tenantId).catch(() => undefined) : undefined;
-      const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now(), { ...this.idProviderOpts(), reminderHours });
+      const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now(), { ...this.idProviderOpts(tenantId), reminderHours });
       // Files that go with it: a copy the client asked for, or a document (the completion statement).
       // As a secure link (the default), or attached for a client who asked for attachments (or on this one email).
       const attachId = (detail as { attachDocumentId?: string }).attachDocumentId;
@@ -348,8 +348,8 @@ export class EngineService {
       await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.edited?.body?.trim() || d.subject, origin: d.issueId ? { issueId: d.issueId, alsoIssueIds: d.alsoIssueIds ?? [], purpose, about, ...(d.question && d.question !== 'forms' ? { formsQuestion: d.question } : {}) } : { formsQuestion: d.question ?? undefined, purpose, about } });
     } else if (action === 'search_order') {
       const d = detail as { searchType: SearchType };
-      const { reference } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType: d.searchType });
-      await this.run(tenantId, matterId, { type: 'record_search_ordered', actor: SYSTEM, searchType: d.searchType, provider: this.ports.searchProvider.name, reference });
+      const { reference, provider } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType: d.searchType });
+      await this.run(tenantId, matterId, { type: 'record_search_ordered', actor: SYSTEM, searchType: d.searchType, provider: provider ?? this.ports.searchProvider.name, reference });
       // No provider connected: the stand-in comes straight back with a placeholder that says so.
       const stub = this.ports.searchProvider.placeholderResult?.({ searchType: d.searchType, reference, orderedAt: this.ports.now() });
       if (stub) {
@@ -411,13 +411,13 @@ export class EngineService {
     const pc = party ? before.partyChecks[party] : null;
     if ((pc ? pc.status : before.idCheck.status) === 'requested') return { state: before, events: [] };
     // A person asked for this: their click is the approval, whatever the trust levels say.
-    const { reference, link } = await this.ports.idCheckProvider.requestCheck({ tenantId, matterId, party, label: pc?.label ?? null });
-    const result = await this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference, party, link: link ?? null });
+    const { reference, link, provider } = await this.ports.idCheckProvider.requestCheck({ tenantId, matterId, party, label: pc?.label ?? null });
+    const result = await this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: provider ?? this.ports.idCheckProvider.name, reference, party, link: link ?? null });
     // The client hears it from us, not only from the provider: why, and the link (or who it comes from). Other people named on the case get the provider's own link.
     // A co-client (a joint buyer or seller) is a client too: their own link, named, to the clients' addresses.
     const coClient = !!pc && ['buyer', 'seller', 'owner'].includes(pc.role);
     if (!party || coClient) {
-      const { idProviderSendsLink, idProviderLabel } = this.idProviderOpts();
+      const { idProviderSendsLink, idProviderLabel } = this.idProviderOpts(tenantId);
       const who = coClient ? `${pc!.label}: ` : '';
       const idLinkLine = link ? `${who}Please start your check here: ${link}` : idProviderSendsLink ? `${who}You will receive an email from ${idProviderLabel} with a secure link to start it.` : `${who}We will send you a secure link to start it shortly.`;
       const context = { idLinkLine, transaction: profileOf(before.transactionType ?? 'freehold_purchase').side === 'seller' ? 'sale' : 'purchase' };
@@ -1305,7 +1305,7 @@ export class EngineService {
           if (awayParty && awayNow(state, awayParty, now)) continue;
           const grouped = a.wait.key === 'enquiry';
           const also = grouped ? openWaits(state).filter((w) => w.key === 'enquiry' && w.subject !== a.wait.subject).map((w) => w.subject) : [];
-          const context: Record<string, unknown> = { waitKey: a.wait.key, subject: a.wait.subject, openedAt: a.wait.openedAt, ageWorkingDays: a.ageWorkingDays, priorChases: a.wait.chasesSentAt.length, ...this.chaseExtras(state, a.wait.key, a.wait.subject) };
+          const context: Record<string, unknown> = { waitKey: a.wait.key, subject: a.wait.subject, openedAt: a.wait.openedAt, ageWorkingDays: a.ageWorkingDays, priorChases: a.wait.chasesSentAt.length, ...this.chaseExtras(tenantId, state, a.wait.key, a.wait.subject) };
           const detail = { waitKey: a.wait.key, subject: a.wait.subject, recipientRole: a.rule.recipientRole, template: a.rule.template, context, ...(also.length ? { alsoSubjects: also } : {}) };
           const summary = `CHASE\n\nTo: ${a.rule.recipientRole.replace(/_/g, ' ')}\nAbout: ${grouped ? `${1 + also.length} unanswered ${also.length ? 'enquiries' : 'enquiry'}` : `${a.wait.key.replace(/_/g, ' ')}${a.wait.subject ? ` ${a.wait.subject}` : ''}`}\nWaiting since: ${a.wait.openedAt.slice(0, 10)} (${a.ageWorkingDays} working days)\nPrevious chases: ${a.wait.chasesSentAt.length}\n\nA reminder that puts what we asked for back in front of them: ${String(context.resend ?? '').split('\n')[0] || 'what is outstanding'}.`;
           if (await this.proposeUnless(tenantId, matterId, subflows, 'chase', a.wait.key, grouped ? 'enquiry:replies' : `${a.wait.key}:${a.wait.subject}`, detail, summary)) continue;
@@ -1332,14 +1332,17 @@ export class EngineService {
   }
 
   /** What a chase carries beyond the reminder: the link, the form, or the list of what is still outstanding (chase-content.ts). */
-  private chaseExtras(state: MatterState, waitKey: string, subject: string | null): Record<string, string> {
+  private chaseExtras(tenantId: string, state: MatterState, waitKey: string, subject: string | null): Record<string, string> {
     const sale = state.transactionType === 'freehold_sale' || state.transactionType === 'leasehold_sale';
-    return { transaction: sale ? 'sale' : 'purchase', ...chaseContent(state, waitKey, subject, this.idProviderOpts()) };
+    return { transaction: sale ? 'sale' : 'purchase', ...chaseContent(state, waitKey, subject, this.idProviderOpts(tenantId)) };
   }
 
   /** How the ID provider reaches the client, for the words a chase or an update uses. */
-  private idProviderOpts(): { idProviderSendsLink: boolean; idProviderLabel: string } {
+  private idProviderOpts(tenantId: string): { idProviderSendsLink: boolean; idProviderLabel: string } {
     const idp = this.ports.idCheckProvider;
+    // A provider routed per firm (InfoTrack on the firm's own account) answers for that firm.
+    const firm = idp.forFirm?.(tenantId);
+    if (firm) return { idProviderSendsLink: firm.sendsClientLink, idProviderLabel: firm.label };
     return { idProviderSendsLink: !!idp.sendsClientLink, idProviderLabel: idp.name === 'infotrack' ? 'InfoTrack' : idp.name };
   }
 

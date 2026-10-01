@@ -315,11 +315,13 @@ export class InfoTrackIdCheckProvider implements IdCheckProvider {
     private orders: IntegrationOrderStore,
     private lookup: MatterLookup
   ) {}
-  async requestCheck(input: { tenantId: string; matterId: string }): Promise<{ reference: string; link?: string | null }> {
+  async requestCheck(input: { tenantId: string; matterId: string; party?: string | null; label?: string | null }): Promise<{ reference: string; link?: string | null }> {
     const m = await this.lookup(input.tenantId, input.matterId);
-    const name = m.buyerNames[0];
+    // A named party (a co-buyer, a gift donor, an attorney) is checked in their own name, not the first client's.
+    const named = input.party && input.label ? input.label.replace(/\s*\([^)]*\)\s*$/, '').trim() : '';
+    const name = named || m.buyerNames[0];
     if (!name) throw new InfoTrackError('No buyer name on the matter to run an ID check for.', 400, false);
-    const r = await this.client.orderIdCheck({ matterRef: m.matterRef, party: { name, email: m.clientEmail ?? null, phone: m.clientPhone ?? null } });
+    const r = await this.client.orderIdCheck({ matterRef: m.matterRef, party: { name, email: named ? null : m.clientEmail ?? null, phone: named ? null : m.clientPhone ?? null } });
     await this.orders.record({ tenantId: input.tenantId, matterId: input.matterId, provider: 'infotrack', kind: 'id_check', subject: name, providerRef: r.reference, status: 'ORDERED' }, { name });
     return { reference: r.reference, link: r.link ?? null };
   }
@@ -340,6 +342,74 @@ export class InfoTrackTitleProvider {
     return { reference: r.reference };
   }
 }
+
+// ───────────────────────────── per firm ─────────────────────────────
+
+/** Each firm's own InfoTrack account (its credentials, its billing); null for a firm that has not connected one. */
+export interface InfoTrackAccounts {
+  clientFor(tenantId: string): Promise<InfoTrackClient | null>;
+}
+
+/** What stands in for a firm with no InfoTrack account: a placeholder search, and our own ID check request. */
+export interface InfoTrackStandIn {
+  search: SearchProvider;
+  idCheck: IdCheckProvider;
+}
+
+/**
+ * The engine's search and ID check port, routed per firm: a firm that has connected InfoTrack
+ * orders on its own account; one that has not gets the stand-in (a placeholder search that says
+ * so on its face). Which one took the order is returned with it, so the case records the truth.
+ */
+export class FirmInfoTrackRouter implements SearchProvider, IdCheckProvider {
+  readonly name = 'infotrack';
+  /** Firms looked up so far, so the words a chase uses can be chosen without a round trip. */
+  private connected = new Map<string, boolean>();
+  constructor(
+    private accounts: InfoTrackAccounts,
+    private orders: IntegrationOrderStore,
+    private lookup: MatterLookup,
+    private standIn: InfoTrackStandIn
+  ) {}
+
+  private async client(tenantId: string): Promise<InfoTrackClient | null> {
+    const c = await this.accounts.clientFor(tenantId);
+    this.connected.set(tenantId, !!c);
+    return c;
+  }
+
+  async orderSearch(input: { tenantId: string; matterId: string; searchType: SearchType }): Promise<{ reference: string; provider: string }> {
+    const c = await this.client(input.tenantId);
+    if (!c) {
+      const r = await this.standIn.search.orderSearch(input);
+      return { reference: `${STAND_IN}${r.reference}`, provider: this.standIn.search.name };
+    }
+    const r = await new InfoTrackSearchProvider(c, this.orders, this.lookup).orderSearch(input);
+    return { reference: r.reference, provider: 'infotrack' };
+  }
+
+  /** Only an order the stand-in took comes straight back as a placeholder; a real order waits for InfoTrack. */
+  placeholderResult(input: { searchType: SearchType; reference: string; orderedAt: Date }) {
+    if (!input.reference.startsWith(STAND_IN)) return null;
+    return this.standIn.search.placeholderResult?.({ ...input, reference: input.reference.slice(STAND_IN.length) }) ?? null;
+  }
+
+  async requestCheck(input: { tenantId: string; matterId: string; party?: string | null; label?: string | null }): Promise<{ reference: string; link?: string | null; provider: string }> {
+    const c = await this.client(input.tenantId);
+    if (!c) return { ...(await this.standIn.idCheck.requestCheck(input)), provider: this.standIn.idCheck.name };
+    const r = await new InfoTrackIdCheckProvider(c, this.orders, this.lookup).requestCheck(input);
+    return { ...r, provider: 'infotrack' };
+  }
+
+  forFirm(tenantId: string): { sendsClientLink: boolean; label: string } | null {
+    const on = this.connected.get(tenantId);
+    if (on === undefined) return null;
+    return on ? { sendsClientLink: true, label: 'InfoTrack' } : { sendsClientLink: !!this.standIn.idCheck.sendsClientLink, label: this.standIn.idCheck.name };
+  }
+}
+
+/** Marks a reference the stand-in issued, so its placeholder is never mistaken for (or substituted for) a real order. */
+const STAND_IN = 'STANDIN:';
 
 // ───────────────────────────── webhook → engine ─────────────────────────────
 
@@ -363,9 +433,10 @@ export type WebhookOutcome = { status: 'PROCESSED'; kind: IntegrationOrder['kind
  * body is signed, but the only thing taken from it is the order reference and the
  * document URL — matter, tenant and sub-flow all come from OUR order record.
  */
-export async function handleInfoTrackResult(deps: { client: InfoTrackClient; orders: IntegrationOrderStore; filer: ResultFiler; router: ResultRouter; log?: (m: string, d?: unknown) => void }, event: WebhookEvent): Promise<WebhookOutcome> {
+export async function handleInfoTrackResult(deps: { client: InfoTrackClient; orders: IntegrationOrderStore; filer: ResultFiler; router: ResultRouter; log?: (m: string, d?: unknown) => void; /** Delivered to a firm's own URL: only that firm's orders are answered. */ tenantId?: string }, event: WebhookEvent): Promise<WebhookOutcome> {
   const order = await deps.orders.find('infotrack', event.reference);
   if (!order) return { status: 'IGNORED', reason: `unknown order reference ${event.reference}` };
+  if (deps.tenantId && order.tenantId !== deps.tenantId) return { status: 'IGNORED', reason: `order ${event.reference} is not this firm's` };
   if (order.status !== 'ORDERED') return { status: 'IGNORED', reason: `order already ${order.status}` };
   if (event.event === 'order.failed' || event.status === 'FAILED') {
     await deps.orders.update('infotrack', event.reference, 'FAILED', event.raw);

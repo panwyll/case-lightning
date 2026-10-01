@@ -6,10 +6,11 @@
 import crypto from 'node:crypto';
 import { putBlob } from '../blob-store';
 import { config } from '../config';
-import { query, queryOne } from '../db';
+import { query, queryOne, runAsSystem } from '../db';
+import { encryptSecret, decryptSecret } from '../crypto';
 import { uploadToMatterKb } from '../graph';
 import { driveUserFor } from '../matter-drive';
-import { InfoTrackClient, InfoTrackIdCheckProvider, InfoTrackSearchProvider, InfoTrackTitleProvider, type IntegrationOrder, type IntegrationOrderStore, type MatterLookup, type ResultFiler } from './infotrack';
+import { FirmInfoTrackRouter, InfoTrackClient, type InfoTrackStandIn, type IntegrationOrder, type IntegrationOrderStore, type MatterLookup, type ResultFiler } from './infotrack';
 
 export class PgOrderStore implements IntegrationOrderStore {
   async record(order: IntegrationOrder, request: unknown): Promise<void> {
@@ -73,36 +74,135 @@ export class PgResultFiler implements ResultFiler {
   }
 }
 
+/**
+ * A firm's own InfoTrack account: the API address and client credentials InfoTrack issued it,
+ * the secret InfoTrack signs results with (when it gives one), and the key WE generate for the
+ * firm's result URL, so a delivery is known to be that firm's before anything is read.
+ * Entered by the admin on the InfoTrack page, stored encrypted (infotrack_connection);
+ * INFOTRACK_* env vars are only a fallback for a deployment that serves one firm.
+ */
+export interface InfoTrackFirmCredentials {
+  baseUrl: string;
+  clientId: string;
+  clientSecret: string;
+  tokenUrl: string | null;
+  signingSecret: string | null;
+  webhookKey: string;
+}
+
+export type InfoTrackSavedCredentials = Omit<InfoTrackFirmCredentials, 'webhookKey'> & { webhookKey: string | null; source: 'firm' | 'deployment' };
+
+export interface InfoTrackConnectionRow {
+  status: 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+  statusDetail: string | null;
+  connectedAt: string | null;
+}
+
+function envCredentials(): Omit<InfoTrackSavedCredentials, 'source' | 'webhookKey'> | null {
+  if (!(config.infotrackBaseUrl && config.infotrackClientId && config.infotrackClientSecret)) return null;
+  return { baseUrl: config.infotrackBaseUrl, clientId: config.infotrackClientId, clientSecret: config.infotrackClientSecret, tokenUrl: config.infotrackTokenUrl ?? null, signingSecret: config.infotrackWebhookSecret ?? null };
+}
+
+/** The deployment-wide account (single-firm deployments, and results ordered before firms had their own). */
 export function infotrackConfigured(): boolean {
-  return !!(config.infotrackBaseUrl && config.infotrackClientId && config.infotrackClientSecret);
+  return !!envCredentials();
 }
 
-let _client: InfoTrackClient | null = null;
-export function infotrackClient(): InfoTrackClient {
-  if (!_client) {
-    if (!infotrackConfigured()) throw new Error('InfoTrack is not configured (INFOTRACK_BASE_URL / CLIENT_ID / CLIENT_SECRET).');
-    _client = new InfoTrackClient({
-      baseUrl: config.infotrackBaseUrl!.replace(/\/+$/, ''),
-      clientId: config.infotrackClientId!,
-      clientSecret: config.infotrackClientSecret!,
-      tokenUrl: config.infotrackTokenUrl,
-      webhookSecret: config.infotrackWebhookSecret,
-      callbackUrl: `${config.appUrl}/api/v1/integrations/infotrack/webhook`,
-    });
+type Row = { credentials_enc: string | null; status: InfoTrackConnectionRow['status']; status_detail: string | null; connected_at: Date | null };
+async function row(tenantId: string): Promise<Row | null> {
+  // Before migration 120 the table does not exist: every firm reads as not connected.
+  return runAsSystem(() => queryOne<Row>(`select credentials_enc, status, status_detail, connected_at from infotrack_connection where tenant_id = $1`, [tenantId])).catch(() => null);
+}
+function decrypt(r: Row | null): Partial<InfoTrackFirmCredentials> | null {
+  if (!r?.credentials_enc) return null;
+  try {
+    return JSON.parse(decryptSecret(r.credentials_enc)) as Partial<InfoTrackFirmCredentials>;
+  } catch {
+    return null;
   }
-  return _client;
 }
 
-export function infotrackProviders() {
-  const client = infotrackClient();
-  const orders = new PgOrderStore();
-  return {
-    searchProvider: new InfoTrackSearchProvider(client, orders, pgMatterLookup),
-    idCheckProvider: new InfoTrackIdCheckProvider(client, orders, pgMatterLookup),
-    titleProvider: new InfoTrackTitleProvider(client, orders, pgMatterLookup),
-    orders,
-    client,
-  };
+/** What the firm has saved, else the deployment's; null when neither. Never shown to anyone in full. */
+export async function infotrackCredentials(tenantId: string): Promise<InfoTrackSavedCredentials | null> {
+  const r = await row(tenantId);
+  const c = decrypt(r);
+  if (c?.baseUrl && c.clientId && c.clientSecret) return { baseUrl: c.baseUrl, clientId: c.clientId, clientSecret: c.clientSecret, tokenUrl: c.tokenUrl ?? null, signingSecret: c.signingSecret ?? null, webhookKey: c.webhookKey ?? null, source: 'firm' };
+  const env = envCredentials();
+  return env ? { ...env, webhookKey: c?.webhookKey ?? null, source: 'deployment' } : null;
+}
+
+export async function infotrackConnection(tenantId: string): Promise<InfoTrackConnectionRow | null> {
+  const r = await row(tenantId);
+  return r ? { status: r.status, statusDetail: r.status_detail, connectedAt: r.connected_at?.toISOString() ?? null } : null;
+}
+
+/** Save what the admin typed; the result URL's key is generated once and then kept. */
+export async function saveInfoTrackCredentials(tenantId: string, creds: Omit<InfoTrackFirmCredentials, 'webhookKey'>): Promise<InfoTrackFirmCredentials> {
+  const webhookKey = decrypt(await row(tenantId))?.webhookKey ?? crypto.randomBytes(32).toString('hex');
+  const full: InfoTrackFirmCredentials = { ...creds, webhookKey };
+  await runAsSystem(() =>
+    query(
+      `insert into infotrack_connection (tenant_id, credentials_enc, updated_at) values ($1,$2,now())
+       on conflict (tenant_id) do update set credentials_enc = excluded.credentials_enc, updated_at = now()`,
+      [tenantId, encryptSecret(JSON.stringify(full))]
+    )
+  );
+  _clients.delete(tenantId);
+  return full;
+}
+
+export async function markInfoTrack(tenantId: string, status: InfoTrackConnectionRow['status'], detail: string | null, by: string | null = null): Promise<void> {
+  await runAsSystem(() =>
+    query(
+      `update infotrack_connection set status = $2, status_detail = $3, connected_by = coalesce($4, connected_by),
+              connected_at = case when $2 = 'CONNECTED' then now() else connected_at end, updated_at = now()
+        where tenant_id = $1`,
+      [tenantId, status, detail, by]
+    )
+  );
+  _clients.delete(tenantId);
+}
+
+/** Where InfoTrack posts a firm's results: the firm and its key ride the URL. */
+export const infotrackWebhookUrl = (tenantId: string, key: string) =>
+  `${config.appUrl}/api/v1/integrations/infotrack/webhook?firm=${encodeURIComponent(tenantId)}&key=${encodeURIComponent(key)}`;
+
+export function infotrackClientFrom(creds: Omit<InfoTrackSavedCredentials, 'source'>, tenantId: string | null, opts: { maxRetries?: number } = {}): InfoTrackClient {
+  return new InfoTrackClient({
+    baseUrl: creds.baseUrl.replace(/\/+$/, ''),
+    clientId: creds.clientId,
+    clientSecret: creds.clientSecret,
+    tokenUrl: creds.tokenUrl ?? undefined,
+    webhookSecret: creds.signingSecret ?? undefined,
+    callbackUrl: tenantId && creds.webhookKey ? infotrackWebhookUrl(tenantId, creds.webhookKey) : `${config.appUrl}/api/v1/integrations/infotrack/webhook`,
+    ...opts,
+  });
+}
+
+/** One client per firm (each keeps its own token), rebuilt when the firm's details change. */
+const _clients = new Map<string, InfoTrackClient | null>();
+export async function infotrackClientFor(tenantId: string): Promise<InfoTrackClient | null> {
+  if (_clients.has(tenantId)) return _clients.get(tenantId)!;
+  const r = await row(tenantId);
+  // A firm that disconnected orders nothing on any account, the deployment's included.
+  const creds = r && r.status !== 'CONNECTED' ? null : await infotrackCredentials(tenantId);
+  const client = creds ? infotrackClientFrom(creds, creds.source === 'firm' ? tenantId : null) : null;
+  _clients.set(tenantId, client);
+  // Look again in a minute: a firm connecting or disconnecting on another server is picked up.
+  setTimeout(() => _clients.delete(tenantId), 60_000).unref?.();
+  return client;
+}
+
+/** The deployment-wide client, for results delivered to the old (firm-less) URL. */
+export function infotrackClient(): InfoTrackClient {
+  const env = envCredentials();
+  if (!env) throw new Error('InfoTrack is not configured (INFOTRACK_BASE_URL / CLIENT_ID / CLIENT_SECRET).');
+  return infotrackClientFrom({ ...env, webhookKey: null }, null);
+}
+
+/** The engine's search and ID check port: each firm on its own InfoTrack account, the stand-in for a firm with none. */
+export function infotrackRouter(standIn: InfoTrackStandIn): FirmInfoTrackRouter {
+  return new FirmInfoTrackRouter({ clientFor: infotrackClientFor }, new PgOrderStore(), pgMatterLookup, standIn);
 }
 
 /** Idempotency for provider retries: returns false if this delivery was already handled. */

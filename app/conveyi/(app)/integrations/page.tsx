@@ -34,13 +34,16 @@ export default function ToolsPage() {
   const [platform, setPlatform] = useState(false);
   useEffect(() => { api('/platform/firms').then(() => setPlatform(true)).catch(() => setPlatform(false)); }, []);
   const [intouch, setIntouch] = useState<Status | null | undefined>(undefined);
+  const [infotrack, setInfotrack] = useState<Status | null | undefined>(undefined);
   useEffect(() => {
+    api<Status>('/integrations/infotrack/status').then(setInfotrack).catch(() => setInfotrack(null));
     api<Status>('/integrations/leap/status').then(setLeap).catch(() => setLeap(null));
     api<Status>('/integrations/intouch/status').then(setIntouch).catch(() => setIntouch(null));
   }, []);
   const cards = [
     { name: 'LEAP', href: paths.leap, s: leap, firmOwned: false },
     { name: 'InTouch', href: `${paths.integrations}/intouch`, s: intouch, firmOwned: true },
+    { name: 'InfoTrack', href: `${paths.integrations}/infotrack`, s: infotrack, firmOwned: true },
   ];
   return (
     <div className="eg" style={{ maxWidth: 1100 }}>

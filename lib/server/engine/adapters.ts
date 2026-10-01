@@ -10,8 +10,8 @@
  *   summariser     → ClaudeSummariser when a key is set (component #3, ai.ts); validated,
  *                    falls back to the deterministic template prose
  *   reportDrafter  → ClaudeReportDrafter when a key is set (component #3); TemplateReportDrafter otherwise
- *   searchProvider → InfoTrackSearchProvider when INFOTRACK_* is set (component #4); mock otherwise
- *   idCheckProvider→ InfoTrackIdCheckProvider when INFOTRACK_* is set (component #4); mock otherwise
+ *   searchProvider → InfoTrack on the firm's own account (infotrack_connection); placeholder stand-in otherwise
+ *   idCheckProvider→ InfoTrack on the firm's own account; stand-in otherwise
  *   clientComms    → ProductionClientComms when WhatsApp/Resend/Graph is configured (component #5); mock otherwise
  *   chaser         → ProductionChaser (draft-by-default template chases from the fee-earner mailbox); mock otherwise
  */
@@ -34,7 +34,7 @@ import { claudeLlm, type EngineDocumentInput } from './llm';
 import { ClaudeExtractor, type DocumentBytesLoader, type DocumentFactsWriter } from './extraction';
 import { ClaudeSummariser, ClaudeReportDrafter, ClaudeProofOfFundsSummariser, ClaudeNoteReader, ClaudeSurveyAdviser, ClaudeEnquiryWriter, ClaudeAckChecker, ClaudeReplyDrafter } from './ai';
 import { PgProofOfFundsForms } from './pof-store';
-import { infotrackConfigured, infotrackProviders } from '../integrations/infotrack-adapters';
+import { infotrackRouter } from '../integrations/infotrack-adapters';
 import { chaser as productionChaser, clientComms as productionClientComms, commsConfigured } from '../comms/adapters';
 import { runAsSystem, runAsAutomation, runOutsideAutomation } from '../db';
 import { createTask } from '../tasks';
@@ -120,11 +120,10 @@ function chooseAi(log: (msg: string, detail?: unknown) => void): { summariser: E
   };
 }
 
-/** Real InfoTrack providers (#4) when credentials are present; mocks otherwise. */
+/** InfoTrack (#4) on each firm's own account; for a firm with none, placeholder searches and our own ID check request. */
 function chooseIntegrations(): { searchProvider: EnginePorts['searchProvider']; idCheckProvider: EnginePorts['idCheckProvider'] } {
-  if (!infotrackConfigured()) return { searchProvider: new MockSearchProvider({ placeholders: true }), idCheckProvider: new MockIdCheckProvider() };
-  const p = infotrackProviders();
-  return { searchProvider: p.searchProvider, idCheckProvider: p.idCheckProvider };
+  const router = infotrackRouter({ search: new MockSearchProvider({ placeholders: true }), idCheck: new MockIdCheckProvider() });
+  return { searchProvider: router, idCheckProvider: router };
 }
 
 /** Real client comms + chaser (#5) when any channel is configured (WhatsApp, Resend or Graph); mocks otherwise. */
