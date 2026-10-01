@@ -49,6 +49,7 @@ export const STEP_ACTION_LABEL: Record<string, string> = {
   priority_search: 'Record Made', funds_request: 'Request Funds', advance_request: 'Request The Advance', completion_monies: 'Record Received', consideration: 'Record Received',
   completion_payment: 'Authorise', redemption_payment: 'Authorise', completion: 'Confirm Completion', balance_to_client: 'Authorise',
   refund: 'Record Sent', shortfall_request: 'Ask The Client', funds_cleared: 'Record Cleared',
+  charge_statement: 'Record Figure', charge_redeemed: 'Record Paid Off', undertaking: 'Give Undertaking', completion_information: 'Record Replies', undertaking_discharge: 'Record Sent',
   mortgage_redeemed: 'Record Redeemed', sdlt: 'Record Filed', ap1: 'Record Lodged', notice_of_assignment: 'Record Served', close_file: 'Close File',
 };
 
@@ -85,6 +86,7 @@ export function directStep(key: string): { label: string; busy: string; done: st
   if (key === 'proof_of_funds_request') return { label: 'Send The Form', busy: 'Sending…', done: 'Sent', body: { type: 'request_proof_of_funds' } };
   if (key === 'report_on_title_redraft') return { label: 'Draft Again', busy: 'Drafting…', done: 'Drafted', body: { type: 'draft_report_on_title' } };
   if (key.startsWith('funds_cleared:')) return { label: 'Record Cleared', busy: 'Recording…', done: 'Cleared', body: { type: 'funds_cleared', receiptId: key.slice('funds_cleared:'.length) } };
+  if (key === 'undertaking_discharge') return { label: 'Record Sent', busy: 'Recording…', done: 'Recorded', body: { type: 'undertaking_discharged' } };
   if (key === 'ap1') return { label: 'Record Lodged', busy: 'Recording…', done: 'Recorded', body: { type: 'ap1_submitted' } };
   return null;
 }

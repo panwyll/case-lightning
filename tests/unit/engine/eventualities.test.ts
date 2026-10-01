@@ -172,6 +172,7 @@ test('deadlines we owe: mortgage offer expiry before exchange and the 14-day SDL
   await h.svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'lender' });
   await h.svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: solId, purpose: 'completion_monies' });
   h.ports.setNow(new Date('2026-10-02T14:00:00Z'));
+  await h.svc.run(TENANT, MATTER, { type: 'completion_information_received', actor: USER, undertakingToRedeem: true });
   const done = await h.svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER });
   assert.equal(done.state.stage, 'completed');
   h.ports.setNow(new Date('2026-10-12T09:00:00Z')); // 4 working days before 16 Oct
@@ -250,6 +251,7 @@ test('post-completion: an HMLR requisition is a decision citing the letter, bloc
   await h2.svc.run(TENANT, MATTER, { type: 'transfer_deed_executed', actor: USER, parties: ['Buyer'] });
   await h2.svc.run(TENANT, MATTER, { type: 'priority_search_made', actor: USER, expiresAt: '2026-12-10' });
   await h2.svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: solId, purpose: 'completion_monies' });
+  await h2.svc.run(TENANT, MATTER, { type: 'completion_information_received', actor: USER, undertakingToRedeem: true });
   await h2.svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER });
   await h2.svc.run(TENANT, MATTER, { type: 'sdlt_submitted', actor: USER });
   await h2.svc.run(TENANT, MATTER, { type: 'ap1_submitted', actor: USER, reference: 'AP1-77' });

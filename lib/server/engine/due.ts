@@ -10,6 +10,7 @@ import { profileOf } from './transactions';
 import { SHAPE_SPEC } from './shapes';
 import { isResolved, type MatterState } from './types';
 import { moneyOf, position, pounds, ROLE_LABEL } from './money';
+import { allDischarged, anythingCharged } from './charges';
 import { subtractWorkingDays, addWorkingDays, EW_CALENDAR } from './working-days';
 
 export interface DueStep {
@@ -152,6 +153,13 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   const fundsExpected = fundsFrom.some((f) => (f === 'lender' && s.hasLender) || f === 'client' || f === 'buyer_solicitor' || f === 'isa_provider' || (f === 'incoming_owner' && (s.considerationPennies ?? 0) > 0));
   if (s.stage === 'pre_completion' && !completed && (s.completion.fundsReceivedAt || !fundsExpected) && (!buyer || paid('seller_solicitor', 'completion_monies')) && stageBlockers(s).every((b) => b === 'completion not confirmed'))
     add({ key: 'completion', lane: 'completion', title: 'Confirm completion', dueDate: completionDate });
+
+  // ── Charges and undertakings (charges.ts) ──
+  if ((seller || remo) && !exchanged && !completed) for (const c of (s.otherCharges ?? []).filter((x) => x.status === 'to_redeem')) add({ key: `charge_statement:${c.id}`, lane: 'redemption', title: `Get a redemption figure from ${c.chargee}` });
+  if (seller && exchanged && !completed && anythingCharged(s) && !s.undertaking) add({ key: 'undertaking', lane: 'redemption', title: "Give the buyer's solicitor our undertaking to redeem (reply to their completion information)", dueDate: completionDate });
+  if (buyer && exchanged && !completed && !s.completionInformation) add({ key: 'completion_information', lane: 'completion', title: "Record the seller's replies to completion information (TA13)", dueDate: completionDate });
+  if (completed) for (const c of (s.otherCharges ?? []).filter((x) => x.status === 'received')) add({ key: `charge_redeemed:${c.id}`, lane: 'redemption', title: `Pay off ${c.chargee} and record it` });
+  if (completed && s.undertaking && !s.undertaking.dischargedAt && allDischarged(s)) add({ key: 'undertaking_discharge', lane: 'registration', title: "Send the discharges to the buyer's solicitor: our undertaking is then done" });
 
   // ── After completion ──
   if (seller && completed && !paid('client')) add({ key: 'balance_to_client', lane: 'completion', title: 'Authorise the balance to the client' });

@@ -152,6 +152,7 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   await svc.resolveDecision(TENANT, MATTER, sellerDecision.eventId, USER, 'verify', 'Called Smith & Co on the number on the Law Society register', { method: 'phone_callback_known_number' });
   r = await svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: sellerDecision.subject!, amountPennies: 34_650_000, purpose: 'completion_monies' });
   assert.equal(r.state.payments[0].authorisedBy, USER);
+  await svc.run(TENANT, MATTER, { type: 'completion_information_received', actor: USER, undertakingToRedeem: true });
   r = await svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER });
   assert.equal(r.state.stage, 'completed');
 

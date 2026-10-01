@@ -199,6 +199,14 @@ export const EVENT_TYPES = [
   'funds_cleared',
   'refund_due',
   'refund_paid',
+  // charges and undertakings (docs/eventualities/completion.md §4): every charge on a sale, our undertaking, the seller's TA13
+  'charge_found',
+  'charge_statement_received',
+  'charge_redeemed',
+  'charge_discharged',
+  'undertaking_given',
+  'undertaking_discharged',
+  'completion_information_received',
   'issue_severity_changed',
   'matter_closed',
   // transaction types (docs/transaction-types.md): sale, remortgage, transfer of equity, co-ownership
@@ -628,6 +636,7 @@ export interface NoteState {
   refusedActions: Array<{ id: string; reason: string }>;
 }
 
+export interface OtherCharge { id: string; chargee: string; text: string | null; status: 'to_redeem' | 'received' | 'redeemed' | 'discharged'; redemptionPennies: number | null; validUntil: string | null; redeemedAt: string | null; dischargedAt: string | null }
 export type FundsRole = 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider';
 export interface ClientMoney {
   /** What each payer was asked for (the figure on the request). */
@@ -1100,6 +1109,16 @@ export interface Payloads {
   funds_cleared: { receiptId: string };
   refund_due: { refundId: string; toRole: FundsRole; to: string | null; amountPennies: number | null; reason: string };
   refund_paid: { refundId: string; reference: string };
+  charge_found: { chargeId: string; chargee: string; text: string | null };
+  charge_statement_received: { chargeId: string; redemptionPennies: number; validUntil: string | null };
+  charge_redeemed: { chargeId: string; amountPennies: number | null };
+  charge_discharged: { chargeId: string; reference: string | null };
+  /** Our undertaking to the buyer's solicitor to redeem every charge and send the discharges. */
+  undertaking_given: { to: string; terms: string };
+  /** The discharges sent to the buyer's solicitor: our undertaking is fulfilled. */
+  undertaking_discharged: { note: string | null };
+  /** The seller's solicitor's replies to completion information (TA13): the undertaking to redeem the seller's charges. */
+  completion_information_received: { undertakingToRedeem: boolean; documentId: string | null };
   client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; /** further_investigation: the investigations this applies to (issue ids); absent = all open ones. */ scope?: string[] | null };
   /** Severity moved (by a person, or by the timer as a deadline nears). */
   issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };
@@ -1603,6 +1622,12 @@ export interface MatterState {
     interimSentAt?: string | null;
   };
   deposit: { received: boolean; at: string | null; /** What has come in towards it, and what the contract says it is. */ amountPennies?: number | null; contractPennies?: number | null };
+  /** Charges beyond the existing mortgage (a second charge, a secured loan, a charging order): each redeemed and discharged (engine/charges.ts). */
+  otherCharges: OtherCharge[];
+  /** Our undertaking on a sale to redeem every charge, and when the discharges went to the buyer's solicitor. */
+  undertaking: { givenAt: string; to: string; terms: string; dischargedAt: string | null } | null;
+  /** On a purchase: the seller's solicitor's completion information (TA13), with their undertaking to redeem. */
+  completionInformation: { receivedAt: string; undertakingToRedeem: boolean; documentId: string | null } | null;
   /** The client's money on this file, reconciled (engine/money.ts): asked for, received and cleared by payer; what is owed back. */
   money: ClientMoney;
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
@@ -1800,6 +1825,9 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     partyNames: [],
     receipts: [],
     money: { requested: {}, received: {}, uncleared: [], statementBalancePennies: null, refunds: [] },
+    otherCharges: [],
+    undertaking: null,
+    completionInformation: null,
     occupiers: [],
     sdltBasis: null,
     completion: { statementGeneratedAt: null, fundsRequestedAt: null, fundsReceivedAt: null, receivedFrom: [], confirmedAt: null },

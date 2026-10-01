@@ -112,6 +112,7 @@ test('§2/§5: a pending change blocks payment events regardless of urgency; pay
   const sd2 = Object.values(s2.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: sd1.subject!, purpose: 'completion_monies' }), /HARD STOP/);
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: sd2.subject!, purpose: 'completion_monies' }), /HARD STOP/);
+  await svc.run(TENANT, MATTER, { type: 'completion_information_received', actor: USER, undertakingToRedeem: true });
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /HARD STOP/);
   assert.ok((await import('../../../lib/server/engine/machine')).stageBlockers(s2.state).some((b) => /hard stop/.test(b)));
   // callback reveals fraud → failed; the OLD verified record is superseded too, so nothing is payable until fresh details are verified

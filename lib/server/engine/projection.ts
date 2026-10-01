@@ -488,6 +488,41 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null) && payersExpected(s).every((r) => s.completion.receivedFrom.includes(r))) s.completion.fundsReceivedAt = s.completion.fundsReceivedAt ?? e.createdAt;
       break;
     }
+    case 'charge_found': {
+      const p = e.payload as Payloads['charge_found'];
+      s.otherCharges = [...(s.otherCharges ?? []), { id: p.chargeId, chargee: p.chargee, text: p.text, status: 'to_redeem', redemptionPennies: null, validUntil: null, redeemedAt: null, dischargedAt: null }];
+      break;
+    }
+    case 'charge_statement_received': {
+      const p = e.payload as Payloads['charge_statement_received'];
+      s.otherCharges = (s.otherCharges ?? []).map((c) => (c.id === p.chargeId ? { ...c, status: 'received', redemptionPennies: p.redemptionPennies, validUntil: p.validUntil } : c));
+      break;
+    }
+    case 'charge_redeemed': {
+      const p = e.payload as Payloads['charge_redeemed'];
+      s.otherCharges = (s.otherCharges ?? []).map((c) => (c.id === p.chargeId ? { ...c, status: 'redeemed', redeemedAt: e.createdAt } : c));
+      openWait(s, 'discharge', p.chargeId, e);
+      break;
+    }
+    case 'charge_discharged': {
+      const p = e.payload as Payloads['charge_discharged'];
+      s.otherCharges = (s.otherCharges ?? []).map((c) => (c.id === p.chargeId ? { ...c, status: 'discharged', dischargedAt: e.createdAt } : c));
+      closeWait(s, 'discharge', p.chargeId, e);
+      break;
+    }
+    case 'undertaking_given': {
+      const p = e.payload as Payloads['undertaking_given'];
+      s.undertaking = { givenAt: e.createdAt, to: p.to, terms: p.terms, dischargedAt: null };
+      break;
+    }
+    case 'undertaking_discharged':
+      if (s.undertaking) s.undertaking = { ...s.undertaking, dischargedAt: e.createdAt };
+      break;
+    case 'completion_information_received': {
+      const p = e.payload as Payloads['completion_information_received'];
+      s.completionInformation = { receivedAt: e.createdAt, undertakingToRedeem: p.undertakingToRedeem, documentId: p.documentId ?? e.sourceDocumentId ?? null };
+      break;
+    }
     case 'funds_cleared': {
       const p = e.payload as Payloads['funds_cleared'];
       s.money = { ...moneyOf(s), uncleared: moneyOf(s).uncleared.filter((u) => u.id !== p.receiptId) };
@@ -1111,7 +1146,8 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'discharge_confirmed': {
       s.redemption = { ...s.redemption, status: 'discharged', dischargedAt: e.createdAt };
-      closeWait(s, 'discharge', null, e);
+      // The existing mortgage's own wait: any other charge's discharge is waited for under its id.
+      closeWait(s, 'discharge', '', e);
       break;
     }
     case 'mortgage_deed_executed': {

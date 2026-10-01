@@ -288,6 +288,10 @@ const exchangeBuyer = (price: number, deposit: number, advance: number | null): 
     const theirs = await c.verifiedDetails('seller_solicitor', '11112222', 'Seller Solicitors LLP client account');
     await c.run({ type: 'payment_authorised', payeeKind: 'seller_solicitor', bankDetailsId: theirs, amountPennies: price - deposit, purpose: 'completion_monies' });
   }),
+  step('ta13', "The seller's solicitor's replies to completion information (TA13), with their undertaking to redeem", async (c) => {
+    const doc = await c.doc({ docType: 'TA13', fileName: 'ta13-completion-information.txt', facts: { content: 'TA13 replies' }, body: F.body('Completion information and undertakings (TA13)', ["We undertake to redeem the charge in favour of the seller's lender and to send the DS1 on receipt."]) });
+    await c.run({ type: 'completion_information_received', undertakingToRedeem: true, documentId: doc });
+  }),
   step('complete', 'Completion confirmed', async (c) => { await c.run({ type: 'completion_confirmed' }); }),
   step('sdlt', 'SDLT return submitted', async (c) => { await c.run({ type: 'sdlt_submitted', reference: 'SDLT-SANDBOX-1' }); }),
   step('ap1', 'AP1 submitted to HM Land Registry', async (c) => { await c.run({ type: 'ap1_submitted', reference: 'AP1-SANDBOX-1' }); }),
@@ -385,12 +389,14 @@ export const SCENARIOS: Scenario[] = [
       step('exchange', 'Contracts exchanged', async (c) => { await c.run({ type: 'contracts_exchanged', completionDate: F.completionDate() }); }),
       step('statement', 'Completion statement drafted and produced', async (c) => { const { documentId } = await c.svc.draftCompletionStatement(c.tenantId, c.matterId); await c.run({ type: 'completion_statement_generated', documentId }); }),
       step('transfer_deed', 'Transfer deed (TR1) executed by the seller', async (c) => { await c.run({ type: 'transfer_deed_executed', parties: ['Sandbox Seller'] }); }),
+      step('undertaking', "Our undertaking to redeem given to the buyer's solicitor (reply to their TA13)", async (c) => { await c.run({ type: 'undertaking_given', to: "The buyer's solicitor", terms: 'To redeem the charge in favour of Big Bank plc from the completion money and send the DS1 on receipt.' }); }),
       step('funds', 'Completion monies received from the buyer\'s solicitor', async (c) => { await c.run({ type: 'funds_received', fromRole: 'buyer_solicitor', amountPennies: 42_500_000 }); }),
       step('redeem_pay', 'Redemption payment authorised against verified lender details', async (c) => { const lender = await c.verifiedDetails('lender', '22223333', 'Big Bank plc'); await c.run({ type: 'payment_authorised', payeeKind: 'lender', bankDetailsId: lender, amountPennies: 18_250_000, purpose: 'other' }); }),
       step('complete', 'Completion confirmed', async (c) => { await c.run({ type: 'completion_confirmed' }); }),
       step('redeemed', 'Mortgage redeemed', async (c) => { await c.run({ type: 'mortgage_redeemed' }); }),
       step('balance', 'Balance paid to the client against verified details', async (c) => { const client = await c.verifiedDetails('client', '44445555', 'Sandbox Seller'); await c.run({ type: 'payment_authorised', payeeKind: 'client', bankDetailsId: client, amountPennies: 23_000_000, purpose: 'other' }); }),
       step('discharge', 'Discharge confirmed', async (c) => { await c.run({ type: 'discharge_confirmed', reference: 'DS1-SANDBOX' }); }),
+      step('undertaking_done', "The DS1 sent to the buyer's solicitor: our undertaking is done", async (c) => { await c.run({ type: 'undertaking_discharged' }); }),
       step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
     ],
   },
@@ -420,12 +426,14 @@ export const SCENARIOS: Scenario[] = [
       step('exchange', 'Contracts exchanged', async (c) => { await c.run({ type: 'contracts_exchanged', completionDate: F.completionDate() }); }),
       step('statement', 'Completion statement drafted and produced', async (c) => { const { documentId } = await c.svc.draftCompletionStatement(c.tenantId, c.matterId); await c.run({ type: 'completion_statement_generated', documentId }); }),
       step('transfer_deed', 'Transfer deed (TR1) executed by the seller', async (c) => { await c.run({ type: 'transfer_deed_executed', parties: ['Sandbox Seller'] }); }),
+      step('undertaking', "Our undertaking to redeem given to the buyer's solicitor (reply to their TA13)", async (c) => { await c.run({ type: 'undertaking_given', to: "The buyer's solicitor", terms: 'To redeem the charge in favour of Big Bank plc from the completion money and send the DS1 on receipt.' }); }),
       step('funds', 'Completion monies received from the buyer\'s solicitor', async (c) => { await c.run({ type: 'funds_received', fromRole: 'buyer_solicitor', amountPennies: 28_000_000 }); }),
       step('redeem_pay', 'Redemption payment authorised', async (c) => { const lender = await c.verifiedDetails('lender', '22223333', 'Big Bank plc'); await c.run({ type: 'payment_authorised', payeeKind: 'lender', bankDetailsId: lender, amountPennies: 9_000_000, purpose: 'other' }); }),
       step('complete', 'Completion confirmed', async (c) => { await c.run({ type: 'completion_confirmed' }); }),
       step('redeemed', 'Mortgage redeemed', async (c) => { await c.run({ type: 'mortgage_redeemed' }); }),
       step('balance', 'Balance paid to the client', async (c) => { const client = await c.verifiedDetails('client', '44445555', 'Sandbox Seller'); await c.run({ type: 'payment_authorised', payeeKind: 'client', bankDetailsId: client, amountPennies: 18_000_000, purpose: 'other' }); }),
       step('discharge', 'Discharge confirmed', async (c) => { await c.run({ type: 'discharge_confirmed', reference: 'DS1-SANDBOX' }); }),
+      step('undertaking_done', "The DS1 sent to the buyer's solicitor: our undertaking is done", async (c) => { await c.run({ type: 'undertaking_discharged' }); }),
       step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
     ],
   },

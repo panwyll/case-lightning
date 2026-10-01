@@ -33,6 +33,8 @@ Waits are not tasks: they are listed under **Waiting** and chase themselves ([wa
 
 - **Money tasks carry their subject in the key** (`refund:RF-1`, `funds_cleared:REC-12`, `shortfall_request:<pennies>`): the label is the kind's (`stepActionLabel`). Refunds stay on the list after a file stops or completes, and the file cannot close until each is recorded sent.
 
+- **Charges have their own tasks** (charges.ts): `charge_statement:<id>` (the figure, before exchange), `charge_redeemed:<id>` (after completion), the discharge as a wait under the charge's id; on a sale `undertaking` (after exchange) and `undertaking_discharge` (once every charge is off); on a purchase `completion_information` (the seller's TA13).
+
 ## Adding one
 
 A new due step needs: the condition in `due.ts` (gated like the machine), `dueAction` + label, the simulator's command in `no-stall.test.ts`. The stall detector fails until all three exist.

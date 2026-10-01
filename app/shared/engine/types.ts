@@ -241,6 +241,9 @@ export interface EngineState {
   matterId: string;
   tenantId?: string;
   enrolled: boolean;
+  otherCharges?: Array<{ id: string; chargee: string; text: string | null; status: string; redemptionPennies: number | null; validUntil: string | null; redeemedAt: string | null; dischargedAt: string | null }>;
+  undertaking?: { givenAt: string; to: string; terms: string; dischargedAt: string | null } | null;
+  completionInformation?: { receivedAt: string; undertakingToRedeem: boolean; documentId: string | null } | null;
   /** The client's money reconciled (engine/money.ts). */
   money?: { requested: Record<string, number>; received: Record<string, number>; uncleared: Array<{ id: string; fromRole: string; amountPennies: number | null; at: string }>; statementBalancePennies: number | null; refunds: Array<{ id: string; toRole: string; to: string | null; amountPennies: number | null; reason: string; dueAt: string; paidAt: string | null; reference: string | null }> };
   transactionType: TransactionType | null;

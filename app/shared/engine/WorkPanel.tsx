@@ -797,6 +797,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     const unreplied = Object.values(s.inboundEnquiries ?? {}).filter((q) => !q.repliedAt).map((q) => q.id);
     if (key.startsWith('funds_cleared:')) return <BusyButton className="ep-btn primary" busyLabel="Recording…" doneLabel="Cleared" disabled={busy} onClick={() => cmd({ type: 'funds_cleared', receiptId: key.slice('funds_cleared:'.length) })}>Record Cleared</BusyButton>;
     if (key.startsWith('shortfall_request:')) { const acc = firmAccounts(); return acc.length ? act('completion', 'funds_requested', 'Ask The Client', { fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: Number(key.slice('shortfall_request:'.length)) }, { primary: true }) : <span className="ep-note">Verify our client account under Bank Details first.</span>; }
+    if (key.startsWith('charge_statement:')) return act('redemption', 'charge_statement_received', 'Record Figure', { chargeId: key.slice('charge_statement:'.length) }, { primary: true });
+    if (key.startsWith('charge_redeemed:')) return act('redemption', 'charge_redeemed', 'Record Paid Off', { chargeId: key.slice('charge_redeemed:'.length), amountPennies: (s.otherCharges ?? []).find((c) => c.id === key.slice('charge_redeemed:'.length))?.redemptionPennies ?? undefined }, { primary: true });
+    if (key === 'undertaking') return act('redemption', 'undertaking_given', 'Give Undertaking', { to: "The buyer's solicitor", terms: 'To redeem every charge on the title from the completion money and send the discharges (DS1 / e-DS1) on receipt.' }, { primary: true });
+    if (key === 'completion_information') return act('completion', 'completion_information_received', 'Record Replies', {}, { primary: true });
+    if (key === 'undertaking_discharge') return <BusyButton className="ep-btn primary" busyLabel="Recording…" doneLabel="Recorded" disabled={busy} onClick={() => cmd({ type: 'undertaking_discharged' })}>Record Sent</BusyButton>;
     if (key.startsWith('refund:')) return act('completion', 'refund_paid', 'Record Sent', { refundId: key.slice('refund:'.length) }, { primary: true });
     switch (key) {
       case 'official_copies': return <UploadButton label={STEP_UPLOADS.official_copies.label} onFiles={async (files, progress) => {
@@ -852,7 +857,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     switch (key) {
       case 'redemption': return act('redemption', 'redemption_statement_received', 'Record Received');
       case 'lender_consent': return act('lender_consent', 'lender_consent_received', 'Record Received');
-      case 'discharge': return act('registration', 'discharge_confirmed', 'Record Confirmed');
+      case 'discharge': return subject ? act('registration', 'charge_discharged', 'Record Received', { chargeId: subject }) : act('registration', 'discharge_confirmed', 'Record Confirmed');
       case 'registration': return act('registration', 'ap1_confirmed', 'Record Registered');
       case 'deposit': return act('exchange', 'deposit_received', 'Record Received');
       case 'insurance': return act('pre_completion_checks', 'buildings_insurance_confirmed', 'Record Insurance');

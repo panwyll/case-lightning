@@ -73,6 +73,11 @@ export function buildCompletionStatement(input: { state: MatterState; side: 'buy
       if (state.redemption.redemptionPennies != null) { lines.push({ label: `Less redemption of mortgage${state.redemption.lender ? ` (${state.redemption.lender})` : ''}`, pennies: state.redemption.redemptionPennies, sign: -1, factId: null, note: state.redemption.validUntil ? `figure valid until ${state.redemption.validUntil}` : undefined }); allowed.push(pounds(state.redemption.redemptionPennies)); }
       else toConfirm.push('Redemption figure: not yet received');
     }
+    // Every other charge on the title comes off from the proceeds too (charges.ts).
+    for (const c of state.otherCharges ?? []) {
+      if (c.redemptionPennies != null) { lines.push({ label: `Less redemption of charge (${c.chargee})`, pennies: c.redemptionPennies, sign: -1, factId: null, note: c.validUntil ? `figure valid until ${c.validUntil}` : undefined }); allowed.push(pounds(c.redemptionPennies)); }
+      else toConfirm.push(`Redemption figure for the charge in favour of ${c.chargee}: not yet received`);
+    }
     toConfirm.push("Estate agent's commission: from the agent's invoice");
   }
 

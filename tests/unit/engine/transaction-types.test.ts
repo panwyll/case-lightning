@@ -135,6 +135,7 @@ test('freehold sale end to end: forms → pack → buyer\'s enquiries answered �
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /No authorised redemption payment/);
   const lenderDetails = await verifiedDetails(h, 'lender', '22223333', 'Big Bank plc');
   await h.svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'lender', bankDetailsId: lenderDetails, amountPennies: 18_250_000, purpose: 'other' });
+  await h.svc.run(TENANT, MATTER, { type: 'undertaking_given', actor: USER, to: "The buyer's solicitor", terms: 'To redeem the charge and send the DS1' });
   await h.svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER });
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.stage, 'completed');
@@ -155,6 +156,8 @@ test('freehold sale end to end: forms → pack → buyer\'s enquiries answered �
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'sdlt_submitted', actor: USER }), /does not apply to a freehold sale/);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER }), /discharge is not yet confirmed/);
   await h.svc.run(TENANT, MATTER, { type: 'discharge_confirmed', actor: USER, reference: 'DS1-0099' });
+  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER }), /undertaking .* still open/, 'the DS1 goes to the buyer\'s solicitor first');
+  await h.svc.run(TENANT, MATTER, { type: 'undertaking_discharged', actor: USER, note: 'DS1 sent to the buyer\'s solicitor' });
   await h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER });
   s = await h.svc.getState(TENANT, MATTER);
   assert.ok(s.closedAt);

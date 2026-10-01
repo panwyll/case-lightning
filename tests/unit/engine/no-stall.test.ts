@@ -133,6 +133,9 @@ async function drive(c: Case, policy: Policy = 'approve') {
         sdlt: () => run({ type: 'sdlt_submitted', reference: 'SDLT-1' }),
         ap1: () => run({ type: 'ap1_submitted' }),
         notice_of_assignment: () => run({ type: 'notice_of_assignment_served', servedOn: 'the landlord', reference: 'NOA-1' }),
+        undertaking: () => run({ type: 'undertaking_given', to: "The buyer's solicitor", terms: 'To redeem every charge and send the discharges' }),
+        completion_information: () => run({ type: 'completion_information_received', undertakingToRedeem: true, documentId: doc({ content: 'TA13 replies' }) }),
+        undertaking_discharge: () => run({ type: 'undertaking_discharged' }),
         close_file: () => run({ type: 'close_matter' }),
       };
       // Money steps carry what they are about in the key (engine/money.ts).
@@ -141,6 +144,8 @@ async function drive(c: Case, policy: Policy = 'approve') {
         shortfall_request: async () => run({ type: 'funds_requested', fromRole: 'client', bankDetailsId: await verified('firm_client_account'), amountPennies: Number(arg) }),
         funds_cleared: () => run({ type: 'funds_cleared', receiptId: arg }),
         refund: () => run({ type: 'refund_paid', refundId: arg, reference: 'FPS-1' }),
+        charge_statement: () => run({ type: 'charge_statement_received', chargeId: arg, redemptionPennies: 500_000, validUntil: F.completionDate(5) }),
+        charge_redeemed: () => run({ type: 'charge_redeemed', chargeId: arg }),
       };
       const f = d.key.startsWith('resend:') ? () => svc.retryFailedAction(TENANT, MATTER, d.key.slice('resend:'.length), USER) : d.key.includes(':') ? money[head] : cmds[d.key];
       if (!f) throw new Error(`due step "${d.key}" has no action on the Tasks list`);
@@ -178,7 +183,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
         property_forms: () => svc.propertyFormsReceived(TENANT, MATTER, doc(F.propertyForms(false, c.tt.startsWith('leasehold')))),
         redemption: () => run({ type: 'redemption_statement_received', redemptionPennies: 12_000_000, validUntil: F.completionDate(5) }),
         lender_consent: () => run({ type: 'lender_consent_received', conditions: 'Outgoing borrower released' }),
-        discharge: () => run({ type: 'discharge_confirmed', reference: 'DS1' }),
+        discharge: () => (w.subject ? run({ type: 'charge_discharged', chargeId: w.subject, reference: 'DS1' }) : run({ type: 'discharge_confirmed', reference: 'DS1' })),
         contract_pack: async () => {
           if (s.title.status === 'awaiting') await svc.titleReceived(TENANT, MATTER, doc(c.flagged ? F.titleWithCharge() : F.titleClear()));
           if (!s.readiness.contractDocumentId) await svc.contractReceived(TENANT, MATTER, doc(contractClear()));

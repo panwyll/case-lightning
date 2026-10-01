@@ -82,6 +82,13 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('payment_authorised'), payeeKind: z.enum(PAYEE_KINDS), bankDetailsId: z.string().min(1).max(60), amountPennies: z.number().int().nonnegative().nullish(), purpose: z.enum(['completion_monies', 'deposit', 'other']) }),
   z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client', 'buyer_solicitor', 'incoming_owner', 'isa_provider']), remitter: z.string().max(160).nullish(), amountPennies: z.number().int().nonnegative().nullish(), uncleared: z.boolean().nullish() }),
   z.object({ type: z.literal('funds_cleared'), receiptId: z.string().min(1).max(40) }),
+  z.object({ type: z.literal('record_other_charge'), chargee: z.string().min(1).max(160), text: z.string().max(600).nullish() }),
+  z.object({ type: z.literal('charge_statement_received'), chargeId: z.string().min(1).max(20), redemptionPennies: z.number().int().nonnegative(), validUntil: z.string().max(10).nullish(), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('charge_redeemed'), chargeId: z.string().min(1).max(20), amountPennies: z.number().int().nonnegative().nullish() }),
+  z.object({ type: z.literal('charge_discharged'), chargeId: z.string().min(1).max(20), reference: z.string().max(120).nullish(), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('undertaking_given'), to: z.string().min(1).max(200), terms: z.string().min(1).max(1000) }),
+  z.object({ type: z.literal('undertaking_discharged'), note: z.string().max(500).nullish() }),
+  z.object({ type: z.literal('completion_information_received'), undertakingToRedeem: z.boolean().nullish(), documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('refund_paid'), refundId: z.string().min(1).max(40), reference: z.string().min(1).max(120) }),
   // transaction types (docs/transaction-types.md)
   z.object({ type: z.literal('request_property_forms'), forms: z.array(z.string().max(10)).min(1).max(6).optional() }),

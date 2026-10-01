@@ -30,6 +30,7 @@ import { propertyFormsIssues } from './property-forms';
 import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
 import { contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
+import { allDischarged, anythingCharged, chargesToAdd, isFinancialCharge, negativeEquity, openCharges } from './charges';
 import { heldOnAbandon, moneyOf, payersExpected, position, pounds, refundsDue, ROLE_LABEL } from './money';
 import {
   EngineError,
@@ -210,6 +211,13 @@ type CommandBody =
   | { type: 'funds_requested'; actor: Actor; fromRole: 'lender' | 'client' | 'isa_provider'; amountPennies?: number | null; bankDetailsId: string }
   | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null; remitter?: string | null; uncleared?: boolean; /** Filled by the service from the contract read (a sale's expected money). */ contractPricePennies?: number | null; contractDepositPennies?: number | null }
   | { type: 'funds_cleared'; actor: Actor; receiptId: string }
+  | { type: 'record_other_charge'; actor: Actor; chargee: string; text?: string | null }
+  | { type: 'charge_statement_received'; actor: Actor; chargeId: string; redemptionPennies: number; validUntil?: string | null; documentId?: string | null }
+  | { type: 'charge_redeemed'; actor: Actor; chargeId: string; amountPennies?: number | null }
+  | { type: 'charge_discharged'; actor: Actor; chargeId: string; reference?: string | null; documentId?: string | null }
+  | { type: 'undertaking_given'; actor: Actor; to: string; terms: string }
+  | { type: 'undertaking_discharged'; actor: Actor; note?: string | null }
+  | { type: 'completion_information_received'; actor: Actor; undertakingToRedeem?: boolean | null; documentId?: string | null }
   | { type: 'refund_paid'; actor: Actor; refundId: string; reference: string }
   // ── transaction types (docs/transaction-types.md) ──
   | { type: 'request_property_forms'; actor: Actor; forms?: string[] | null }
@@ -276,6 +284,13 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'funds_received',
   'funds_cleared',
   'refund_paid',
+  'record_other_charge',
+  'charge_statement_received',
+  'charge_redeemed',
+  'charge_discharged',
+  'undertaking_given',
+  'undertaking_discharged',
+  'completion_information_received',
   'completion_confirmed',
   'sdlt_submitted',
   'ap1_submitted',
@@ -527,6 +542,8 @@ export function stageBlockers(s: MatterState): string[] {
         if (!(s.completion.receivedFrom ?? []).some((r) => r === 'client' || r === 'isa_provider')) b.push("client's balance not received");
         if (!s.payments.some((p) => p.payeeKind === 'seller_solicitor' && p.purpose === 'completion_monies')) b.push('completion payment not authorised against verified bank details');
         if (pendingBankDetailsDecision(s, 'seller_solicitor')) b.push('bank-details change awaiting out-of-band verification (hard stop)');
+        if (!s.completionInformation) b.push("seller's completion information (TA13) not received");
+        else if (sellerTitleCharged(s) && !s.completionInformation.undertakingToRedeem) b.push("no undertaking from the seller's solicitor to redeem their charges");
         if (s.completion.fundsReceivedAt && s.payments.length) b.push('completion not confirmed');
       }
       break;
@@ -572,6 +589,7 @@ function saleBlockers(s: MatterState): string[] {
       if (open.length) b.push(`${open.length} enquir${open.length === 1 ? 'y' : 'ies'} from the buyer awaiting our reply (${open.map((q) => q.id).join(', ')})`);
       if (s.hasExistingMortgage && s.redemption.status === 'not_started') b.push('redemption statement not requested');
       if (s.hasExistingMortgage && s.redemption.status === 'requested') b.push('redemption statement awaited');
+      for (const c of (s.otherCharges ?? []).filter((x) => x.status === 'to_redeem')) b.push(`redemption figure awaited from ${c.chargee}`);
       b.push(...issueBlockers(s, 'exchange'));
       if (!s.readiness.contractApprovedAt) b.push("contract not yet approved by the buyer's solicitor");
       else if (!s.readiness.signedContractHeldAt) b.push("our client's signed contract not on file");
@@ -589,17 +607,23 @@ function saleBlockers(s: MatterState): string[] {
         if (!s.completion.fundsReceivedAt) b.push("completion monies not received from the buyer's solicitor");
         if (s.hasExistingMortgage && !s.payments.some((x) => x.payeeKind === 'lender')) b.push('redemption payment not authorised against verified lender details');
         if (pendingBankDetailsDecision(s, 'lender')) b.push('lender bank-details change awaiting out-of-band verification (hard stop)');
+        if (anythingCharged(s) && !s.undertaking) b.push("our undertaking to redeem not yet given to the buyer's solicitor");
         if (s.completion.fundsReceivedAt) b.push('completion not confirmed');
       }
       break;
     case 'completed':
       if (s.hasExistingMortgage && s.redemption.status !== 'redeemed' && s.redemption.status !== 'discharged') b.push('mortgage not yet recorded as redeemed');
+      for (const c of (s.otherCharges ?? []).filter((x) => x.status === 'to_redeem' || x.status === 'received')) b.push(`${c.chargee} not yet recorded as paid off`);
       if (!s.payments.some((x) => x.payeeKind === 'client')) b.push('balance to the client not authorised against verified client details');
       break;
-    case 'post_completion':
-      if (s.hasExistingMortgage && s.redemption.status !== 'discharged') b.push("awaiting the lender's discharge (DS1 / e-DS1)");
-      else b.push('matter complete');
+    case 'post_completion': {
+      const waiting: string[] = [];
+      if (s.hasExistingMortgage && s.redemption.status !== 'discharged') waiting.push("awaiting the lender's discharge (DS1 / e-DS1)");
+      for (const c of openCharges(s)) waiting.push(`awaiting ${c.chargee}'s discharge`);
+      if (!waiting.length && s.undertaking && !s.undertaking.dischargedAt) waiting.push("discharges not yet sent to the buyer's solicitor (our undertaking)");
+      b.push(...(waiting.length ? waiting : ['matter complete']));
       break;
+    }
   }
   return b;
 }
@@ -618,6 +642,7 @@ function ownerBlockers(s: MatterState, p: TransactionProfile): string[] {
       b.push(...unresolvedSearches(s, true));
       if (remo && !isResolved(s.mortgage.status)) b.push(`mortgage offer ${s.mortgage.status}`);
       if (s.hasExistingMortgage && remo && s.redemption.status !== 'received' && s.redemption.status !== 'redeemed' && s.redemption.status !== 'discharged') b.push(`redemption statement ${s.redemption.status === 'requested' ? 'awaited' : 'not requested'}`);
+      if (remo) for (const c of (s.otherCharges ?? []).filter((x) => x.status === 'to_redeem')) b.push(`redemption figure awaited from ${c.chargee}`);
       if (s.hasExistingMortgage && !remo && s.lenderConsent.status !== 'received') b.push(`lender's consent ${s.lenderConsent.status === 'requested' ? 'awaited' : 'not requested'}`);
       if (!remo && s.parties > 1 && !s.clientDecisions.ownership_basis) b.push('basis of co-ownership not yet decided by the clients');
       b.push(...issueBlockers(s, 'exchange'));
@@ -646,6 +671,7 @@ function ownerBlockers(s: MatterState, p: TransactionProfile): string[] {
     case 'post_completion':
       if (s.postCompletion.requisitions.some((r) => !r.respondedAt)) b.push('HMLR requisition outstanding');
       if (remo && s.hasExistingMortgage && s.redemption.status !== 'discharged') b.push("awaiting the old lender's discharge");
+      for (const c of openCharges(s)) b.push(c.status === 'received' ? `${c.chargee} not yet recorded as paid off` : `awaiting ${c.chargee}'s discharge`);
       b.push(s.postCompletion.ap1ConfirmedAt ? 'matter complete' : 'awaiting HMLR registration');
       break;
   }
@@ -1131,6 +1157,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         // What a specific entry needs done is an issue of its own (findings.ts).
         ...findingEvents(s, [...titleFindings(cmd.facts, fc), ...(cmd.facts.lease && fc.side === 'buyer' ? leaseFindings(leaseFlags(cmd.facts.lease, s.lenderRequirements?.minUnexpiredYears ?? null), cmd.facts.lease, fc) : [])], cmd.documentId),
       ];
+      // A sale or remortgage redeems every charge on the register, not only the mortgage it was enrolled with.
+      if ((fc.side === 'seller' || profile(s).type === 'remortgage') && !cmd.facts.planOnly) chargesToAdd(s, cmd.facts).forEach((c, n) => out.push({ type: 'charge_found', actor: SYSTEM, payload: { chargeId: `CH-${(s.otherCharges ?? []).length + n + 1}`, chargee: c.chargee, text: c.text }, sourceDocumentId: cmd.documentId }));
       // Unregistered land: an epitome of title, not a register; first registration on completion. Outside what the engine reads (PG 1).
       if (cmd.facts.unregistered && !s.manualHandling.required) {
         out.push({ type: 'manual_handling_required', actor: SYSTEM, payload: { reason: 'unregistered_land', detail: 'The title is unregistered: an epitome / deeds bundle rather than official copies. Investigate the root of title (15 years), the index map search (SIM) and the land charges searches (K15) by hand; first registration follows completion.' } });
@@ -1238,6 +1266,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         const unreplied = Object.values(s.inboundEnquiries).filter((q) => !q.repliedAt);
         if (unreplied.length) reject(`Cannot exchange: ${unreplied.length} of the buyer's enquiries await our reply (${unreplied.map((q) => q.id).join(', ')}).`);
         if (s.hasExistingMortgage && s.redemption.status !== 'received') reject('Cannot exchange: the redemption figure is not known.');
+        const unknown = (s.otherCharges ?? []).filter((c) => c.status === 'to_redeem');
+        if (unknown.length) reject(`Cannot exchange: no redemption figure yet for ${unknown.map((c) => c.chargee).join(', ')}.`);
       }
       if (profile(s).side === 'buyer' && s.hasLender && !isResolved(s.mortgage.status)) reject(`Cannot exchange: the mortgage offer is ${s.mortgage.status} (withdrawn / awaiting re-issue).`);
       const open = profile(s).side === 'buyer' ? unresolvedSearches(s, false) : [];
@@ -1353,6 +1383,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           const cur = currentBankDetails(s, 'lender');
           if (!cur || cur.id !== auth.bankDetailsId || cur.status !== 'verified') reject("HARD STOP: the lender's bank details the payment was authorised against are no longer the current verified record.", 423);
         }
+        if (p.side === 'seller' && anythingCharged(s) && !s.undertaking) reject("Give the buyer's solicitor our undertaking to redeem the charges (the reply to their completion information) before completing.");
         return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }];
       }
       // A purchase completes on paper first: the transfer deed, and with a lender the mortgage deed and the certificate of title.
@@ -1380,6 +1411,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!auth) reject('No authorised completion payment: authorise the transfer against verified bank details first.', 412);
       const cur = currentBankDetails(s, 'seller_solicitor');
       if (!cur || cur.id !== auth.bankDetailsId || cur.status !== 'verified') reject('HARD STOP: the bank details the payment was authorised against are no longer the current verified record.', 423);
+      // The seller's charges come off only on their solicitor's undertaking (TA13): never complete without it.
+      if (!s.completionInformation) reject("The seller's solicitor's replies to completion information (TA13) are not on file.");
+      if (sellerTitleCharged(s) && !s.completionInformation.undertakingToRedeem) reject("The seller's title is charged and their solicitor has not undertaken to redeem it (TA13).");
       const completed: NewEvent[] = [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }];
       // Leasehold: what the landlord requires on assignment (deed of covenant, certificate of compliance for a restriction) is owed after completion and before the AP1 can go in clean.
       const consents = s.managementPack.facts?.consentsRequired?.trim();
@@ -1817,6 +1851,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireStage(s, 'post_completion', 'Closing the file');
       if (profile(s).registration === 'ap1' && !s.postCompletion.ap1ConfirmedAt) reject('Registration is not confirmed; the file cannot be closed yet.');
       if (s.hasExistingMortgage && (profile(s).side === 'seller' || profile(s).type === 'remortgage') && s.redemption.status !== 'discharged') reject("The lender's discharge is not yet confirmed; the file cannot be closed.");
+      if (openCharges(s).length) reject(`Not yet discharged: ${openCharges(s).map((c) => c.chargee).join(', ')}.`);
+      if (s.undertaking && !s.undertaking.dischargedAt) reject("Our undertaking to the buyer's solicitor is still open: send them the discharges first.");
       if (isLeasehold(s) && profile(s).side === 'buyer' && !s.postCompletion.noticeOfAssignmentAt) reject('Leasehold: serve the notice of assignment before closing the file.');
       if (Object.values(s.issues).some((i) => i.status === 'open' || i.status === 'negotiating')) reject('Open issues remain; resolve or withdraw them before closing.');
       if (refundsDue(s).length) reject(`Money is still owed back: ${refundsDue(s).map((r) => `${r.amountPennies != null ? pounds(r.amountPennies) : 'an amount'} to ${ROLE_LABEL[r.toRole]}`).join(', ')}. Record the refund first.`);
@@ -2252,7 +2288,61 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireType(s, ['freehold_sale', 'leasehold_sale', 'remortgage'], 'A redemption statement');
       if (s.redemption.status === 'redeemed' || s.redemption.status === 'discharged') reject('The mortgage has been redeemed.');
       if (cmd.validUntil && Number.isNaN(Date.parse(cmd.validUntil))) reject('validUntil must be YYYY-MM-DD.', 400);
-      return [{ type: 'redemption_statement_received', actor: cmd.actor, payload: { lender: cmd.lender ?? s.redemption.lender ?? null, redemptionPennies: cmd.redemptionPennies ?? null, validUntil: cmd.validUntil ?? null, dailyInterestPennies: cmd.dailyInterestPennies ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      const received: NewEvent = { type: 'redemption_statement_received', actor: cmd.actor, payload: { lender: cmd.lender ?? s.redemption.lender ?? null, redemptionPennies: cmd.redemptionPennies ?? null, validUntil: cmd.validUntil ?? null, dailyInterestPennies: cmd.dailyInterestPennies ?? null }, sourceDocumentId: cmd.documentId ?? null };
+      return [received, ...negativeEquityEvents(s, { ...s, redemption: { ...s.redemption, redemptionPennies: cmd.redemptionPennies ?? s.redemption.redemptionPennies } })];
+    }
+    case 'record_other_charge': {
+      requireEnrolled(s);
+      requireType(s, ['freehold_sale', 'leasehold_sale', 'remortgage'], 'Another charge to redeem');
+      if (s.completion.confirmedAt) reject('The matter has completed.');
+      if (!cmd.chargee?.trim()) reject('Who is the charge in favour of?', 400);
+      return [{ type: 'charge_found', actor: cmd.actor, payload: { chargeId: `CH-${(s.otherCharges ?? []).length + 1}`, chargee: cmd.chargee.trim(), text: cmd.text?.trim() || null } }];
+    }
+    case 'charge_statement_received': {
+      requireEnrolled(s);
+      const c = (s.otherCharges ?? []).find((x) => x.id === cmd.chargeId);
+      if (!c) reject('No such charge on this case.', 404);
+      if (c!.status === 'redeemed' || c!.status === 'discharged') reject(`${c!.chargee} has been paid off.`);
+      if (!Number.isInteger(cmd.redemptionPennies) || cmd.redemptionPennies < 0) reject('Give the redemption figure.', 400);
+      if (cmd.validUntil && Number.isNaN(Date.parse(cmd.validUntil))) reject('Valid until must be a date.', 400);
+      const others = (s.otherCharges ?? []).map((x) => (x.id === c!.id ? { ...x, redemptionPennies: cmd.redemptionPennies } : x));
+      return [{ type: 'charge_statement_received', actor: cmd.actor, payload: { chargeId: c!.id, redemptionPennies: cmd.redemptionPennies, validUntil: cmd.validUntil ?? null }, sourceDocumentId: cmd.documentId ?? null }, ...negativeEquityEvents(s, { ...s, otherCharges: others })];
+    }
+    case 'charge_redeemed': {
+      requireEnrolled(s);
+      const c = (s.otherCharges ?? []).find((x) => x.id === cmd.chargeId);
+      if (!c) reject('No such charge on this case.', 404);
+      if (!s.completion.confirmedAt) reject('A charge is paid off on or after completion.');
+      if (c!.status !== 'received') reject(c!.status === 'to_redeem' ? `No redemption figure for ${c!.chargee} yet.` : `${c!.chargee} is already paid off.`);
+      return [{ type: 'charge_redeemed', actor: cmd.actor, payload: { chargeId: c!.id, amountPennies: cmd.amountPennies ?? c!.redemptionPennies } }];
+    }
+    case 'charge_discharged': {
+      requireEnrolled(s);
+      const c = (s.otherCharges ?? []).find((x) => x.id === cmd.chargeId);
+      if (!c) reject('No such charge on this case.', 404);
+      if (c!.status !== 'redeemed') reject(`${c!.chargee} is ${c!.status.replace(/_/g, ' ')}; a discharge follows payment.`);
+      return [{ type: 'charge_discharged', actor: cmd.actor, payload: { chargeId: c!.id, reference: cmd.reference?.trim() || null }, sourceDocumentId: cmd.documentId ?? null }];
+    }
+    case 'undertaking_given': {
+      requireEnrolled(s);
+      requireSide(s, ['seller'], "Our undertaking to the buyer's solicitor");
+      if (s.undertaking) reject('The undertaking is already given.');
+      if (!s.exchange.exchangedAt) reject('The undertaking to redeem is given in reply to the completion information, after exchange.');
+      if (!isUserActor(cmd.actor)) reject('Only a person gives an undertaking.', 403);
+      if (!cmd.to?.trim() || !cmd.terms?.trim()) reject('Say who it is given to and its terms.', 400);
+      return [{ type: 'undertaking_given', actor: cmd.actor, payload: { to: cmd.to.trim(), terms: cmd.terms.trim() } }];
+    }
+    case 'undertaking_discharged': {
+      requireEnrolled(s);
+      if (!s.undertaking) reject('No undertaking was given.');
+      if (s.undertaking!.dischargedAt) reject('The undertaking is already discharged.');
+      if (!allDischarged(s)) reject('Every charge must be discharged before the undertaking is.');
+      return [{ type: 'undertaking_discharged', actor: cmd.actor, payload: { note: cmd.note?.trim() || null } }];
+    }
+    case 'completion_information_received': {
+      requireEnrolled(s);
+      requireSide(s, ['buyer'], "The seller's completion information");
+      return [{ type: 'completion_information_received', actor: cmd.actor, payload: { undertakingToRedeem: !!cmd.undertakingToRedeem, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
     }
     case 'mortgage_redeemed': {
       requireEnrolled(s);
@@ -2544,6 +2634,19 @@ const issue = (s: MatterState, id: string, kind: IssueKind, title: string, detai
 const openOf = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).some((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const openList = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).filter((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const resolvedBy = (id: string, note: string): NewEvent => ({ type: 'issue_resolved', actor: SYSTEM, payload: { issueId: id, resolution: 'funds_in_place', note, costPennies: null, paidBy: null } });
+
+// ── Charges and undertakings (charges.ts) ──
+const NEGATIVE_EQUITY = 'Negative equity';
+/** The redemptions against the price, after a figure arrives: owing more than the price holds exchange. */
+function negativeEquityEvents(s: MatterState, after: MatterState): NewEvent[] {
+  if (profile(s).side !== 'seller') return [];
+  const ne = negativeEquity(after);
+  const open = openList(s, 'completion_funds_shortfall', NEGATIVE_EQUITY);
+  if (ne && ne.shortPennies > 0) return open.length ? [] : [issue(s, issueIds(s)(), 'completion_funds_shortfall', `${NEGATIVE_EQUITY}: the charges total ${pounds(ne.owedPennies)} against a price of ${pounds(ne.pricePennies)}`, `The sale does not clear the charges by ${pounds(ne.shortPennies)}, before our fees and the agent's. Do not exchange or give an undertaking to redeem unless the client has the shortfall here in cleared funds, or each lender agrees in writing to a short sale and to release its charge.`, s.exchange.exchangedAt ? 'completion' : 'exchange')];
+  return open.map((i) => resolvedBy(i.id, 'The figures now clear the charges.'));
+}
+/** On a purchase: the seller's title, as read, carries a charge that must come off. */
+const sellerTitleCharged = (s: MatterState): boolean => ((s.title.facts as TitleFacts | null)?.charges ?? []).some((c) => isFinancialCharge(c.text));
 
 // ── Readings become typed issues (findings.ts) ──
 function findingContext(s: MatterState): FindingContext {
