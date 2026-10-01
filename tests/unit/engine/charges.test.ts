@@ -55,6 +55,8 @@ test('after completion each charge is paid off and its discharge waited for; the
   assert.ok(dueSteps(s, NOW).some((d) => d.key === 'undertaking_discharge'));
   assert.match(stageBlockers(s).join(' | '), /discharges not yet sent to the buyer's solicitor/);
   s = fold(s, { type: 'undertaking_discharged' });
+  assert.deepEqual(stageBlockers(s), ['final bill not delivered']);
+  s = fold(s, { type: 'final_bill_delivered', amountPennies: 150_000 });
   assert.deepEqual(stageBlockers(s), ['matter complete']);
 });
 

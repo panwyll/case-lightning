@@ -158,6 +158,7 @@ test('freehold sale end to end: forms → pack → buyer\'s enquiries answered �
   await h.svc.run(TENANT, MATTER, { type: 'discharge_confirmed', actor: USER, reference: 'DS1-0099' });
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER }), /undertaking .* still open/, 'the DS1 goes to the buyer\'s solicitor first');
   await h.svc.run(TENANT, MATTER, { type: 'undertaking_discharged', actor: USER, note: 'DS1 sent to the buyer\'s solicitor' });
+  await h.svc.run(TENANT, MATTER, { type: 'final_bill_delivered', actor: USER, amountPennies: 150_000 } as never);
   await h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER });
   s = await h.svc.getState(TENANT, MATTER);
   assert.ok(s.closedAt);
@@ -287,6 +288,7 @@ test('remortgage end to end: no exchange — title, offer and redemption figure 
   await h.svc.run(TENANT, MATTER, { type: 'register_checked', actor: USER });
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER }), /discharge is not yet confirmed/);
   await h.svc.run(TENANT, MATTER, { type: 'discharge_confirmed', actor: USER });
+  await h.svc.run(TENANT, MATTER, { type: 'final_bill_delivered', actor: USER, amountPennies: 150_000 } as never);
   await h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER });
   s = await h.svc.getState(TENANT, MATTER);
   assert.ok(s.closedAt);
@@ -354,6 +356,7 @@ test('transfer of equity end to end: every party identified, lender\'s consent, 
   await h.svc.run(TENANT, MATTER, { type: 'ap1_submitted', actor: USER, reference: 'AP1-2' });
   await h.svc.run(TENANT, MATTER, { type: 'ap1_confirmed', actor: USER });
   await h.svc.run(TENANT, MATTER, { type: 'register_checked', actor: USER });
+  await h.svc.run(TENANT, MATTER, { type: 'final_bill_delivered', actor: USER, amountPennies: 150_000 } as never);
   await h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER });
   s = await h.svc.getState(TENANT, MATTER);
   assert.ok(s.closedAt);

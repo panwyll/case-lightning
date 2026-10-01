@@ -212,6 +212,8 @@ export const EVENT_TYPES = [
   'party_event_recorded',
   'contributions_recorded',
   'completion_payment_sent',
+  'final_bill_delivered',
+  'retention_released',
   'redemption_figure_adjusted',
   'ap1_cancelled',
   'requisition_extended',
@@ -788,7 +790,7 @@ export interface Engagement {
 
 // ───────────────────────────── Waits / SLA (2.6) ─────────────────────────────
 
-export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack', 'transfer_deed', 'signed_documents', 'mortgage_offer', 'survey', 'deposit', 'client_decision', 'insurance', 'seller_discharge'] as const;
+export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack', 'transfer_deed', 'signed_documents', 'mortgage_offer', 'survey', 'deposit', 'client_decision', 'insurance', 'seller_discharge', 'retention_release'] as const;
 /** Things the client arranges in their own time (their mortgage, their survey): opened by the timer, not by a request of ours, so they are checked on rather than left to drift. */
 export const EXPECTATION_KEYS = ['mortgage_offer', 'survey'] as const;
 export type ExpectationKey = (typeof EXPECTATION_KEYS)[number];
@@ -1147,6 +1149,8 @@ export interface Payloads {
   completion_information_received: { undertakingToRedeem: boolean; documentId: string | null };
   longstop_date_recorded: { date: string };
   completion_payment_sent: { reference: string; sentAt: string };
+  final_bill_delivered: { amountPennies: number; documentId: string | null };
+  retention_released: { amountPennies: number | null };
   redemption_figure_adjusted: { redemptionPennies: number; days: number; reason: string };
   contributions_recorded: { model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent: Record<string, number> | null; shares: Array<{ party: string; shareBp: number }> };
   ap1_cancelled: { reason: string };
@@ -1661,6 +1665,8 @@ export interface MatterState {
     interimSentAt?: string | null;
   };
   deposit: { received: boolean; at: string | null; /** What has come in towards it, and what the contract says it is. */ amountPennies?: number | null; contractPennies?: number | null };
+  /** The final bill delivered to the client: fees are taken from client money only after it (SRA Accounts Rules 4.3). */
+  finalBill?: { amountPennies: number; deliveredAt: string; documentId: string | null } | null;
   /** Joint clients' authority to exchange, each their own (parties.md 2.7). */
   authorityByParty?: Record<string, string>;
   /** What each buyer puts in and the declaration of trust's model, with each owner's share at purchase (co-owners.ts). */

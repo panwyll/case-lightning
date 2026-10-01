@@ -133,6 +133,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
         sdlt: () => run({ type: 'sdlt_submitted', reference: 'SDLT-1' }),
         ap1: () => run({ type: 'ap1_submitted' }),
         notice_of_assignment: () => run({ type: 'notice_of_assignment_served', servedOn: 'the landlord', reference: 'NOA-1' }),
+        final_bill: () => run({ type: 'final_bill_delivered', amountPennies: 150_000 }),
         completion_payment_sent: () => run({ type: 'completion_payment_sent', reference: 'CHAPS-1' }),
         contributions: () => run({ type: 'record_contributions', model: 'CONTRIBUTION', contributions: (s.partyNames?.length ? s.partyNames : ['A', 'B']).map((n, i) => ({ party: n, pennies: (i + 1) * 1_000_000 })) }),
         register_check: () => run({ type: 'register_checked', lenderTold: true }),
@@ -189,6 +190,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
         property_forms: () => svc.propertyFormsReceived(TENANT, MATTER, doc(F.propertyForms(false, c.tt.startsWith('leasehold')))),
         redemption: () => run({ type: 'redemption_statement_received', redemptionPennies: 12_000_000, validUntil: F.completionDate(5) }),
         lender_consent: () => run({ type: 'lender_consent_received', conditions: 'Outgoing borrower released' }),
+        retention_release: () => run({ type: 'retention_released', amountPennies: 500_000 }),
         seller_discharge: () => run({ type: 'seller_discharge_received', reference: 'DS1' }),
         discharge: () => (w.subject ? run({ type: 'charge_discharged', chargeId: w.subject, reference: 'DS1' }) : run({ type: 'discharge_confirmed', reference: 'DS1' })),
         contract_pack: async () => {

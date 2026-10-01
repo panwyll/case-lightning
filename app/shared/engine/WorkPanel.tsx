@@ -533,6 +533,7 @@ const SHAPES: Array<{ id: string; label: string; sides: string[]; summary: strin
   { id: 'court_order_transfer', label: 'Transfer Under A Court Order', sides: ['owner'], summary: 'The sealed order, the lender\'s release of the outgoing owner, the SDLT exemption.' },
   { id: 'right_to_buy', label: 'Right To Buy', sides: ['buyer', 'seller'], summary: 'Discount repayment charge for five years, right of first refusal for ten.' },
   { id: 'flying_freehold', label: 'Flying Freehold', sides: ['buyer'], summary: 'The lender\'s limit, rights of support and access, an indemnity policy.' },
+  { id: 'equity_loan_redemption', label: 'Help To Buy Loan To Repay', sides: ['seller', 'owner'], summary: 'The RICS valuation, the redemption figure and Homes England\'s release.' },
   { id: 'commonhold', label: 'Commonhold', sides: ['buyer', 'seller'], summary: 'The community statement and the association in place of the lease and the pack.' },
 ];
 
@@ -806,6 +807,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     if (key.startsWith('shortfall_request:')) { const acc = firmAccounts(); return acc.length ? act('completion', 'funds_requested', 'Ask The Client', { fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: Number(key.slice('shortfall_request:'.length)) }, { primary: true }) : <span className="ep-note">Verify our client account under Bank Details first.</span>; }
     if (key.startsWith('charge_statement:')) return act('redemption', 'charge_statement_received', 'Record Figure', { chargeId: key.slice('charge_statement:'.length) }, { primary: true });
     if (key.startsWith('charge_redeemed:')) return act('redemption', 'charge_redeemed', 'Record Paid Off', { chargeId: key.slice('charge_redeemed:'.length), amountPennies: (s.otherCharges ?? []).find((c) => c.id === key.slice('charge_redeemed:'.length))?.redemptionPennies ?? undefined }, { primary: true });
+    if (key === 'final_bill') return act('registration', 'final_bill_delivered', 'Record Sent', {}, { primary: true });
     if (key === 'completion_payment_sent') return act('completion', 'completion_payment_sent', 'Record Sent', {}, { primary: true });
     if (key === 'contributions') return <ContributionsForm names={s.partyNames ?? []} busy={busy} onSubmit={(body) => cmd(body)} />;
     if (key === 'register_check') return act('registration', 'register_checked', 'Record Checked', {}, { primary: true });
@@ -872,6 +874,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       case 'redemption': return act('redemption', 'redemption_statement_received', 'Record Received');
       case 'lender_consent': return act('lender_consent', 'lender_consent_received', 'Record Received');
       case 'seller_discharge': return act('registration', 'seller_discharge_received', 'Record Received');
+      case 'retention_release': return act('registration', 'retention_released', 'Record Released');
       case 'discharge': return subject ? act('registration', 'charge_discharged', 'Record Received', { chargeId: subject }) : act('registration', 'discharge_confirmed', 'Record Confirmed');
       case 'registration': return act('registration', 'ap1_confirmed', 'Record Registered');
       case 'deposit': return act('exchange', 'deposit_received', 'Record Received');

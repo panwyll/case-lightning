@@ -128,7 +128,8 @@ export const CLIENT_UPDATE_TEMPLATES: Partial<Record<EventType, string>> = {
   report_on_title_sent: 'report_on_title_sent',
   contracts_exchanged: 'exchanged',
   completion_confirmed: 'completed',
-  ap1_confirmed: 'registration_complete',
+  // Once the new register is read (not when the Land Registry says done): the client gets it with the news (theme H).
+  register_checked: 'registration_complete',
 };
 
 /** What the client hears when we ask the seller's side something: what it was for, plainly, and what happens next. */
@@ -1986,7 +1987,9 @@ export class EngineService {
             dedupKey = `${template}:${ordered.join('+')}`;
             because = `all ${ordered.length} searches ordered (${ordered.join(', ')})`;
           }
-          const detail = { template, context, triggeredByEventId: e.id };
+          // Registration: the new register goes with the news, as the client's title information document.
+          if (e.type === 'register_checked' && !(e.payload as { ok?: boolean }).ok) continue;
+          const detail = { template, context, triggeredByEventId: e.id, ...(e.type === 'register_checked' && e.sourceDocumentId ? { attachDocumentId: e.sourceDocumentId, attachFileNames: ['Your title register.pdf'] } : {}) };
           if (await this.proposeUnless(tenantId, matterId, subflows, 'client_update', template, dedupKey, detail, `CLIENT UPDATE\n\nTo: the client\nBecause: ${because}\nTemplate: ${template}\n\nThe firm's standard status message for this milestone.`)) continue;
           try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log(`client update could not be sent (${template})`, err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
         }

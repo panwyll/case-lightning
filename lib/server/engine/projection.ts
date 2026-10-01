@@ -490,6 +490,14 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null) && payersExpected(s).every((r) => s.completion.receivedFrom.includes(r))) s.completion.fundsReceivedAt = s.completion.fundsReceivedAt ?? e.createdAt;
       break;
     }
+    case 'retention_released':
+      closeWait(s, 'retention_release', null, e);
+      break;
+    case 'final_bill_delivered': {
+      const p = e.payload as Payloads['final_bill_delivered'];
+      s.finalBill = { amountPennies: p.amountPennies, deliveredAt: e.createdAt, documentId: p.documentId ?? null };
+      break;
+    }
     case 'completion_payment_sent': {
       const p = e.payload as Payloads['completion_payment_sent'];
       s.completion = { ...s.completion, paymentSent: { reference: p.reference, at: p.sentAt } };
@@ -602,6 +610,8 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['completion_confirmed'];
       s.completion.confirmedAt = p.completedAt ?? e.createdAt;
       // A purchase from a charged seller: their solicitor's undertaking to send the DS1 is now owed, and chased (theme H).
+      // A retention agreed with the lender (works, a re-inspection) is released after completion: waited for and chased.
+      if (Object.values(s.issues).some((i) => i.status === 'resolved' && i.resolution === 'retention_agreed')) openWait(s, 'retention_release', '', e);
       if (profileOf(s.transactionType ?? 'freehold_purchase').side === 'buyer' && ((s.title.facts as { charges?: Array<{ text: string }> } | null)?.charges ?? []).some((c) => isFinancialCharge(c.text))) openWait(s, 'seller_discharge', '', e);
       break;
     }

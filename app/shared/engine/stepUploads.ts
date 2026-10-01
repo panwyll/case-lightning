@@ -49,7 +49,7 @@ export const STEP_ACTION_LABEL: Record<string, string> = {
   priority_search: 'Record Made', funds_request: 'Request Funds', advance_request: 'Request The Advance', completion_monies: 'Record Received', consideration: 'Record Received',
   completion_payment: 'Authorise', redemption_payment: 'Authorise', completion: 'Confirm Completion', balance_to_client: 'Authorise',
   refund: 'Record Sent', shortfall_request: 'Ask The Client', funds_cleared: 'Record Cleared',
-  completion_payment_sent: 'Record Sent', contributions: 'Record Contributions', register_check: 'Record Checked', requisition_extend: 'Record More Time', sdlt_facts: 'Record Answers', cgt_facts: 'Record Answers', longstop_date: 'Record Date', charge_statement: 'Record Figure', charge_redeemed: 'Record Paid Off', undertaking: 'Give Undertaking', completion_information: 'Record Replies', undertaking_discharge: 'Record Sent',
+  final_bill: 'Record Sent', completion_payment_sent: 'Record Sent', contributions: 'Record Contributions', register_check: 'Record Checked', requisition_extend: 'Record More Time', sdlt_facts: 'Record Answers', cgt_facts: 'Record Answers', longstop_date: 'Record Date', charge_statement: 'Record Figure', charge_redeemed: 'Record Paid Off', undertaking: 'Give Undertaking', completion_information: 'Record Replies', undertaking_discharge: 'Record Sent',
   mortgage_redeemed: 'Record Redeemed', sdlt: 'Record Filed', ap1: 'Record Lodged', notice_of_assignment: 'Record Served', close_file: 'Close File',
 };
 
@@ -76,6 +76,7 @@ export const WAIT_ACTIONS: Record<string, WaitAction> = {
   lender_consent: { label: 'Record Received' },
   discharge: { label: 'Record Confirmed' },
   seller_discharge: { label: 'Record Received' },
+  retention_release: { label: 'Record Released' },
   registration: { label: 'Record Registered' },
   insurance: { label: 'Record Insurance' },
   client_decision: { label: 'Record Decision' },

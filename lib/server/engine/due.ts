@@ -164,6 +164,9 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   // Tenants in common in unequal shares: the declaration of trust needs the figures (co-owners.ts).
   if ((buyer || toe) && s.parties > 1 && s.clientDecisions.ownership_basis?.decision === 'tenants_in_common_unequal' && !s.coOwnership && !s.deeds.deedOfTrustAt && !completed) add({ key: 'contributions', lane: 'co_ownership', title: 'Record what each buyer puts in, and how the declaration of trust shares it' });
 
+  // The final bill, before anything is taken from client money for fees and before the file closes (SRA Accounts Rules 4.3).
+  if (completed && !s.finalBill) add({ key: 'final_bill', lane: 'registration', title: 'Send the client the final bill' });
+
   // ── After registration (theme H): the new register read; a requisition that cannot be met in time ──
   if (s.postCompletion.ap1ConfirmedAt && !s.registerCheckedAt && p.registration === 'ap1') add({ key: 'register_check', lane: 'registration', title: 'Check the new register: proprietors, the charges, any restriction' });
   for (const r of s.postCompletion.requisitions.filter((x) => !x.respondedAt && x.deadline)) {

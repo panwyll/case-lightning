@@ -221,6 +221,8 @@ type CommandBody =
   | { type: 'record_party_event'; actor: Actor; event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; hasAttorney?: boolean | null; note?: string | null }
   | { type: 'sar_made'; actor: Actor; note?: string | null }
   | { type: 'completion_payment_sent'; actor: Actor; reference: string; sentAt?: string | null }
+  | { type: 'final_bill_delivered'; actor: Actor; amountPennies: number; documentId?: string | null }
+  | { type: 'retention_released'; actor: Actor; amountPennies?: number | null }
   | { type: 'record_contributions'; actor: Actor; model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent?: Record<string, number> | null }
   | { type: 'ap1_cancelled'; actor: Actor; reason: string }
   | { type: 'requisition_extended'; actor: Actor; requisitionEventId: string; deadline: string; note: string }
@@ -308,6 +310,8 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'daml_response',
   'record_contributions',
   'completion_payment_sent',
+  'final_bill_delivered',
+  'retention_released',
   'ap1_cancelled',
   'requisition_extended',
   'register_checked',
@@ -651,6 +655,7 @@ function saleBlockers(s: MatterState): string[] {
       if (s.hasExistingMortgage && s.redemption.status !== 'discharged') waiting.push("awaiting the lender's discharge (DS1 / e-DS1)");
       for (const c of openCharges(s)) waiting.push(`awaiting ${c.chargee}'s discharge`);
       if (!waiting.length && s.undertaking && !s.undertaking.dischargedAt) waiting.push("discharges not yet sent to the buyer's solicitor (our undertaking)");
+      if (!waiting.length && !s.finalBill) waiting.push('final bill not delivered');
       b.push(...(waiting.length ? waiting : ['matter complete']));
       break;
     }
@@ -982,6 +987,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           },
         },
         ...shapeIssues,
+        // A shape that always brings a charge to redeem (a Help to Buy equity loan) puts it on the case's charges.
+        ...shapes.filter((sh) => SHAPE_SPEC[sh].charge && side !== 'buyer').map((sh, n): NewEvent => ({ type: 'charge_found', actor: cmd.actor, payload: { chargeId: `CH-${n + 1}`, chargee: SHAPE_SPEC[sh].charge!, text: null } })),
         ...conditionIssues,
         ...partyEvents,
         ...extraParties,
@@ -1922,6 +1929,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (refundsDue(s).length) reject(`Money is still owed back: ${refundsDue(s).map((r) => `${r.amountPennies != null ? pounds(r.amountPennies) : 'an amount'} to ${ROLE_LABEL[r.toRole]}`).join(', ')}. Record the refund first.`);
       if (profile(s).registration === 'ap1' && !s.registerCheckedAt) reject('Check the new register first (the proprietors, the charges, any restriction).');
       if (s.waits.some((w) => w.key === 'seller_discharge' && !w.closedAt)) reject("The seller's DS1 has not arrived: their solicitor's undertaking is still open.");
+      if (s.waits.some((w) => w.key === 'retention_release' && !w.closedAt)) reject("The lender's retention has not been released: pass it on to the client (or the seller, under the contract) first.");
+      if (!s.finalBill) reject('Deliver the final bill first.');
       return [{ type: 'matter_closed', actor: cmd.actor, payload: { reason: cmd.reason ?? null, ...retentionDates(s, ctx.now) } }];
     }
     case 'update_issue': {
@@ -2398,6 +2407,18 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const sentAt = cmd.sentAt && !Number.isNaN(Date.parse(cmd.sentAt)) ? new Date(cmd.sentAt).toISOString() : ctx.now.toISOString();
       return [{ type: 'completion_payment_sent', actor: cmd.actor, payload: { reference: cmd.reference.trim(), sentAt } }];
     }
+    case 'retention_released': {
+      requireEnrolled(s);
+      if (!s.waits.some((w) => w.key === 'retention_release' && !w.closedAt)) reject('No retention is awaited.');
+      return [{ type: 'retention_released', actor: cmd.actor, payload: { amountPennies: cmd.amountPennies ?? null } }];
+    }
+    case 'final_bill_delivered': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person delivers the bill.', 403);
+      if (!Number.isInteger(cmd.amountPennies) || cmd.amountPennies < 0) reject('Give the bill total.', 400);
+      if (s.finalBill) reject('The final bill is already delivered.');
+      return [{ type: 'final_bill_delivered', actor: cmd.actor, payload: { amountPennies: cmd.amountPennies, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+    }
     // ── Co-owners' money (co-owners.ts) ──
     case 'record_contributions': {
       requireEnrolled(s);
@@ -2856,6 +2877,8 @@ function afterRegistration(s: MatterState): string[] {
   const left: string[] = [];
   if (!s.registerCheckedAt) left.push('the new register not yet checked');
   if (s.waits.some((w) => w.key === 'seller_discharge' && !w.closedAt)) left.push("awaiting the seller's DS1 (their solicitor's undertaking)");
+  if (s.waits.some((w) => w.key === 'retention_release' && !w.closedAt)) left.push("awaiting the lender's release of the retention");
+  if (!s.finalBill) left.push('final bill not delivered');
   return left.length ? left : ['matter complete'];
 }
 /** How long the file is kept (a purchase 15 years, a sale 6), and the CDD records (5 years from completion, MLR reg 40). */

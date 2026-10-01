@@ -83,3 +83,11 @@ test('the service sends nothing to a client who has died', async () => {
   await h.svc.requestIdCheck(TENANT, MATTER, USER).catch(() => null);
   assert.equal(h.ports.clientComms.sent.length, before, 'nothing reached the client');
 });
+
+test('the client hears about registration once the new register is checked, with the register as their title document', async () => {
+  const h = harness();
+  const { CLIENT_UPDATE_TEMPLATES } = await import('../../../lib/server/engine/service');
+  assert.equal(CLIENT_UPDATE_TEMPLATES.register_checked, 'registration_complete');
+  assert.equal(CLIENT_UPDATE_TEMPLATES.ap1_confirmed, undefined);
+  void h;
+});

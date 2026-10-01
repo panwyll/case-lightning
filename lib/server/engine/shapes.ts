@@ -7,7 +7,7 @@
 import type { Side } from './transactions';
 import type { IssueGate, IssueKind } from './issues';
 
-export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa', 'second_charge', 'shared_ownership', 'unrepresented_counterparty', 'court_order_transfer', 'right_to_buy', 'flying_freehold', 'commonhold'] as const;
+export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa', 'second_charge', 'shared_ownership', 'unrepresented_counterparty', 'court_order_transfer', 'right_to_buy', 'flying_freehold', 'commonhold', 'equity_loan_redemption'] as const;
 export type CaseShape = (typeof CASE_SHAPES)[number];
 
 export type FundsRole = 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider';
@@ -25,6 +25,8 @@ export interface ShapeSpec {
   fundsFrom?: FundsRole;
   /** The client's recorded authority to exchange does not apply (the hammer is the exchange). */
   skipExchangeAuthority?: boolean;
+  /** A charge the shape always brings to redeem (charges.ts): added to the case's charges at enrolment. */
+  charge?: string;
   /** How the ID / AML sub-flow reads under this shape. */
   idCheckLabel?: string;
 }
@@ -57,6 +59,12 @@ export const SHAPE_SPEC: Record<CaseShape, ShapeSpec> = {
     summary: 'Part of the price comes from a Lifetime ISA: the investor declaration, the eligibility limits and the bonus paid to us by the ISA manager.',
     issue: { kind: 'isa_bonus', title: 'Lifetime ISA: declarations and the withdrawal from the ISA manager', detail: 'Eligibility: first-time buyer, price at or below £450,000, a residential mortgage, the account open at least 12 months, completion within 90 days of the withdrawal. The client signs the investor declaration; we send the conveyancer declaration to the ISA manager, who pays the money to our client account within 30 days — request it in time for completion and never before exchange without checking the 90-day window. Two Lifetime ISAs (two buyers) need two withdrawals.', gate: 'completion' },
     fundsFrom: 'isa_provider',
+  },
+  equity_loan_redemption: {
+    id: 'equity_loan_redemption', label: 'Help To Buy Loan To Repay', sides: ['seller', 'owner'],
+    summary: 'A Help to Buy equity loan to repay on a sale or remortgage: the RICS valuation, the redemption figure, Homes England\'s consent.',
+    charge: 'Homes England (Help to Buy equity loan)',
+    issue: { kind: 'third_party_consent', title: 'Help to Buy equity loan: valuation, redemption figure and consent', detail: 'The loan is repaid as a share of the value, not the sum borrowed: the client instructs a RICS valuation (valid three months, and it must still be valid when the redemption is paid), sends it to the scheme administrator, and asks for the redemption figure. Put the figure on the statement before exchange, pay it on completion, and get Homes England\'s release. On a remortgage that keeps the loan, a deed of postponement instead.', gate: 'exchange' },
   },
   second_charge: {
     id: 'second_charge', label: 'Second Charge / Equity Loan', sides: ['buyer'],

@@ -168,6 +168,8 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   r = await svc.run(TENANT, MATTER, { type: 'register_checked', actor: USER, lenderTold: true });
   if (r.state.waits.some((w) => w.key === 'seller_discharge' && !w.closedAt)) r = await svc.run(TENANT, MATTER, { type: 'seller_discharge_received', actor: USER, reference: 'DS1' });
   assert.ok(r.state.postCompletion.ap1ConfirmedAt);
+  assert.deepEqual(stageBlockers(r.state), ['final bill not delivered']);
+  r = await svc.run(TENANT, MATTER, { type: 'final_bill_delivered', actor: USER, amountPennies: 150_000 });
   assert.deepEqual(stageBlockers(r.state), ['matter complete']);
   assert.deepEqual(await h.store.listActiveMatters(TENANT), [], 'finished matters leave the timer sweep');
 

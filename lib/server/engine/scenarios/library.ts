@@ -309,6 +309,7 @@ const exchangeBuyer = (price: number, deposit: number, advance: number | null): 
       await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'consent_obtained', note: 'Deed of covenant signed at completion; certificate of compliance received from the management company and lodged with the AP1.', documentId: cert });
     }
   }),
+  step('final_bill', 'The final bill sent to the client', async (c) => { if (!(await c.svc.getState(c.tenantId, c.matterId)).finalBill) await c.run({ type: 'final_bill_delivered', amountPennies: 150_000 }); }),
   step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
 ];
 
@@ -359,6 +360,7 @@ export const SCENARIOS: Scenario[] = [
       ...reportOnTitle(),
       ...exchangeBuyer(PRICE, DEPOSIT, ADVANCE).filter((s) => s.id !== 'close'),
       step('notice', 'Notice of assignment served on the landlord', async (c) => { await c.run({ type: 'notice_of_assignment_served', servedOn: 'Block Managers Ltd for Mill Lane Freeholds Limited', reference: 'NOA-1' }); }),
+      step('final_bill', 'The final bill sent to the client', async (c) => { if (!(await c.svc.getState(c.tenantId, c.matterId)).finalBill) await c.run({ type: 'final_bill_delivered', amountPennies: 150_000 }); }),
       step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
     ],
   },
@@ -403,6 +405,7 @@ export const SCENARIOS: Scenario[] = [
       step('balance', 'Balance paid to the client against verified details', async (c) => { const client = await c.verifiedDetails('client', '44445555', 'Sandbox Seller'); await c.run({ type: 'payment_authorised', payeeKind: 'client', bankDetailsId: client, amountPennies: 23_000_000, purpose: 'other' }); }),
       step('discharge', 'Discharge confirmed', async (c) => { await c.run({ type: 'discharge_confirmed', reference: 'DS1-SANDBOX' }); }),
       step('undertaking_done', "The DS1 sent to the buyer's solicitor: our undertaking is done", async (c) => { await c.run({ type: 'undertaking_discharged' }); }),
+      step('final_bill', 'The final bill sent to the client', async (c) => { if (!(await c.svc.getState(c.tenantId, c.matterId)).finalBill) await c.run({ type: 'final_bill_delivered', amountPennies: 150_000 }); }),
       step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
     ],
   },
@@ -440,6 +443,7 @@ export const SCENARIOS: Scenario[] = [
       step('balance', 'Balance paid to the client', async (c) => { const client = await c.verifiedDetails('client', '44445555', 'Sandbox Seller'); await c.run({ type: 'payment_authorised', payeeKind: 'client', bankDetailsId: client, amountPennies: 18_000_000, purpose: 'other' }); }),
       step('discharge', 'Discharge confirmed', async (c) => { await c.run({ type: 'discharge_confirmed', reference: 'DS1-SANDBOX' }); }),
       step('undertaking_done', "The DS1 sent to the buyer's solicitor: our undertaking is done", async (c) => { await c.run({ type: 'undertaking_discharged' }); }),
+      step('final_bill', 'The final bill sent to the client', async (c) => { if (!(await c.svc.getState(c.tenantId, c.matterId)).finalBill) await c.run({ type: 'final_bill_delivered', amountPennies: 150_000 }); }),
       step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
     ],
   },
@@ -477,6 +481,7 @@ export const SCENARIOS: Scenario[] = [
     if (st.waits.some((w) => w.key === 'seller_discharge' && !w.closedAt)) await c.run({ type: 'seller_discharge_received', reference: 'DS1-SANDBOX' });
   }),
       step('discharge', 'Discharge of the old charge confirmed', async (c) => { await c.run({ type: 'discharge_confirmed' }); }),
+      step('final_bill', 'The final bill sent to the client', async (c) => { if (!(await c.svc.getState(c.tenantId, c.matterId)).finalBill) await c.run({ type: 'final_bill_delivered', amountPennies: 150_000 }); }),
       step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
     ],
   },
@@ -506,6 +511,7 @@ export const SCENARIOS: Scenario[] = [
     const st = await c.svc.getState(c.tenantId, c.matterId);
     if (st.waits.some((w) => w.key === 'seller_discharge' && !w.closedAt)) await c.run({ type: 'seller_discharge_received', reference: 'DS1-SANDBOX' });
   }),
+      step('final_bill', 'The final bill sent to the client', async (c) => { if (!(await c.svc.getState(c.tenantId, c.matterId)).finalBill) await c.run({ type: 'final_bill_delivered', amountPennies: 150_000 }); }),
       step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
     ],
   },

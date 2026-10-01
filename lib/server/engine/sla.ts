@@ -62,6 +62,8 @@ export const DEFAULT_SLA: SlaConfig = {
   deposit: { waitKey: 'deposit', chaseAfter: 3, chaseEvery: 3, escalateAfter: 8, reEscalateAfter: 3, recipientRole: 'client', template: 'chase_deposit' },
   client_decision: { waitKey: 'client_decision', chaseAfter: 3, chaseEvery: 3, escalateAfter: 8, reEscalateAfter: 3, recipientRole: 'client', template: 'chase_ownership_basis' },
   insurance: { waitKey: 'insurance', chaseAfter: 3, chaseEvery: 2, escalateAfter: 6, reEscalateAfter: 2, recipientRole: 'client', template: 'chase_buildings_insurance' },
+  // A lender's retention (works, a re-inspection): released after completion, chased monthly until it is.
+  retention_release: { waitKey: 'retention_release', chaseAfter: 20, chaseEvery: 20, escalateAfter: 60, reEscalateAfter: 20, recipientRole: 'lender', template: 'chase_retention_release' },
   // A purchase: the seller's solicitor's undertaking to send their client's DS1 after completion (CCP 12(ii)).
   seller_discharge: { waitKey: 'seller_discharge', chaseAfter: 10, chaseEvery: 10, escalateAfter: 30, reEscalateAfter: 10, recipientRole: 'seller_solicitor', template: 'chase_seller_discharge' },
   discharge: { waitKey: 'discharge', chaseAfter: 10, chaseEvery: 10, escalateAfter: 30, reEscalateAfter: 10, recipientRole: 'lender', template: 'chase_discharge' },
