@@ -39,15 +39,15 @@ export class GoCardlessBankData implements OpenBankingProvider {
     return list;
   }
 
-  async start(input: { reference: string; institutionId: string; redirectUrl: string; historyDays: number }): Promise<{ providerRef: string; link: string }> {
+  async start(input: { reference: string; institutionId: string; callbackUrl: string; state: string; historyDays: number }): Promise<{ providerRef: string; link: string }> {
     const inst = (await this.institutions('gb')).find((x) => x.id === input.institutionId);
     const maxDays = Math.min(input.historyDays, inst?.historyDays ?? input.historyDays);
     const agreement = await this.call<{ id: string }>('/agreements/enduser/', { method: 'POST', body: JSON.stringify({ institution_id: input.institutionId, max_historical_days: maxDays, access_valid_for_days: 7, access_scope: ['balances', 'details', 'transactions'] }) });
-    const req = await this.call<{ id: string; link: string }>('/requisitions/', { method: 'POST', body: JSON.stringify({ redirect: input.redirectUrl, institution_id: input.institutionId, reference: input.reference, agreement: agreement.id, user_language: 'EN' }) });
+    const req = await this.call<{ id: string; link: string }>('/requisitions/', { method: 'POST', body: JSON.stringify({ redirect: `${input.callbackUrl}?state=${encodeURIComponent(input.state)}`, institution_id: input.institutionId, reference: input.reference, agreement: agreement.id, user_language: 'EN' }) });
     return { providerRef: req.id, link: req.link };
   }
 
-  async collect(providerRef: string, institution: { id: string; name: string }): Promise<{ status: 'pending' | 'linked' | 'failed' | 'expired'; accounts: ConnectedAccount[]; reason?: string }> {
+  async collect(providerRef: string, institution: { id: string; name: string }, _back?: { code?: string | null; callbackUrl: string; historyDays: number }): Promise<{ status: 'pending' | 'linked' | 'failed' | 'expired'; accounts: ConnectedAccount[]; reason?: string }> {
     const req = await this.call<{ status: string; accounts: string[] }>(`/requisitions/${providerRef}/`);
     if (req.status === 'EX') return { status: 'expired', accounts: [], reason: 'The bank connection expired before it was completed.' };
     if (req.status === 'RJ' || (req.status === 'SU' && !req.accounts.length)) return { status: 'failed', accounts: [], reason: 'The bank did not share any accounts.' };

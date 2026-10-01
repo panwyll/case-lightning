@@ -18,10 +18,14 @@ export type ConnectionStatus = 'pending' | 'linked' | 'failed' | 'expired';
 export interface OpenBankingProvider {
   readonly name: string;
   institutions(country: string): Promise<Institution[]>;
-  /** Start a connection: the link the client follows to their bank, and the provider's reference for it. */
-  start(input: { reference: string; institutionId: string; redirectUrl: string; historyDays: number; /** Whose account is expected (the demo bank names its holder with it). */ holderHint?: string | null }): Promise<{ providerRef: string; link: string }>;
-  /** After the client comes back: the accounts they shared, each with its transactions and balance. */
-  collect(providerRef: string, institution: { id: string; name: string }): Promise<{ status: ConnectionStatus; accounts: ConnectedAccount[]; reason?: string }>;
+  /**
+   * Start a connection: the link the client follows to their bank, and the provider's reference for it.
+   * Every provider sends the client back to the one fixed `callbackUrl` (registered with the provider)
+   * carrying `state`, our signed reference for the connection.
+   */
+  start(input: { reference: string; institutionId: string; callbackUrl: string; state: string; historyDays: number; /** Whose account is expected (the demo bank names its holder with it). */ holderHint?: string | null }): Promise<{ providerRef: string; link: string }>;
+  /** After the client comes back: the accounts they shared, each with its transactions and balance. `code` is the provider's one-time grant, where it gives one. */
+  collect(providerRef: string, institution: { id: string; name: string }, back: { code?: string | null; callbackUrl: string; historyDays: number }): Promise<{ status: ConnectionStatus; accounts: ConnectedAccount[]; reason?: string }>;
 }
 
 /** How far back we ask for: 24 months, or less where the bank gives less. */

@@ -14,8 +14,8 @@ const NOW = new Date('2026-09-20T10:00:00Z');
 const bank = new DemoBank(() => NOW);
 async function account(scenario: string, holder: string): Promise<StatementFacts> {
   const inst = DEMO_INSTITUTIONS.find((i) => i.id === scenario)!;
-  const { providerRef } = await bank.start({ reference: 'r', institutionId: scenario, redirectUrl: 'https://x.test/back?c=1', historyDays: 730, holderHint: holder });
-  return (await bank.collect(providerRef, inst)).accounts[0].statement;
+  const { providerRef } = await bank.start({ reference: 'r', institutionId: scenario, callbackUrl: 'https://x.test/cb', state: 's', historyDays: 730, holderHint: holder });
+  return (await bank.collect(providerRef, inst, { code: 'demo', callbackUrl: 'https://x.test/cb', historyDays: 730 })).accounts[0].statement;
 }
 const doc = (id: string, statement: StatementFacts, sourceIndex: number | null, donorFor: number | null = null): EvidenceDocument => ({ id, fileName: `${statement.bankName} (connected)`, sourceIndex, donorFor, kind: 'bank_statement', payslip: null, statement, unreadable: null, provenance: 'open_banking' });
 const sub = (sources: ProofOfFundsSubmission['sources']): ProofOfFundsSubmission => ({ declarant: { fullName: 'Priya Shah' }, purchasePricePennies: 40_000_000, mortgageAdvancePennies: 30_000_000, sources, declarations: { accurate: true, noThirdPartyInterest: true, noUndisclosedBorrowing: true }, submittedAt: NOW.toISOString() });

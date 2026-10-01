@@ -118,17 +118,22 @@ export default function ProofOfFundsPage() {
           const d = JSON.parse(localStorage.getItem(draftKey) ?? 'null');
           if (d) { setSources(d.sources); setFullName(d.fullName); setPrice(d.price); setMortgage(d.mortgage); setCoDeclarants(d.coDeclarants ?? []); setEmail(d.email ?? ''); setPhone(d.phone ?? ''); setNote(d.note ?? ''); setDec(d.dec); setAnswers(d.answers ?? {}); }
         } catch { /* storage blocked: the form starts again, the connected accounts are still attached below */ }
+      }
+      // Every bank connected from this form is attached to its source, whichever browser it was finished in.
+      if (r.ok) {
         const c = await fetch(`/api/v1/pof/${token}/connections`).then((x) => x.json()).catch(() => null) as { connections?: Array<{ id: string; sourceIndex: number; party: 'client' | 'donor'; status: string; bank: string; files: Array<{ id: string; fileName: string }> }> } | null;
         const got = (c?.connections ?? []).filter((x) => x.status === 'linked');
-        setSources((ss) => ss.map((src, k) => {
+        if (got.length) setSources((ss) => ss.map((src, k) => {
           const mine = got.filter((x) => x.sourceIndex === k + 1);
           const add = (have: Array<{ id: string; fileName: string }>, party: 'client' | 'donor') => [...have, ...mine.filter((x) => x.party === party).flatMap((x) => x.files).filter((f) => !have.some((h) => h.id === f.id))];
           return { ...src, files: add(src.files, 'client'), gift: { ...src.gift, files: add(src.gift.files, 'donor') } };
         }));
-        const just = got.find((x) => x.id === connected);
-        setObMsg(failed ? { ok: false, text: failed } : { ok: true, text: just ? `${just.bank} connected: ${just.files.length} account${just.files.length === 1 ? '' : 's'} added.` : 'Bank connected.' });
-        url.searchParams.delete('connected'); url.searchParams.delete('connectFailed'); url.searchParams.delete('demo');
-        window.history.replaceState(null, '', url.pathname + url.search);
+        if (connected || failed) {
+          const just = got.find((x) => x.id === connected);
+          setObMsg(failed ? { ok: false, text: failed } : { ok: true, text: just ? `${just.bank} connected: ${just.files.length} account${just.files.length === 1 ? '' : 's'} added.` : 'Bank connected.' });
+          url.searchParams.delete('connected'); url.searchParams.delete('connectFailed'); url.searchParams.delete('demo');
+          window.history.replaceState(null, '', url.pathname + url.search);
+        }
       }
       if (r.ok) fetch(`/api/v1/pof/${token}/banks`).then((x) => x.json()).then((b) => { setObAvailable(!!b.available); setBanks(b.banks ?? []); }).catch(() => {});
     }).catch(() => setCtx({ status: 'unknown' }));
@@ -149,6 +154,8 @@ export default function ProofOfFundsPage() {
       const r = await fetch(`/api/v1/pof/${token}/connect`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sourceIndex: bankFor.i + 1, party: bankFor.party, institutionId, holderName: bankFor.party === 'donor' ? src.gift.donorName || null : fullName || null }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? 'The bank could not be connected.');
+      // The bank returns the client to /pof/return, which needs this form's link: kept in this browser only.
+      try { localStorage.setItem(`pof-return:${j.connectionId}`, token); } catch { /* storage blocked: /pof/return says to use the email link */ }
       window.location.href = j.link;
     } catch (e: unknown) { setObMsg({ ok: false, text: e instanceof Error ? e.message : 'The bank could not be connected.' }); setBusy(false); }
   };

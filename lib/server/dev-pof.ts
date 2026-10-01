@@ -16,6 +16,6 @@ export const devPofBanks = (q: string) => ({ available: true, banks: DEMO_INSTIT
 export function devPofConnect(body: { sourceIndex: number; party: 'client' | 'donor'; institutionId: string }, origin: string) {
   const id = `00000000-0000-4000-8000-${String(connected.size + 1).padStart(12, '0')}`;
   connected.set(id, { sourceIndex: body.sourceIndex, party: body.party, bank: DEMO_INSTITUTIONS.find((b) => b.id === body.institutionId)?.name ?? 'Demo Bank' });
-  return { connectionId: id, link: `${origin}/pof/${DEV_POF_TOKEN}?connected=${id}` };
+  return { connectionId: id, link: `${origin}/pof/return?c=${id}&s=ok` };
 }
 export const devPofConnections = () => ({ connections: [...connected.entries()].map(([id, c]) => ({ id, sourceIndex: c.sourceIndex, party: c.party, status: 'linked', bank: c.bank, error: null, files: [{ id: `11111111-0000-4000-8000-${id.slice(-12)}`, fileName: `${c.bank} ····4821 (connected, 24 months)` }] })) });

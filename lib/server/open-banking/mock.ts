@@ -53,11 +53,12 @@ export class DemoBank implements OpenBankingProvider {
   readonly name = 'demo-bank';
   constructor(private now: () => Date = () => new Date()) {}
   async institutions(): Promise<Institution[]> { return DEMO_INSTITUTIONS; }
-  async start(input: { reference: string; institutionId: string; redirectUrl: string; historyDays: number; holderHint?: string | null }): Promise<{ providerRef: string; link: string }> {
+  async start(input: { reference: string; institutionId: string; callbackUrl: string; state: string; historyDays: number; holderHint?: string | null }): Promise<{ providerRef: string; link: string }> {
     const ref = `demo:${input.institutionId}:${Buffer.from(input.holderHint ?? 'Demo Client').toString('base64url')}`;
-    return { providerRef: ref, link: `${input.redirectUrl}${input.redirectUrl.includes('?') ? '&' : '?'}demo=1` };
+    // No bank to visit: straight back, as a bank would send the client.
+    return { providerRef: ref, link: `${input.callbackUrl}?state=${encodeURIComponent(input.state)}&code=demo` };
   }
-  async collect(providerRef: string, institution: { id: string; name: string }): Promise<{ status: 'linked'; accounts: ConnectedAccount[] }> {
+  async collect(providerRef: string, institution: { id: string; name: string }, _back?: { code?: string | null; callbackUrl: string; historyDays: number }): Promise<{ status: 'linked'; accounts: ConnectedAccount[] }> {
     const [, scenario, h] = providerRef.split(':');
     const holder = Buffer.from(h ?? '', 'base64url').toString() || 'Demo Client';
     const { lines, closing } = demoTransactions(scenario, this.now(), holder);

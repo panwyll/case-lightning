@@ -296,7 +296,12 @@ Run migration 073 (or `db/supabase/engine-one-shot-5.sql`).
 - **What comes back.** Up to **24 months** of booked transactions (less where the bank gives less), the balance, and the holder's name as the bank records it.
 - **How it is stored.** Each shared account becomes a document on the case (`doc_type OPEN_BANKING_ACCOUNT`) whose facts are a `StatementFacts`. The running balance is worked back from today's balance, and the regular income is recognised. Every rule that reads an uploaded statement reads it unchanged, and the briefing marks it **bank-verified**.
 - **The trip to the bank.** The form is kept in the browser while the client is at their bank, and restored with the account attached to the source when they return.
-- **Provider.** GoCardless Bank Account Data when `GOCARDLESS_SECRET_ID` / `GOCARDLESS_SECRET_KEY` are set. The demo bank is used in development and tests, or when `OPEN_BANKING_DEMO=1`. In production without a provider, the form offers uploads only. Other providers (TrueLayer, Yapily, or a firm's own contract) are adapters behind `OpenBankingProvider`.
+- **Provider: TrueLayer** (Data API; UK, FCA-authorised for account information).
+  - **Credentials:** set `TRUELAYER_CLIENT_ID`, `TRUELAYER_CLIENT_SECRET` and `TRUELAYER_ENV` (`sandbox` or `live`).
+  - **Callback:** register `<app>/api/v1/open-banking/callback` as the redirect URI in the TrueLayer console.
+  - **Scope:** `info accounts balance transactions`, with no offline access. The data is read once, at connection.
+  - **Fallbacks:** GoCardless Bank Account Data (`GOCARDLESS_SECRET_ID` / `GOCARDLESS_SECRET_KEY`) is kept as an alternative adapter. The demo bank is used in development and tests, or when `OPEN_BANKING_DEMO=1`. In production without a provider, the form offers uploads only.
+- **The return trip.** Every provider sends the client back to the one callback with a signed `state` naming our connection (`open-banking/state.ts`). A callback can only finish a connection we started. The client then goes to `/pof/return`, whose browser kept the form's link when they left: that link is never sent to the bank or stored by us in the clear. In another browser, the client is told to reopen the form from the email. The form always attaches every bank connected from it, wherever the connection was finished.
 
 **The analysis** (`lib/server/engine/source-of-funds.ts`) runs after the line-by-line review on the same evidence. It does five things:
 
