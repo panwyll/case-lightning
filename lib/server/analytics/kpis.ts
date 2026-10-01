@@ -27,6 +27,8 @@ export interface CaseFacts {
   completedAt: string | null;
   abandoned: { at: string; reason: string } | null;
   completionDate: string | null;
+  /** Our fee for the case, ex VAT, from the firm's fee scale (fees.ts); null when the firm has not set its fees. */
+  fee?: number | null;
   waits: Array<{ key: string; party: Party; openedAt: string; closedAt: string | null; chases: string[] }>;
   decisions: Array<{ kind: string; createdAt: string; resolvedAt: string | null; resolvedBy: string | null }>;
 }
@@ -49,7 +51,7 @@ export const INDUSTRY = {
 
 export interface Stat { p50: number | null; p85: number | null; n: number; thin: boolean }
 export interface PersonRow {
-  id: string; name: string; active: number; completionsThisMonth: number; target: number | null; bookedThisMonth: number;
+  id: string; name: string; active: number; completionsThisMonth: number; target: number | null; bookedThisMonth: number; feesThisMonth: number; fees12m: number;
   completions12m: number; monthlyAverage6m: number; cycle: Stat; taskHours: Stat; overdueTasks: number; withUsShare: number | null;
   csat: { pct: number | null; n: number }; nps: { score: number | null; n: number }; fallThrough: { rate: number | null; n: number };
 }
@@ -62,7 +64,9 @@ export interface AnalyticsReport {
     record: { month: string; completions: number } | null; yearToDate: number; lastYearToDate: number;
   };
   instructions: { thisMonth: number; samePointLastYear: number; last4Weeks: number; same4WeeksLastYear: number };
-  months: Array<{ month: string; instructions: number; exchanges: number; completions: number; fellThrough: number; completionsLastYear: number }>;
+  months: Array<{ month: string; instructions: number; exchanges: number; completions: number; fellThrough: number; completionsLastYear: number; fees: number }>;
+  /** Fee income, counted on completion. `set` false until the firm sets its fees. */
+  fees: { set: boolean; thisMonth: number; booked: number; forecast: number; lastYearMonth: number; yearToDate: number; lastYearToDate: number; perCompletion: number | null; pipeline: number; lostToFallThrough: number };
   pipeline: { open: number; byStep: Array<{ step: string; label: string; count: number }>; exchangedAwaiting: number; completingNext30: number };
   cycle: { instructionToExchange: Stat; exchangeToCompletion: Stat; instructionToCompletion: Stat; lastYearInstructionToCompletion: Stat; sle: number | null; industry: typeof INDUSTRY.instructionToCompletionDays };
   ageing: { overSle: number; cases: Array<{ id: string; ref: string; handler: string | null; ageDays: number; step: string; waitingOn: string }> };
@@ -97,6 +101,7 @@ const stat = (xs: number[], round = 0): Stat => {
   return { p50: r(percentile(xs, 50)), p85: r(percentile(xs, 85)), n: xs.length, thin: xs.length < MIN_SAMPLE };
 };
 const within = (iso: string | null, from: Date, to: Date) => !!iso && t(iso) >= from.getTime() && t(iso) < to.getTime();
+const sumFees = (cs: CaseFacts[]) => Math.round(cs.reduce((a, c) => a + (c.fee ?? 0), 0));
 const pct = (a: number, b: number) => (b > 0 ? a / b : null);
 const STEP_LABEL: Record<string, string> = { pre_exchange: 'Pre-Exchange', exchanged: 'Exchanged' };
 const WAIT_LABEL: Record<string, string> = {
@@ -190,6 +195,7 @@ export function computeAnalytics(input: AnalyticsInput, scope: Scope = {}): Anal
       completions: cases.filter((c) => within(c.completedAt, a, b)).length,
       fellThrough: cases.filter((c) => within(c.abandoned?.at ?? null, a, b)).length,
       completionsLastYear: cases.filter((c) => within(c.completedAt, la, lb)).length,
+      fees: sumFees(cases.filter((c) => within(c.completedAt, a, b))),
     };
   });
 
@@ -200,6 +206,22 @@ export function computeAnalytics(input: AnalyticsInput, scope: Scope = {}): Anal
     exchangedAwaiting: open.filter((c) => c.exchangedAt).length,
     completingNext30: open.filter((c) => c.completionDate && t(`${c.completionDate.slice(0, 10)}T12:00:00Z`) >= now.getTime() - DAY && t(`${c.completionDate.slice(0, 10)}T12:00:00Z`) <= now.getTime() + 30 * DAY).length,
   };
+
+  const isBooked = (c: CaseFacts) => isOpen(c) && !!c.exchangedAt && !!c.completionDate && t(`${c.completionDate.slice(0, 10)}T12:00:00Z`) >= now.getTime() - DAY && t(`${c.completionDate.slice(0, 10)}T00:00:00Z`) < mEnd.getTime();
+  const done12f = cases.filter((c) => within(c.completedAt, new Date(now.getTime() - 365 * DAY), now) && c.fee != null);
+  const fees = {
+    set: cases.some((c) => c.fee != null),
+    thisMonth: sumFees(cases.filter((c) => within(c.completedAt, mStart, now))),
+    booked: sumFees(cases.filter(isBooked)),
+    forecast: 0,
+    lastYearMonth: sumFees(cases.filter((c) => within(c.completedAt, lyStart, lyEnd))),
+    yearToDate: sumFees(cases.filter((c) => within(c.completedAt, yStart, now))),
+    lastYearToDate: sumFees(cases.filter((c) => within(c.completedAt, lyYStart, lyNow))),
+    perCompletion: done12f.length ? Math.round(sumFees(done12f) / done12f.length) : null,
+    pipeline: sumFees(open),
+    lostToFallThrough: sumFees(cases.filter((c) => within(c.abandoned?.at ?? null, new Date(now.getTime() - 365 * DAY), now))),
+  };
+  fees.forecast = fees.thisMonth + fees.booked;
 
   // Cycle times over the last twelve months, and the twelve before.
   const y1 = new Date(now.getTime() - 365 * DAY), y2 = new Date(now.getTime() - 730 * DAY);
@@ -289,7 +311,7 @@ export function computeAnalytics(input: AnalyticsInput, scope: Scope = {}): Anal
   const report: AnalyticsReport = {
     generatedAt: now.toISOString(),
     scope: { personId: scope.personId ?? null, personName: name(scope.personId ?? null), side: scope.side ?? null },
-    pace, instructions, months, pipeline, cycle, ageing, flow, delays, tasks, chases, fallThrough, satisfaction, people, insights: [],
+    pace, instructions, months, fees, pipeline, cycle, ageing, flow, delays, tasks, chases, fallThrough, satisfaction, people, insights: [],
   };
   report.insights = insights(report);
   return report;
@@ -327,6 +349,8 @@ function personRow(id: string, name: string, cases: CaseFacts[], fb: FeedbackFac
     completionsThisMonth: cases.filter((c) => within(c.completedAt, mStart, now)).length,
     bookedThisMonth: cases.filter((c) => isOpen(c) && c.exchangedAt && c.completionDate && t(`${c.completionDate.slice(0, 10)}T12:00:00Z`) >= now.getTime() - DAY && t(`${c.completionDate.slice(0, 10)}T00:00:00Z`) < mEnd.getTime()).length,
     target,
+    feesThisMonth: sumFees(cases.filter((c) => within(c.completedAt, mStart, now))),
+    fees12m: sumFees(done12),
     completions12m: done12.length,
     monthlyAverage6m: Math.round((six / 6) * 10) / 10,
     cycle: stat(done12.map((c) => days(c.instructedAt, c.completedAt!))),

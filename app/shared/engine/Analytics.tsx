@@ -16,6 +16,7 @@ const CSS = `
 .an-h{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin:0 0 10px;display:flex;align-items:center;gap:8px}
 .an-grid{display:grid;gap:14px;margin-bottom:14px}
 .an-g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.an-g5{grid-template-columns:repeat(5,minmax(0,1fr))}
 .an-g2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .an-g3{grid-template-columns:2fr 1fr}
 .an-big{font-size:30px;font-weight:800;line-height:1.1;letter-spacing:-.01em}
@@ -39,8 +40,8 @@ const CSS = `
 .an-thin{color:#94a3b8}
 .an-mini{display:inline-block;width:64px;height:6px;background:#f1f5f9;border-radius:99px;position:relative;vertical-align:middle;margin-right:6px}
 .an-mini i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:#5A27E0}
-.an-kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:8px 12px;margin-top:12px}
-.an-kv b{display:block;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums}
+.an-kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(58px,1fr));gap:8px;margin-top:12px}
+.an-kv b{display:block;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
 .an-kv small{display:block;font-size:11.5px;color:#64748b;margin-top:1px}
 .an-kv.big{margin-top:0}
 .an-kv.big b{font-size:22px}
@@ -49,12 +50,14 @@ const CSS = `
 .an-of{font-size:12px;color:#94a3b8;font-weight:600}
 .an-legend{margin-left:auto;display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-weight:600;font-size:11.5px;color:#64748b}
 .an-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-left:8px}
+.an-set{display:inline-flex;margin-top:6px;background:#5A27E0;color:#fff;border-radius:8px;padding:8px 14px;font-weight:700;font-size:13px;text-decoration:none}
 .an-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .an-chips span{font-size:12px;background:#f8fafc;border:1px solid #e6e8ee;border-radius:99px;padding:2px 9px;color:#475569}
 .an-q{font-size:13.5px;line-height:1.5;border-left:3px solid #e2e8f0;padding:2px 0 2px 10px;margin:0 0 10px}
 .an-q small{display:block;color:#94a3b8;font-size:12px}
-@media (max-width:1100px){.an-g4{grid-template-columns:repeat(2,minmax(0,1fr))}.an-g3,.an-g2{grid-template-columns:1fr}}
-@media (max-width:640px){.an-g4{grid-template-columns:1fr}.an-leg{grid-template-columns:1fr}.an-kv{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:1250px){.an-g5{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:1100px){.an-g4,.an-g5{grid-template-columns:repeat(2,minmax(0,1fr))}.an-g3,.an-g2{grid-template-columns:1fr}}
+@media (max-width:640px){.an-g4,.an-g5{grid-template-columns:1fr}.an-leg{grid-template-columns:1fr}.an-kv{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `;
 
 const COLOUR: Record<string, string> = { us: '#5A27E0', client: '#0ea5e9', other_side: '#f59e0b', lender: '#10b981', searches: '#ec4899', land_registry: '#64748b', other: '#94a3b8', none: '#e2e8f0' };
@@ -94,6 +97,7 @@ function Split({ ex, done, industry, industrySource }: { ex: number | null; done
     </div>
   );
 }
+const gbp = (n: number | null | undefined) => (n == null ? '–' : n >= 100_000 ? `£${Math.round(n / 1000)}k` : `£${n.toLocaleString('en-GB')}`);
 const hours = (h: number | null) => (h == null ? '–' : h < 24 ? `${Math.round(h)}h` : `${Math.round((h / 24) * 10) / 10}d`);
 function S({ s, unit = 'd', p = 'p50' }: { s: Stat; unit?: string; p?: 'p50' | 'p85' }) {
   const v = s[p];
@@ -117,7 +121,7 @@ function MonthChart({ r }: { r: AnalyticsReport }) {
         const current = i === ms.length - 1;
         return (
           <g key={m.month}>
-            <title>{`${MONTH(m.month)}: ${m.completions} completions${current ? `, ${r.pace.booked} booked` : ''}; last year ${m.completionsLastYear}; ${m.instructions} instructions; ${m.fellThrough} fell through`}</title>
+            <title>{`${MONTH(m.month)}: ${m.completions} completions${m.fees ? ` (£${m.fees.toLocaleString('en-GB')})` : ''}${current ? `, ${r.pace.booked} booked` : ''}; last year ${m.completionsLastYear}; ${m.instructions} instructions; ${m.fellThrough} fell through`}</title>
             {current && r.pace.booked > 0 && <rect x={x} y={y(m.completions + r.pace.booked)} width={w} height={y(m.completions) - y(m.completions + r.pace.booked)} fill="#c4b5fd" rx="2" />}
             <rect x={x} y={y(m.completions)} width={w} height={base - y(m.completions)} fill="#5A27E0" rx="2" opacity={current ? 1 : 0.85} />
             {m.completionsLastYear > 0 && <line x1={x - 2} x2={x + w + 2} y1={y(m.completionsLastYear)} y2={y(m.completionsLastYear)} stroke="#0f172a" strokeWidth="2" />}
@@ -131,13 +135,13 @@ function MonthChart({ r }: { r: AnalyticsReport }) {
   );
 }
 
-function PeopleTable({ people, onPick }: { people: PersonRow[]; onPick?: (id: string) => void }) {
+function PeopleTable({ people, onPick, fees }: { people: PersonRow[]; onPick?: (id: string) => void; fees: boolean }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="an-t">
         <thead>
           <tr>
-            <th>Person</th><th className="num">Active</th><th>This Month</th><th className="num">6-Month Average</th><th className="num">Last 12 Months</th>
+            <th>Person</th><th className="num">Active</th><th>This Month</th><th className="num">6-Month Average</th><th className="num">Last 12 Months</th>{fees && <th className="num">Fees 12 Months</th>}
             <th className="num">Days To Complete</th><th className="num">Task Turnaround</th><th className="num">Overdue</th><th className="num">With Us</th><th className="num">CSAT</th><th className="num">NPS</th><th className="num">Fall-Through</th>
           </tr>
         </thead>
@@ -154,6 +158,7 @@ function PeopleTable({ people, onPick }: { people: PersonRow[]; onPick?: (id: st
                 </td>
                 <td className="num">{p.monthlyAverage6m}</td>
                 <td className="num">{p.completions12m}</td>
+                {fees && <td className="num">{gbp(p.fees12m)}</td>}
                 <td className="num"><S s={p.cycle} /></td>
                 <td className="num"><S s={p.taskHours} unit="h" /></td>
                 <td className="num" style={p.overdueTasks ? { color: '#b91c1c', fontWeight: 700 } : undefined}>{p.overdueTasks}</td>
@@ -178,6 +183,8 @@ export function AnalyticsView(props: {
   admin: boolean;
   onScope: (person: string, side: string) => void;
   caseHref: (id: string) => string | null;
+  /** Where an admin sets the firm's fees, while none are set. */
+  feesHref?: string | null;
 }) {
   const { report: r, person, side } = props;
   const p = r.pace;
@@ -201,7 +208,7 @@ export function AnalyticsView(props: {
         </select>
       </div>
 
-      <div className="an-grid an-g4">
+      <div className="an-grid an-g5">
         <div className="an-card">
           <div className="an-h">Completions This Month</div>
           <div className="an-big">{p.completions}{p.booked > 0 && <small>+{p.booked} Booked</small>}</div>
@@ -209,9 +216,19 @@ export function AnalyticsView(props: {
           <KV items={[['Target', p.target ?? '–'], ['Last Year', p.lastYearMonth], ['Record', p.record ? <span title={MONTH(p.record.month)}>{p.record.completions}</span> : '–']]} />
         </div>
         <div className="an-card">
+          <div className="an-h">Fee Income This Month</div>
+          {r.fees.set ? (
+            <>
+              <div className="an-big">{gbp(r.fees.thisMonth)}{r.fees.booked > 0 && <small>+{gbp(r.fees.booked)} Booked</small>}</div>
+              {r.fees.lastYearMonth > 0 && <Meter value={r.fees.forecast} max={Math.max(r.fees.forecast, r.fees.lastYearMonth)} mark={r.fees.lastYearMonth} markLabel={`Last year ${gbp(r.fees.lastYearMonth)}`} good={r.fees.forecast >= r.fees.lastYearMonth} />}
+              <KV items={[['Year To Date', <span key="y" title={`Last year to date ${gbp(r.fees.lastYearToDate)}`}>{gbp(r.fees.yearToDate)}</span>], ['Per Case', gbp(r.fees.perCompletion)], ['In Pipeline', gbp(r.fees.pipeline)]]} />
+            </>
+          ) : props.feesHref ? <a className="an-set" href={props.feesHref}>Set Your Fees</a> : <div className="an-big an-thin">–</div>}
+        </div>
+        <div className="an-card">
           <div className="an-h">Instructions<Chip>4 Weeks</Chip></div>
           <div className="an-big">{r.instructions.last4Weeks}{change(r.instructions.last4Weeks, r.instructions.same4WeeksLastYear)}</div>
-          <KV items={[['Last Year', r.instructions.same4WeeksLastYear], ['This Month', r.instructions.thisMonth], ['Completions YTD', <>{p.yearToDate} {change(p.yearToDate, p.lastYearToDate)}</>]]} />
+          <KV items={[['Last Year', r.instructions.same4WeeksLastYear], ['This Month', r.instructions.thisMonth], ['Completions YTD', <span key="c" title={`Last year to date ${p.lastYearToDate}`}>{p.yearToDate}</span>]]} />
         </div>
         <div className="an-card">
           <div className="an-h">Days To Complete</div>
@@ -300,7 +317,7 @@ export function AnalyticsView(props: {
       {r.people.length > 0 && (
         <div className="an-card" style={{ marginBottom: 14 }}>
           <div className="an-h">{props.admin && !person ? 'People' : 'Your Figures'}</div>
-          <PeopleTable people={r.people} onPick={props.admin && !person ? (id) => props.onScope(id, side) : undefined} />
+          <PeopleTable fees={r.fees.set} people={r.people} onPick={props.admin && !person ? (id) => props.onScope(id, side) : undefined} />
         </div>
       )}
 

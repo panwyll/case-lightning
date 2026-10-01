@@ -64,7 +64,7 @@ export function demoAnalyticsInput(now = new Date()): AnalyticsInput {
       const fallsThrough = r() < 0.2;
       const exAt = cursor + between(5, 25) * slow * DAY;
       const done = cursor < now.getTime() && exAt <= now.getTime();
-      const fc: CaseFacts = { id: `demo-${n}`, ref: `DEMO-${String(n).padStart(4, '0')}`, handlerId: person.id, side, leasehold, instructedAt: iso(t0), exchangedAt: null, completedAt: null, abandoned: null, completionDate: null, waits, decisions };
+      const fc: CaseFacts = { fee: (side === 'purchase' ? 1250 : side === 'sale' ? 1050 : 650) + (leasehold ? 300 : 0) + (r() < 0.3 ? 250 : 0), id: `demo-${n}`, ref: `DEMO-${String(n).padStart(4, '0')}`, handlerId: person.id, side, leasehold, instructedAt: iso(t0), exchangedAt: null, completedAt: null, abandoned: null, completionDate: null, waits, decisions };
       if (fallsThrough && cursor - t0 > 20 * DAY) {
         const at = t0 + between(20, Math.max(21, (cursor - t0) / DAY)) * DAY;
         if (at <= now.getTime()) {

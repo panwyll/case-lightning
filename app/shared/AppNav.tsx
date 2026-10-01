@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import Tour, { type TourStep } from '@/app/shared/assist/Tour';
 import { Suspense, useEffect, useState } from 'react';
 import { paths, APP_BASE } from '@/lib/paths';
 import type { ComponentType } from 'react';
@@ -97,6 +98,9 @@ export const SHELL_CSS = `
 .sh-item.on .sh-badge.soft{background:#ddd6fe;color:#4c1d95}
 .sh-viewas{display:flex;align-items:center;gap:10px;margin-left:16px;background:#fef3c7;color:#78350f;border:1px solid #fde68a;border-radius:999px;padding:4px 6px 4px 12px;font-size:12.5px;font-weight:700}
 .sh-viewas button{border:1px solid #f59e0b;background:#fff;color:#78350f;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+.sh-tour{margin-left:auto;background:none;border:0;color:#5A27E0;font:inherit;font-size:13px;font-weight:700;cursor:pointer;padding:6px 10px;border-radius:8px}
+.sh-tour:hover,.sh-tour.on{background:#ede9fe}
+.sh-tour+.sh-me{margin-left:12px}
 .sh-me{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:#475569}
 .sh-av{width:30px;height:30px;border-radius:999px;background:#ede9fe;color:#5A27E0;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
 .sh-out{background:none;border:none;color:#94a3b8;font-size:12.5px;font-weight:600;cursor:pointer;padding:4px 6px;font-family:inherit}
@@ -142,7 +146,7 @@ function Items({ isAdmin, assistant }: { isAdmin: boolean; assistant: boolean })
         return (
           <div key={g.label} className="sh-group">
             {items.map((i) => (
-              <Link key={i.key} href={i.href} className={`sh-item adm-nav${active(i) ? ' on' : ''}`} aria-current={active(i) ? 'page' : undefined} data-tour={i.adminTab ? `nav-${i.adminTab}` : undefined}>
+              <Link key={i.key} href={i.href} className={`sh-item adm-nav${active(i) ? ' on' : ''}`} aria-current={active(i) ? 'page' : undefined} data-tour={`nav-${i.key}`}>
                 <span className="sh-ico"><i.icon size={16} /></span>
                 <span>{i.label}</span>
                 {i.count && counts[i.count] > 0 && <span className={`sh-badge${i.count === 'email' ? ' soft' : ''}`} aria-label={`${counts[i.count]} ${i.count === 'email' ? 'to file' : 'need you'}`}>{counts[i.count] > 99 ? '99+' : counts[i.count]}</span>}
@@ -164,6 +168,32 @@ export function Brand() {
       </svg>
       <strong style={{ fontSize: 17 }}>CONVE<span style={{ color: '#5A27E0' }}>Yi</span></strong>
     </Link>
+  );
+}
+
+/** What each part of the app is for, in a line, opened as it is shown. A step whose item this person does not have is skipped. */
+const TOUR: Array<{ key: string; title: string; body: string; href: string }> = [
+  { key: 'mywork', title: 'Tasks', body: 'Everything that needs you, in one list. Approve, reply or upload right on the row.', href: paths.tasks },
+  { key: 'email', title: 'Email', body: 'Mail CONVEYi has matched to a case, ready to file in one click.', href: paths.email },
+  { key: 'matters', title: 'Case View', body: 'Every case: where it is, what it is waiting on, and its files.', href: paths.matters },
+  { key: 'analytics', title: 'Analytics', body: 'How the firm is pacing, where cases wait, fees, and each person against their target.', href: paths.analytics },
+  { key: 'firm', title: 'Firm', body: 'Your details, fees, targets, and how CONVEYi runs alongside your other systems.', href: `${paths.admin}?tab=firm` },
+  { key: 'rules', title: 'Rules', body: 'What CONVEYi does by itself, and what it asks you first.', href: `${paths.admin}?tab=rules` },
+  { key: 'tools', title: 'Tools', body: 'Connect InfoTrack, LEAP and InTouch, and see the audit log.', href: paths.integrations },
+  { key: 'help', title: 'Help & Support', body: 'Questions, and how to reach us.', href: `${paths.admin}?tab=help` },
+];
+
+/** The header's Show Me Around: a coach-mark tour of the sidebar that opens each page as it goes, and returns where it started. */
+function ShowMeAround() {
+  const router = useRouter();
+  const [on, setOn] = useState(false);
+  const [from, setFrom] = useState<string | null>(null);
+  const steps: TourStep[] = TOUR.map((t) => ({ target: `[data-tour="nav-${t.key}"]`, title: t.title, body: t.body, before: () => router.push(t.href) }));
+  return (
+    <>
+      <button className={`sh-tour${on ? ' on' : ''}`} onClick={() => { setFrom(window.location.pathname + window.location.search); setOn(true); }}>Show Me Around</button>
+      {on && <Tour steps={steps} onClose={() => { setOn(false); if (from) router.push(from); }} />}
+    </>
   );
 }
 
@@ -190,6 +220,7 @@ export function AppShell({ me, children }: { me: Me | null; children: React.Reac
             <button onClick={() => { void fetch('/api/v1/auth/view-as/stop', { method: 'POST', credentials: 'include' }).then(() => { window.location.href = `${paths.admin}?tab=team`; }); }}>Return to {me.actor.displayName || me.actor.email}</button>
           </div>
         )}
+        {me && <ShowMeAround />}
         {me && (
           <div className="sh-me">
             <span>{me.displayName || me.email}</span>

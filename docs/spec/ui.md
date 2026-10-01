@@ -14,6 +14,7 @@
 - **Proper terminology**: "unsuccessful", not "did not go"; the reason in plain words under it.
 - **Loading says Loading…**, never "No templates"/"No emails".
 - **Title Case** on buttons, headers, labels, chips, dropdown options ("Ready To Exchange", "On Track").
+- **Show Me Around** sits in the header bar on every page: a coach-mark tour of the sidebar that opens each page as it shows it, one line each, and returns where it started. Items a person does not have are skipped.
 - **Edge cases live in the case page's header, not the Tasks list.** Beside the health chip: a warning triangle (Raise Issue on the case) and a hand (Take Over Manually; amber in manual mode, where it resumes automation). Each asks for its reason in a small form.
 - **Undo vs Mark Incomplete** on a done step in the case view.
   - **Undo** is for a step marked done by hand in error: the case is rebuilt as if it had never been marked (only in the stage it was done in).

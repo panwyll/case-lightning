@@ -173,7 +173,25 @@ export function StorageCard() {
   );
 }
 
-type Features = { mode: string; modes: Array<{ value: string; label: string }>; features: Array<{ key: string; label: string; on: boolean; byDefault: boolean; overridden: boolean }>; targets: { monthlyCompletions: number | null; perPerson: Record<string, number> }; canEdit: boolean };
+type Band = { upTo: number | null; fee: number };
+type Extra = { id: string; label: string; fee: number; when: string; sides: string[] };
+type Fees = { purchase: Band[]; sale: Band[]; remortgage: Band[]; transfer: Band[]; extras: Extra[] };
+type Features = { mode: string; modes: Array<{ value: string; label: string }>; features: Array<{ key: string; label: string; on: boolean; byDefault: boolean; overridden: boolean }>; targets: { monthlyCompletions: number | null; perPerson: Record<string, number> }; fees: Fees; feeConditions: Array<{ value: string; label: string }>; commonExtras: Array<{ label: string; when: string; sides: string[] }>; reviewUrl: string | null; canEdit: boolean };
+const SIDES: Array<[keyof Omit<Fees, 'extras'>, string]> = [['purchase', 'Purchase'], ['sale', 'Sale'], ['remortgage', 'Remortgage'], ['transfer', 'Transfer Of Equity']];
+const FEE_CSS = `
+.fe-row{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;align-items:start;font-size:12.5px;color:#334155;font-weight:600;padding:5px 0}
+.fe-bands{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.fe-band{display:inline-flex;align-items:center;gap:4px;font-weight:400;color:#64748b}
+.fe-n{width:92px;border:1px solid #cbd5e1;border-radius:7px;padding:5px 7px;font:inherit;font-size:13px;color:#0f172a;background:#fff}
+.fe-n.sm{width:72px}
+.fe-txt{border:1px solid #cbd5e1;border-radius:7px;padding:5px 7px;font:inherit;font-size:13px;min-width:0;width:100%}
+.fe-del{background:none;border:0;color:#b91c1c;font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:2px 4px}
+.fe-add{background:none;border:0;color:#5A27E0;font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:2px 4px}
+.fe-x{display:grid;grid-template-columns:minmax(140px,1.4fr) 90px minmax(150px,1fr) minmax(130px,1fr) auto;gap:6px;align-items:center;padding:3px 0}
+.fe-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.fe-chip{border:1px dashed #c4b5fd;background:#faf7ff;color:#5A27E0;border-radius:99px;padding:3px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+@media (max-width:760px){.fe-x{grid-template-columns:1fr 90px}.fe-row{grid-template-columns:1fr}}
+`;
 
 /** How the firm runs CONVEYi: the whole case system, or alongside LEAP or InTouch; each feature against the mode's default; and the targets analytics measures against. */
 export function FirmSetup() {
@@ -183,8 +201,9 @@ export function FirmSetup() {
   const [note, setNote] = useState<string | null>(null);
   const [target, setTarget] = useState('');
   const [per, setPer] = useState<Record<string, string>>({});
+  const [review, setReview] = useState('');
   useEffect(() => {
-    api<Features>('/admin/features').then((r) => { setF(r); setTarget(r.targets.monthlyCompletions?.toString() ?? ''); setPer(Object.fromEntries(Object.entries(r.targets.perPerson).map(([k, v]) => [k, String(v)]))); }).catch(() => setF(null));
+    api<Features>('/admin/features').then((r) => { setF(r); setTarget(r.targets.monthlyCompletions?.toString() ?? ''); setPer(Object.fromEntries(Object.entries(r.targets.perPerson).map(([k, v]) => [k, String(v)]))); setReview(r.reviewUrl ?? ''); }).catch(() => setF(null));
     api<{ users: Array<{ id: string; email: string; display_name: string | null }> }>('/admin/users').then((r) => setPeople(r.users.map((u) => ({ id: u.id, name: u.display_name || u.email })))).catch(() => setPeople([]));
   }, []);
   useEffect(() => { if (!note) return; const t = setTimeout(() => setNote(null), 4000); return () => clearTimeout(t); }, [note]);
@@ -196,7 +215,7 @@ export function FirmSetup() {
     finally { setBusy(null); }
   };
   const num = (v: string) => (v.trim() === '' ? null : Math.max(0, Math.round(Number(v))));
-  const saveTargets = () => patch('targets', { targets: { monthlyCompletions: num(target), perPerson: Object.fromEntries(Object.entries(per).map(([k, v]) => [k, num(v)]).filter(([, v]) => v !== null)) } });
+  const saveTargets = () => patch('targets', { reviewUrl: review.trim() || null, targets: { monthlyCompletions: num(target), perPerson: Object.fromEntries(Object.entries(per).map(([k, v]) => [k, num(v)]).filter(([, v]) => v !== null)) } });
   return (
     <div className="fd">
       <style>{CSS + '.fd-flag{display:flex;align-items:center;gap:10px;font-size:13px;padding:5px 0}.fd-flag b{font-weight:600;min-width:240px}.fd-dflt{font-size:11.5px;color:#94a3b8}.fd-on{border:1px solid #cbd5e1;border-radius:999px;padding:3px 12px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#64748b;min-width:56px}.fd-on.yes{background:#dcfce7;border-color:#86efac;color:#166534}.fd-on:disabled{opacity:.6;cursor:default}'}</style>
@@ -215,14 +234,89 @@ export function FirmSetup() {
           </div>
         ))}
       </div>
-      <div className="fd-h" style={{ marginTop: 14 }}>Targets</div>
+      <div className="fd-h" style={{ marginTop: 14 }}>Targets And Reviews</div>
       <div className="fd-grid">
+        <label className="fd-row"><span>Review Page</span><input className="fd-in" type="url" placeholder="https://" value={review} onChange={(e) => setReview(e.target.value)} disabled={!f.canEdit} /></label>
         <label className="fd-row"><span>Completions A Month</span><input className="fd-in" inputMode="numeric" value={target} onChange={(e) => setTarget(e.target.value.replace(/\D/g, ''))} disabled={!f.canEdit} style={{ maxWidth: 120 }} /></label>
         {people.map((p) => (
           <label key={p.id} className="fd-row"><span>{p.name}</span><input className="fd-in" inputMode="numeric" value={per[p.id] ?? ''} onChange={(e) => setPer({ ...per, [p.id]: e.target.value.replace(/\D/g, '') })} disabled={!f.canEdit} style={{ maxWidth: 120 }} /></label>
         ))}
       </div>
-      {f.canEdit && <div className="fd-a"><button className="fd-btn" disabled={!!busy} onClick={() => void saveTargets()}>{busy === 'targets' ? <Spin>Saving…</Spin> : 'Save Targets'}</button>{note && <span className="fd-note">{note}</span>}</div>}
+      {f.canEdit && <div className="fd-a"><button className="fd-btn" disabled={!!busy} onClick={() => void saveTargets()}>{busy === 'targets' ? <Spin>Saving…</Spin> : 'Save'}</button>{note && <span className="fd-note">{note}</span>}</div>}
+    </div>
+  );
+}
+
+/** What the firm charges: a legal fee per kind of case in price bands, and the add-ons (ID checks, leasehold, lender work…) that apply to a case by its facts. Feeds the fee figures in Analytics. */
+export function FeesEditor() {
+  const [f, setF] = useState<Features | null>(null);
+  const [fees, setFees] = useState<Fees | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => { api<Features>('/admin/features').then((r) => { setF(r); setFees(r.fees); }).catch(() => setF(null)); }, []);
+  useEffect(() => { if (!note) return; const t = setTimeout(() => setNote(null), 4000); return () => clearTimeout(t); }, [note]);
+  if (!f || !fees) return null;
+  const edit = !f.canEdit;
+  const n = (v: string) => (v.trim() === '' ? null : Math.max(0, Number(v.replace(/[^\d.]/g, ''))));
+  const setBand = (side: keyof Omit<Fees, 'extras'>, i: number, b: Partial<Band>) => setFees({ ...fees, [side]: fees[side].map((x, j) => (j === i ? { ...x, ...b } : x)) });
+  const setExtra = (i: number, x: Partial<Extra>) => setFees({ ...fees, extras: fees.extras.map((e, j) => (j === i ? { ...e, ...x } : e)) });
+  const addExtra = (x: { label: string; when: string; sides: string[] }) => setFees({ ...fees, extras: [...fees.extras, { id: `x${Date.now().toString(36)}`, fee: 0, ...x }] });
+  const save = async () => {
+    setBusy(true);
+    try {
+      const clean: Fees = { ...fees, extras: fees.extras.filter((e) => e.label.trim()) };
+      for (const [k] of SIDES) clean[k] = fees[k].filter((b) => b.fee > 0);
+      const r = await api<Features>('/admin/features', { method: 'PATCH', body: JSON.stringify({ fees: clean }) });
+      setF(r); setFees(r.fees); setNote('Saved');
+    } catch (e: unknown) { setNote(e instanceof Error ? e.message : 'Could not save.'); }
+    finally { setBusy(false); }
+  };
+  const unused = f.commonExtras.filter((c) => !fees.extras.some((e) => e.when === c.when && e.label === c.label));
+  return (
+    <div className="fd">
+      <style>{CSS + FEE_CSS}</style>
+      <div className="fd-h">Fees <span className="fd-dflt" style={{ fontWeight: 600, marginLeft: 6, fontSize: 11.5, color: '#94a3b8' }}>Ex VAT</span></div>
+      {SIDES.map(([side, label]) => {
+        const bands = fees[side].length ? fees[side] : [{ upTo: null, fee: 0 }];
+        return (
+          <div key={side} className="fe-row">
+            <span style={{ paddingTop: 6 }}>{label}</span>
+            <div className="fe-bands">
+              {bands.map((b, i) => (
+                <span key={i} className="fe-band">
+                  {bands.length > 1 && <>Up To £<input className="fe-n" inputMode="numeric" placeholder="Any Price" disabled={edit} value={b.upTo?.toLocaleString('en-GB') ?? ''} onChange={(e) => { if (!fees[side].length) setFees({ ...fees, [side]: [{ upTo: n(e.target.value), fee: 0 }] }); else setBand(side, i, { upTo: n(e.target.value) }); }} /></>}
+                  £<input className="fe-n sm" inputMode="numeric" disabled={edit} value={b.fee ? b.fee.toLocaleString('en-GB') : ''} onChange={(e) => { if (!fees[side].length) setFees({ ...fees, [side]: [{ upTo: null, fee: n(e.target.value) ?? 0 }] }); else setBand(side, i, { fee: n(e.target.value) ?? 0 }); }} />
+                  {f.canEdit && bands.length > 1 && <button className="fe-del" onClick={() => setFees({ ...fees, [side]: fees[side].filter((_, j) => j !== i) })}>Remove</button>}
+                </span>
+              ))}
+              {f.canEdit && <button className="fe-add" onClick={() => setFees({ ...fees, [side]: [...(fees[side].length ? fees[side] : [{ upTo: null, fee: 0 }]), { upTo: null, fee: 0 }] })}>+ Price Band</button>}
+            </div>
+          </div>
+        );
+      })}
+      <div className="fd-h" style={{ marginTop: 12 }}>Add-Ons</div>
+      {fees.extras.map((x, i) => (
+        <div key={x.id} className="fe-x">
+          <input className="fe-txt" value={x.label} disabled={edit} onChange={(e) => setExtra(i, { label: e.target.value })} aria-label="Charge" />
+          <span className="fe-band">£<input className="fe-n sm" inputMode="numeric" disabled={edit} value={x.fee ? x.fee.toLocaleString('en-GB') : ''} onChange={(e) => setExtra(i, { fee: n(e.target.value) ?? 0 })} aria-label="Fee" /></span>
+          <select className="fd-in" value={x.when} disabled={edit} onChange={(e) => setExtra(i, { when: e.target.value })} aria-label="When">
+            {f.feeConditions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+          <select className="fd-in" value={x.sides.length === 1 ? x.sides[0] : x.sides.length ? x.sides.join(',') : ''} disabled={edit} onChange={(e) => setExtra(i, { sides: e.target.value ? e.target.value.split(',') : [] })} aria-label="Cases">
+            <option value="">All Cases</option>
+            {x.sides.length > 1 && <option value={x.sides.join(',')}>{x.sides.map((s) => SIDES.find(([k]) => k === s)?.[1]).join(' And ')}</option>}
+            {SIDES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+          {f.canEdit ? <button className="fe-del" onClick={() => setFees({ ...fees, extras: fees.extras.filter((_, j) => j !== i) })}>Remove</button> : <span />}
+        </div>
+      ))}
+      {f.canEdit && (
+        <div className="fe-chips">
+          {unused.map((c) => <button key={c.label} className="fe-chip" onClick={() => addExtra(c)}>+ {c.label}</button>)}
+          <button className="fe-chip" onClick={() => addExtra({ label: '', when: 'always', sides: [] })}>+ Other Charge</button>
+        </div>
+      )}
+      {f.canEdit && <div className="fd-a"><button className="fd-btn" disabled={busy} onClick={() => void save()}>{busy ? <Spin>Saving…</Spin> : 'Save Fees'}</button>{note && <span className="fd-note">{note}</span>}</div>}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { query } from '../db';
 import { getPolicy } from '../policy';
 import { DEFAULT_SLA } from '../engine/sla';
 import type { AnalyticsInput, CaseFacts, CaseSide, Party } from './kpis';
+import { feeFor, parsePrice } from './fees';
 
 const ROLE_PARTY: Record<string, Party> = { client: 'client', seller_solicitor: 'other_side', estate_agent: 'other_side', lender: 'lender', search_provider: 'searches', hmlr: 'land_registry' };
 export function partyOf(key: string, subject: string | null): Party {
@@ -24,15 +25,15 @@ export function sideOf(transactionType: string | null): CaseSide {
 }
 
 type Row = {
-  id: string; ref: string; handler_id: string | null; created_at: Date; transaction_type: string | null; instructed_at: string | null;
-  exchanged_at: string | null; completed_at: string | null; abandoned_at: string | null; abandoned_reason: string | null; completion_date: string | null;
+  id: string; ref: string; handler_id: string | null; created_at: Date; purchase_price: string | null; transaction_type: string | null; instructed_at: string | null;
+  exchanged_at: string | null; completed_at: string | null; abandoned_at: string | null; abandoned_reason: string | null; completion_date: string | null; has_lender: boolean; shapes: string[]; co_checks: number; donors: number;
   waits: Array<{ key: string; subject: string | null; openedAt: string; closedAt: string | null; chasesSentAt: string[] | null }> | null;
   decisions: Array<{ kind: string; createdAt: string; resolvedAt: string | null; resolvedBy: string | null }> | null;
 };
 
 export async function loadAnalyticsInput(tenantId: string, now = new Date()): Promise<AnalyticsInput> {
   const rows = await query<Row>(
-    `select m.id, m.matter_ref as ref, coalesce(m.assigned_to, m.created_by) as handler_id, m.created_at,
+    `select m.id, m.matter_ref as ref, coalesce(m.assigned_to, m.created_by) as handler_id, m.created_at, m.purchase_price,
             coalesce(s.state->>'transactionType', m.transaction_type) as transaction_type,
             s.state->'stageHistory'->0->>'at' as instructed_at,
             s.state->'exchange'->>'exchangedAt' as exchanged_at,
@@ -40,6 +41,10 @@ export async function loadAnalyticsInput(tenantId: string, now = new Date()): Pr
             s.state->'abandoned'->>'at' as abandoned_at,
             s.state->'abandoned'->>'reason' as abandoned_reason,
             s.state->'exchange'->>'completionDate' as completion_date,
+            coalesce((s.state->>'hasLender')::boolean, false) as has_lender,
+            coalesce(s.state->'shapes', '[]'::jsonb) as shapes,
+            (select count(*) from jsonb_each(coalesce(s.state->'partyChecks', '{}'::jsonb)) p(k, v) where v->>'role' <> 'donor')::int as co_checks,
+            (select count(*) from jsonb_each(coalesce(s.state->'partyChecks', '{}'::jsonb)) p(k, v) where v->>'role' = 'donor')::int as donors,
             (select jsonb_agg(jsonb_build_object('key', w->>'key', 'subject', w->>'subject', 'openedAt', w->>'openedAt', 'closedAt', w->>'closedAt', 'chasesSentAt', w->'chasesSentAt'))
                from jsonb_array_elements(coalesce(s.state->'waits', '[]'::jsonb)) w) as waits,
             (select jsonb_agg(jsonb_build_object('kind', d->>'kind', 'createdAt', d->>'createdAt', 'resolvedAt', d->>'resolvedAt', 'resolvedBy', d->>'resolvedBy'))
@@ -50,6 +55,7 @@ export async function loadAnalyticsInput(tenantId: string, now = new Date()): Pr
         and (m.created_at > now() - interval '25 months' or s.finished_at is null)`,
     [tenantId]
   );
+  const scale = await getPolicy(tenantId, 'feeScale');
   const cases: CaseFacts[] = rows.map((r) => ({
     id: r.id,
     ref: r.ref,
@@ -61,6 +67,8 @@ export async function loadAnalyticsInput(tenantId: string, now = new Date()): Pr
     completedAt: r.completed_at,
     abandoned: r.abandoned_at ? { at: r.abandoned_at, reason: r.abandoned_reason ?? 'other' } : null,
     completionDate: r.completion_date,
+    // Every client is ID checked, and each named party (a co-buyer, an attorney) and each gift donor too.
+    fee: feeFor(scale, { side: sideOf(r.transaction_type), price: parsePrice(r.purchase_price), leasehold: (r.transaction_type ?? '').startsWith('leasehold'), hasLender: r.has_lender, idChecks: 1 + r.co_checks + r.donors, gifts: r.donors, shapes: r.shapes ?? [] }),
     waits: (r.waits ?? []).filter((w) => w.openedAt).map((w) => ({ key: w.key, party: partyOf(w.key, w.subject), openedAt: w.openedAt, closedAt: w.closedAt, chases: w.chasesSentAt ?? [] })),
     decisions: (r.decisions ?? []).filter((d) => d.createdAt).map((d) => ({ kind: d.kind, createdAt: d.createdAt, resolvedAt: d.resolvedAt, resolvedBy: d.resolvedBy })),
   }));

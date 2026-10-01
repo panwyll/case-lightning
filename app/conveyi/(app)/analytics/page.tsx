@@ -42,6 +42,7 @@ function Analytics() {
         admin={res.admin}
         onScope={(p, s) => { const q = new URLSearchParams({ ...(p ? { person: p } : {}), ...(s ? { side: s } : {}) }); setRes(null); router.push(`${paths.analytics}${q.size ? `?${q}` : ''}`); }}
         caseHref={(id) => paths.matter(id)}
+        feesHref={res.admin ? `${paths.admin}?tab=firm` : null}
       />
     </div>
   );

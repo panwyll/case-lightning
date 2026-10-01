@@ -67,3 +67,35 @@ test('a person\'s view is their cases only; satisfaction and fall-through come w
   assert.ok(r.pipeline.open < firm.pipeline.open);
   assert.ok(firm.flow.shares.reduce((a, s) => a + s.share, 0) > 0.999);
 });
+
+import { feeBreakdown, parsePrice } from '../../../lib/server/analytics/fees';
+
+test('a case\'s fee: the band its price falls in, plus every add-on that applies, counted per person where it says so', () => {
+  const scale = {
+    purchase: [{ upTo: 250000, fee: 950 }, { upTo: null, fee: 1250 }], sale: [{ upTo: null, fee: 995 }], remortgage: [], transfer: [],
+    extras: [
+      { id: 'a', label: 'ID Check', fee: 15, when: 'each_id_check', sides: [] },
+      { id: 'b', label: 'Leasehold Supplement', fee: 300, when: 'leasehold', sides: [] },
+      { id: 'c', label: 'Acting For Your Lender', fee: 150, when: 'mortgage', sides: ['purchase', 'remortgage'] },
+      { id: 'd', label: 'Gifted Deposit', fee: 100, when: 'each_gift', sides: ['purchase'] },
+      { id: 'e', label: 'New Build', fee: 250, when: 'new_build', sides: ['purchase'] },
+    ],
+  };
+  const b = feeBreakdown(scale, { side: 'purchase', price: parsePrice('£320,000'), leasehold: true, hasLender: true, idChecks: 3, gifts: 1, shapes: ['new_build'] })!;
+  assert.deepEqual(b.lines.map((l) => [l.label, l.amount]), [['Legal Fee', 1250], ['ID Check × 3', 45], ['Leasehold Supplement', 300], ['Acting For Your Lender', 150], ['Gifted Deposit', 100], ['New Build', 250]]);
+  assert.equal(b.total, 2095);
+  const sale = feeBreakdown(scale, { side: 'sale', price: 200000, leasehold: false, hasLender: true, idChecks: 1, gifts: 0, shapes: [] })!;
+  assert.equal(sale.total, 995 + 15, 'lender work is for purchases and remortgages only');
+  assert.equal(feeBreakdown(null, { side: 'sale', price: 1, leasehold: false, hasLender: false, idChecks: 1, gifts: 0, shapes: [] }), null);
+});
+
+test('fee income is counted on completion: done and booked this month, the pipeline, and per person', () => {
+  const cases = [
+    base({ id: 'a', fee: 1200, completedAt: '2026-10-03T12:00:00Z', instructedAt: '2026-06-01T00:00:00Z' }),
+    base({ id: 'b', fee: 1000, exchangedAt: '2026-10-01T12:00:00Z', completionDate: '2026-10-28' }),
+    base({ id: 'c', fee: 800 }),
+  ];
+  const r = computeAnalytics({ now: NOW, cases, feedback: [], targets: { monthlyCompletions: null, perPerson: {} }, people: [{ id: 'u1', name: 'Asha' }] });
+  assert.deepEqual([r.fees.set, r.fees.thisMonth, r.fees.booked, r.fees.forecast, r.fees.pipeline], [true, 1200, 1000, 2200, 1800]);
+  assert.equal(r.people[0].feesThisMonth, 1200);
+});

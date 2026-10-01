@@ -30,6 +30,7 @@ Built the way target-driven teams such as sales operations and kanban flow teams
 | **What cases wait for** | By wait (searches, enquiry replies, mortgage offer and so on): share of all waiting time, the median length of finished waits, and how many are open now. Last 12 months. |
 | **Our turnaround** | Tasks (decisions) finished in the last 90 days: p50 and p85 from raised to done. Also tasks waiting now, how many have waited over 2 working days, and the slowest kinds to clear. |
 | **Chases** | Share of chases followed by the answer within 3 days, the median reply time after a chase, and the same by party. |
+| **Fee income** | Counted on completion, ex VAT, from the firm's fee scale (Firm → Fees, `analytics/fees.ts`). Each case's fee is the legal fee for its kind of case in the band its price falls in, plus every add-on that applies: per person ID checked, per gift donor, leasehold, acting for the lender, or a case shape (new build, ISA, buy to let, company client, auction, shared ownership, right to buy, second charge), limited to the kinds of case chosen. The tile shows done and booked this month against last year's month, year to date, the average per case and the value of the open pipeline. People get fees over 12 months. Until fees are set, an admin sees Set Your Fees instead. |
 | **Pipeline** | Open cases before exchange, cases exchanged and awaiting completion, and cases completing in the next 30 days. |
 | **Fall-through** | Cases abandoned ÷ (completed + abandoned) over the last 12 months, by reason. |
 | **Cases to look at** | Open cases older than the firm's p85 instruction-to-completion time. Until the firm has 5 completions, the threshold is the industry figure × 1.3. Each shows who it is waiting on now. |
@@ -50,5 +51,5 @@ Both shown reference figures live in `INDUSTRY` in `kpis.ts`.
 
 ## Not yet measured
 
-- **Fee income.** We hold no fees per case.
+- **A fee agreed for one case** that differs from the scale (a discount, a quote). The scale is used for every case.
 - **Reply time to client emails.** Needs the mailbox thread times.

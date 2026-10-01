@@ -4,8 +4,17 @@ import { query, queryOne } from './db';
 export type SigningProvider = 'none' | 'infotrack' | 'intouch' | 'leap' | 'mock';
 export type SystemModePolicy = 'standalone' | 'alongside';
 /** Targets the firm sets for its analytics: completions a month, for the firm and per person (by user id). */
+/** What the firm charges per case, ex VAT, in pounds: by kind of case, in price bands (upTo null = any price above), plus a leasehold supplement. */
+export interface FeeBand { upTo: number | null; fee: number }
+/**
+ * A charge on top of the legal fee: an ID check per person, a leasehold supplement, acting for the lender, a gifted
+ * deposit per donor, a new build, a bank transfer, an SDLT return. `when` says which cases it applies to (fees.ts
+ * FEE_CONDITIONS); `sides` limits it to kinds of case (empty: every kind).
+ */
+export interface FeeExtra { id: string; label: string; fee: number; when: string; sides: string[] }
+export interface FeeScale { purchase: FeeBand[]; sale: FeeBand[]; remortgage: FeeBand[]; transfer: FeeBand[]; extras: FeeExtra[] }
 export interface AnalyticsTargets { monthlyCompletions: number | null; perPerson: Record<string, number> }
-export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEmail: boolean; signingProvider: SigningProvider; clientReminderHours: number; systemMode: SystemModePolicy; features: Record<string, boolean>; analyticsTargets: AnalyticsTargets; reviewUrl: string | null } = {
+export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEmail: boolean; signingProvider: SigningProvider; clientReminderHours: number; systemMode: SystemModePolicy; features: Record<string, boolean>; analyticsTargets: AnalyticsTargets; reviewUrl: string | null; feeScale: FeeScale | null } = {
   /** Outgoing files go as a password-protected zip, with the password sent separately (WhatsApp where the client has opted in, otherwise its own message). */
   protectOutgoingFiles: false,
   /** Email filed to a case or set aside here is archived in the mailbox, so the Outlook inbox matches the Email tab. */
@@ -21,6 +30,8 @@ export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEma
   analyticsTargets: { monthlyCompletions: null, perPerson: {} },
   /** Where a client who would recommend us is asked to leave a review (ReviewSolicitors, Trustpilot, Google). */
   reviewUrl: null,
+  /** Null until the firm sets its fees (Firm > How CONVEYi Runs > Fees). */
+  feeScale: null,
 };
 export type PolicyKey = keyof typeof POLICY_DEFAULTS;
 
