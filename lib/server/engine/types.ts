@@ -1000,7 +1000,7 @@ export interface Payloads {
 
   deposit_received: { amountPennies?: number | null; /** The deposit the contract states, when it has been read. */ contractDepositPennies?: number | null };
   exchange_conditions_met: { conditions: string[] };
-  contracts_exchanged: { completionDate: string; exchangedAt?: string | null };
+  contracts_exchanged: { completionDate: string; exchangedAt?: string | null; /** Law Society formula, who we spoke to, and where the deposit went (exchange.md 5.1). */ formula?: 'A' | 'B' | 'C' | null; spokeWith?: string | null; depositRoute?: 'held_by_us' | 'sent_to_seller_solicitor' | 'up_the_chain' | null };
 
   completion_statement_generated: { documentId?: string | null; /** The balance on the approved statement: due from the client on a purchase, to them on a sale. */ balancePennies?: number | null };
   funds_requested: {
@@ -1508,7 +1508,7 @@ export const isManualStep = (step: string): boolean => (MANUAL_STEPS as readonly
 /** cleared (auto), reviewed (human) and withdrawn (enquiries) all count as resolved for stage gating. */
 export const isResolved = (s: string | undefined): boolean => s === 'cleared' || s === 'reviewed' || s === 'withdrawn';
 
-export const ABANDON_REASONS = ['client_withdrew', 'seller_withdrew', 'chain_collapsed', 'gazumped', 'survey', 'finance_failed', 'conflict', 'client_died', 'capacity', 'aml', 'fraud_suspected', 'other'] as const;
+export const ABANDON_REASONS = ['client_withdrew', 'seller_withdrew', 'chain_collapsed', 'gazumped', 'survey', 'finance_failed', 'conflict', 'client_died', 'capacity', 'aml', 'fraud_suspected', 'rescinded', 'other'] as const;
 export type AbandonReason = (typeof ABANDON_REASONS)[number];
 
 export interface SearchState {
@@ -1689,7 +1689,7 @@ export interface MatterState {
   completionInformation: { receivedAt: string; undertakingToRedeem: boolean; documentId: string | null } | null;
   /** The client's money on this file, reconciled (engine/money.ts): asked for, received and cleared by payer; what is owed back. */
   money: ClientMoney;
-  exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
+  exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null; formula?: 'A' | 'B' | 'C' | null; spokeWith?: string | null; depositRoute?: 'held_by_us' | 'sent_to_seller_solicitor' | 'up_the_chain' | null };
   /** Purchase side: the seller's forms as read. */
   /** The seller's forms as a set: they come as separate files (TA6, TA10, TA7), each adding forms and answers. */
   sellerForms: { receivedAt: string | null; forms: string[]; documentId: string | null; facts: PropertyFormsFacts | null; documents?: Array<{ documentId: string; forms: string[] }> };

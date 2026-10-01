@@ -454,6 +454,9 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['contracts_exchanged'];
       s.exchange.exchangedAt = p.exchangedAt ?? e.createdAt;
       s.exchange.completionDate = p.completionDate;
+      s.exchange.formula = p.formula ?? null;
+      s.exchange.spokeWith = p.spokeWith ?? null;
+      s.exchange.depositRoute = p.depositRoute ?? null;
       // Exchanged: the offer and the survey are behind us.
       closeWait(s, 'mortgage_offer', null, e);
       closeWait(s, 'survey', null, e);

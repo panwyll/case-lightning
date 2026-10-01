@@ -66,7 +66,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('request_id_check'), party: z.string().max(80).nullish() }),
   z.object({ type: z.literal('raise_enquiry'), enquiryId: z.string().min(1).max(60).nullish(), subject: z.string().min(1).max(500), origin: z.object({ issueId: z.string().min(1).max(60).optional() }).nullish() }),
   z.object({ type: z.literal('deposit_received'), amountPennies: z.number().int().nonnegative().nullish() }),
-  z.object({ type: z.literal('contracts_exchanged'), completionDate: isoDate, exchangedAt: z.string().datetime().nullish() }),
+  z.object({ type: z.literal('contracts_exchanged'), completionDate: isoDate, exchangedAt: z.string().datetime().nullish(), formula: z.string().max(12).nullish(), spokeWith: z.string().max(160).nullish(), depositRoute: z.enum(['held_by_us', 'sent_to_seller_solicitor', 'up_the_chain']).nullish() }),
   z.object({ type: z.literal('completion_statement_generated'), documentId: z.string().uuid().nullish(), balancePennies: z.number().int().nullish() }),
   z.object({ type: z.literal('funds_requested'), fromRole: z.enum(['lender', 'client', 'isa_provider']), amountPennies: z.number().int().nonnegative().nullish(), bankDetailsId: z.string().min(1).max(60) }),
   // Addendum 2 — payment verification

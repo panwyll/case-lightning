@@ -1600,6 +1600,20 @@ export class EngineService {
   private async effects(tenantId: string, matterId: string, events: EngineEvent[], state: MatterState, subflows: LevelConfig): Promise<void> {
     for (const e of events) {
       try {
+        // Exchange: the memorandum on file, as the formula requires (exchange.md 5.1).
+        if (e.type === 'contracts_exchanged') {
+          const p = e.payload as { completionDate: string; exchangedAt?: string | null; formula?: string | null; spokeWith?: string | null; depositRoute?: string | null };
+          const deposit = state.deposit.amountPennies ?? state.deposit.contractPennies ?? null;
+          const ROUTE: Record<string, string> = { held_by_us: 'held by us as stakeholder', sent_to_seller_solicitor: "sent to the seller's solicitor", up_the_chain: 'passed up the chain (SCS 2.2.5)' };
+          const content = ['MEMORANDUM OF EXCHANGE', '', `Exchanged: ${(p.exchangedAt ?? e.createdAt).replace('T', ' ').slice(0, 16)}`, `Formula: ${p.formula ? `Law Society Formula ${p.formula}` : 'not recorded'}`, `With: ${p.spokeWith ?? 'not recorded'}`, `Recorded by: ${e.actor}`, `Completion date: ${p.completionDate}`, `Deposit: ${deposit != null ? `£${(deposit / 100).toLocaleString('en-GB', { minimumFractionDigits: 2 })}` : 'not recorded'}${p.depositRoute ? `, ${ROUTE[p.depositRoute] ?? p.depositRoute}` : ''}`].join('\n');
+          await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'EXCHANGE_MEMORANDUM', fileName: readableName('Exchange memorandum', this.ports.now()), content }).catch((err) => this.ports.log('exchange memorandum could not be filed', err));
+        }
+        // A linked sale or purchase falling through: the other file is told at once (exchange.md 8.3).
+        if (e.type === 'matter_abandoned' && state.relatedMatter) {
+          const other = state.relatedMatter.matterId;
+          const was = state.relatedMatter.relation === 'sale' ? 'purchase' : 'sale';
+          await this.run(tenantId, other, { type: 'raise_issue', actor: SYSTEM, issueId: `CHAIN-FELL-${matterId.slice(0, 8)}`, kind: 'chain_dependency', title: `The client's linked ${was} has fallen through`, detail: `The ${was} on the linked file was abandoned (${String((e.payload as { reason?: string }).reason ?? '').replace(/_/g, ' ')}). Take the client's instructions: ${was === 'sale' ? 'can they still buy (bridging, other funds), or does this purchase stop too?' : 'do they still want to sell, and when?'} Tell the other side and the lender.`, gate: 'exchange', severity: 'critical' } as never).catch((err) => this.ports.log('linked file could not be told', err));
+        }
         // The seller's forms: ONE enquiry to the seller's solicitor covering every point they raise and every "not known"
         // answer, numbered, proposed (never sent unasked below auto) and tied to the one issue that lists them.
         if (e.type === 'seller_forms_received') {

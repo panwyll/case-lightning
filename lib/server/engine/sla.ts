@@ -12,6 +12,7 @@
  */
 import type { MatterState, WaitKey, WaitState } from './types';
 import { auctionCompletionDue, firstRegistrationDue, isaReceivedAt, lisaWindowEnds } from './dates';
+import { profileOf } from './transactions';
 import { openIssues, openWaits } from './types';
 import { duplicateIssue, ISSUE_KIND_SPEC, MORTGAGE_EXPIRY_CRITICAL_DAYS, MORTGAGE_EXPIRY_WARNING_DAYS, type IssueKind, type IssueSeverity } from './issues';
 import { openIssues as openIssuesOf } from './types';
@@ -135,7 +136,7 @@ function stripUndefined<T extends object>(o: T): Partial<T> {
 
 // ───────────────────────────── deadlines (eventualities) ─────────────────────────────
 
-export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry' | 'certificate_of_title' | 'first_registration' | 'lisa_window' | 'auction_completion' | 'longstop_date' | 'sdlt_refund' | 'nrs_refund';
+export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry' | 'certificate_of_title' | 'first_registration' | 'lisa_window' | 'auction_completion' | 'longstop_date' | 'sdlt_refund' | 'nrs_refund' | 'target_exchange';
 
 export interface DeadlineAction {
   kind: DeadlineKind;
@@ -151,7 +152,7 @@ export interface DeadlineAction {
  * How many working days before a deadline the engine raises it (one escalation per deadline, by subject).
  * `stale_issue` is the other way round: an open issue nobody has touched for this many working days is raised.
  */
-export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2, certificate_of_title: 3, first_registration: 10, lisa_window: 15, auction_completion: 5, longstop_date: 20, sdlt_refund: 60, nrs_refund: 40 };
+export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2, certificate_of_title: 3, first_registration: 10, lisa_window: 15, auction_completion: 5, longstop_date: 20, sdlt_refund: 60, nrs_refund: 40, target_exchange: 5 };
 /** Working days before completion a lender usually needs the certificate of title (UK Finance Handbook practice). */
 export const CERTIFICATE_OF_TITLE_NOTICE = 5;
 
@@ -212,6 +213,8 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
     const end = new Date(Date.UTC(c.getUTCFullYear() + 3, c.getUTCMonth(), c.getUTCDate())).toISOString().slice(0, 10);
     push('sdlt_refund', end, `The higher rates were paid on ${state.completion.confirmedAt.slice(0, 10)} because the client's old main home had not sold. If it sells by ${end}, the extra 5% is refundable: ask the client whether it has sold, and claim within 12 months of that sale (or amend the return within 12 months of filing).`);
   }
+  // The date everyone was aiming to exchange by (exchange.md 4.11): coming up or past, a person looks at what is holding it.
+  if (state.targetExchangeDate && !state.exchange.exchangedAt && profileOf(state.transactionType ?? 'freehold_purchase').hasExchange) push('target_exchange', state.targetExchangeDate.slice(0, 10), `The target exchange date is ${state.targetExchangeDate.slice(0, 10)} and contracts are not exchanged. Check what is holding it, agree a new date with the client and the other side, and update the target.`);
   // The clocks the law or a scheme sets (dates.ts).
   const fr = firstRegistrationDue(state);
   if (fr && !state.postCompletion.ap1SubmittedAt) push('first_registration', fr, `The land was unregistered: apply for first registration (FR1) by ${fr}, two months from completion. Miss it and the legal estate reverts to the seller, holding it on trust (LRA 2002 ss.6-7); the lender's charge is unprotected.`);

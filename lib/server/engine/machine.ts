@@ -211,7 +211,7 @@ type CommandBody =
   | { type: 'draft_report_on_title'; draftId: string; draftDocumentId: string; model: string; summary: string; citations: Citation[]; basedOn?: string[] }
   | { type: 'record_report_on_title_sent'; actor: Actor; draftId: string; channel: string; messageId?: string | null }
   | { type: 'deposit_received'; actor: Actor; amountPennies?: number | null; /** Filled by the service from the contract read. */ contractDepositPennies?: number | null }
-  | { type: 'contracts_exchanged'; actor: Actor; completionDate: string; exchangedAt?: string | null }
+  | { type: 'contracts_exchanged'; actor: Actor; completionDate: string; exchangedAt?: string | null; formula?: string | null; spokeWith?: string | null; depositRoute?: 'held_by_us' | 'sent_to_seller_solicitor' | 'up_the_chain' | null }
   | { type: 'completion_statement_generated'; actor: Actor; documentId?: string | null; balancePennies?: number | null }
   | { type: 'funds_requested'; actor: Actor; fromRole: 'lender' | 'client' | 'isa_provider'; amountPennies?: number | null; bankDetailsId: string }
   | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null; remitter?: string | null; uncleared?: boolean; /** Filled by the service from the contract read (a sale's expected money). */ contractPricePennies?: number | null; contractDepositPennies?: number | null }
@@ -1332,9 +1332,22 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!s.exchange.conditionsMet) reject('Exchange conditions are not met (deposit received?).');
       if (s.exchange.exchangedAt) reject('Contracts already exchanged.');
       if (Number.isNaN(Date.parse(cmd.completionDate))) reject('A valid completion date is required to exchange.', 400);
-      const dateWrong = completionDateProblem(s, cmd.completionDate, cmd.exchangedAt && !Number.isNaN(Date.parse(cmd.exchangedAt)) ? new Date(cmd.exchangedAt) : ctx.now);
+      const exchangeDay = cmd.exchangedAt && !Number.isNaN(Date.parse(cmd.exchangedAt)) ? new Date(cmd.exchangedAt) : ctx.now;
+      const dateWrong = completionDateProblem(s, cmd.completionDate, exchangeDay);
       if (dateWrong) reject(`Cannot exchange: ${dateWrong}`, 400);
-      return [{ type: 'contracts_exchanged', actor: cmd.actor, payload: { completionDate: cmd.completionDate, exchangedAt: cmd.exchangedAt ?? null } }];
+      const formula = cmd.formula?.trim().toUpperCase().replace(/^FORMULA\s*/, '') || null;
+      if (formula && !['A', 'B', 'C'].includes(formula)) reject('The formula is A, B or C.', 400);
+      // Exchanging and completing the same day: everything completion needs must already be in hand (exchange.md 5.5).
+      if (profile(s).side === 'buyer' && cmd.completionDate.slice(0, 10) === exchangeDay.toISOString().slice(0, 10)) {
+        const missing = [
+          !(s.completion.receivedFrom ?? []).some((r) => r === 'client' || r === 'isa_provider') && "the client's money in",
+          s.hasLender && !s.deeds.certificateOfTitleAt && 'the certificate of title sent to the lender',
+          !s.preCompletion.prioritySearchAt && 'a priority search (OS1)',
+          !s.deeds.transferDeedAt && "the seller's signed transfer",
+        ].filter(Boolean);
+        if (missing.length) reject(`Cannot exchange and complete today without ${missing.join(', ')}: once exchanged, the client is bound to complete this afternoon.`);
+      }
+      return [{ type: 'contracts_exchanged', actor: cmd.actor, payload: { completionDate: cmd.completionDate, exchangedAt: cmd.exchangedAt ?? null, formula: formula as 'A' | 'B' | 'C' | null, spokeWith: cmd.spokeWith?.trim() || null, depositRoute: cmd.depositRoute ?? null } }];
     }
 
     // ── Completion ──
@@ -1555,6 +1568,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!isUserActor(cmd.actor)) reject('Only a person can abandon a matter.', 403);
       if (!ABANDON_REASONS.includes(cmd.reason)) reject(`Unknown abandonment reason "${cmd.reason}".`, 400);
       if (s.completion.confirmedAt) reject('The purchase has completed; it cannot be abandoned. Record a correction if the completion event was wrong.');
+      // Rescission follows an expired notice to complete (SCS 7.4 / 7.5): nothing else ends an exchanged contract this way.
+      if (cmd.reason === 'rescinded' && !(s.noticeToComplete && Date.parse(s.noticeToComplete.expiresAt) < ctx.now.getTime())) reject('Rescission follows an expired notice to complete: serve one (or record the one served) and wait for it to expire.');
       // Whatever we hold goes back where it came from (LSAG: returning money to a different account is a red flag).
       const held = heldOnAbandon(s).map((h, n): NewEvent => ({ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${moneyOf(s).refunds.length + n + 1}`, toRole: h.toRole, to: null, amountPennies: h.amountPennies, reason: h.reason } }));
       return [{ type: 'matter_abandoned', actor: cmd.actor, payload: { reason: cmd.reason, detail: cmd.detail ?? null, stage: s.stage } }, ...held];
@@ -1571,6 +1586,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [
         { type: 'contract_review_raised', actor: SYSTEM, payload: { documentId: cmd.documentId, decision, depositPennies: cmd.terms?.depositPennies ?? null }, sourceDocumentId: cmd.documentId },
         ...(cmd.terms ? findingEvents(s, contractFindings(cmd.terms, findingContext(s)), cmd.documentId) : []),
+        // An amended contract is not the one the client authorised (exchange.md 4.2).
+        ...(s.readiness.contractDocumentId && s.readiness.contractDocumentId !== cmd.documentId ? lapseExchangeAuthority(s, 'the contract was amended') : []),
         // A conditional contract carries its long-stop date: on the case, so the timer watches it.
         ...(() => { const d = cmd.terms ? conditionalLongStop(cmd.terms.specialConditions ?? []) : null; return d && d !== s.longStopDate ? [{ type: 'longstop_date_recorded', actor: SYSTEM, payload: { date: d } } as NewEvent] : []; })(),
       ];
@@ -1726,7 +1743,19 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         summarisedBy: 'template',
       };
       assertDecisionSpec(decision);
-      return [{ type: 'notice_to_complete_served', actor: cmd.actor, payload: { servedBy: cmd.servedBy, servedAt, expiresAt: cmd.expiresAt, decision }, sourceDocumentId: cmd.documentId }];
+      const out: NewEvent[] = [{ type: 'notice_to_complete_served', actor: cmd.actor, payload: { servedBy: cmd.servedBy, servedAt, expiresAt: cmd.expiresAt, decision }, sourceDocumentId: cmd.documentId }];
+      // Served on our client: what they stand to lose if it expires (exchange.md 7.4).
+      const side = profile(s).side;
+      if ((side === 'buyer' && cmd.servedBy === 'seller') || (side === 'seller' && cmd.servedBy === 'buyer')) {
+        const price = s.purchasePricePennies ?? null;
+        const tenth = price ? Math.round(price / 10) : null;
+        const detail = side === 'buyer'
+          ? `If our client has not completed by ${cmd.expiresAt.slice(0, 10)}, the seller may rescind and keep the deposit${tenth ? `, made up to 10% of the price (${pounds(tenth)})` : ''}, resell, and claim any further loss (SCS 7.4). Find out today what is stopping completion (money, the lender, the chain), tell the client in writing what is at stake, and keep the seller's solicitor informed.`
+          : `If our client has not completed by ${cmd.expiresAt.slice(0, 10)}, the buyer may rescind, recover the deposit with interest, and claim their losses (SCS 7.5). Find out today what is stopping completion (vacant possession, the redemption, the chain) and tell the client in writing what is at stake.`;
+        const raised = issue(s, issueIds(s)(), 'completion_failure', `Notice to complete served on our client: expires ${cmd.expiresAt.slice(0, 10)}`, detail, 'completion');
+        out.push({ ...raised, payload: { ...(raised.payload as object), severity: 'critical' } } as NewEvent);
+      }
+      return out;
     }
     case 'mortgage_offer_withdrawn': {
       requireEnrolled(s);
