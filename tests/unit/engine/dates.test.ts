@@ -43,3 +43,13 @@ test('the clocks: first registration two months from completion; the LISA 90 day
   const nb = base({ shapes: ['new_build'], longStopDate: '2026-10-28' });
   assert.ok(kinds(nb, NOW).includes('longstop_date:2026-10-28'));
 });
+
+test("a conditional contract's long-stop date is taken from the contract and watched; the non-resident surcharge refund window follows completion", async () => {
+  const { conditionalLongStop } = await import('../../../lib/server/engine/findings');
+  assert.equal(conditionalLongStop([{ text: 'This contract is conditional on the grant of planning permission by 31 March 2027.' }]), '2027-03-31');
+  assert.equal(conditionalLongStop([{ text: 'The seller sells with full title guarantee.' }]), null);
+  const cond = base({ longStopDate: '2026-10-20' });
+  assert.ok(deadlineActions(cond, NOW).some((d) => d.kind === 'longstop_date' && /conditional contract/.test(d.summary)));
+  const nrs = base({ stage: 'completed', sdltBasis: { firstTimeBuyer: false, additionalProperty: false, nonUkResident: true }, completion: { ...initialState(TENANT, MATTER).completion, confirmedAt: '2024-11-20T12:00:00Z' } });
+  assert.ok(deadlineActions(nrs, NOW).some((d) => d.kind === 'nrs_refund' && d.dueDate === '2026-11-20'));
+});

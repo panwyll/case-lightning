@@ -29,7 +29,7 @@ import { buildDecision, leaseFlags, offeredOptions, evaluateEnquiryReply, evalua
 import { propertyFormsIssues } from './property-forms';
 import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
-import { contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
+import { conditionalLongStop, contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
 import { computeSdlt } from './sdlt';
 import { sharesAtPurchase, sharesText, unequal } from './co-owners';
 import { amlHoldActive, damlNoticeEnds, damlMoratoriumEnds, partyEventConsequences, sanctionsHold, SANCTIONS_PREFIX } from './people';
@@ -1571,6 +1571,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [
         { type: 'contract_review_raised', actor: SYSTEM, payload: { documentId: cmd.documentId, decision, depositPennies: cmd.terms?.depositPennies ?? null }, sourceDocumentId: cmd.documentId },
         ...(cmd.terms ? findingEvents(s, contractFindings(cmd.terms, findingContext(s)), cmd.documentId) : []),
+        // A conditional contract carries its long-stop date: on the case, so the timer watches it.
+        ...(() => { const d = cmd.terms ? conditionalLongStop(cmd.terms.specialConditions ?? []) : null; return d && d !== s.longStopDate ? [{ type: 'longstop_date_recorded', actor: SYSTEM, payload: { date: d } } as NewEvent] : []; })(),
       ];
     }
     case 'set_clients': {

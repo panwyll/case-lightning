@@ -135,7 +135,7 @@ function stripUndefined<T extends object>(o: T): Partial<T> {
 
 // ───────────────────────────── deadlines (eventualities) ─────────────────────────────
 
-export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry' | 'certificate_of_title' | 'first_registration' | 'lisa_window' | 'auction_completion' | 'longstop_date' | 'sdlt_refund';
+export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry' | 'certificate_of_title' | 'first_registration' | 'lisa_window' | 'auction_completion' | 'longstop_date' | 'sdlt_refund' | 'nrs_refund';
 
 export interface DeadlineAction {
   kind: DeadlineKind;
@@ -151,7 +151,7 @@ export interface DeadlineAction {
  * How many working days before a deadline the engine raises it (one escalation per deadline, by subject).
  * `stale_issue` is the other way round: an open issue nobody has touched for this many working days is raised.
  */
-export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2, certificate_of_title: 3, first_registration: 10, lisa_window: 15, auction_completion: 5, longstop_date: 20, sdlt_refund: 60 };
+export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2, certificate_of_title: 3, first_registration: 10, lisa_window: 15, auction_completion: 5, longstop_date: 20, sdlt_refund: 60, nrs_refund: 40 };
 /** Working days before completion a lender usually needs the certificate of title (UK Finance Handbook practice). */
 export const CERTIFICATE_OF_TITLE_NOTICE = 5;
 
@@ -219,7 +219,15 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
   if (lisa) push('lisa_window', lisa, `The Lifetime ISA bonus must be used to complete by ${lisa}, 90 days after we received it. If completion will not happen by then, the money goes back to the ISA manager (not the client), with no charge to them.`);
   const auction = auctionCompletionDue(state, cal);
   if (auction) push('auction_completion', auction, `An auction purchase completes 20 working days after the auction: by ${auction}. Late completion costs contractual interest and, after a notice to complete, the 10% deposit.`);
-  if (state.longStopDate && state.shapes?.includes('new_build') && !state.completion.confirmedAt) push('longstop_date', state.longStopDate, `The new-build long-stop date is ${state.longStopDate}. If the developer has not served notice of completion by then, either side may rescind; advise the client and tell the lender (the offer must still be valid).`);
+  if (state.longStopDate && !state.completion.confirmedAt) push('longstop_date', state.longStopDate, state.shapes?.includes('new_build')
+    ? `The new-build long-stop date is ${state.longStopDate}. If the developer has not served notice of completion by then, either side may rescind; advise the client and tell the lender (the offer must still be valid).`
+    : `The conditional contract's long-stop date is ${state.longStopDate}. If its condition is not met by then the contract ends (or either side may rescind, as it says): check where the condition stands and advise the client.`);
+  // The non-resident surcharge is refundable if a buyer is UK resident for 183 days in any 365 within the year after completion (claim within two years).
+  if (state.sdltBasis?.nonUkResident && !state.sdltBasis.wales && state.completion.confirmedAt) {
+    const c = new Date(state.completion.confirmedAt);
+    const end = new Date(Date.UTC(c.getUTCFullYear() + 2, c.getUTCMonth(), c.getUTCDate())).toISOString().slice(0, 10);
+    push('nrs_refund', end, `The 2% non-resident surcharge was paid on completion (${state.completion.confirmedAt.slice(0, 10)}). If a buyer has spent 183 days in the UK in any 365-day period in the year after it, it can be reclaimed by amending the return, by ${end}: ask the client.`);
+  }
   // Stale issues: the forum pattern is an issue that sits for weeks because both sides are waiting
   // for the other. Raised once per period of silence (subject carries the last-touched date).
   for (const i of openIssues(state)) {

@@ -149,6 +149,19 @@ export function searchFindings(f: SearchFacts, ctx: FindingContext): Finding[] {
   return out;
 }
 
+/** A conditional contract's long-stop date, where a condition names one ("conditional on ... by 31 March 2027"). */
+export function conditionalLongStop(conditions: Array<{ text: string }>): string | null {
+  const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  for (const c of conditions) {
+    if (!/conditional|long[- ]?stop|subject to (planning|the grant|obtaining)/i.test(c.text)) continue;
+    const iso = c.text.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+    if (iso) return iso[0];
+    const m = c.text.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})\b/i);
+    if (m) return `${m[3]}-${String(MONTHS.indexOf(m[2].toLowerCase()) + 1).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  }
+  return null;
+}
+
 /** The draft contract: the deposit and the special conditions that change the bargain. */
 export function contractFindings(c: Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'>, ctx: FindingContext): Finding[] {
   const out: Finding[] = [];
