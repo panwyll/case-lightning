@@ -241,6 +241,8 @@ export interface EngineState {
   matterId: string;
   tenantId?: string;
   enrolled: boolean;
+  amlHold?: { since: string; noticeEnds: string; status: 'awaiting' | 'granted' | 'refused'; moratoriumEnds: string | null } | null;
+  partyEvents?: Array<{ event: string; party: string; at: string; hasAttorney: boolean | null }>;
   otherCharges?: Array<{ id: string; chargee: string; text: string | null; status: string; redemptionPennies: number | null; validUntil: string | null; redeemedAt: string | null; dischargedAt: string | null }>;
   undertaking?: { givenAt: string; to: string; terms: string; dischargedAt: string | null } | null;
   completionInformation?: { receivedAt: string; undertakingToRedeem: boolean; documentId: string | null } | null;

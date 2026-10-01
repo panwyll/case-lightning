@@ -209,6 +209,9 @@ export const EVENT_TYPES = [
   'completion_information_received',
   'longstop_date_recorded',
   'sdlt_facts_recorded',
+  'party_event_recorded',
+  'sar_made',
+  'daml_response_recorded',
   'cgt_facts_recorded',
   'issue_severity_changed',
   'matter_closed',
@@ -1125,6 +1128,9 @@ export interface Payloads {
   /** The seller's solicitor's replies to completion information (TA13): the undertaking to redeem the seller's charges. */
   completion_information_received: { undertakingToRedeem: boolean; documentId: string | null };
   longstop_date_recorded: { date: string };
+  party_event_recorded: { event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; hasAttorney: boolean | null; note: string | null };
+  sar_made: { noticeEnds: string };
+  daml_response_recorded: { decision: 'granted' | 'refused'; moratoriumEnds: string | null };
   sdlt_facts_recorded: { facts: { wales?: boolean; mainResidence?: boolean; anyEverOwned?: boolean; anyOwnsOther?: boolean; replacing?: boolean; replacingFirst?: boolean; anyNonResident?: boolean; mixedUse?: boolean; debtAssumedPennies?: number | null }; basis: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; wales?: boolean }; reasons: string[]; refundDiary: boolean };
   cgt_facts_recorded: { mainResidenceThroughout: boolean; ukResident: boolean };
   client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; /** further_investigation: the investigations this applies to (issue ids); absent = all open ones. */ scope?: string[] | null };
@@ -1473,7 +1479,7 @@ export const isManualStep = (step: string): boolean => (MANUAL_STEPS as readonly
 /** cleared (auto), reviewed (human) and withdrawn (enquiries) all count as resolved for stage gating. */
 export const isResolved = (s: string | undefined): boolean => s === 'cleared' || s === 'reviewed' || s === 'withdrawn';
 
-export const ABANDON_REASONS = ['client_withdrew', 'seller_withdrew', 'chain_collapsed', 'gazumped', 'survey', 'finance_failed', 'conflict', 'other'] as const;
+export const ABANDON_REASONS = ['client_withdrew', 'seller_withdrew', 'chain_collapsed', 'gazumped', 'survey', 'finance_failed', 'conflict', 'client_died', 'capacity', 'aml', 'fraud_suspected', 'other'] as const;
 export type AbandonReason = (typeof ABANDON_REASONS)[number];
 
 export interface SearchState {
@@ -1630,6 +1636,10 @@ export interface MatterState {
     interimSentAt?: string | null;
   };
   deposit: { received: boolean; at: string | null; /** What has come in towards it, and what the contract says it is. */ amountPennies?: number | null; contractPennies?: number | null };
+  /** People events (theme G): who has died, lost capacity or become bankrupt, and when. */
+  partyEvents?: Array<{ event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; at: string; hasAttorney: boolean | null }>;
+  /** A suspicious activity report made with a request for consent (DAML): money and exchange wait; nothing is said to the client about it. */
+  amlHold?: { since: string; noticeEnds: string; status: 'awaiting' | 'granted' | 'refused'; moratoriumEnds: string | null } | null;
   /** A new build's long-stop date from the contract: past it either side may rescind. */
   longStopDate?: string | null;
   /** Charges beyond the existing mortgage (a second charge, a secured loan, a charging order): each redeemed and discharged (engine/charges.ts). */

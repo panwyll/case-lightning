@@ -1,13 +1,14 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Hand } from '@/app/shared/icons';
+import { AlertTriangle, Hand, Users } from '@/app/shared/icons';
 import { BusyButton } from './BusyButton';
 import { IssuesPanel } from './IssuesPanel';
 import type { Api, EngineState } from './types';
 import { WORK_CSS } from './WorkPanel';
 
 /**
- * A task's header: raise an issue on its case, and take the case over by hand (or hand it back).
+ * A task's header: raise an issue on its case, record something that happened to a person on it (people.ts),
+ * and take the case over by hand (or hand it back).
  * Icons only; each opens its own small form. The case is read when one is first opened.
  */
 const CSS = `
@@ -24,18 +25,22 @@ const CSS = `
 .cqa-pop .warn svg{flex:none;margin-top:1px}
 .cqa-pop .dont{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#475569;font-weight:600}
 .cqa-pop .bad{font-size:12.5px;color:#b91c1c;font-weight:600}
+.cqa-pop select,.cqa-pop input[type=text]{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:7px 8px;font:inherit;font-size:13px;background:#fff}
 `;
 
 export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matterId: string; onChanged?: () => void }) {
   const [state, setState] = useState<EngineState | null>(null);
-  const [open, setOpen] = useState<'issue' | 'manual' | null>(null);
+  const [open, setOpen] = useState<'issue' | 'manual' | 'person' | null>(null);
+  const [what, setWhat] = useState<'died' | 'capacity_lost' | 'bankrupt' | 'sar' | 'daml_granted' | 'daml_refused'>('died');
+  const [who, setWho] = useState('');
+  const [lpa, setLpa] = useState(false);
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const box = useRef<HTMLSpanElement | null>(null);
   const load = async () => { const v = await api<{ state: EngineState }>(`/matters/${matterId}/engine`).catch(() => null); if (v) setState(v.state); return v?.state ?? null; };
   useEffect(() => { void load(); }, [matterId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (open !== 'manual') return;
+    if (open !== 'manual' && open !== 'person') return;
     const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(null); };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
@@ -43,10 +48,11 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
   const cmd = async (body: Record<string, unknown>) => { await api(`/matters/${matterId}/engine`, { method: 'POST', body: JSON.stringify(body) }); await load(); onChanged?.(); return true; };
   const manual = !!state?.manualHandling?.required;
   // The button's name, shown on hover or focus.
-  const [tip, setTip] = useState<{ which: 'issue' | 'manual' } | null>(null);
+  const [tip, setTip] = useState<{ which: 'issue' | 'manual' | 'person' } | null>(null);
   // Placed in the icons' own box, right under the icon it names: nothing about the page can move it.
-  const showTip = (which: 'issue' | 'manual') => () => setTip({ which });
-  const TIPS = { issue: 'Raise Issue', manual: manual ? 'Resume Automation' : 'Take Over Manually' };
+  const showTip = (which: 'issue' | 'manual' | 'person') => () => setTip({ which });
+  const TIPS = { issue: 'Raise Issue', manual: manual ? 'Resume Automation' : 'Take Over Manually', person: 'Something Happened' };
+  const holdPending = state?.amlHold?.status === 'awaiting';
   // The warning before taking a case over, until the person says not to show it again (this browser only).
   const WARN_KEY = 'conveyi:manual-warning-hidden';
   const [warnHidden, setWarnHidden] = useState(false);
@@ -54,7 +60,7 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
   // Saved at once, applied from the next time: the warning stays while it is being read.
   const [dontShow, setDontShow] = useState(false);
   const hideWarning = (on: boolean) => { setDontShow(on); try { if (on) localStorage.setItem(WARN_KEY, '1'); else localStorage.removeItem(WARN_KEY); } catch { /* storage blocked */ } };
-  const hover = (which: 'issue' | 'manual') => ({ onMouseEnter: showTip(which), onFocus: showTip(which), onMouseLeave: () => setTip(null), onBlur: () => setTip(null) });
+  const hover = (which: 'issue' | 'manual' | 'person') => ({ onMouseEnter: showTip(which), onFocus: showTip(which), onMouseLeave: () => setTip(null), onBlur: () => setTip(null) });
   const done = !!state?.completion?.confirmedAt || !!state?.abandoned;
 
   return (
@@ -62,7 +68,40 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
       <style>{WORK_CSS + CSS}</style>
       {!done && <button type="button" className="cqa-b" aria-label="Raise Issue" {...hover('issue')} onClick={() => { setTip(null); setErr(null); setOpen(open === 'issue' ? null : 'issue'); }}><AlertTriangle size={16} /></button>}
       {!done && <button type="button" className={`cqa-b${manual ? ' on' : ''}`} aria-label={manual ? 'Resume Automation' : 'Take Over Manually'} {...hover('manual')} onClick={() => { setTip(null); setErr(null); setReason(''); try { setWarnHidden(localStorage.getItem(WARN_KEY) === '1'); } catch { /* storage blocked */ } setOpen(open === 'manual' ? null : 'manual'); }}><Hand size={16} /></button>}
-      {tip && !open && <span className="cqa-tip" role="tooltip" style={tip.which === 'issue' ? { right: 38 } : { right: 0 }}>{TIPS[tip.which]}</span>}
+      {!done && <button type="button" className="cqa-b" aria-label="Something Happened" {...hover('person')} onClick={() => { setTip(null); setErr(null); setReason(''); setWho(state?.partyNames?.[0] ?? ''); setWhat(holdPending ? 'daml_granted' : 'died'); setOpen(open === 'person' ? null : 'person'); }}><Users size={16} /></button>}
+      {tip && !open && <span className="cqa-tip" role="tooltip" style={tip.which === 'issue' ? { right: 76 } : tip.which === 'manual' ? { right: 38 } : { right: 0 }}>{TIPS[tip.which]}</span>}
+      {open === 'person' && (
+        <span className="cqa-pop" role="dialog" aria-label="Something Happened">
+          <b>Something Happened</b>
+          <select value={what} onChange={(e) => setWhat(e.target.value as typeof what)} aria-label="What happened">
+            <option value="died">Someone Has Died</option>
+            <option value="capacity_lost">Someone Has Lost Capacity</option>
+            <option value="bankrupt">Someone Is Bankrupt</option>
+            {!holdPending && <option value="sar">Report Made To The NCA (Hold)</option>}
+            {holdPending && <option value="daml_granted">NCA Consent Received</option>}
+            {holdPending && <option value="daml_refused">NCA Consent Refused</option>}
+          </select>
+          {(what === 'died' || what === 'capacity_lost' || what === 'bankrupt') && (
+            <>
+              <input type="text" list="cqa-people" value={who} onChange={(e) => setWho(e.target.value)} placeholder="Who" aria-label="Who" />
+              <datalist id="cqa-people">{(state?.partyNames ?? []).map((n) => <option key={n} value={n} />)}</datalist>
+              {what === 'capacity_lost' && <label className="dont"><input type="checkbox" checked={lpa} onChange={(e) => setLpa(e.target.checked)} />A Registered Power Of Attorney Covers It</label>}
+            </>
+          )}
+          {what === 'sar' && <span className="warn"><AlertTriangle size={16} /><span>No money moves and nothing exchanges for seven working days, or until consent. Say nothing to the client about it.</span></span>}
+          <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Note" aria-label="Note" />
+          {err && <span className="bad">{err}</span>}
+          <span className="f">
+            <button type="button" className="ep-btn" style={{ margin: 0 }} onClick={() => setOpen(null)}>Cancel</button>
+            <BusyButton disabled={(what === 'died' || what === 'capacity_lost' || what === 'bankrupt') && !who.trim()} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
+              setErr(null);
+              const body = what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };
+              try { await cmd(body); setTimeout(() => setOpen(null), 900); return true; }
+              catch (e: unknown) { setErr(e instanceof Error ? e.message : 'It did not save.'); return false; }
+            }}>Record</BusyButton>
+          </span>
+        </span>
+      )}
       {open === 'issue' && state && (
         <IssuesPanel api={api} state={state} busy={false} raiseOnly onCancel={() => setOpen(null)} onChanged={() => { void load(); onChanged?.(); }} cmd={async (body) => { try { return await cmd(body); } catch (e: unknown) { throw e instanceof Error ? e : new Error('It did not save.'); } }} />
       )}

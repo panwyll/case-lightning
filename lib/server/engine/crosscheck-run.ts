@@ -4,6 +4,7 @@
  * raises one "documents disagree" issue per mismatching check (resolving it when the
  * documents agree again). Best-effort and idempotent; a failure here never fails a read.
  */
+import { profileOf } from './transactions';
 import { query, queryOne } from '../db';
 import { crossCheck, parsePennies, type CaseRecord, type CheckResult, type RegisterRow } from './crosscheck';
 import { SYSTEM } from './types';
@@ -35,6 +36,7 @@ export async function runCrossChecks(tenantId: string, matterId: string): Promis
   const state = await svc.getState(tenantId, matterId).catch(() => null);
   if (state?.exchange.completionDate) record.completionDate = state.exchange.completionDate;
   if (state?.nameAliases?.length) record.nameAliases = state.nameAliases.map((a) => ({ from: a.from, to: a.to }));
+  if (state?.transactionType) record.side = profileOf(state.transactionType).side;
   const results = crossCheck(record, await loadRegister(tenantId, matterId));
   for (const r of results) {
     await query(

@@ -15,6 +15,8 @@ export interface CaseRecord {
   sellerNames: string[];
   lender: string | null;
   completionDate: string | null;
+  /** Whose side we act for: on a sale our client's ID check is a seller's, checked against the registered proprietor. */
+  side?: 'buyer' | 'seller' | 'owner';
   /** Documented name changes (marriage, deed poll): a document naming the old name names the same person. */
   nameAliases?: Array<{ from: string; to: string }>;
 }
@@ -110,7 +112,16 @@ export function crossCheck(record: CaseRecord, rows: RegisterRow[]): CheckResult
     }
     out.push({ check, label: CHECK_LABEL[check], status: bad.length ? 'mismatch' : 'match', values, message: bad.length ? `${CHECK_LABEL[check]} differ from the case record (${recordNames.join(' & ')}): ${bad.join('; ')}.` : `${CHECK_LABEL[check]} agree across ${values.length} sources.` });
   };
-  nameCheck('buyer_names', record.buyerNames, pick('buyer_names'));
-  nameCheck('seller_names', record.sellerNames, pick('seller_names'));
+  // Our own client's ID check belongs to their side: on a sale it is the seller, and must match the registered proprietor (parties.md 9.1).
+  const ownId = (r: CheckValue[]) => r.filter((v) => /^id\.subject\./.test(rows.find((x) => x.documentId === v.documentId && x.value === v.value)?.key ?? ''));
+  const buyerRows = pick('buyer_names');
+  if (record.side === 'seller') {
+    const ids = ownId(buyerRows);
+    nameCheck('buyer_names', record.buyerNames, buyerRows.filter((v) => !ids.includes(v)));
+    nameCheck('seller_names', record.sellerNames, [...pick('seller_names'), ...ids]);
+  } else {
+    nameCheck('buyer_names', record.buyerNames, buyerRows);
+    nameCheck('seller_names', record.sellerNames, pick('seller_names'));
+  }
   return out;
 }

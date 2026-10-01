@@ -25,6 +25,7 @@
  * puts the connection on the conveyi_automation role: the database refuses human-gated
  * events from there whatever this code does.
  */
+import { clientMessagesStopped } from './people';
 import { workingDaysBetween } from './working-days';
 import { checkDraft, draftCheckLine, renderChecked, type DraftCheck } from './draft-check';
 import { buildCompletionStatement } from './completion-statement';
@@ -142,12 +143,32 @@ function enquiryLine(purpose: string, about: string | null): string {
   }
 }
 
+/** Marks the client-comms port once it stops messages to a client who has died. */
+const STOP_WRAPPED = Symbol('client-messages-stop');
+
 /** Which sub-flow an automatic client update belongs to (null → only matter-level shadow suppresses it). */
 export class EngineService {
   constructor(
     private store: EventStore,
     private ports: EnginePorts
-  ) {}
+  ) {
+    // Nothing goes to a client who has died (people.ts): every message to the client passes here, whoever sends it.
+    // Wrapped in place (not a copy of the ports), so a port swapped in later is still the one used.
+    const raw = ports.clientComms as EnginePorts['clientComms'] & { [STOP_WRAPPED]?: true };
+    if (raw && !raw[STOP_WRAPPED]) {
+      const stopped = async (tenantId: string, matterId: string) => clientMessagesStopped(await this.getState(tenantId, matterId));
+      ports.clientComms = new Proxy(raw, { get: (target, key, receiver) => {
+        if (key === STOP_WRAPPED) return true;
+        const v = Reflect.get(target, key, receiver);
+        if ((key !== 'sendStatusUpdate' && key !== 'sendReportOnTitle') || typeof v !== 'function') return typeof v === 'function' ? v.bind(target) : v;
+        return async (input: { tenantId: string; matterId: string }) => {
+          const why = await stopped(input.tenantId, input.matterId);
+          if (why) throw Object.assign(new Error(why), { status: 409 });
+          return v.call(target, input);
+        };
+      } });
+    }
+  }
 
   // ───────────── core ─────────────
 

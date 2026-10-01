@@ -31,6 +31,7 @@ import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templat
 import { profileOf, type TransactionProfile } from './transactions';
 import { contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
 import { computeSdlt } from './sdlt';
+import { amlHoldActive, damlNoticeEnds, damlMoratoriumEnds, partyEventConsequences, sanctionsHold, SANCTIONS_PREFIX } from './people';
 import { cgtFlags, chargeableConsideration, deriveSdltBasis, type CgtFacts, type SdltFacts } from './sdlt-facts';
 import { completionDateProblem, staleAtCompletion } from './dates';
 import { allDischarged, anythingCharged, chargesToAdd, isFinancialCharge, negativeEquity, openCharges } from './charges';
@@ -216,6 +217,9 @@ type CommandBody =
   | { type: 'funds_cleared'; actor: Actor; receiptId: string }
   | { type: 'record_other_charge'; actor: Actor; chargee: string; text?: string | null }
   | { type: 'longstop_date_recorded'; actor: Actor; date: string }
+  | { type: 'record_party_event'; actor: Actor; event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; hasAttorney?: boolean | null; note?: string | null }
+  | { type: 'sar_made'; actor: Actor; note?: string | null }
+  | { type: 'daml_response'; actor: Actor; decision: 'granted' | 'refused'; note?: string | null }
   | ({ type: 'record_sdlt_facts'; actor: Actor } & SdltFacts)
   | ({ type: 'record_cgt_facts'; actor: Actor } & CgtFacts)
   | { type: 'charge_statement_received'; actor: Actor; chargeId: string; redemptionPennies: number; validUntil?: string | null; documentId?: string | null }
@@ -292,6 +296,9 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'refund_paid',
   'record_other_charge',
   'longstop_date_recorded',
+  'record_party_event',
+  'sar_made',
+  'daml_response',
   'record_sdlt_facts',
   'record_cgt_facts',
   'charge_statement_received',
@@ -1027,7 +1034,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const status = pc ? pc.status : s.idCheck.status;
       // A result (or the client's own photo of their ID) may arrive before anything was requested.
       if (status !== 'requested' && status !== 'not_started') reject(`No ID check${pc ? ` for ${pc.label}` : ''} is awaiting a result (status: ${status}).`);
-      return verdictEvents({
+      // A sanctions match is a hard stop of its own, not only a flag on the review (SAMLA 2018; OFSI): nothing moves until a person clears it.
+      const sanctions = (cmd.facts.flags ?? []).some((f) => f.code === 'SANCTIONS_MATCH') && !sanctionsHold(s)
+        ? [issue(s, issueIds(s)(), 'aml_kyc_problem', `${SANCTIONS_PREFIX}: ${pc?.label ?? s.partyNames?.[0] ?? 'the client'}`, 'The ID check matched a sanctions list. Until it is shown to be a different person (date of birth, address history) or OFSI grants a licence: no money in or out, no exchange, no completion, and no further work that benefits them. Report a true match to OFSI. Never cleared by automation.', s.exchange.exchangedAt ? 'completion' : 'exchange')]
+        : [];
+      return [...sanctions, ...verdictEvents({
         verdict: evaluateIdCheck(cmd.facts),
         cleared: 'id_check_cleared',
         flagged: 'id_check_flagged',
@@ -1038,7 +1049,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         summary: cmd.summary,
         extra: { facts: cmd.facts, party: cmd.party ?? null },
         confidence: cmd.facts.confidence,
-      });
+      })];
     }
 
     // ── Searches ──
@@ -1270,6 +1281,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'contracts_exchanged': {
       requireEnrolled(s);
       requireStage(s, 'pre_exchange', 'Exchange');
+      moneyMayMove(s, ctx.now, 'No exchange');
       if (!profile(s).hasExchange) reject(`A ${profile(s).label.toLowerCase()} completes without an exchange of contracts.`);
       if (profile(s).side === 'seller') {
         const unreplied = Object.values(s.inboundEnquiries).filter((q) => !q.repliedAt);
@@ -1312,6 +1324,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     }
     case 'funds_requested': {
       requireEnrolled(s);
+      moneyMayMove(s, ctx.now, 'No request for money');
       if (cmd.fromRole === 'isa_provider' && !s.shapes.some((sh) => SHAPE_SPEC[sh]?.fundsFrom === 'isa_provider')) reject('No ISA on this matter: enrol it with a Lifetime ISA or Help to Buy ISA shape.');
       requireStage(s, 'pre_completion', 'Requesting funds');
       requireSide(s, ['buyer', 'owner'], 'Requesting completion funds');
@@ -1370,6 +1383,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'completion_confirmed': {
       requireEnrolled(s);
       requireStage(s, 'pre_completion', 'Confirming completion');
+      moneyMayMove(s, ctx.now, 'No completion');
       // Paying out money that has not cleared is paying with other clients' money (SRA Accounts Rules 5.3).
       const notCleared = moneyOf(s).uncleared;
       if (notCleared.length) reject(`Money has not cleared: ${notCleared.map((u) => `${u.amountPennies != null ? pounds(u.amountPennies) : 'a payment'} from ${ROLE_LABEL[u.fromRole]}`).join(', ')}. Confirm it has cleared first.`);
@@ -1503,6 +1517,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [recorded, flagged];
     }
     case 'payment_authorised': {
+      moneyMayMove(s, ctx.now, 'No payment');
       if (cmd.purpose === 'completion_monies' && moneyOf(s).uncleared.length) reject("The completion money cannot go out while some of what came in has not cleared: confirm it has cleared first.");
       requireEnrolled(s);
       requireStageAtLeast(s, 'pre_exchange', 'Authorising a payment');
@@ -1881,6 +1896,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.resolveBy && !ISO_DAY.test(cmd.resolveBy)) reject('The resolve-by date must be a date (YYYY-MM-DD).', 400);
       const resolveBy = cmd.resolveBy && cmd.resolveBy !== i.resolveBy ? cmd.resolveBy : null;
       if (cmd.status === i.status && !gate && party === undefined && !resolveBy && !cmd.note?.trim()) reject('Nothing to update: give a note, a new status, a new gate, a date or the party.', 400);
+      if (gate && i.title.startsWith(SANCTIONS_PREFIX) && i.kind === 'aml_kyc_problem') reject('A sanctions match is a hard stop: it is cleared by resolving it with the evidence, never by changing what it holds.', 400);
       if (gate === 'none' && !cmd.note?.trim()) reject('Releasing an issue\'s hold on the matter needs a note saying why (the client accepts the risk, the lender is content…).', 400);
       return [{ type: 'issue_updated', actor: cmd.actor, payload: { issueId: i.id, status: cmd.status, note: cmd.note?.trim() || null, gate, ...(party !== undefined ? { party } : {}), ...(resolveBy ? { resolveBy } : {}) } }];
     }
@@ -2332,6 +2348,31 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (flags.length && !openOf(s, 'cgt_flag', 'Capital Gains Tax')) out.push(issue(s, issueIds(s)(), 'cgt_flag', 'Capital Gains Tax: tell the client a 60-day report may be due', `${flags.join(' ')} Never advise on the tax or give a figure: tell the client in writing and suggest they speak to their accountant before completion.`, 'none'));
       return out;
     }
+    case 'record_party_event': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
+      if (!cmd.party?.trim()) reject('Who is it about?', 400);
+      if (s.completion.confirmedAt && cmd.event !== 'died') reject('The matter has completed.');
+      if ((s.partyEvents ?? []).some((p) => p.event === cmd.event && p.party.trim().toLowerCase() === cmd.party.trim().toLowerCase())) reject('Already recorded.');
+      const ev: NewEvent = { type: 'party_event_recorded', actor: cmd.actor, payload: { event: cmd.event, party: cmd.party.trim(), hasAttorney: cmd.hasAttorney ?? null, note: cmd.note?.trim() || null } };
+      if (s.completion.confirmedAt) return [ev];
+      const nextId = issueIds(s);
+      const note = cmd.note?.trim();
+      const found = partyEventConsequences(s, { event: cmd.event, party: cmd.party.trim(), hasAttorney: cmd.hasAttorney ?? null }, profile(s).side);
+      return [ev, ...found.map((c) => { const e = issue(s, nextId(), c.kind, c.title, note ? `${c.detail} (${note})` : c.detail, c.gate); return { ...e, payload: { ...(e.payload as object), severity: c.severity } } as NewEvent; })];
+    }
+    case 'sar_made': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Only a person (the MLRO) records a report.', 403);
+      if (amlHoldActive(s, ctx.now)) reject('A consent request is already pending.');
+      return [{ type: 'sar_made', actor: cmd.actor, payload: { noticeEnds: damlNoticeEnds(ctx.now) } }];
+    }
+    case 'daml_response': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Only a person (the MLRO) records the response.', 403);
+      if (!s.amlHold || s.amlHold.status !== 'awaiting') reject('No consent request is pending.');
+      return [{ type: 'daml_response_recorded', actor: cmd.actor, payload: { decision: cmd.decision, moratoriumEnds: cmd.decision === 'refused' ? damlMoratoriumEnds(ctx.now) : null } }];
+    }
     case 'longstop_date_recorded': {
       requireEnrolled(s);
       if (!s.shapes?.includes('new_build')) reject('A long-stop date is recorded on a new-build purchase.');
@@ -2682,6 +2723,13 @@ const issue = (s: MatterState, id: string, kind: IssueKind, title: string, detai
 const openOf = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).some((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const openList = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).filter((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const resolvedBy = (id: string, note: string): NewEvent => ({ type: 'issue_resolved', actor: SYSTEM, payload: { issueId: id, resolution: 'funds_in_place', note, costPennies: null, paidBy: null } });
+
+// ── People events (people.ts) ──
+/** Money, exchange and completion wait on an uncleared sanctions match or a pending consent request; the reason given is neutral (no tipping off). */
+function moneyMayMove(s: MatterState, now: Date, what: string): void {
+  if (sanctionsHold(s)) reject(`${what}: a sanctions match is not cleared.`, 423);
+  if (amlHoldActive(s, now)) reject(`${what} for now: the matter is on hold. Speak to the MLRO.`, 423);
+}
 
 // ── Charges and undertakings (charges.ts) ──
 const NEGATIVE_EQUITY = 'Negative equity';

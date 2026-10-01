@@ -488,6 +488,19 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null) && payersExpected(s).every((r) => s.completion.receivedFrom.includes(r))) s.completion.fundsReceivedAt = s.completion.fundsReceivedAt ?? e.createdAt;
       break;
     }
+    case 'party_event_recorded': {
+      const p = e.payload as Payloads['party_event_recorded'];
+      s.partyEvents = [...(s.partyEvents ?? []), { event: p.event, party: p.party, at: e.createdAt, hasAttorney: p.hasAttorney }];
+      break;
+    }
+    case 'sar_made':
+      s.amlHold = { since: e.createdAt, noticeEnds: (e.payload as Payloads['sar_made']).noticeEnds, status: 'awaiting', moratoriumEnds: null };
+      break;
+    case 'daml_response_recorded': {
+      const p = e.payload as Payloads['daml_response_recorded'];
+      if (s.amlHold) s.amlHold = { ...s.amlHold, status: p.decision, moratoriumEnds: p.moratoriumEnds };
+      break;
+    }
     case 'sdlt_facts_recorded': {
       const p = e.payload as Payloads['sdlt_facts_recorded'];
       s.sdltFacts = { ...p.facts, recordedAt: e.createdAt, reasons: p.reasons, refundDiary: p.refundDiary };
