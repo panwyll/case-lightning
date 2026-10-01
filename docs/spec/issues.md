@@ -15,6 +15,8 @@ A typed problem (`issues.ts ISSUE_KIND_SPEC`) with what it stops, who owns the n
 - **One problem, one issue** (`issues.ts duplicateIssue`): raising an issue that matches an open one (same kind and party; a kind a case has one of, like the deal at risk or the offer expiring, or most of the same words) notes "Reported again: …" on the existing issue and keeps the stronger hold. Duplicates already on file are merged by the timer: the later one is withdrawn as a duplicate of the earlier. Timer-keyed issues keep their own idempotence.
 - **Every More action is an inline form**, never a browser prompt; Abandon needs an explicit confirmation.
 
+- **Money raises and clears its own issues** (engine/money.ts): a receipt short of what was asked for raises `completion_funds_shortfall` (critical, holds completion) and the money arriving resolves it; a deposit short of the contract's raises `deposit_issue` (holds exchange) and the top-up resolves it. No one resolves these by hand unless the figures were wrong.
+
 ## Adding a kind
 
 Spec entry (label, group, gate, stages, resolutions, responsible, window), `ISSUE_CHIP`, its next steps in `STEPS_BY_KIND` if the defaults do not fit, and — if a resolution needs a new field — `RESOLUTION_FIELDS`. The simulator resolves issues with each kind's first outcome and its required fields.

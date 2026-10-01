@@ -67,7 +67,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('raise_enquiry'), enquiryId: z.string().min(1).max(60).nullish(), subject: z.string().min(1).max(500), origin: z.object({ issueId: z.string().min(1).max(60).optional() }).nullish() }),
   z.object({ type: z.literal('deposit_received'), amountPennies: z.number().int().nonnegative().nullish() }),
   z.object({ type: z.literal('contracts_exchanged'), completionDate: isoDate, exchangedAt: z.string().datetime().nullish() }),
-  z.object({ type: z.literal('completion_statement_generated'), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('completion_statement_generated'), documentId: z.string().uuid().nullish(), balancePennies: z.number().int().nullish() }),
   z.object({ type: z.literal('funds_requested'), fromRole: z.enum(['lender', 'client', 'isa_provider']), amountPennies: z.number().int().nonnegative().nullish(), bankDetailsId: z.string().min(1).max(60) }),
   // Addendum 2 — payment verification
   z.object({
@@ -80,7 +80,9 @@ export const userCommandSchema = z.discriminatedUnion('type', [
     note: z.string().max(1000).nullish(),
   }),
   z.object({ type: z.literal('payment_authorised'), payeeKind: z.enum(PAYEE_KINDS), bankDetailsId: z.string().min(1).max(60), amountPennies: z.number().int().nonnegative().nullish(), purpose: z.enum(['completion_monies', 'deposit', 'other']) }),
-  z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client', 'buyer_solicitor', 'incoming_owner', 'isa_provider']), remitter: z.string().max(160).nullish(), amountPennies: z.number().int().nonnegative().nullish() }),
+  z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client', 'buyer_solicitor', 'incoming_owner', 'isa_provider']), remitter: z.string().max(160).nullish(), amountPennies: z.number().int().nonnegative().nullish(), uncleared: z.boolean().nullish() }),
+  z.object({ type: z.literal('funds_cleared'), receiptId: z.string().min(1).max(40) }),
+  z.object({ type: z.literal('refund_paid'), refundId: z.string().min(1).max(40), reference: z.string().min(1).max(120) }),
   // transaction types (docs/transaction-types.md)
   z.object({ type: z.literal('request_property_forms'), forms: z.array(z.string().max(10)).min(1).max(6).optional() }),
   z.object({ type: z.literal('property_forms_received'), forms: z.array(z.string().max(10)).min(1).max(6), documentId: z.string().uuid().nullish() }),

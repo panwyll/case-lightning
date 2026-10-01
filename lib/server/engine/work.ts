@@ -197,6 +197,7 @@ const CLIENT_REQUESTS = new Set(['id_check_request', 'proof_of_funds_request', '
 export const DUE_CHIP: Record<string, string> = {
   official_copies: 'Upload Documents', proof_of_funds_request: 'Client Request', report_on_title_redraft: 'Draft Document', contract_pack: "Send Buyer's Solicitor Documents", management_pack_sale: 'Managing Agent Request',
   contract_approved_sale: 'Record Outcome', contract_approve: 'Document Sign-Off', buyer_enquiries: 'Reply To Enquiries', exchange: 'Exchange Contracts', completion_statement: 'Send Client Documents',
+  funds_cleared: 'Record Receipt', refund: 'Return Money', shortfall_request: 'Request Funds',
   certificate_of_title: 'Send Lender Documents', bankruptcy_search: 'Run Search', priority_search: 'Run Search', funds_request: 'Request Funds', advance_request: 'Request Funds', completion_monies: 'Record Receipt', consideration: 'Record Receipt',
   completion_payment: 'Authorise Payment', redemption_payment: 'Authorise Payment', completion: 'Confirm Completion', balance_to_client: 'Authorise Payment', mortgage_redeemed: 'Record Outcome',
   sdlt: 'File Return', ap1: 'Submit Application', notice_of_assignment: 'Send Landlord Documents', close_file: 'Close File',
@@ -419,7 +420,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       bucket: 'do',
       kind: 'step',
       // A step's chip is whose and what kind; a held-back send keeps its own ("Client Request").
-      chip: d.key.startsWith('resend:') ? (() => { const pr = s.proposals[d.key.slice('resend:'.length)]; return pr ? proposalChip(pr.action, pr.detail as Record<string, unknown>) : 'Held Back'; })() : DUE_CHIP[d.key] ?? undefined,
+      chip: d.key.startsWith('resend:') ? (() => { const pr = s.proposals[d.key.slice('resend:'.length)]; return pr ? proposalChip(pr.action, pr.detail as Record<string, unknown>) : 'Held Back'; })() : DUE_CHIP[d.key] ?? DUE_CHIP[d.key.split(':')[0]] ?? undefined,
       what: d.title,
       // A step is its own title; the line under it is only ever something to know before doing it.
       unblocks: null,

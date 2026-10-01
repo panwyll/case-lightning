@@ -10,8 +10,10 @@ import { TASK_CONTEXT_CSS, TaskContextBody, TaskContextFacts } from './TaskConte
  * figures and dates, the checklist, who confirmed — and hands one body back to record.
  * Field keys are the command's own fields; `completion` carries the rest.
  */
-export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCancel, upload }: {
+export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCancel, upload, initial }: {
   contract: CompletionContract;
+  /** Figures already known (a money field in pennies), filled in for the person to check. */
+  initial?: Record<string, unknown>;
   /** Upload a scan here (a signed deed back by post); the new file is chosen and counts as read. */
   upload?: (file: File) => Promise<CaseDocument>;
   context: TaskContextView | null;
@@ -22,7 +24,15 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
 }) {
   const [documentId, setDocumentId] = useState('');
   const [read, setRead] = useState(false);
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    for (const f of contract.fields ?? []) {
+      const v = initial?.[f.key];
+      if (typeof v === 'number' && f.kind === 'money') out[f.key] = (v / 100).toFixed(2);
+      else if (typeof v === 'string') out[f.key] = v;
+    }
+    return out;
+  });
   const [ticks, setTicks] = useState<Record<string, boolean>>({});
   const [party, setParty] = useState({ who: '', channel: 'email', at: new Date().toISOString().slice(0, 10) });
   const [note, setNote] = useState('');
@@ -44,7 +54,8 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
     for (const f of contract.fields ?? []) {
       const v = (values[f.key] ?? '').trim();
       if (!v) continue;
-      if (f.kind === 'money') body[f.key] = Math.round(Number(v.replace(/[£,\s]/g, '')) * 100);
+      if (f.kind === 'flag') body[f.key] = v === 'yes';
+      else if (f.kind === 'money') body[f.key] = Math.round(Number(v.replace(/[£,\s]/g, '')) * 100);
       else if (f.kind === 'names') body[f.key] = v.split(',').map((x) => x.trim()).filter(Boolean);
       else if (f.kind === 'datetime') body[f.key] = new Date(v).toISOString();
       else body[f.key] = v;
@@ -81,7 +92,9 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
           )}
         </div>
       ))}
-      {(contract.fields ?? []).map((f) => row(f.label, (
+      {(contract.fields ?? []).map((f) => f.kind === 'flag' ? row('', (
+        <label className="cs-tick"><input type="checkbox" checked={values[f.key] === 'yes'} onChange={(e) => setValues({ ...values, [f.key]: e.target.checked ? 'yes' : '' })} />{f.label}</label>
+      ), f.key) : row(f.label, (
         <input
           className="ep-input"
           type={f.kind === 'date' ? 'date' : f.kind === 'datetime' ? 'datetime-local' : 'text'}

@@ -31,6 +31,8 @@ Waits are not tasks: they are listed under **Waiting** and chase themselves ([wa
 - **Recorded**: every task's appearance, departure and who cleared it goes to `task_record` ([analytics](../analytics.md)); a new source of tasks is recorded by the same path because it goes through `matterWork`.
 - **Done means gone, visibly**: the row shows the success (tick, "Read as the register", "Resolved …") for ~2s, then leaves.
 
+- **Money tasks carry their subject in the key** (`refund:RF-1`, `funds_cleared:REC-12`, `shortfall_request:<pennies>`): the label is the kind's (`stepActionLabel`). Refunds stay on the list after a file stops or completes, and the file cannot close until each is recorded sent.
+
 ## Adding one
 
 A new due step needs: the condition in `due.ts` (gated like the machine), `dueAction` + label, the simulator's command in `no-stall.test.ts`. The stall detector fails until all three exist.

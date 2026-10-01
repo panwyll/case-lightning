@@ -129,7 +129,7 @@ mortgage, smaller advance, retention, scheme money returned).
 
 | # | Eventuality | Signal | Correct response | Engine today | Priority | Source |
 |---|---|---|---|---|---|---|
-| 8.1 | Deposit received **≠ contract deposit** | `deposit_received.amountPennies` vs `contract.deposit_pennies` | short → `deposit_issue` (exchange); over → hold the excess for completion with the client's consent | MISSING — amount recorded only (machine.ts:1204-1213) | P1 | SCS 2.2 |
+| 8.1 | Deposit received **≠ contract deposit** | `deposit_received.amountPennies` vs `contract.deposit_pennies` | short → `deposit_issue` (exchange); over → hold the excess for completion with the client's consent | **BUILT** — `deposit_received` compared with the contract deposit (service fills it from the register): short → `deposit_issue` holding exchange, topped up by a further receipt (machine.ts `depositConsequences`) | P1 | SCS 2.2 |
 | 8.2 | Deposit **under 10%** agreed | contract deposit < 10% price | special condition needed (balance payable on default); client advised | MISSING — `deposit_issue` manual; no % check | P2 | SCS 2.2.1 |
 | 8.3 | Deposit is the **deposit from the client's own sale** passed up the chain | linked sale | SCS 2.2.5 use; chain dependency already holds exchange | PARTIAL — chain gate (link_related_matter); no deposit-source fact | P2 | SCS 2.2.5 |
 | 8.4 | Deposit before PoF sign-off | receipt | `aml_kyc_problem` holds exchange | BUILT (machine.ts:1210) | — | LSAG |
@@ -140,13 +140,13 @@ mortgage, smaller advance, retention, scheme money returned).
 
 | # | Eventuality | Signal | Correct response | Engine today | Priority | Source |
 |---|---|---|---|---|---|---|
-| 9.1 | Client's balance received **short of the statement** | `funds_received(client).amountPennies` < statement balance | `completion_funds_shortfall` (completion gate) auto-raised; chase the difference | MISSING — the gate is presence-only (machine.ts:1329; 524) | P1 | — |
-| 9.2 | Client **overpays** | received > balance | surplus refund task, returned promptly to the sending account | MISSING | P2 | SAR 2.5 |
-| 9.3 | Lender advance ≠ offer (arrangement fee/TT fee deducted, retention) | `funds_received(lender)` vs offer | recompute the balance; difference → client shortfall | MISSING | P1 | Handbook |
+| 9.1 | Client's balance received **short of the statement** | `funds_received(client).amountPennies` < statement balance | `completion_funds_shortfall` (completion gate) auto-raised; chase the difference | **BUILT** — every amount checked against the figure asked for (`funds_requested.amountPennies`, now required on the form): short → `completion_funds_shortfall` (critical, holds completion) and a task to ask the client for the difference; made up → resolved (engine/money.ts `position`) | P1 | — |
+| 9.2 | Client **overpays** | received > balance | surplus refund task, returned promptly to the sending account | **BUILT** — the surplus becomes a refund owed to the sending account (`refund_due`), on the Tasks list until `refund_paid`; the file cannot close with one unpaid | P2 | SAR 2.5 |
+| 9.3 | Lender advance ≠ offer (arrangement fee/TT fee deducted, retention) | `funds_received(lender)` vs offer | recompute the balance; difference → client shortfall | **BUILT** — the advance compared with the request, else the offer; a deduction is the client's shortfall | P1 | Handbook |
 | 9.4 | Client funds late on completion day / CHAPS cut-off missed | wait open on the day | `completion_failure` with late-completion compensation calc at the contract rate; notice to complete if it slips | PARTIAL — waits + manual `completion_failure`; no compensation calculation | P1 | SCS 6.1.2, 7.2, 6.8 |
 | 9.5 | Lender funds late | funds wait | chase; COT deadline | BUILT (sla.ts:42,178) | — | Handbook (COT) |
 | 9.6 | Completion **delayed after the advance arrived** | advance received + completion moves | return the advance within the lender's period (Part 2), with interest; new COT | MISSING | P1 | Handbook (holding funds) / Part 2 |
-| 9.7 | Remortgage: new advance < redemption + costs | redemption figure vs offer | shortfall from the client before completion | MISSING | P2 | — |
+| 9.7 | Remortgage: new advance < redemption + costs | redemption figure vs offer | shortfall from the client before completion | **BUILT** — an advance below the redemption figure is a shortfall (money.ts `position`) | P2 | — |
 | 9.8 | Redemption statement expired (sale / remortgage) | validity date | re-request | BUILT kind `redemption_statement_expired` (issues.ts) | — | — |
 | 9.9 | Completion money from an unseen account | remitter | `aml_kyc_problem` holds completion | BUILT (machine.ts:1278-1287) | — | LSAG 6.17.2 |
 | 9.10 | Chain proceeds short (our sale's net proceeds below the plan) | sale completion statement | purchase-side shortfall issue | MISSING — linked matters do not exchange money facts | P2 | — |
@@ -155,7 +155,7 @@ mortgage, smaller advance, retention, scheme money returned).
 
 | # | Eventuality | Signal | Correct response | Engine today | Priority | Source |
 |---|---|---|---|---|---|---|
-| 10.1 | **Abortive** matter with money held | `matter_abandoned` + receipts | refund task: money only to the account it came from (or ISA manager, 7.3); MLRO view if the client asks to send it elsewhere | MISSING — abandon closes waits only (projection.ts:655-659) | P1 | LSAG (red flag: returning funds to a different account); SAR 2.5 |
+| 10.1 | **Abortive** matter with money held | `matter_abandoned` + receipts | refund task: money only to the account it came from (or ISA manager, 7.3); MLRO view if the client asks to send it elsewhere | **BUILT** — abandoning a file owes back the deposit (before exchange) and every receipt: the client's to the client, the ISA bonus to the ISA manager, the advance to the lender (money.ts `heldOnAbandon`); the refunds stay on the Tasks list after the file stops | P1 | LSAG (red flag: returning funds to a different account); SAR 2.5 |
 | 10.2 | **Interest** on client money | money held over firm-policy threshold/period | fair-sum interest calculated on the ledger at the end | MISSING — no ledger, `receipts` only (types.ts:1603) | P2 | SAR 7.1 |
 | 10.3 | **Residual balance** after completion (SDLT less than estimate, search refund) | final reconciliation | return promptly; statement of account | MISSING | P2 | SAR 2.5 |
 | 10.4 | **Fee dispute** / client will not pay the bill | client email | fees taken from completion money only with a bill sent first and the client's agreement; dispute → hold disputed sum, not more | MISSING | P2 | SAR 4.3 |

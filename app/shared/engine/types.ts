@@ -241,6 +241,8 @@ export interface EngineState {
   matterId: string;
   tenantId?: string;
   enrolled: boolean;
+  /** The client's money reconciled (engine/money.ts). */
+  money?: { requested: Record<string, number>; received: Record<string, number>; uncleared: Array<{ id: string; fromRole: string; amountPennies: number | null; at: string }>; statementBalancePennies: number | null; refunds: Array<{ id: string; toRole: string; to: string | null; amountPennies: number | null; reason: string; dueAt: string; paidAt: string | null; reference: string | null }> };
   transactionType: TransactionType | null;
   parties?: number;
   hasExistingMortgage?: boolean;
@@ -320,7 +322,7 @@ export interface NoteRow {
   refusedActions: Array<{ id: string; reason: string }>;
 }
 
-export interface CompletionField { key: string; label: string; kind: 'money' | 'date' | 'datetime' | 'text' | 'names'; required?: boolean; hint?: string }
+export interface CompletionField { key: string; label: string; kind: 'money' | 'date' | 'datetime' | 'text' | 'names' | 'flag'; required?: boolean; hint?: string }
 export interface CompletionContract { label: string; documentRoles?: string[]; documentLabel?: string; documentRequired?: boolean; fields?: CompletionField[]; checklist?: Array<{ key: string; label: string }>; party?: { label: string }; effect: string }
 export interface DocumentReviewSummary { pages: number; read: number; withFacts: number; unreadable: number; unattested: number; complete: boolean; facts: number; verified: number }
 export interface CaseDocument {

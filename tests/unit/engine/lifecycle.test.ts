@@ -124,7 +124,7 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId }), /certificate of title first/);
   await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: firmId });
   r = await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'client' });
-  assert.ok(r.state.completion.fundsReceivedAt);
+  assert.equal(r.state.completion.fundsReceivedAt, null, "the client's money is in; the advance is not, so the money is not all in");
   // The Lenders' Handbook's pre-completion checks: the certificate names what is still missing, one by one.
   await svc.run(TENANT, MATTER, { type: 'priority_search_made', actor: USER, expiresAt: '2027-01-15' });
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER }), /unqualified: a clear bankruptcy search \(K16\) against every borrower; buildings insurance confirmed\./);
@@ -134,7 +134,8 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   await svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER });
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /advance has not been received/);
   await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId });
-  await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'lender' });
+  r = await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'lender' });
+  assert.ok(r.state.completion.fundsReceivedAt, 'the advance in too: all in');
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /No authorised completion payment/);
   const seller = await svc.recordBankDetails(TENANT, MATTER, { actor: 'external', payeeKind: 'seller_solicitor', payeeRef: 'Smith & Co', details: { sortCode: '201122', accountNumber: '87654321', accountName: 'Smith & Co Client Account', firmName: 'Smith & Co' }, sourceChannel: 'email', sourceDocumentId: h.doc({ content: 'Completion statement email from Smith & Co with client account details' }) });
   const sellerDecision = Object.values(seller.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;

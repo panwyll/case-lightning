@@ -58,11 +58,11 @@ test("every purchase completes inside a priority period; the lender's own checks
   const os1 = { ...k16, preCompletion: { ...k16.preCompletion, prioritySearchAt: '2026-09-25T10:00:00Z', prioritySearchExpiresAt: '2026-10-30' } };
   assert.throws(() => decide(os1, cmd, ctx), /Buildings insurance has not been confirmed/);
   const insured = { ...os1, preCompletion: { ...os1.preCompletion, insuranceConfirmedAt: '2026-09-26T10:00:00Z' } };
-  assert.throws(() => decide(insured, cmd, ctx), /Funds have not been received/, 'past the Handbook checks, on to the money');
+  assert.throws(() => decide(insured, cmd, ctx), /has not been received|Funds have not been received/, 'past the Handbook checks, on to the money');
   const cash = { ...base, hasLender: false, deeds: { ...base.deeds, mortgageDeedAt: null, certificateOfTitleAt: null } };
   assert.throws(() => decide(cash, cmd, ctx), /No priority search \(OS1\)/, 'a cash purchase needs a priority search too: its registration is protected the same way');
   const cashOs1 = { ...cash, preCompletion: { ...cash.preCompletion, prioritySearchAt: '2026-09-25T10:00:00Z', prioritySearchExpiresAt: '2026-10-30' } };
-  assert.throws(() => decide(cashOs1, cmd, ctx), /Funds have not been received/, 'no lender: K16 and insurance are good practice, not a gate');
+  assert.throws(() => decide(cashOs1, cmd, ctx), /has not been received/, 'no lender: K16 and insurance are good practice, not a gate');
   assert.ok(stageBlockers(base).includes('priority search (OS1) not made'));
   // The timer: two working days before the priority period ends.
   const soon = { ...os1, preCompletion: { ...os1.preCompletion, prioritySearchExpiresAt: '2026-09-29' } };

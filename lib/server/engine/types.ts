@@ -195,6 +195,10 @@ export const EVENT_TYPES = [
   'specialist_report_received',
   'client_decision_recorded',
   'client_decision_lapsed',
+  // money reconciled (docs/eventualities/money.md §8–10): cleared funds and the refunds owed
+  'funds_cleared',
+  'refund_due',
+  'refund_paid',
   'issue_severity_changed',
   'matter_closed',
   // transaction types (docs/transaction-types.md): sale, remortgage, transfer of equity, co-ownership
@@ -624,6 +628,20 @@ export interface NoteState {
   refusedActions: Array<{ id: string; reason: string }>;
 }
 
+export type FundsRole = 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider';
+export interface ClientMoney {
+  /** What each payer was asked for (the figure on the request). */
+  requested: Partial<Record<FundsRole, number>>;
+  /** What each payer has sent, summed over receipts that carried an amount. */
+  received: Partial<Record<FundsRole, number>>;
+  /** Money credited but not cleared: it cannot be paid out until it has. */
+  uncleared: Array<{ id: string; fromRole: FundsRole; amountPennies: number | null; at: string }>;
+  /** The balance on the approved completion statement. */
+  statementBalancePennies: number | null;
+  /** Money we hold that has to go back: a surplus, or everything on a file that did not proceed. */
+  refunds: Array<{ id: string; toRole: FundsRole; to: string | null; amountPennies: number | null; reason: string; dueAt: string; paidAt: string | null; reference: string | null }>;
+}
+
 /** A contract (draft or engrossed) as the pipeline reads it: the terms a conveyancer checks before approval and exchange. */
 export interface ContractFacts {
   sellers: string[];
@@ -943,11 +961,11 @@ export interface Payloads {
   /** approvedBy is validated by the database (071): a human of this firm who wrote the cited approval event. */
   report_on_title_sent: { draftId: string; approvedEventId: string; approvedBy: string; channel: string; messageId?: string | null };
 
-  deposit_received: { amountPennies?: number | null };
+  deposit_received: { amountPennies?: number | null; /** The deposit the contract states, when it has been read. */ contractDepositPennies?: number | null };
   exchange_conditions_met: { conditions: string[] };
   contracts_exchanged: { completionDate: string; exchangedAt?: string | null };
 
-  completion_statement_generated: { documentId?: string | null };
+  completion_statement_generated: { documentId?: string | null; /** The balance on the approved statement: due from the client on a purchase, to them on a sale. */ balancePennies?: number | null };
   funds_requested: {
     fromRole: 'lender' | 'client' | 'isa_provider';
     amountPennies?: number | null;
@@ -955,7 +973,7 @@ export interface Payloads {
     bankDetailsId: string;
     approvedBy: string;
   };
-  funds_received: { fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null; /** The name on the sending account, as the bank shows it (LSAG 6.17: money must come from where the evidence said). */ remitter?: string | null };
+  funds_received: { fromRole: FundsRole; amountPennies?: number | null; /** Credited but not yet cleared (a cheque, a payment held by the bank): it cannot be paid out. */ uncleared?: boolean; receiptId?: string; /** The name on the sending account, as the bank shows it (LSAG 6.17: money must come from where the evidence said). */ remitter?: string | null };
   completion_confirmed: { completedAt?: string | null };
 
   sdlt_submitted: { reference?: string | null };
@@ -1079,6 +1097,9 @@ export interface Payloads {
   /** approvedEventId: the note_actions_applied event a person approved it in, when it came from a note (the database checks it). */
   /** An answer the client gave no longer holds: what it rested on changed (the price, the date, who the clients are). They are asked again. */
   client_decision_lapsed: { subject: ClientDecisionSubject; reason: string };
+  funds_cleared: { receiptId: string };
+  refund_due: { refundId: string; toRole: FundsRole; to: string | null; amountPennies: number | null; reason: string };
+  refund_paid: { refundId: string; reference: string };
   client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; /** further_investigation: the investigations this applies to (issue ids); absent = all open ones. */ scope?: string[] | null };
   /** Severity moved (by a person, or by the timer as a deadline nears). */
   issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };
@@ -1579,7 +1600,9 @@ export interface MatterState {
     /** When an interim report went to the client (the supplementary is what is due now). */
     interimSentAt?: string | null;
   };
-  deposit: { received: boolean; at: string | null };
+  deposit: { received: boolean; at: string | null; /** What has come in towards it, and what the contract says it is. */ amountPennies?: number | null; contractPennies?: number | null };
+  /** The client's money on this file, reconciled (engine/money.ts): asked for, received and cleared by payer; what is owed back. */
+  money: ClientMoney;
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
   /** Purchase side: the seller's forms as read. */
   /** The seller's forms as a set: they come as separate files (TA6, TA10, TA7), each adding forms and answers. */
@@ -1774,6 +1797,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     preCompletion: { insuranceConfirmedAt: null, insurer: null, prioritySearchAt: null, prioritySearchExpiresAt: null, bankruptcySearchAt: null },
     partyNames: [],
     receipts: [],
+    money: { requested: {}, received: {}, uncleared: [], statementBalancePennies: null, refunds: [] },
     occupiers: [],
     sdltBasis: null,
     completion: { statementGeneratedAt: null, fundsRequestedAt: null, fundsReceivedAt: null, receivedFrom: [], confirmedAt: null },
@@ -1846,6 +1870,7 @@ export function withStateDefaults(s: MatterState): MatterState {
     title: merge('title'),
     reportOnTitle: merge('reportOnTitle'),
     deposit: merge('deposit'),
+    money: merge('money'),
     exchange: merge('exchange'),
     completion: merge('completion'),
     preCompletion: merge('preCompletion'),

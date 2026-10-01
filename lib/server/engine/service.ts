@@ -157,6 +157,12 @@ export class EngineService {
     // A linked sale or purchase exchanges with us: the other file must be able to exchange too, and its chain issue here clears when it can.
     if (cmd.type === 'contracts_exchanged') await this.assertLinkedMatterReady(tenantId, matterId, cmd.actor as Actor, cmd.completionDate);
     if (cmd.type === 'completion_confirmed') await this.assertLinkedSaleCompleted(tenantId, matterId);
+    // Money is checked against the contract: the deposit it states, and on a sale the price less that deposit from the buyer's solicitor.
+    if ((cmd.type === 'deposit_received' && cmd.contractDepositPennies === undefined) || (cmd.type === 'funds_received' && cmd.fromRole === 'buyer_solicitor' && cmd.contractPricePennies === undefined)) {
+      const terms = await this.contractTerms(tenantId, matterId);
+      if (cmd.type === 'deposit_received') cmd = { ...cmd, contractDepositPennies: terms.depositPennies };
+      else if (cmd.type === 'funds_received') cmd = { ...cmd, contractPricePennies: terms.pricePennies, contractDepositPennies: terms.depositPennies };
+    }
     const result = await this.store.withMatterLock(tenantId, matterId, async (tx) => {
       // The state as last known plus whatever was appended since, under the lock; the whole log only the first time.
       const known = this.stateCache.get(`${tenantId}:${matterId}`);
@@ -1136,6 +1142,13 @@ export class EngineService {
     const citations = [...draft.citations];
     for (const f of check?.cited ?? []) if (!citations.some((c) => c.documentId === f.documentId && c.locator?.quote === (f.quote ?? undefined))) citations.push({ documentId: f.documentId, label: `${f.documentLabel}${f.page ? ` p.${f.page}` : ''} — ${f.key.replace(/^[a-z_]+\./, '').replace(/[._]/g, ' ')}: ${f.value}`, locator: { page: f.page ?? undefined, quote: f.quote ?? undefined } });
     return this.run(tenantId, matterId, { type: 'draft_report_on_title', draftId, draftDocumentId: doc.id, model: draft.model, summary, citations, basedOn: draft.basedOn });
+  }
+
+  /** The price and deposit the contract states, from the register (null when it has not been read). */
+  async contractTerms(tenantId: string, matterId: string): Promise<{ pricePennies: number | null; depositPennies: number | null }> {
+    const register = this.ports.documents.loadRegister ? await this.ports.documents.loadRegister(tenantId, matterId).catch(() => null) : null;
+    const num = (key: string) => { const f = register?.facts.find((x) => x.key === key && /^\d+$/.test(x.value.trim())); return f ? Number(f.value) : null; };
+    return { pricePennies: num('contract.price_pennies'), depositPennies: num('contract.deposit_pennies') };
   }
 
   /** The completion statement drafted from the register: every figure cited or marked to confirm; filed as a document for the Completion Statement Produced milestone. */

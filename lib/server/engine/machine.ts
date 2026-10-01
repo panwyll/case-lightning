@@ -29,6 +29,7 @@ import { buildDecision, offeredOptions, evaluateEnquiryReply, evaluateIdCheck, e
 import { propertyFormsIssues } from './property-forms';
 import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
+import { heldOnAbandon, moneyOf, payersExpected, position, pounds, refundsDue, ROLE_LABEL } from './money';
 import {
   EngineError,
   isResolved,
@@ -115,7 +116,7 @@ import {
   type SupportingDocFacts,
   openIssues,
   isManualStep,
-  isReopenableStep, type ManualStepFacts, MANUAL_STEP_REQUIRED, deedsToSign } from './types';
+  isReopenableStep, type ManualStepFacts, MANUAL_STEP_REQUIRED, deedsToSign, type FundsRole } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
 export interface SummaryOverride {
@@ -202,11 +203,13 @@ type CommandBody =
   | { type: 'payment_authorised'; actor: Actor; payeeKind: PayeeKind; bankDetailsId: string; amountPennies?: number | null; purpose: 'completion_monies' | 'deposit' | 'other' }
   | { type: 'draft_report_on_title'; draftId: string; draftDocumentId: string; model: string; summary: string; citations: Citation[]; basedOn?: string[] }
   | { type: 'record_report_on_title_sent'; actor: Actor; draftId: string; channel: string; messageId?: string | null }
-  | { type: 'deposit_received'; actor: Actor; amountPennies?: number | null }
+  | { type: 'deposit_received'; actor: Actor; amountPennies?: number | null; /** Filled by the service from the contract read. */ contractDepositPennies?: number | null }
   | { type: 'contracts_exchanged'; actor: Actor; completionDate: string; exchangedAt?: string | null }
-  | { type: 'completion_statement_generated'; actor: Actor; documentId?: string | null }
+  | { type: 'completion_statement_generated'; actor: Actor; documentId?: string | null; balancePennies?: number | null }
   | { type: 'funds_requested'; actor: Actor; fromRole: 'lender' | 'client' | 'isa_provider'; amountPennies?: number | null; bankDetailsId: string }
-  | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null; remitter?: string | null }
+  | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null; remitter?: string | null; uncleared?: boolean; /** Filled by the service from the contract read (a sale's expected money). */ contractPricePennies?: number | null; contractDepositPennies?: number | null }
+  | { type: 'funds_cleared'; actor: Actor; receiptId: string }
+  | { type: 'refund_paid'; actor: Actor; refundId: string; reference: string }
   // ── transaction types (docs/transaction-types.md) ──
   | { type: 'request_property_forms'; actor: Actor; forms?: string[] | null }
   | { type: 'property_forms_received'; actor: Actor; forms: string[]; documentId?: string | null; facts?: PropertyFormsFacts | null }
@@ -270,6 +273,8 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'payment_authorised',
   'funds_requested',
   'funds_received',
+  'funds_cleared',
+  'refund_paid',
   'completion_confirmed',
   'sdlt_submitted',
   'ap1_submitted',
@@ -1204,8 +1209,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'deposit_received': {
       requireEnrolled(s);
       requireStageAtLeast(s, 'pre_contract', 'Recording the deposit');
-      if (s.deposit.received) reject('Deposit already recorded.');
-      const out: NewEvent[] = [{ type: 'deposit_received', actor: cmd.actor, payload: { amountPennies: cmd.amountPennies ?? null } }];
+      // The contract's deposit is what is owed: a deposit short of it can be topped up, and the shortfall holds exchange until it is.
+      const contractDeposit = cmd.contractDepositPennies ?? s.deposit.contractPennies ?? null;
+      const heldSoFar = s.deposit.amountPennies ?? 0;
+      const topUp = s.deposit.received && contractDeposit != null && heldSoFar < contractDeposit;
+      if (s.deposit.received && !topUp) reject('Deposit already recorded.');
+      const out: NewEvent[] = [{ type: 'deposit_received', actor: cmd.actor, payload: { amountPennies: cmd.amountPennies ?? null, contractDepositPennies: contractDeposit } }];
+      out.push(...depositConsequences(s, heldSoFar + (cmd.amountPennies ?? 0), cmd.amountPennies != null ? contractDeposit : null));
+      if (topUp) return out;
       // Money accepted before source of funds is signed off is the situation the guidance says must not happen silently: it is recorded as an issue holding exchange.
       if (s.requireProofOfFunds && !proofOfFundsApproved(s) && !Object.values(s.issues).some((i) => i.kind === 'aml_kyc_problem' && i.title.startsWith('Deposit received before') && (i.status === 'open' || i.status === 'negotiating'))) {
         out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'aml_kyc_problem', title: `Deposit received before proof of funds was signed off (proof of funds ${proofOfFundsHoldReason(s)})`, detail: 'Client money was accepted before the source-of-funds check was complete. Complete the check now; record the MLRO\'s view on the funds already held.', gate: 'exchange', stage: s.stage, sourceDocumentId: null, origin: null, party: null }, sourceDocumentId: null });
@@ -1248,7 +1259,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'completion_statement_generated': {
       requireEnrolled(s);
       requireStage(s, 'exchanged', 'Generating the completion statement');
-      return [{ type: 'completion_statement_generated', actor: cmd.actor, payload: { documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      return [{ type: 'completion_statement_generated', actor: cmd.actor, payload: { documentId: cmd.documentId ?? null, balancePennies: cmd.balancePennies ?? null }, sourceDocumentId: cmd.documentId ?? null }];
     }
     case 'funds_requested': {
       requireEnrolled(s);
@@ -1267,25 +1278,52 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'funds_received': {
       requireEnrolled(s);
       const inbound = cmd.fromRole === 'buyer_solicitor' || cmd.fromRole === 'incoming_owner';
+      // A payer who sent too little sends the rest against the same request: the shortfall issue is what is open, not the wait.
+      const topUp = !!(moneyOf(s).received[cmd.fromRole] && openOf(s, 'completion_funds_shortfall', SHORT_PREFIX));
+      if (s.completion.confirmedAt) reject('The matter has completed; record any later money as a receipt on client account.');
       if (inbound) {
         if (!fundsFromFor(profile(s).fundsFrom, s.shapes ?? []).includes(cmd.fromRole)) reject(`Money from the ${cmd.fromRole.replace(/_/g, ' ')} does not arise on a ${profile(s).label.toLowerCase()}.`);
         if (!stageAtLeast(s, 'pre_completion')) reject('Completion monies arrive at pre-completion.');
-        if (s.completion.fundsReceivedAt) reject('Completion monies already recorded.');
-      } else if (!s.waits.some((w) => w.key === 'funds' && w.subject === cmd.fromRole && w.closedAt === null)) reject(`No outstanding funds request to ${cmd.fromRole}.`);
-      const out: NewEvent[] = [{ type: 'funds_received', actor: cmd.actor, payload: { fromRole: cmd.fromRole, amountPennies: cmd.amountPennies ?? null, remitter: cmd.remitter?.trim() || null } }];
+        if (s.completion.fundsReceivedAt && !topUp) reject('Completion monies already recorded.');
+      } else if (!topUp && !s.waits.some((w) => w.key === 'funds' && w.subject === cmd.fromRole && w.closedAt === null)) reject(`No outstanding funds request to ${cmd.fromRole}.`);
+      if (cmd.amountPennies != null && (!Number.isInteger(cmd.amountPennies) || cmd.amountPennies <= 0)) reject('The amount received must be a positive sum.', 400);
+      const nextId = issueIds(s);
+      const out: NewEvent[] = [{ type: 'funds_received', actor: cmd.actor, payload: { fromRole: cmd.fromRole, amountPennies: cmd.amountPennies ?? null, remitter: cmd.remitter?.trim() || null, ...(cmd.uncleared ? { uncleared: true, receiptId: `REC-${s.lastSeq + 1}` } : {}) } }];
+      if (cmd.amountPennies != null) {
+        const received = { ...moneyOf(s).received, [cmd.fromRole]: (moneyOf(s).received[cmd.fromRole] ?? 0) + cmd.amountPennies };
+        out.push(...moneyConsequences(s, received, { pricePennies: cmd.contractPricePennies ?? null, depositPennies: cmd.contractDepositPennies ?? null }, nextId, cmd.remitter?.trim() || null));
+      }
       // The client's money must come from where the source-of-funds evidence said it was (LSAG 6.17.2; red flag 18.4 "the source changes at the last minute").
       const remitter = cmd.remitter?.trim();
       if (remitter && cmd.fromRole === 'client') {
         const strangers = strangersAmong(s, remitter);
         if (strangers.length && !Object.values(s.issues).some((i) => i.kind === 'aml_kyc_problem' && i.title.startsWith('Completion money from'))) {
-          out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'aml_kyc_problem', title: `Completion money from an account not seen in the evidence: ${remitter}`, detail: `The client's balance arrived from "${remitter}". ${strangers.join(' and ')} ${strangers.length === 1 ? 'was' : 'were'} not the declarant, a named party, or a holder of any statement read for the proof of funds. Establish whose account it is and why the money came from there before completing; consider whether the change of source is a reporting matter.`, gate: 'completion', stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: 'critical', causedBy: null } });
+          out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextId(), kind: 'aml_kyc_problem', title: `Completion money from an account not seen in the evidence: ${remitter}`, detail: `The client's balance arrived from "${remitter}". ${strangers.join(' and ')} ${strangers.length === 1 ? 'was' : 'were'} not the declarant, a named party, or a holder of any statement read for the proof of funds. Establish whose account it is and why the money came from there before completing; consider whether the change of source is a reporting matter.`, gate: 'completion', stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: 'critical', causedBy: null } });
         }
       }
       return out;
     }
+    case 'funds_cleared': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person confirms money has cleared.', 403);
+      if (!moneyOf(s).uncleared.some((u) => u.id === cmd.receiptId)) reject('That receipt is not waiting to clear.', 404);
+      return [{ type: 'funds_cleared', actor: cmd.actor, payload: { receiptId: cmd.receiptId } }];
+    }
+    case 'refund_paid': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person records a refund as paid.', 403);
+      const r = moneyOf(s).refunds.find((x) => x.id === cmd.refundId);
+      if (!r) reject('No such refund on this file.', 404);
+      if (r!.paidAt) reject('That refund is already recorded as paid.');
+      if (!cmd.reference?.trim()) reject('Give the payment reference.', 400);
+      return [{ type: 'refund_paid', actor: cmd.actor, payload: { refundId: cmd.refundId, reference: cmd.reference.trim() } }];
+    }
     case 'completion_confirmed': {
       requireEnrolled(s);
       requireStage(s, 'pre_completion', 'Confirming completion');
+      // Paying out money that has not cleared is paying with other clients' money (SRA Accounts Rules 5.3).
+      const notCleared = moneyOf(s).uncleared;
+      if (notCleared.length) reject(`Money has not cleared: ${notCleared.map((u) => `${u.amountPennies != null ? pounds(u.amountPennies) : 'a payment'} from ${ROLE_LABEL[u.fromRole]}`).join(', ')}. Confirm it has cleared first.`);
       const holdingCompletion = issuesGating(s, 'completion');
       if (holdingCompletion.length) reject(`Cannot confirm completion while an issue holds it: ${holdingCompletion.map((i) => `${ISSUE_KIND_SPEC[i.kind].label} — ${i.title}`).join('; ')}.`);
       if (profile(s).side !== 'buyer') {
@@ -1324,9 +1362,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.hasLender) for (const why of lenderChecksUnmet(s, ctx.now)) reject(why);
       // Then the money: the advance from the lender where there is one, and the client's balance (an ISA bonus counts as the client's).
       const from = s.completion.receivedFrom ?? [];
-      if (!s.completion.fundsReceivedAt) reject('Funds have not been received.');
       if (s.hasLender && !from.includes('lender')) reject('The mortgage advance has not been received from the lender.');
       if (!from.includes('client') && !from.includes('isa_provider')) reject("The client's balance has not been received.");
+      if (!s.completion.fundsReceivedAt) reject(`Funds have not been received from ${payersExpected(s).filter((r) => !from.includes(r)).map((r) => ROLE_LABEL[r]).join(' and ') || 'everyone asked'}.`);
       // Addendum 2: the completion transfer must have been authorised by a person against
       // verified seller's-solicitor details, and no bank-details change may be pending.
       const pend = pendingBankDetailsDecision(s, 'seller_solicitor');
@@ -1412,6 +1450,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [recorded, flagged];
     }
     case 'payment_authorised': {
+      if (cmd.purpose === 'completion_monies' && moneyOf(s).uncleared.length) reject("The completion money cannot go out while some of what came in has not cleared: confirm it has cleared first.");
       requireEnrolled(s);
       requireStageAtLeast(s, 'pre_exchange', 'Authorising a payment');
       if (!isUserActor(cmd.actor)) reject('A payment can only be authorised by a person, never by automation.', 403);
@@ -1426,7 +1465,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!isUserActor(cmd.actor)) reject('Only a person can abandon a matter.', 403);
       if (!ABANDON_REASONS.includes(cmd.reason)) reject(`Unknown abandonment reason "${cmd.reason}".`, 400);
       if (s.completion.confirmedAt) reject('The purchase has completed; it cannot be abandoned. Record a correction if the completion event was wrong.');
-      return [{ type: 'matter_abandoned', actor: cmd.actor, payload: { reason: cmd.reason, detail: cmd.detail ?? null, stage: s.stage } }];
+      // Whatever we hold goes back where it came from (LSAG: returning money to a different account is a red flag).
+      const held = heldOnAbandon(s).map((h, n): NewEvent => ({ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${moneyOf(s).refunds.length + n + 1}`, toRole: h.toRole, to: null, amountPennies: h.amountPennies, reason: h.reason } }));
+      return [{ type: 'matter_abandoned', actor: cmd.actor, payload: { reason: cmd.reason, detail: cmd.detail ?? null, stage: s.stage } }, ...held];
     }
     case 'record_contract_filed': {
       requireEnrolled(s);
@@ -1768,6 +1809,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.hasExistingMortgage && (profile(s).side === 'seller' || profile(s).type === 'remortgage') && s.redemption.status !== 'discharged') reject("The lender's discharge is not yet confirmed; the file cannot be closed.");
       if (isLeasehold(s) && profile(s).side === 'buyer' && !s.postCompletion.noticeOfAssignmentAt) reject('Leasehold: serve the notice of assignment before closing the file.');
       if (Object.values(s.issues).some((i) => i.status === 'open' || i.status === 'negotiating')) reject('Open issues remain; resolve or withdraw them before closing.');
+      if (refundsDue(s).length) reject(`Money is still owed back: ${refundsDue(s).map((r) => `${r.amountPennies != null ? pounds(r.amountPennies) : 'an amount'} to ${ROLE_LABEL[r.toRole]}`).join(', ')}. Record the refund first.`);
       return [{ type: 'matter_closed', actor: cmd.actor, payload: { reason: cmd.reason ?? null } }];
     }
     case 'update_issue': {
@@ -2483,8 +2525,36 @@ function issueIds(s: MatterState): () => string {
   let n = Object.keys(s.issues).length;
   return () => { do { n += 1; } while (s.issues[`ISS-${n}`]); return `ISS-${n}`; };
 }
-const issue = (s: MatterState, id: string, kind: IssueKind, title: string, detail: string, gate: IssueGate): NewEvent => ({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: id, kind, title, detail, gate, stage: s.stage, sourceDocumentId: null, origin: null, party: null, causedBy: null } });
+const issue = (s: MatterState, id: string, kind: IssueKind, title: string, detail: string, gate: IssueGate): NewEvent => ({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: id, kind, title, detail, gate, stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: ISSUE_KIND_SPEC[kind].severity, causedBy: null } });
 const openOf = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).some((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
+const openList = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).filter((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
+const resolvedBy = (id: string, note: string): NewEvent => ({ type: 'issue_resolved', actor: SYSTEM, payload: { issueId: id, resolution: 'funds_in_place', note, costPennies: null, paidBy: null } });
+
+// ── Money reconciled (engine/money.ts) ──
+const SHORT_PREFIX = 'Completion money short';
+const DEPOSIT_SHORT = 'Deposit short';
+
+/** After a receipt: a shortfall against what was asked for holds completion until it is made up; an overpayment by the client is owed back. */
+function moneyConsequences(s: MatterState, received: Partial<Record<FundsRole, number>>, contract: { pricePennies: number | null; depositPennies: number | null }, nextId: () => string, remitter: string | null): NewEvent[] {
+  const pos = position(s, received, contract);
+  const out: NewEvent[] = [];
+  const open = openList(s, 'completion_funds_shortfall', SHORT_PREFIX);
+  const lines = pos.lines.filter((l) => l.receivedPennies !== l.expectedPennies).map((l, n) => `${n === 0 ? ROLE_LABEL[l.role].replace(/^t/, 'T') : ROLE_LABEL[l.role]} sent ${pounds(l.receivedPennies)} of ${pounds(l.expectedPennies)}${l.role === 'lender' && moneyOf(s).requested.lender == null ? ' (the offer)' : ''}`);
+  if (pos.shortfallPennies > 0) {
+    if (!open.length) out.push(issue(s, nextId(), 'completion_funds_shortfall', `${SHORT_PREFIX}: ${pounds(pos.shortfallPennies)} still to come`, `${lines.join('; ')}. ${profile(s).side === 'seller' ? "Do not release the keys until the buyer's solicitor sends the rest." : 'Ask the client for the difference (a lender that deducted its fees, or a retention, leaves the client to make it up). Completion cannot go ahead short.'}`, 'completion'));
+  } else for (const i of open) out.push(resolvedBy(i.id, 'The money in now matches what was asked for.'));
+  const owed = moneyOf(s).refunds.filter((r) => r.reason.startsWith('Overpaid')).reduce((a, r) => a + (r.amountPennies ?? 0), 0);
+  if (pos.surplusPennies > owed) out.push({ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${moneyOf(s).refunds.length + 1}`, toRole: pos.surplusTo ?? 'client', to: remitter, amountPennies: pos.surplusPennies - owed, reason: `Overpaid: ${lines.join('; ')}. Return the surplus to the account it came from, or hold it against completion with the client's written agreement.` } });
+  return out;
+}
+
+/** The deposit held against the contract's: short holds exchange until topped up. */
+function depositConsequences(s: MatterState, held: number, contractDeposit: number | null): NewEvent[] {
+  if (contractDeposit == null) return [];
+  const open = openList(s, 'deposit_issue', DEPOSIT_SHORT);
+  if (held < contractDeposit) return open.length ? [] : [issue(s, issueIds(s)(), 'deposit_issue', `${DEPOSIT_SHORT}: ${pounds(held)} of the ${pounds(contractDeposit)} the contract says`, `Ask the client for the other ${pounds(contractDeposit - held)} before exchange, or agree a reduced deposit with the seller's solicitor in the contract (SCS 2.2).`, s.exchange.exchangedAt ? 'completion' : 'exchange')];
+  return open.map((i) => resolvedBy(i.id, 'The full deposit is held.'));
+}
 
 /** The client's authority to exchange was given on the deal as it stood: a change to the price, the date or the parties means asking again. */
 function lapseExchangeAuthority(s: MatterState, why: string): NewEvent[] {

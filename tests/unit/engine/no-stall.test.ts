@@ -9,6 +9,7 @@
  * The conveyancer here never opens the case: every action it takes is one the Tasks list offers.
  */
 import { test } from 'node:test';
+import { position } from '../../../lib/server/engine/money';
 import assert from 'node:assert/strict';
 import { EngineService } from '../../../lib/server/engine/service';
 import { MemoryEventStore } from '../../../lib/server/engine/store';
@@ -120,7 +121,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
         certificate_of_title: () => run({ type: 'certificate_of_title_sent', completionDate: completion }),
         bankruptcy_search: () => run({ type: 'bankruptcy_search_clear', subjects: s.partyNames?.length ? s.partyNames : ['Client'], documentId: doc({ content: 'K16' }) }),
         priority_search: () => run({ type: 'priority_search_made', expiresAt: F.completionDate(20), documentId: doc({ content: 'OS1' }) }),
-        funds_request: async () => { const ours = await verified('firm_client_account'); const roles = [...profileOf(c.tt).fundsFrom, ...(s.shapes ?? []).map((sh) => SHAPE_SPEC[sh]?.fundsFrom).filter(Boolean)] as string[]; for (const from of roles.filter((f, i) => (f === 'client' || f === 'isa_provider') && roles.indexOf(f) === i).filter((f) => !s.waits.some((w) => w.key === 'funds' && w.subject === f))) await run({ type: 'funds_requested', fromRole: from as never, bankDetailsId: ours }); },
+        funds_request: async () => { const ours = await verified('firm_client_account'); const roles = [...profileOf(c.tt).fundsFrom, ...(s.shapes ?? []).map((sh) => SHAPE_SPEC[sh]?.fundsFrom).filter(Boolean)] as string[]; for (const from of roles.filter((f, i) => (f === 'client' || f === 'isa_provider') && roles.indexOf(f) === i).filter((f) => !s.waits.some((w) => w.key === 'funds' && w.subject === f))) await run({ type: 'funds_requested', fromRole: from as never, bankDetailsId: ours, ...(from === 'client' ? { amountPennies: PRICE - ((s.mortgage.facts as { amountPennies?: number } | null)?.amountPennies ?? (s.hasLender ? ADVANCE : 0)) } : {}) }); },
         advance_request: async () => run({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: await verified('firm_client_account') }),
         completion_monies: () => run({ type: 'funds_received', fromRole: 'buyer_solicitor', amountPennies: PRICE }),
         consideration: () => run({ type: 'funds_received', fromRole: 'incoming_owner', amountPennies: 5_000_000 }),
@@ -134,7 +135,14 @@ async function drive(c: Case, policy: Policy = 'approve') {
         notice_of_assignment: () => run({ type: 'notice_of_assignment_served', servedOn: 'the landlord', reference: 'NOA-1' }),
         close_file: () => run({ type: 'close_matter' }),
       };
-      const f = d.key.startsWith('resend:') ? () => svc.retryFailedAction(TENANT, MATTER, d.key.slice('resend:'.length), USER) : cmds[d.key];
+      // Money steps carry what they are about in the key (engine/money.ts).
+      const [head, arg] = [d.key.slice(0, d.key.indexOf(':')), d.key.slice(d.key.indexOf(':') + 1)];
+      const money: Record<string, () => Promise<unknown>> = {
+        shortfall_request: async () => run({ type: 'funds_requested', fromRole: 'client', bankDetailsId: await verified('firm_client_account'), amountPennies: Number(arg) }),
+        funds_cleared: () => run({ type: 'funds_cleared', receiptId: arg }),
+        refund: () => run({ type: 'refund_paid', refundId: arg, reference: 'FPS-1' }),
+      };
+      const f = d.key.startsWith('resend:') ? () => svc.retryFailedAction(TENANT, MATTER, d.key.slice('resend:'.length), USER) : d.key.includes(':') ? money[head] : cmds[d.key];
       if (!f) throw new Error(`due step "${d.key}" has no action on the Tasks list`);
       await f();
       return `step ${d.key}`;
@@ -163,7 +171,8 @@ async function drive(c: Case, policy: Policy = 'approve') {
         id_check: () => svc.idCheckResultReceived(TENANT, MATTER, doc(c.flagged ? F.idRefer() : F.idClear()), w.subject || null),
         search: () => svc.searchReturned(TENANT, MATTER, w.subject as never, doc(c.flagged ? F.searchFlagged(w.subject as never) : F.searchClear(w.subject as never))),
         enquiry: () => svc.enquiryReplyReceived(TENANT, MATTER, w.subject, doc(F.replyClear(w.subject))),
-        funds: () => run({ type: 'funds_received', fromRole: w.subject, amountPennies: w.subject === 'lender' ? ADVANCE : PRICE - ADVANCE }),
+        // The lender sends the simulator's advance, which may be short of the offer: the client is then asked for the rest and sends what was asked.
+        funds: () => run({ type: 'funds_received', fromRole: w.subject, amountPennies: w.subject === 'lender' ? ADVANCE : position(s).shortfallPennies || (s.money?.requested?.[w.subject as 'client'] != null ? s.money.requested[w.subject as 'client']! - (s.money.received[w.subject as 'client'] ?? 0) : PRICE - ADVANCE) }),
         registration: () => run({ type: 'ap1_confirmed' }),
         management_pack: () => svc.managementPackReceived(TENANT, MATTER, doc(F.managementPack(false))),
         property_forms: () => svc.propertyFormsReceived(TENANT, MATTER, doc(F.propertyForms(false, c.tt.startsWith('leasehold')))),

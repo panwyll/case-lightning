@@ -7,7 +7,7 @@ import { DecisionPanel } from '@/app/shared/engine/DecisionPanel';
 import { CaseTodoReview, IssueReview, StepReview } from '@/app/shared/engine/StepReview';
 import { BusyButton, UploadButton } from '@/app/shared/engine/BusyButton';
 import { AddressAndSend } from '@/app/shared/engine/AddressAndSend';
-import { STEP_ACTION_LABEL, STEP_UPLOADS, directStep, uploadForStep, type UploadOutcome } from '@/app/shared/engine/stepUploads';
+import { stepActionLabel, STEP_UPLOADS, directStep, uploadForStep, type UploadOutcome } from '@/app/shared/engine/stepUploads';
 import { type WorkItem , KIND_LABEL , pretty , chipLabel , quickApprovable } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
 import { SEVERITY_LABEL } from '@/app/shared/engine/severity';
@@ -318,7 +318,7 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
                         catch (e: unknown) { setQuickErr({ id: i.ref.id, text: e instanceof Error ? e.message : 'It was unsuccessful.' }); return false; }
                       }}>{ds.label}</BusyButton>; })()
                     : isDecision || isStep
-                    ? <button type="button" className={`tl-btn${isOpen ? ' on' : isStep ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : STEP_ACTION_LABEL[i.ref.id] ?? 'Open') : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : `${isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : STEP_ACTION_LABEL[i.ref.id] ?? 'Open') : 'Review'} `}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
+                    ? <button type="button" className={`tl-btn${isOpen ? ' on' : isStep ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : stepActionLabel(i.ref.id) ?? 'Open') : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : `${isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : stepActionLabel(i.ref.id) ?? 'Open') : 'Review'} `}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>
                       {i.kind === 'issue:file_locked' && i.documentId && (unlockingId === i.id
                         ? <span className="tl-pw"><PasswordInput autoFocus value={pwd} onChange={setPwd} onEnter={() => void unlock(i)} onEscape={() => setUnlockingId(null)} style={{ width: 190 }} /><BusyButton className="tl-btn go" disabled={!pwd} busyLabel="Unlocking…" doneLabel="Unlocked" onClick={() => unlock(i)}>Unlock</BusyButton></span>

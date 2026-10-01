@@ -616,6 +616,8 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   );
 }
 
+const PAYER: Record<string, string> = { client: 'Client', lender: 'Lender', isa_provider: 'ISA Manager', buyer_solicitor: "Buyer's Solicitor", incoming_owner: 'Incoming Owner' };
+
 export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow', stepKey }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' | 'step' | 'todo' | 'wait'; /** section 'step': the one due step whose action to show (the Tasks list opens it in place); section 'wait': the wait, as `key:subject`. */ stepKey?: string }) {
   // Tasks dismissed here: hidden at once, listed under Dismissed (restorable).
   const [goneSteps, setGoneSteps] = useState<Set<string>>(new Set());
@@ -788,9 +790,14 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   ) : null;
   // What a step waiting on us records, and the form it opens: the same as the flowchart's own.
   const [closing, setClosing] = useState(false);
+  // The figure to ask for, from what the file already says: the client's balance from the statement, the advance from the offer.
+  const askFor = (role: string): number | undefined => (role === 'lender' ? (s.mortgage.facts as { amountPennies?: number } | null)?.amountPennies : role === 'client' ? s.money?.statementBalancePennies ?? undefined : undefined) ?? undefined;
   const firmAccounts = () => Object.values(s.bankDetails).filter((b) => b.payeeKind === 'firm_client_account' && b.status === 'verified');
   const dueAction = (key: string): ReactNode => {
     const unreplied = Object.values(s.inboundEnquiries ?? {}).filter((q) => !q.repliedAt).map((q) => q.id);
+    if (key.startsWith('funds_cleared:')) return <BusyButton className="ep-btn primary" busyLabel="Recording…" doneLabel="Cleared" disabled={busy} onClick={() => cmd({ type: 'funds_cleared', receiptId: key.slice('funds_cleared:'.length) })}>Record Cleared</BusyButton>;
+    if (key.startsWith('shortfall_request:')) { const acc = firmAccounts(); return acc.length ? act('completion', 'funds_requested', 'Ask The Client', { fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: Number(key.slice('shortfall_request:'.length)) }, { primary: true }) : <span className="ep-note">Verify our client account under Bank Details first.</span>; }
+    if (key.startsWith('refund:')) return act('completion', 'refund_paid', 'Record Sent', { refundId: key.slice('refund:'.length) }, { primary: true });
     switch (key) {
       case 'official_copies': return <UploadButton label={STEP_UPLOADS.official_copies.label} onFiles={async (files, progress) => {
         setUpMsg((m) => { const n = { ...m }; delete n[key]; return n; });
@@ -814,12 +821,12 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         if (!acc.length) return <span className="ep-note">Verify our client account under Bank Details first.</span>;
         // The client's money (and an ISA bonus): the lender's advance is its own step, after the certificate of title.
         const asked = (f: string) => (s.waits ?? []).some((w: { key: string; subject: string }) => w.key === 'funds' && w.subject === f);
-        return <>{[...p.fundsFrom, ...(s.shapes ?? []).map((sh: string) => (sh === 'lifetime_isa' || sh === 'help_to_buy_isa' ? 'isa_provider' : null)).filter(Boolean)].filter((f, i, all) => (f === 'client' || f === 'isa_provider') && all.indexOf(f) === i && !asked(f as string)).map((f) => <button key={f as string} className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: f, bankDetailsId: payFrom.firm_client_account ?? acc[0].id })}>{f === 'client' ? 'Request From The Client' : 'Request The ISA Bonus'}</button>)}</>;
+        return <>{[...p.fundsFrom, ...(s.shapes ?? []).map((sh: string) => (sh === 'lifetime_isa' || sh === 'help_to_buy_isa' ? 'isa_provider' : null)).filter(Boolean)].filter((f, i, all) => (f === 'client' || f === 'isa_provider') && all.indexOf(f) === i && !asked(f as string)).map((f) => <span key={f as string}>{act('completion', 'funds_requested', f === 'client' ? 'Request From The Client' : 'Request The ISA Bonus', { fromRole: f, bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: askFor(f as string) }, { primary: true })}</span>)}</>;
       }
       case 'advance_request': {
         const acc = firmAccounts();
         if (!acc.length) return <span className="ep-note">Verify our client account under Bank Details first.</span>;
-        return <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: payFrom.firm_client_account ?? acc[0].id })}>Request The Advance</button>;
+        return act('completion', 'funds_requested', 'Request The Advance', { fromRole: 'lender', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: askFor('lender') }, { primary: true });
       }
       case 'completion_monies': return act('completion', 'funds_received', 'Record Received', { fromRole: 'buyer_solicitor' }, { primary: true });
       case 'consideration': return act('completion', 'funds_received', 'Record Received', { fromRole: 'incoming_owner' }, { primary: true });
@@ -906,6 +913,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
           return r.document;
         } : undefined}
         contract={contracts[sheet.type]}
+        initial={sheet.extra}
         docs={docs}
         context={sheetContext}
         busy={busy}
@@ -1304,9 +1312,9 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       actions: s.stage === 'pre_completion' && !completed ? <>
         {needsRequest && firm.length === 0 && !s.completion.fundsReceivedAt && <span className="ep-block" style={{ display: 'inline-block', marginRight: 6 }}>Firm client-account details not verified.</span>}
         {needsRequest && firm.length > 0 && !s.completion.fundsReceivedAt && pickAccount('firm_client_account', firm)}
-        {p.fundsFrom.includes('lender') && firm.length > 0 && s.hasLender && !openWaits.some((w) => w.key === 'funds' && w.subject === 'lender') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request {remo ? 'the advance' : 'lender funds'}</button>}
-        {p.fundsFrom.includes('client') && firm.length > 0 && !openWaits.some((w) => w.key === 'funds' && w.subject === 'client') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request client funds</button>}
-        {p.fundsFrom.includes('isa_provider') && firm.length > 0 && !openWaits.some((w) => w.key === 'funds' && w.subject === 'isa_provider') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'isa_provider', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request The ISA Bonus</button>}
+        {p.fundsFrom.includes('lender') && firm.length > 0 && s.hasLender && !openWaits.some((w) => w.key === 'funds' && w.subject === 'lender') && !s.completion.fundsReceivedAt && act('completion', 'funds_requested', remo ? 'Request The Advance' : 'Request Lender Funds', { fromRole: 'lender', bankDetailsId: payFrom.firm_client_account ?? firm[0].id, amountPennies: askFor('lender') })}
+        {p.fundsFrom.includes('client') && firm.length > 0 && !openWaits.some((w) => w.key === 'funds' && w.subject === 'client') && !s.completion.fundsReceivedAt && act('completion', 'funds_requested', 'Request Client Funds', { fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? firm[0].id, amountPennies: askFor('client') })}
+        {p.fundsFrom.includes('isa_provider') && firm.length > 0 && !openWaits.some((w) => w.key === 'funds' && w.subject === 'isa_provider') && !s.completion.fundsReceivedAt && act('completion', 'funds_requested', 'Request The ISA Bonus', { fromRole: 'isa_provider', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}
         {openWaits.filter((w) => w.key === 'funds').map((w) => <span key={w.subject}>{act('completion', 'funds_received', `${pretty(w.subject)} Funds Received`, { fromRole: w.subject })}</span>)}
         {p.fundsFrom.includes('buyer_solicitor') && !s.completion.fundsReceivedAt && act('completion', 'funds_received', "Completion Monies Received from the Buyer's Solicitor", { fromRole: 'buyer_solicitor' }, { primary: true })}
         {p.fundsFrom.includes('incoming_owner') && (s.considerationPennies ?? 0) > 0 && !s.completion.fundsReceivedAt && act('completion', 'funds_received', 'Consideration Received', { fromRole: 'incoming_owner' }, { primary: true })}
@@ -1474,6 +1482,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
           <button className="ep-btn" style={{ margin: 0 }} disabled={busy || !bd.accountName || bd.sortCode.length !== 6 || bd.accountNumber.length !== 8} onClick={() => { void cmd({ type: 'record_bank_details', payeeKind: bd.payeeKind, payeeRef: bd.payeeRef || null, details: { sortCode: bd.sortCode, accountNumber: bd.accountNumber, accountName: bd.accountName, firmName: bd.firmName || null }, sourceChannel: bd.sourceChannel }); setBd({ ...bd, accountName: '', sortCode: '', accountNumber: '' }); }}>Record Details</button>
         </div>
         <NoticeBox n={noticeFor('money')} />
+        {s.money && Object.keys({ ...s.money.requested, ...s.money.received }).length > 0 && <div style={{ marginTop: 8, fontSize: 12.5 }}><b>Money in:</b> {Object.keys({ ...s.money.requested, ...s.money.received }).map((r) => `${PAYER[r] ?? pretty(r)} ${gbp(s.money!.received[r] ?? 0)}${s.money!.requested[r] != null ? ` of ${gbp(s.money!.requested[r])}` : ''}`).join(' · ')}{s.money.uncleared.length > 0 ? ` · ${s.money.uncleared.length} not cleared` : ''}</div>}
+        {s.money && s.money.refunds.length > 0 && <div style={{ marginTop: 4, fontSize: 12.5 }}><b>Owed back:</b> {s.money.refunds.map((r) => `${r.amountPennies != null ? gbp(r.amountPennies) : 'Amount'} to ${PAYER[r.toRole] ?? pretty(r.toRole)}${r.paidAt ? ` (sent ${fmtDay(r.paidAt)})` : ''}`).join(' · ')}</div>}
         {s.payments.length > 0 && <div style={{ marginTop: 8, fontSize: 12.5 }}><b>Payments authorised:</b> {s.payments.map((x) => `${pretty(x.purpose)} → ${pretty(x.payeeKind)}${x.amountPennies ? ` ${gbp(x.amountPennies)}` : ''} (${fmtDay(x.at)})`).join(' · ')}</div>}
       </div>
 

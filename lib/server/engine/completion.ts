@@ -10,7 +10,7 @@
  */
 import type { CommandType } from './machine';
 
-export type FieldKind = 'money' | 'date' | 'datetime' | 'text' | 'names';
+export type FieldKind = 'money' | 'date' | 'datetime' | 'text' | 'names' | 'flag';
 export interface Field {
   key: string;
   label: string;
@@ -50,6 +50,7 @@ export interface Completion {
 const money = (key: string, label: string, required = true): Field => ({ key, label, kind: 'money', required });
 const date = (key: string, label: string, required = true): Field => ({ key, label, kind: 'date', required });
 const text = (key: string, label: string, required = true, hint?: string): Field => ({ key, label, kind: 'text', required, hint });
+const flag = (key: string, label: string): Field => ({ key, label, kind: 'flag', required: false });
 const names = (key: string, label: string): Field => ({ key, label, kind: 'names', required: true, hint: 'Comma-separated' });
 
 export const COMPLETION_CONTRACTS: Partial<Record<CommandType, CompletionContract>> = {
@@ -58,8 +59,10 @@ export const COMPLETION_CONTRACTS: Partial<Record<CommandType, CompletionContrac
   signed_contract_held: { label: 'Signed Contract Held', documentRoles: ['contract', 'CONTRACT', 'SIGNED_CONTRACT'], documentLabel: 'The signed contract', documentRequired: true, checklist: [{ key: 'every_signatory', label: 'Every client has signed' }, { key: 'dated', label: 'Left undated for exchange' }], effect: 'The signed part is on file, ready to exchange.' },
   deposit_received: { label: 'Deposit Received', documentLabel: 'Remittance or client-account receipt', fields: [money('amountPennies', 'Amount received')], effect: 'Records the deposit as held on client account.' },
   contracts_exchanged: { label: 'Contracts Exchanged', fields: [date('completionDate', 'Completion date agreed'), { key: 'exchangedAt', label: 'Exchanged at', kind: 'datetime', required: false }], checklist: [{ key: 'formula', label: 'Exchanged under a Law Society formula' }, { key: 'deposit_held', label: 'Deposit held or sent as agreed' }], effect: 'The contract is binding from this moment. Completion date and deposit become contractual.' },
-  completion_statement_generated: { label: 'Completion Statement Produced', documentRoles: ['COMPLETION_STATEMENT', 'completion_statement'], documentLabel: 'The completion statement', documentRequired: true, effect: 'The statement is on file; funds can be requested against it.' },
-  funds_received: { label: 'Funds Received', documentLabel: 'Bank receipt', fields: [money('amountPennies', 'Amount received'), text('remitter', 'Name on the sending account', false)], effect: 'Records the money as received on client account. A client balance from an account not seen in the source-of-funds evidence raises an AML issue that holds completion.' },
+  completion_statement_generated: { label: 'Completion Statement Produced', documentRoles: ['COMPLETION_STATEMENT', 'completion_statement'], documentLabel: 'The completion statement', documentRequired: true, fields: [money('balancePennies', 'Balance on the statement')], effect: 'The statement is on file; funds can be requested against it.' },
+  funds_requested: { label: 'Request Funds', fields: [money('amountPennies', 'Amount to ask for')], effect: 'Asks for the money to our verified client account. What arrives is checked against this figure: short holds completion, over is returned.' },
+  funds_received: { label: 'Funds Received', documentLabel: 'Bank receipt', fields: [money('amountPennies', 'Amount received'), text('remitter', 'Name on the sending account', false), flag('uncleared', 'Not cleared yet (a cheque, or held by the bank)')], effect: 'Checked against what was asked for: short holds completion, over is owed back. Money from an account not seen in the source-of-funds evidence raises an AML issue.' },
+  refund_paid: { label: 'Refund Sent', fields: [text('reference', 'Payment reference')], effect: 'Records the money as returned to the account it came from.' },
   completion_confirmed: { label: 'Completion Confirmed', fields: [{ key: 'completedAt', label: 'Completed at', kind: 'datetime', required: false }], checklist: [{ key: 'monies_sent', label: "Completion monies sent and receipt confirmed by the other side" }, { key: 'keys', label: 'Keys released / vacant possession confirmed' }], effect: 'The transaction has completed. The registration clock starts.' },
   mortgage_deed_executed: { label: 'Mortgage Deed Signed', documentRoles: ['MORTGAGE_DEED', 'mortgage_deed', 'DEED', 'SIGNED_DEED'], documentLabel: 'Scan of the signed mortgage deed', documentRequired: true, checklist: [{ key: 'every_borrower', label: 'Every borrower has signed' }, { key: 'witnessed', label: 'Witnessed by an independent adult' }, { key: 'original_held', label: 'The wet-ink original is with us (or it was signed electronically)' }], effect: 'The deed is held for completion.' },
   certificate_of_title_sent: { label: 'Certificate of Title Sent', documentRoles: ['CERTIFICATE_OF_TITLE', 'certificate_of_title'], documentLabel: 'The certificate sent to the lender', fields: [date('completionDate', 'Completion date on the certificate')], effect: 'The lender is asked to release the advance for the completion date.' },

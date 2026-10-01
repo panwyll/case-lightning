@@ -232,7 +232,7 @@ const exchangeBuyer = (price: number, deposit: number, advance: number | null): 
   step('exchange', 'Contracts exchanged', async (c) => { await c.run({ type: 'contracts_exchanged', completionDate: F.completionDate() }); }),
   step('statement', 'Completion statement drafted and produced', async (c) => {
     const { documentId } = await c.svc.draftCompletionStatement(c.tenantId, c.matterId);
-    await c.run({ type: 'completion_statement_generated', documentId });
+    await c.run({ type: 'completion_statement_generated', documentId, balancePennies: price - deposit - (advance ?? 0) });
   }),
   // The order lenders work to: the client's money in, the searches and insurance done, the deed signed; then the certificate of title, and the advance against it.
   step('balance', "The client's balance requested and received", async (c) => {

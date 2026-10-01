@@ -9,6 +9,7 @@ import { stageBlockers } from './machine';
 import { profileOf } from './transactions';
 import { SHAPE_SPEC } from './shapes';
 import { isResolved, type MatterState } from './types';
+import { moneyOf, position, pounds, ROLE_LABEL } from './money';
 import { subtractWorkingDays, addWorkingDays, EW_CALENDAR } from './working-days';
 
 export interface DueStep {
@@ -39,8 +40,18 @@ const RESEND_TITLE: Record<string, (d: { searchType?: string }) => string> = {
 };
 const RESEND_LANE: Record<string, string> = { search_order: 'searches', id_check_request: 'id_aml', proof_of_funds_request: 'source_of_funds', signing_pack: 'signing', deposit_request: 'exchange', property_forms_request: 'property_forms', exchange_authority_request: 'exchange', balance_request: 'completion', ownership_basis_request: 'co_ownership', buildings_insurance_request: 'pre_completion_checks' };
 
+/** Money owed back and money not yet cleared: on our list even on a file that has stopped, until it is dealt with. */
+function moneySteps(s: MatterState): DueStep[] {
+  const m = moneyOf(s);
+  return [
+    ...m.uncleared.map((u) => ({ key: `funds_cleared:${u.id}`, lane: 'completion', title: `Confirm ${u.amountPennies != null ? pounds(u.amountPennies) : 'the money'} from ${ROLE_LABEL[u.fromRole]} has cleared`, detail: 'It cannot be paid out until it has.' })),
+    ...m.refunds.filter((r) => !r.paidAt).map((r) => ({ key: `refund:${r.id}`, lane: 'completion', title: `Return ${r.amountPennies != null ? pounds(r.amountPennies) : 'the money held'} to ${ROLE_LABEL[r.toRole]}${r.to ? ` (${r.to})` : ''}`, detail: r.reason })),
+  ];
+}
+
 export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
-  if (!s.enrolled || s.abandoned || s.closedAt) return [];
+  if (!s.enrolled) return [];
+  if (s.abandoned || s.closedAt) return moneySteps(s);
   const tt = s.transactionType ?? 'freehold_purchase';
   const p = profileOf(tt);
   const buyer = p.side === 'buyer', seller = p.side === 'seller';
@@ -49,8 +60,12 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   const paid = (kind: string, purpose?: string) => s.payments.some((x) => x.payeeKind === kind && (!purpose || x.purpose === purpose));
   const fundsFrom = [...p.fundsFrom, ...(s.shapes ?? []).map((sh) => SHAPE_SPEC[sh]?.fundsFrom).filter(Boolean)] as string[];
   const completionDate = s.exchange.completionDate ?? s.targetCompletionDate ?? null;
-  const out: DueStep[] = [];
+  const out: DueStep[] = moneySteps(s);
   const add = (x: DueStep) => out.push(x);
+  // Money short of what was asked for: ask the client for the difference (a lender's deduction is theirs to make up too).
+  const short = (buyer || remo) && !completed ? position(s).shortfallPennies : 0;
+  if (short > 0 && !s.waits.some((w) => w.key === 'funds' && w.subject === 'client' && w.closedAt === null))
+    add({ key: `shortfall_request:${short}`, lane: 'completion', title: `Ask the client for the ${pounds(short)} still to come`, dueDate: completionDate });
   // A step is offered only once the machine accepts it (a sale acts on the pack and the management pack once the ID check has cleared).
   const STAGE_ORDER = ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion', 'completed', 'post_completion'];
   const atLeast = (st: string) => STAGE_ORDER.indexOf(s.stage) >= STAGE_ORDER.indexOf(st);
@@ -128,7 +143,7 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
     add({ key: 'completion_monies', lane: 'completion', title: "Confirm the completion monies are in from the buyer's solicitor", dueDate: completionDate });
   if (s.stage === 'pre_completion' && fundsFrom.includes('incoming_owner') && (s.considerationPennies ?? 0) > 0 && !s.completion.fundsReceivedAt)
     add({ key: 'consideration', lane: 'completion', title: 'Confirm the consideration is in from the incoming owner', dueDate: completionDate });
-  if (buyer && s.stage === 'pre_completion' && s.completion.fundsReceivedAt && !paid('seller_solicitor', 'completion_monies'))
+  if (buyer && s.stage === 'pre_completion' && s.completion.fundsReceivedAt && !short && !moneyOf(s).uncleared.length && !paid('seller_solicitor', 'completion_monies'))
     add({ key: 'completion_payment', lane: 'completion', title: "Authorise the completion payment to the seller's solicitor", dueDate: completionDate });
   if ((seller || remo) && s.redemption.status === 'received' && s.stage === 'pre_completion' && !paid('lender'))
     add({ key: 'redemption_payment', lane: 'redemption', title: 'Authorise the redemption payment to the lender', dueDate: completionDate });

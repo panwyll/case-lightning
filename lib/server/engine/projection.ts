@@ -1,5 +1,6 @@
 import { addWorkingDays, subtractWorkingDays } from './working-days';
 import { resolveWithinWorkingDays, type IssueGate, type IssueKind } from './issues';
+import { moneyOf, payersExpected } from './money';
 /**
  * Projection: fold the immutable event log into the current MatterState.
  *
@@ -437,10 +438,13 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
 
     // ── Exchange ──
-    case 'deposit_received':
-      s.deposit = { received: true, at: e.createdAt };
+    case 'deposit_received': {
+      const p = e.payload as Payloads['deposit_received'];
+      const before = s.deposit.received ? s.deposit.amountPennies ?? null : null;
+      s.deposit = { received: true, at: s.deposit.at ?? e.createdAt, amountPennies: p.amountPennies != null ? (before ?? 0) + p.amountPennies : before, contractPennies: p.contractDepositPennies ?? s.deposit.contractPennies ?? null };
       closeWait(s, 'deposit', null, e);
       break;
+    }
     case 'exchange_conditions_met':
       s.exchange.conditionsMet = true;
       break;
@@ -455,12 +459,17 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
 
     // ── Completion ──
-    case 'completion_statement_generated':
+    case 'completion_statement_generated': {
       s.completion.statementGeneratedAt = e.createdAt;
+      const bal = (e.payload as Payloads['completion_statement_generated']).balancePennies;
+      if (bal != null) s.money = { ...moneyOf(s), statementBalancePennies: bal };
       break;
+    }
     case 'funds_requested': {
       const p = e.payload as Payloads['funds_requested'];
       s.completion.fundsRequestedAt = e.createdAt;
+      // The figure asked for sets what is needed; once money has come in, a further request is for the rest of it (a short payment, or a lender's deduction passed to the client) and does not raise the need.
+      if (p.amountPennies != null && !moneyOf(s).received[p.fromRole]) s.money = { ...moneyOf(s), requested: { ...moneyOf(s).requested, [p.fromRole]: p.amountPennies } };
       openWait(s, 'funds', p.fromRole, e);
       break;
     }
@@ -469,7 +478,29 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       closeWait(s, 'funds', p.fromRole, e);
       if (!s.completion.receivedFrom) s.completion.receivedFrom = [];
       if (!s.completion.receivedFrom.includes(p.fromRole)) s.completion.receivedFrom.push(p.fromRole);
-      if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null)) s.completion.fundsReceivedAt = e.createdAt;
+      const m = moneyOf(s);
+      s.money = {
+        ...m,
+        received: p.amountPennies != null ? { ...m.received, [p.fromRole]: (m.received[p.fromRole] ?? 0) + p.amountPennies } : m.received,
+        uncleared: p.uncleared ? [...m.uncleared, { id: p.receiptId ?? `REC-${e.seq}`, fromRole: p.fromRole, amountPennies: p.amountPennies ?? null, at: e.createdAt }] : m.uncleared,
+      };
+      // All in only when every payer the case expects has paid (the client's money in is not the lender's advance).
+      if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null) && payersExpected(s).every((r) => s.completion.receivedFrom.includes(r))) s.completion.fundsReceivedAt = s.completion.fundsReceivedAt ?? e.createdAt;
+      break;
+    }
+    case 'funds_cleared': {
+      const p = e.payload as Payloads['funds_cleared'];
+      s.money = { ...moneyOf(s), uncleared: moneyOf(s).uncleared.filter((u) => u.id !== p.receiptId) };
+      break;
+    }
+    case 'refund_due': {
+      const p = e.payload as Payloads['refund_due'];
+      s.money = { ...moneyOf(s), refunds: [...moneyOf(s).refunds, { id: p.refundId, toRole: p.toRole, to: p.to, amountPennies: p.amountPennies, reason: p.reason, dueAt: e.createdAt, paidAt: null, reference: null }] };
+      break;
+    }
+    case 'refund_paid': {
+      const p = e.payload as Payloads['refund_paid'];
+      s.money = { ...moneyOf(s), refunds: moneyOf(s).refunds.map((r) => (r.id === p.refundId ? { ...r, paidAt: e.createdAt, reference: p.reference } : r)) };
       break;
     }
     case 'completion_confirmed': {
