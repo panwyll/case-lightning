@@ -2,14 +2,14 @@
 
 These six catalogues list what can realistically happen at each junction of the flow, with sources. For each one they record what the engine should do (the signal, the issue and what it holds, the task or wait, who is told, how the case recovers) and what it does today.
 
-| Catalogue | Covers | Rows | Built today |
+| Catalogue | Covers | Rows | Built (1 October 2026) |
 |---|---|---|---|
-| [parties.md](parties.md) | Who the clients are and how that changes: a co-buyer leaving, divorce, death, capacity, attorneys, insolvency, sanctions, conflicts, fraud | 77 | ~13% |
-| [money.md](money.md) | Source of funds (business owners, overseas, loans, gifts), mortgage changes, ISAs, completion money, refunds | 77 | ~30% |
-| [property.md](property.md) | Title, unregistered land, planning and building regulations, searches, surveys, leasehold, the Building Safety Act, new build, auctions, tenanted property | 81 | ~35% |
-| [tax.md](tax.md) | SDLT edge by edge (second homes, commercial holdings, homes abroad, replacing a main residence, companies, non-residents, transfers of equity), Wales LTT, seller CGT | 72 | ~15% |
-| [exchange.md](exchange.md) | The contract, the deposit, the exchange formulae, authority, chains, notice to complete, failure to complete | 54 | ~22% |
-| [completion.md](completion.md) | Undertakings, charges, the day itself, delays, money, registration, discharge, file closure | 99 | ~25% |
+| [parties.md](parties.md) | Who the clients are and how that changes: a co-buyer leaving, divorce, death, capacity, attorneys, insolvency, sanctions, conflicts, fraud | 77 | 31% fully, more in part |
+| [money.md](money.md) | Source of funds (business owners, overseas, loans, gifts), mortgage changes, ISAs, completion money, refunds | 87 | 36% fully, more in part |
+| [property.md](property.md) | Title, unregistered land, planning and building regulations, searches, surveys, leasehold, the Building Safety Act, new build, auctions, tenanted property | 91 | 44% fully, more in part |
+| [tax.md](tax.md) | SDLT edge by edge (second homes, commercial holdings, homes abroad, replacing a main residence, companies, non-residents, transfers of equity), Wales LTT, seller CGT | 83 | 33% fully, more in part |
+| [exchange.md](exchange.md) | The contract, the deposit, the exchange formulae, authority, chains, notice to complete, failure to complete | 61 | 26% fully, more in part |
+| [completion.md](completion.md) | Undertakings, charges, the day itself, delays, money, registration, discharge, file closure | 99 | 41% fully, more in part |
 
 ## Build plan
 

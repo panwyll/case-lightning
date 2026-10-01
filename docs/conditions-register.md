@@ -111,7 +111,7 @@ practice guide.
 | Simultaneous exchange and completion | | **gated** | |
 | Tenants in common → declaration of trust before completion | | **gated** | `ownership_basis` client decision |
 | Transfer deed, mortgage deed, certificate, advance, client balance before completion | | **gated** | |
-| Money from the client short of the statement | issue `funding_shortfall` | **gated** | |
+| Money from the client short of the statement | `completion_funds_shortfall` raised and cleared by the receipts (engine/money.ts) | **gated** | |
 | Bank details change | hard stop; out-of-band verification | **gated** | |
 | Completion fails on the day / notice to complete | issue + decision + deadline | **gated** | |
 | SDLT: first-time-buyer relief, higher rates (additional property, company), non-resident surcharge, mixed use, linked transactions | the return and the sum | **flagged** | `sdlt.ts` computes the estimate on the declared basis (rates from April 2025): standard, relief, surcharges, company flat rate, non-residential rates for mixed use, linked consideration setting the rate on the aggregate; on the completion statement, the SDLT deadline and the registration tile; the `sdlt_basis` issue lists what to check |
@@ -127,7 +127,7 @@ practice guide.
 | TA6 answered "not known" | an enquiry to the seller's solicitor | **gated** | each such question is an enquiry proposed under the `enquiry_draft` trust level (propose by default; raised at once only at auto) |
 | EPC | the seller's certificate before marketing; F / G cannot be let (MEES) | **flagged** | `TA6_EPC_MISSING` on a sale; `TA6_EPC_MEES` on a buy-to-let purchase |
 | TA6 / TA7 answers read for issues | disputes, notices, works without consent, guarantees and insurance claims, flooding, knotweed, radon, occupiers, shared rights, septic tank, solar lease, boundaries, listed, leasehold arrears | **gated** | `property-forms.ts`: each material answer is an issue cited to the page, on the purchase (`seller_forms_received`) and on the sale (our client's forms); the issue's own gate holds |
-| Probate / attorney / capacity of the seller | issue `seller_capacity` holds exchange | **gated** | |
+| Probate / attorney / capacity of the seller | `probate_issue` / `power_of_attorney_issue` (record_party_event, engine/people.ts) | **gated** | |
 | Redemption figure known before exchange; discharge before close | | **gated** | |
 | Our client is also buying (linked sale and purchase) | one chain, simultaneous exchange | **gated** | `link_related_matter` on either side; see Source of funds |
 | Remortgage: SDLT determination, old lender redeemed, new deed | | **gated** | |
