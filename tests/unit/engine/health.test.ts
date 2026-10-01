@@ -27,6 +27,7 @@ test('health: every transaction type says what each of its phases should take', 
 test('health is expected progress, not age: a 100-day-old case whose outstanding items are all inside their SLA is normal', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   // The seller's solicitor sent the pack straight away; a long instruction phase — the ID check came back on day 100.
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
@@ -46,6 +47,7 @@ test('health is expected progress, not age: a 100-day-old case whose outstanding
 test('health: a case sitting in one phase with nothing outstanding becomes delayed, and says what the phase should take', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   // Nothing is owed by anyone else — so the only thing wrong is that we have not moved.
@@ -84,6 +86,7 @@ test('health: a case sitting in one phase with nothing outstanding becomes delay
 test('health: a wait past its chase point is someone else late (yellow), and always explains itself; a slow third party is never critical', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const rule = DEFAULT_SLA.search;
@@ -121,6 +124,7 @@ test('health: a wait past its chase point is someone else late (yellow), and alw
 test('health: an issue of ours holding exchange is with us (blue) while it is on time; a critical issue outranks it; the map line names the case, not the code', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'title_defect', title: 'Restriction in the register requires a certificate on transfer', gate: 'exchange' });
@@ -145,6 +149,7 @@ test('health: an issue of ours holding exchange is with us (blue) while it is on
 test('health: a mortgage offer about to expire is critical and outranks everything else on the case', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const expiry = new Date(h.ports.now().getTime() + 4 * 86_400_000).toISOString().slice(0, 10);
@@ -164,6 +169,7 @@ test('health: a mortgage offer about to expire is critical and outranks everythi
 test('health: a matter that is abandoned or closed says so instead of showing red for the rest of time', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'chain_dependency', title: 'Chain collapsed above us', gate: 'exchange' });
   await h.svc.run(TENANT, MATTER, { type: 'abandon_matter', actor: USER, reason: 'chain_collapsed', detail: 'Buyer above pulled out' });
   const s = await h.svc.getState(TENANT, MATTER);
@@ -186,6 +192,7 @@ test('rollup: the oversight strip counts what a team lead actually asks for', ()
 test('work: a wait is WAITING with a countdown, becomes CHASE when the clock runs out, and never loses its owner', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const ctx = { matterRef: 'OAK-14', propertyAddress: '14 Oak Street', assignedTo: USER };
@@ -230,6 +237,7 @@ test('work: a wait is WAITING with a countdown, becomes CHASE when the clock run
 test('work: a decision is a DO for a person, a hard stop is critical, and a proposed chase asks before sending', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleWithCharge()));
@@ -270,6 +278,7 @@ test('work: a decision is a DO for a person, a hard stop is critical, and a prop
 test('work: a closed or abandoned matter produces no work at all', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.run(TENANT, MATTER, { type: 'abandon_matter', actor: USER, reason: 'client_withdrew' });
   const s = await h.svc.getState(TENANT, MATTER);
@@ -280,6 +289,7 @@ test('caseload: the queue row carries the health band, the coarse lifecycle and 
   const h = harness();
   h.store.matterMeta.set(`${TENANT}:${MATTER}`, { matterRef: 'OAK-14', propertyAddress: '14 Oak Street', assignedTo: USER });
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'title_defect', title: 'Restriction on the title', gate: 'exchange' });
@@ -302,6 +312,7 @@ test('caseload: the queue row carries the health band, the coarse lifecycle and 
 test('work: the client\'s authority to exchange is not waited on until the case reaches pre-exchange', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: true });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   const s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.stage, 'instruction');
   const early = matterWork(s, h.ports.now()).items.filter((i) => i.id === 'waiting:client:exchange_authority');
@@ -315,6 +326,7 @@ test('work: the client\'s authority to exchange is not waited on until the case 
 test('health: critical means jeopardy or our own delay — a survey needing review is not critical; a party pulling out is; a decision we sit on for two weeks is', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   // A survey rated urgent comes in: work to do, not a crisis.
   await h.svc.surveyReceived(TENANT, MATTER, h.doc({ surveyType: 'level3', surveyor: 'J Bloggs MRICS', summary: 'x', recommendations: [{ code: 'STRUCT', text: 'Cracking to the rear wall; structural engineer before exchange.', furtherInvestigation: true, specialist: 'structural engineer', severity: 'high', rating: 3 }], confidence: 0.9 }, 'SURVEY'));
   let s = await h.svc.getState(TENANT, MATTER);

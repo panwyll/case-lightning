@@ -799,6 +799,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     if (key.startsWith('shortfall_request:')) { const acc = firmAccounts(); return acc.length ? act('completion', 'funds_requested', 'Ask The Client', { fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: Number(key.slice('shortfall_request:'.length)) }, { primary: true }) : <span className="ep-note">Verify our client account under Bank Details first.</span>; }
     if (key.startsWith('charge_statement:')) return act('redemption', 'charge_statement_received', 'Record Figure', { chargeId: key.slice('charge_statement:'.length) }, { primary: true });
     if (key.startsWith('charge_redeemed:')) return act('redemption', 'charge_redeemed', 'Record Paid Off', { chargeId: key.slice('charge_redeemed:'.length), amountPennies: (s.otherCharges ?? []).find((c) => c.id === key.slice('charge_redeemed:'.length))?.redemptionPennies ?? undefined }, { primary: true });
+    if (key === 'sdlt_facts') return act('exchange', 'record_sdlt_facts', 'Record Answers', {}, { primary: true });
+    if (key === 'cgt_facts') return act('exchange', 'record_cgt_facts', 'Record Answers', {}, { primary: true });
     if (key === 'longstop_date') return act('exchange', 'longstop_date_recorded', 'Record Date', {}, { primary: true });
     if (key === 'undertaking') return act('redemption', 'undertaking_given', 'Give Undertaking', { to: "The buyer's solicitor", terms: 'To redeem every charge on the title from the completion money and send the discharges (DS1 / e-DS1) on receipt.' }, { primary: true });
     if (key === 'completion_information') return act('completion', 'completion_information_received', 'Record Replies', {}, { primary: true });

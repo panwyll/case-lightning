@@ -30,6 +30,8 @@ import { propertyFormsIssues } from './property-forms';
 import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
 import { contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
+import { computeSdlt } from './sdlt';
+import { cgtFlags, chargeableConsideration, deriveSdltBasis, type CgtFacts, type SdltFacts } from './sdlt-facts';
 import { completionDateProblem, staleAtCompletion } from './dates';
 import { allDischarged, anythingCharged, chargesToAdd, isFinancialCharge, negativeEquity, openCharges } from './charges';
 import { heldOnAbandon, moneyOf, payersExpected, position, pounds, refundsDue, ROLE_LABEL } from './money';
@@ -214,6 +216,8 @@ type CommandBody =
   | { type: 'funds_cleared'; actor: Actor; receiptId: string }
   | { type: 'record_other_charge'; actor: Actor; chargee: string; text?: string | null }
   | { type: 'longstop_date_recorded'; actor: Actor; date: string }
+  | ({ type: 'record_sdlt_facts'; actor: Actor } & SdltFacts)
+  | ({ type: 'record_cgt_facts'; actor: Actor } & CgtFacts)
   | { type: 'charge_statement_received'; actor: Actor; chargeId: string; redemptionPennies: number; validUntil?: string | null; documentId?: string | null }
   | { type: 'charge_redeemed'; actor: Actor; chargeId: string; amountPennies?: number | null }
   | { type: 'charge_discharged'; actor: Actor; chargeId: string; reference?: string | null; documentId?: string | null }
@@ -288,6 +292,8 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'refund_paid',
   'record_other_charge',
   'longstop_date_recorded',
+  'record_sdlt_facts',
+  'record_cgt_facts',
   'charge_statement_received',
   'charge_redeemed',
   'charge_discharged',
@@ -2299,6 +2305,33 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const received: NewEvent = { type: 'redemption_statement_received', actor: cmd.actor, payload: { lender: cmd.lender ?? s.redemption.lender ?? null, redemptionPennies: cmd.redemptionPennies ?? null, validUntil: cmd.validUntil ?? null, dailyInterestPennies: cmd.dailyInterestPennies ?? null }, sourceDocumentId: cmd.documentId ?? null };
       return [received, ...negativeEquityEvents(s, { ...s, redemption: { ...s.redemption, redemptionPennies: cmd.redemptionPennies ?? s.redemption.redemptionPennies } })];
     }
+    case 'record_sdlt_facts': {
+      requireEnrolled(s);
+      requireSide(s, ['buyer', 'owner'], "The buyers' SDLT answers");
+      if (s.postCompletion.sdltSubmittedAt) reject('The return has been filed: correct it with HMRC (an amendment within 12 months), then here.');
+      const { type: _t, actor: _a, completion: _c, ...facts } = cmd as SdltFacts & { type: string; actor: string; completion?: unknown };
+      if (facts.debtAssumedPennies != null && (!Number.isInteger(facts.debtAssumedPennies) || facts.debtAssumedPennies < 0)) reject('The debt taken on must be a sum in pennies.', 400);
+      const d = deriveSdltBasis(facts, s);
+      const out: NewEvent[] = [{ type: 'sdlt_facts_recorded', actor: cmd.actor, payload: { facts, basis: d.basis, reasons: d.reasons, refundDiary: d.refundDiary } }];
+      const nextId = issueIds(s);
+      // The tax moved: say so with both figures, so the client's money and the statement follow.
+      const price = chargeableConsideration(s);
+      if (s.sdltBasis && price) {
+        const before = computeSdlt(price, { ...s.sdltBasis, company: s.shapes?.includes('company_buyer') ?? false });
+        const after = computeSdlt(price, d.basis);
+        if (before.totalPennies !== after.totalPennies) out.push(issue(s, nextId(), 'sdlt_basis', `${TAX_CHANGED}: estimate ${pounds(before.totalPennies)} → ${pounds(after.totalPennies)}`, `${d.reasons.join(' ')} Update the completion statement and tell the client: the money they need has changed.`, 'none'));
+      }
+      for (const c of d.contradictions) if (!Object.values(s.issues).some((i) => i.kind === 'sdlt_basis' && i.title === `Tax answers contradict the case: ${c.split(':')[0]}`)) out.push(issue(s, nextId(), 'sdlt_basis', `Tax answers contradict the case: ${c.split(':')[0]}`, c, 'exchange'));
+      return out;
+    }
+    case 'record_cgt_facts': {
+      requireEnrolled(s);
+      requireSide(s, ['seller'], "The client's CGT answers");
+      const out: NewEvent[] = [{ type: 'cgt_facts_recorded', actor: cmd.actor, payload: { mainResidenceThroughout: !!cmd.mainResidenceThroughout, ukResident: !!cmd.ukResident } }];
+      const flags = cgtFlags({ mainResidenceThroughout: !!cmd.mainResidenceThroughout, ukResident: !!cmd.ukResident });
+      if (flags.length && !openOf(s, 'cgt_flag', 'Capital Gains Tax')) out.push(issue(s, issueIds(s)(), 'cgt_flag', 'Capital Gains Tax: tell the client a 60-day report may be due', `${flags.join(' ')} Never advise on the tax or give a figure: tell the client in writing and suggest they speak to their accountant before completion.`, 'none'));
+      return out;
+    }
     case 'longstop_date_recorded': {
       requireEnrolled(s);
       if (!s.shapes?.includes('new_build')) reject('A long-stop date is recorded on a new-build purchase.');
@@ -2464,7 +2497,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!cmd.reason?.trim()) reject('Say why no return is due.', 400);
       // A purchase of £40,000 or more needs a return even when no tax is due (and a relief can only be claimed on one).
       const p = profile(s);
-      const consideration = p.side === 'buyer' ? s.purchasePricePennies : s.transactionType === 'transfer_of_equity' ? s.considerationPennies : null;
+      const consideration = p.side === 'buyer' || s.transactionType === 'transfer_of_equity' ? chargeableConsideration(s) : null;
       if ((p.side === 'buyer' || s.transactionType === 'transfer_of_equity') && consideration != null && consideration >= 4_000_000) reject('A return is required for a purchase of £40,000 or more, even when no tax is due or a relief brings it to nil (the relief is claimed on the return).');
       return [{ type: 'sdlt_not_required', actor: cmd.actor, payload: { reason: cmd.reason.trim() } }];
     }
@@ -2652,6 +2685,7 @@ const resolvedBy = (id: string, note: string): NewEvent => ({ type: 'issue_resol
 
 // ── Charges and undertakings (charges.ts) ──
 const NEGATIVE_EQUITY = 'Negative equity';
+const TAX_CHANGED = 'SDLT basis changed';
 /** The redemptions against the price, after a figure arrives: owing more than the price holds exchange. */
 function negativeEquityEvents(s: MatterState, after: MatterState): NewEvent[] {
   if (profile(s).side !== 'seller') return [];

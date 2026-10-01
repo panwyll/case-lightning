@@ -208,6 +208,8 @@ export const EVENT_TYPES = [
   'undertaking_discharged',
   'completion_information_received',
   'longstop_date_recorded',
+  'sdlt_facts_recorded',
+  'cgt_facts_recorded',
   'issue_severity_changed',
   'matter_closed',
   // transaction types (docs/transaction-types.md): sale, remortgage, transfer of equity, co-ownership
@@ -1123,6 +1125,8 @@ export interface Payloads {
   /** The seller's solicitor's replies to completion information (TA13): the undertaking to redeem the seller's charges. */
   completion_information_received: { undertakingToRedeem: boolean; documentId: string | null };
   longstop_date_recorded: { date: string };
+  sdlt_facts_recorded: { facts: { wales?: boolean; mainResidence?: boolean; anyEverOwned?: boolean; anyOwnsOther?: boolean; replacing?: boolean; replacingFirst?: boolean; anyNonResident?: boolean; mixedUse?: boolean; debtAssumedPennies?: number | null }; basis: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; wales?: boolean }; reasons: string[]; refundDiary: boolean };
+  cgt_facts_recorded: { mainResidenceThroughout: boolean; ukResident: boolean };
   client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; /** further_investigation: the investigations this applies to (issue ids); absent = all open ones. */ scope?: string[] | null };
   /** Severity moved (by a person, or by the timer as a deadline nears). */
   issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };
@@ -1657,7 +1661,11 @@ export interface MatterState {
   /** Adult occupiers named at enrolment who are not buying. */
   occupiers: string[];
   /** The SDLT basis the client declared at enrolment (null = nothing declared). */
-  sdltBasis: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; linkedConsiderationPennies?: number | null } | null;
+  sdltBasis: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; linkedConsiderationPennies?: number | null; wales?: boolean } | null;
+  /** The buyers' answers the basis is worked out from (sdlt-facts.ts), and the reasons it gives. */
+  sdltFacts?: { wales?: boolean; mainResidence?: boolean; anyEverOwned?: boolean; anyOwnsOther?: boolean; replacing?: boolean; replacingFirst?: boolean; anyNonResident?: boolean; mixedUse?: boolean; debtAssumedPennies?: number | null; recordedAt?: string; reasons?: string[]; refundDiary?: boolean } | null;
+  /** On a sale: the client's two CGT answers (a flag, never advice). */
+  cgtFacts?: { mainResidenceThroughout?: boolean; ukResident?: boolean; recordedAt: string } | null;
   /** Money that landed on client account outside the completion flow (fees, the deposit, an unexpected credit): who sent it and what for. */
   receipts: Array<{ remitter: string; amountPennies: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; at: string }>;
   completion: {

@@ -131,7 +131,7 @@ function stripUndefined<T extends object>(o: T): Partial<T> {
 
 // ───────────────────────────── deadlines (eventualities) ─────────────────────────────
 
-export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry' | 'certificate_of_title' | 'first_registration' | 'lisa_window' | 'auction_completion' | 'longstop_date';
+export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry' | 'certificate_of_title' | 'first_registration' | 'lisa_window' | 'auction_completion' | 'longstop_date' | 'sdlt_refund';
 
 export interface DeadlineAction {
   kind: DeadlineKind;
@@ -147,7 +147,7 @@ export interface DeadlineAction {
  * How many working days before a deadline the engine raises it (one escalation per deadline, by subject).
  * `stale_issue` is the other way round: an open issue nobody has touched for this many working days is raised.
  */
-export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2, certificate_of_title: 3, first_registration: 10, lisa_window: 15, auction_completion: 5, longstop_date: 20 };
+export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2, certificate_of_title: 3, first_registration: 10, lisa_window: 15, auction_completion: 5, longstop_date: 20, sdlt_refund: 60 };
 /** Working days before completion a lender usually needs the certificate of title (UK Finance Handbook practice). */
 export const CERTIFICATE_OF_TITLE_NOTICE = 5;
 
@@ -179,11 +179,13 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
     push('certificate_of_title', due, `Send the certificate of title to the lender (through its portal) by ${due}: ${CERTIFICATE_OF_TITLE_NOTICE} working days before completion on ${cotCompletion}, so the mortgage advance arrives in time. Record it under the lender's completion requirements once it has gone.`);
   }
   if (state.completion.confirmedAt && !state.postCompletion.sdltSubmittedAt && !state.sdltNotRequiredAt) {
-    const due = new Date(new Date(state.completion.confirmedAt).getTime() + 14 * 86_400_000).toISOString().slice(0, 10);
+    const wales = !!state.sdltBasis?.wales;
+    const due = new Date(new Date(state.completion.confirmedAt).getTime() + (wales ? 30 : 14) * 86_400_000).toISOString().slice(0, 10);
     const price = state.purchasePricePennies;
     const basis = { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false };
     const est = price ? computeSdlt(price, basis) : null;
-    push('sdlt_filing', due, `The SDLT return and payment are due within 14 days of completion (${state.completion.confirmedAt.slice(0, 10)}) — by ${due}. Late filing carries an automatic penalty and interest.${est ? ` Estimate on the ${sdltLabel(basis)} basis: £${(est.totalPennies / 100).toLocaleString('en-GB')} (${est.scheme}); check against HMRC's calculator.` : ''}`);
+    if (wales) push('sdlt_filing', due, `The Land Transaction Tax return and payment are due to the Welsh Revenue Authority within 30 days of completion (${state.completion.confirmedAt.slice(0, 10)}) — by ${due}.${est ? ` Estimate: £${(est.totalPennies / 100).toLocaleString('en-GB')} (${est.scheme}).` : ''}`);
+    else push('sdlt_filing', due, `The SDLT return and payment are due within 14 days of completion (${state.completion.confirmedAt.slice(0, 10)}) — by ${due}. Late filing carries an automatic penalty and interest.${est ? ` Estimate on the ${sdltLabel(basis)} basis: £${(est.totalPennies / 100).toLocaleString('en-GB')} (${est.scheme}); check against HMRC's calculator.` : ''}`);
   }
   if (state.preCompletion?.prioritySearchExpiresAt && !state.postCompletion.ap1SubmittedAt) {
     const exp = state.preCompletion.prioritySearchExpiresAt.slice(0, 10);
@@ -199,6 +201,12 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
   for (const r of state.postCompletion.requisitions) {
     if (r.respondedAt || !r.deadline) continue;
     push('requisition_reply', r.deadline.slice(0, 10), `HM Land Registry's requisition of ${r.receivedAt.slice(0, 10)} must be answered by ${r.deadline.slice(0, 10)} or the application is cancelled and priority is lost.`);
+  }
+  // The higher rates paid while the old main home was unsold: refundable if it sells within three years of this purchase.
+  if (state.sdltFacts?.refundDiary && state.completion.confirmedAt) {
+    const c = new Date(state.completion.confirmedAt);
+    const end = new Date(Date.UTC(c.getUTCFullYear() + 3, c.getUTCMonth(), c.getUTCDate())).toISOString().slice(0, 10);
+    push('sdlt_refund', end, `The higher rates were paid on ${state.completion.confirmedAt.slice(0, 10)} because the client's old main home had not sold. If it sells by ${end}, the extra 5% is refundable: ask the client whether it has sold, and claim within 12 months of that sale (or amend the return within 12 months of filing).`);
   }
   // The clocks the law or a scheme sets (dates.ts).
   const fr = firstRegistrationDue(state);

@@ -20,6 +20,8 @@ export interface SdltBasis {
   companyRelief?: boolean;
   /** Linked transactions: the other consideration between the same parties; the rate is set on the total and this purchase pays its share. */
   linkedConsiderationPennies?: number | null;
+  /** The property is in Wales: Land Transaction Tax to the Welsh Revenue Authority, not SDLT (ltt below). */
+  wales?: boolean;
 }
 export interface SdltBand { fromPennies: number; toPennies: number | null; rate: number; taxPennies: number }
 export interface SdltEstimate {
@@ -49,6 +51,7 @@ const COMPANY_FLAT_RATE = 0.17;
 const SURCHARGE_FLOOR = 40_000;
 
 export function computeSdlt(pricePennies: number, basis: SdltBasis): SdltEstimate {
+  if (basis.wales) return computeLtt(pricePennies, basis);
   const linked = basis.linkedConsiderationPennies ?? 0;
   if (linked > 0) {
     // The rate is set on the aggregate; this transaction bears its proportion (FA 2003 s.55(4)).
@@ -108,4 +111,37 @@ export function computeSdlt(pricePennies: number, basis: SdltBasis): SdltEstimat
   return { totalPennies: total, bands, scheme, notes, ratesFrom: RATES_FROM };
 }
 
-export const sdltLabel = (b: SdltBasis): string => [b.mixedUse && 'mixed use', b.company && 'company', b.firstTimeBuyer && 'first-time buyer', b.additionalProperty && 'additional property', b.nonUkResident && 'non-UK resident', (b.linkedConsiderationPennies ?? 0) > 0 && 'linked transactions'].filter(Boolean).join(', ') || 'standard';
+export const sdltLabel = (b: SdltBasis): string => [b.wales && 'Wales (LTT)', b.mixedUse && 'mixed use', b.company && 'company', b.firstTimeBuyer && 'first-time buyer', b.additionalProperty && 'additional property', b.nonUkResident && 'non-UK resident', (b.linkedConsiderationPennies ?? 0) > 0 && 'linked transactions'].filter(Boolean).join(', ') || 'standard';
+
+// ───────────────────────────── Wales: Land Transaction Tax ─────────────────────────────
+
+const LTT_FROM = '2024-12-11';
+/** LTT main residential rates (from 10 October 2022). */
+const LTT_MAIN: Array<[number, number | null, number]> = [[0, 225_000, 0], [225_000, 400_000, 0.06], [400_000, 750_000, 0.075], [750_000, 1_500_000, 0.10], [1_500_000, null, 0.12]];
+/** LTT higher residential rates (from 11 December 2024). */
+const LTT_HIGHER: Array<[number, number | null, number]> = [[0, 180_000, 0.05], [180_000, 250_000, 0.085], [250_000, 400_000, 0.10], [400_000, 750_000, 0.125], [750_000, 1_500_000, 0.15], [1_500_000, null, 0.17]];
+/** LTT non-residential and mixed-use rates. */
+const LTT_NON_RESIDENTIAL: Array<[number, number | null, number]> = [[0, 225_000, 0], [225_000, 250_000, 0.01], [250_000, 1_000_000, 0.05], [1_000_000, null, 0.06]];
+
+/**
+ * Land Transaction Tax (Wales): no first-time buyer relief and no non-resident surcharge; the higher rates are their
+ * own table (companies always pay them); the return goes to the Welsh Revenue Authority within 30 days.
+ */
+export function computeLtt(pricePennies: number, basis: SdltBasis): SdltEstimate {
+  const price = pricePennies / 100;
+  const notes: string[] = ['Wales: Land Transaction Tax, returned to the Welsh Revenue Authority within 30 days of completion.'];
+  const higher = !basis.mixedUse && price >= 40_000 && (basis.additionalProperty || basis.company);
+  const table = basis.mixedUse ? LTT_NON_RESIDENTIAL : higher ? LTT_HIGHER : LTT_MAIN;
+  if (basis.firstTimeBuyer) notes.push("LTT has no first-time buyer relief: the main rates apply.");
+  if (basis.nonUkResident) notes.push('LTT has no non-resident surcharge.');
+  const bands: SdltBand[] = [];
+  let total = 0;
+  for (const [from, to, rate] of table) {
+    if (price <= from) break;
+    const slice = (to == null ? price : Math.min(price, to)) - from;
+    const tax = Math.round(slice * rate * 100);
+    bands.push({ fromPennies: from * 100, toPennies: to == null ? null : to * 100, rate, taxPennies: tax });
+    total += tax;
+  }
+  return { totalPennies: total, bands, scheme: basis.mixedUse ? 'LTT non-residential rates' : higher ? 'LTT higher residential rates' : 'LTT main residential rates', notes, ratesFrom: LTT_FROM };
+}

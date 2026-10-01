@@ -488,6 +488,17 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null) && payersExpected(s).every((r) => s.completion.receivedFrom.includes(r))) s.completion.fundsReceivedAt = s.completion.fundsReceivedAt ?? e.createdAt;
       break;
     }
+    case 'sdlt_facts_recorded': {
+      const p = e.payload as Payloads['sdlt_facts_recorded'];
+      s.sdltFacts = { ...p.facts, recordedAt: e.createdAt, reasons: p.reasons, refundDiary: p.refundDiary };
+      s.sdltBasis = { firstTimeBuyer: p.basis.firstTimeBuyer, additionalProperty: p.basis.additionalProperty, nonUkResident: p.basis.nonUkResident, mixedUse: p.basis.mixedUse, wales: p.basis.wales };
+      break;
+    }
+    case 'cgt_facts_recorded': {
+      const p = e.payload as Payloads['cgt_facts_recorded'];
+      s.cgtFacts = { mainResidenceThroughout: p.mainResidenceThroughout, ukResident: p.ukResident, recordedAt: e.createdAt };
+      break;
+    }
     case 'longstop_date_recorded':
       s.longStopDate = (e.payload as Payloads['longstop_date_recorded']).date;
       break;

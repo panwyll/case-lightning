@@ -154,6 +154,9 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   if (s.stage === 'pre_completion' && !completed && (s.completion.fundsReceivedAt || !fundsExpected) && (!buyer || paid('seller_solicitor', 'completion_monies')) && stageBlockers(s).every((b) => b === 'completion not confirmed'))
     add({ key: 'completion', lane: 'completion', title: 'Confirm completion', dueDate: completionDate });
 
+  // The tax answers the basis is worked out from (sdlt-facts.ts): the buyers' before exchange, the seller's two CGT questions.
+  if ((buyer || toe) && !s.sdltFacts && !exchanged && !completed) add({ key: 'sdlt_facts', lane: 'exchange', title: "Record the buyers' SDLT answers" });
+  if (seller && !s.cgtFacts && !exchanged) add({ key: 'cgt_facts', lane: 'exchange', title: "Record the client's CGT answers (main home throughout? UK resident?)" });
   // A new build's contract carries a long-stop date: on the case, so its clock is watched (dates.ts).
   if (buyer && s.shapes?.includes('new_build') && !s.longStopDate && !completed && ['contract_review', 'pre_exchange', 'exchanged', 'pre_completion'].includes(s.stage)) add({ key: 'longstop_date', lane: 'exchange', title: 'Record the long-stop date from the new-build contract' });
   // ── Charges and undertakings (charges.ts) ──
@@ -167,7 +170,7 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   if (seller && completed && !paid('client')) add({ key: 'balance_to_client', lane: 'completion', title: 'Authorise the balance to the client' });
   if (completed && (seller || remo) && s.redemption.status === 'received') add({ key: 'mortgage_redeemed', lane: 'redemption', title: 'Record the mortgage as redeemed' });
   if (completed && p.registration === 'ap1' && (buyer || toe) && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt)
-    add({ key: 'sdlt', lane: 'registration', title: 'File the SDLT return', dueDate: day(new Date(Date.parse(s.completion.confirmedAt!) + 14 * 86_400_000)) });
+    add({ key: 'sdlt', lane: 'registration', title: s.sdltBasis?.wales ? 'File the LTT return (Welsh Revenue Authority)' : 'File the SDLT return', dueDate: day(new Date(Date.parse(s.completion.confirmedAt!) + (s.sdltBasis?.wales ? 30 : 14) * 86_400_000)) });
   const sdltDone = !(buyer || toe) || !!s.postCompletion.sdltSubmittedAt || !!s.sdltNotRequiredAt;
   if (completed && p.registration === 'ap1' && sdltDone && !s.postCompletion.ap1SubmittedAt)
     add({ key: 'ap1', lane: 'registration', title: 'Lodge the AP1 at HM Land Registry', dueDate: s.preCompletion.prioritySearchExpiresAt ?? null });
