@@ -865,7 +865,7 @@ export class EngineService {
     ].join('\n');
     // The decision cites the contract itself, and each flagged point where the read found it.
     const citations = [{ documentId: docId, label: 'The contract' }, ...points.filter((p) => p.locator).map((p) => ({ documentId: docId, locator: p.locator, label: p.description }))];
-    await this.run(tenantId, matterId, { type: 'raise_contract_review', documentId: docId, summary, citations, terms: f ? { pricePennies: f.pricePennies, depositPennies: f.depositPennies, depositHolder: f.depositHolder, noticeToCompleteDays: f.noticeToCompleteDays, specialConditions: f.specialConditions } : null });
+    await this.run(tenantId, matterId, { type: 'raise_contract_review', documentId: docId, summary, citations, terms: f ? { pricePennies: f.pricePennies, depositPennies: f.depositPennies, depositHolder: f.depositHolder, noticeToCompleteDays: f.noticeToCompleteDays, specialConditions: f.specialConditions, completionDate: f.completionDate } : null });
   }
 
   /** A document behind the seller's forms (a policy, a permission, a certificate, a guarantee): read, and shown with the title. */

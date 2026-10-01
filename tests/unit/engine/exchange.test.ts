@@ -63,3 +63,25 @@ test('a linked sale abandoned tells the purchase at once, holding its exchange',
   const told = Object.values(purchase.issues).find((x) => x.title === "The client's linked sale has fallen through")!;
   assert.equal(told.gate, 'exchange');
 });
+
+test("a survey the client booked holds exchange until the report is back or they decide to go ahead without it", () => {
+  const booked = ready({ survey: { ...i0.survey, plan: { plan: 'booked', date: '2026-10-10', at: 'x' } } });
+  assert.throws(() => fold(booked, { type: 'contracts_exchanged', completionDate: '2026-10-16', formula: 'B', spokeWith: 'J' }), /survey is booked and the report is not back/);
+  const goAhead = { ...booked, clientDecisions: { accept_risk: { decision: 'accepted', at: 'x', by: USER, note: 'Exchange without waiting' } } } as MatterState;
+  assert.equal(fold(goAhead, { type: 'contracts_exchanged', completionDate: '2026-10-16', formula: 'B', spokeWith: 'J' }).exchange.exchangedAt !== null, true);
+});
+
+test('a mortgage offer withdrawn after exchange is a critical money issue holding completion, not a reset', () => {
+  const s = ready({ hasLender: true, stage: 'pre_completion', mortgage: { ...i0.mortgage, status: 'cleared' }, exchange: { ...i0.exchange, exchangedAt: '2026-09-20T10:00:00Z', completionDate: '2026-10-16' } });
+  const after = fold(s, { type: 'mortgage_offer_withdrawn', reason: 'Valuation revised down' });
+  const i = Object.values(after.issues)[0];
+  assert.equal(i.kind, 'mortgage_at_risk');
+  assert.equal(i.gate, 'completion');
+  assert.equal(after.mortgage.status, 'cleared', 'the offer record stands; the issue carries the emergency');
+});
+
+test("a completion date in the draft contract after the offer expires is raised before exchange", async () => {
+  const { contractFindings } = await import('../../../lib/server/engine/findings');
+  const f = contractFindings({ pricePennies: 1, depositPennies: 1, depositHolder: null, noticeToCompleteDays: 10, specialConditions: [], completionDate: '2027-03-01' }, { side: 'buyer', hasLender: true, offerExpiry: '2027-02-01' });
+  assert.equal(f[0].code, 'COMPLETION_AFTER_OFFER');
+});

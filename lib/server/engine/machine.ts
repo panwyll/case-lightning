@@ -158,7 +158,7 @@ type CommandBody =
   // ── eventualities (docs/engine-eventualities.md) ──
   | { type: 'abandon_matter'; actor: Actor; reason: AbandonReason; detail?: string | null }
   | { type: 'record_contract_filed'; documentId: string; points: number }
-  | { type: 'raise_contract_review'; documentId: string; summary: string; citations?: Citation[]; /** What the contract read says, for the rules (findings.ts). */ terms?: Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'> | null }
+  | { type: 'raise_contract_review'; documentId: string; summary: string; citations?: Citation[]; /** What the contract read says, for the rules (findings.ts). */ terms?: (Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'> & { completionDate?: string | null }) | null }
   | { type: 'set_clients'; actor: Actor; names: string[]; reason?: string | null }
   | { type: 'set_target_dates'; actor: Actor; targetExchangeDate?: string | null; targetCompletionDate?: string | null; reason?: string | null }
   | { type: 'change_completion_date'; actor: Actor; completionDate: string; reason?: string | null }
@@ -550,6 +550,7 @@ export function stageBlockers(s: MatterState): string[] {
       if (s.hasLender && !isResolved(s.mortgage.status)) b.push(`mortgage offer ${s.mortgage.status} (withdrawn or awaiting re-issue)`);
       b.push(...issueBlockers(s, 'exchange'));
       if (proofOfFundsHolds(s)) b.push(`proof of funds ${proofOfFundsHoldReason(s)}`);
+      if (surveyPending(s)) b.push('survey booked by the client, report not back');
       if (surveyHolds(s)) b.push(`survey: client not yet ${s.survey.status === 'further_investigation' ? 'able to decide — further investigation outstanding' : s.survey.status === 'client_renegotiating' ? 'satisfied — renegotiating' : 'confirmed satisfied with the physical condition'}`);
       if (!s.readiness.contractApprovedAt) b.push(s.readiness.contractDocumentId ? 'contract not yet approved' : "draft contract not yet received from the seller's solicitor");
       else if (!s.readiness.signedContractHeldAt) b.push("our client's signed contract not on file");
@@ -715,6 +716,8 @@ function ownerBlockers(s: MatterState, p: TransactionProfile): string[] {
 
 /** A survey on file means the client must confirm they are satisfied with the physical condition before exchange (their decision, never inferred). */
 const surveyHolds = (s: MatterState): boolean => surveyApplies(s) && s.survey.status !== 'client_satisfied';
+/** The client booked a survey and its report is not back: exchange waits for it, or for the client's decision to go ahead without it (exchange.md 4.5). */
+const surveyPending = (s: MatterState): boolean => s.survey.plan?.plan === 'booked' && !surveyApplies(s) && s.clientDecisions.accept_risk?.decision !== 'accepted';
 /** Firm policy: the client's recorded authority to exchange. */
 const exchangeAuthorityHolds = (s: MatterState): boolean => s.requireExchangeAuthority && s.clientDecisions.exchange_authority?.decision !== 'authorised';
 const proofOfFundsHoldReason = (s: MatterState): string => (s.proofOfFunds.status === 'submitted' ? 'awaiting sign-off' : s.proofOfFunds.status === 'requested' ? 'requested from the client' : s.proofOfFunds.status === 'reviewed' ? `${s.proofOfFunds.resolution === 'reject' ? 'rejected' : 'not signed off'} — a new round is needed` : 'not yet requested (firm policy)');
@@ -1321,6 +1324,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         if (stale.length) reject(`Cannot exchange: the lender requires searches under ${maxAge} months old at completion, and on ${cmd.completionDate} ${stale.join(', ')} will be older; re-order.`);
       }
       if (proofOfFundsHolds(s)) reject(`Cannot exchange: proof of funds ${s.proofOfFunds.status === 'submitted' ? 'is awaiting the conveyancer\'s sign-off' : s.proofOfFunds.status === 'requested' ? 'is still with the client' : proofOfFundsHoldReason(s)}.`);
+      if (surveyPending(s)) reject("Cannot exchange: the client's survey is booked and the report is not back. Wait for it, or record the client's decision to exchange without it (accept risk).");
       if (surveyHolds(s)) reject(`Cannot exchange: the client has not confirmed they are satisfied with the physical condition (survey ${s.survey.status.replace(/_/g, ' ')}). Record the client's decision.`);
       if (exchangeAuthorityHolds(s)) reject('Cannot exchange: the client has not authorised exchange. Record the client\'s decision (exchange_authority).');
       const unidentified = Object.values(s.partyChecks).filter((pc) => pc.role !== 'donor' && !isResolved(pc.status));
@@ -1761,7 +1765,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       if (!s.hasLender) reject('Cash purchase — there is no mortgage offer to withdraw.');
       if (s.mortgage.status === 'awaiting' || s.mortgage.status === 'not_required') reject('No mortgage offer is on file.');
-      if (s.exchange.exchangedAt) reject('Contracts are exchanged: a withdrawn offer after exchange is a manual-handling emergency, not a sub-flow reset.');
+      // After exchange the client is still bound to complete: the offer going is an emergency on the money, not a reset (exchange.md 6.6).
+      if (s.exchange.exchangedAt) {
+        const raised = issue(s, issueIds(s)(), 'mortgage_at_risk', `Mortgage offer withdrawn after exchange${cmd.reason ? `: ${cmd.reason}` : ''}`, `The client is bound to complete on ${s.exchange.completionDate ?? 'the contract date'} with or without the advance. Today: find out why the lender withdrew and whether it can be reinstated; look for replacement funding (another lender, bridging, family money, each with its own source-of-funds check); tell the client in writing that if they cannot complete the seller may serve notice and keep the deposit; keep the seller's solicitor informed if the date is at risk.`, 'completion');
+        return [{ ...raised, payload: { ...(raised.payload as object), severity: 'critical' } } as NewEvent];
+      }
       return [{ type: 'mortgage_offer_withdrawn', actor: cmd.actor, payload: { reason: cmd.reason, lender: cmd.lender ?? s.mortgage.facts?.lender ?? null } }];
     }
     case 'withdraw_enquiry': {
@@ -2942,7 +2950,7 @@ const sellerTitleCharged = (s: MatterState): boolean => ((s.title.facts as Title
 
 // ── Readings become typed issues (findings.ts) ──
 function findingContext(s: MatterState): FindingContext {
-  return { side: profile(s).side, hasLender: s.hasLender, alterations: s.sellerForms?.facts?.answers?.alterations ?? null, pricePennies: s.purchasePricePennies ?? null, clients: Math.max(s.parties ?? 1, s.partyNames?.length ?? 0) };
+  return { side: profile(s).side, hasLender: s.hasLender, alterations: s.sellerForms?.facts?.answers?.alterations ?? null, pricePennies: s.purchasePricePennies ?? null, clients: Math.max(s.parties ?? 1, s.partyNames?.length ?? 0), offerExpiry: s.hasLender ? ((s.mortgage.facts as { expiryDate?: string | null } | null)?.expiryDate ?? null) : null };
 }
 /** Each finding once per case: a later reading of the same thing (a new edition, the lease after the register) never raises it again. */
 function findingEvents(s: MatterState, found: Finding[], documentId: string | null, nextId: () => string = issueIds(s)): NewEvent[] {

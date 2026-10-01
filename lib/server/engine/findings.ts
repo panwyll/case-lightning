@@ -21,6 +21,8 @@ export interface FindingContext {
   alterations?: string | null;
   /** How many clients we act for (a sole owner selling under a Form A restriction needs a second trustee). */
   clients?: number;
+  /** When the mortgage offer runs out, for a completion date fixed in the draft. */
+  offerExpiry?: string | null;
   /** The purchase price, for the deposit percentage. */
   pricePennies?: number | null;
 }
@@ -163,7 +165,7 @@ export function conditionalLongStop(conditions: Array<{ text: string }>): string
 }
 
 /** The draft contract: the deposit and the special conditions that change the bargain. */
-export function contractFindings(c: Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'>, ctx: FindingContext): Finding[] {
+export function contractFindings(c: Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'> & { completionDate?: string | null }, ctx: FindingContext): Finding[] {
   const out: Finding[] = [];
   const price = c.pricePennies ?? ctx.pricePennies ?? null;
   const buyer = ctx.side === 'buyer';
@@ -173,6 +175,10 @@ export function contractFindings(c: Pick<ContractFacts, 'pricePennies' | 'deposi
   }
   if (buyer && c.depositHolder && /\bagent\b/i.test(c.depositHolder) && !/stakeholder/i.test(c.depositHolder)) {
     out.push({ code: 'DEPOSIT_AS_AGENT', kind: 'deposit_issue', severity: 'warning', gate: 'exchange', page: null, title: 'Deposit held as agent for the seller', detail: `The contract has the deposit held as agent ("${clip(c.depositHolder, 80)}"): it can be released to the seller at exchange and is unprotected if the seller defaults. Ask for stakeholder; if it stays, advise the client and record their acceptance.` });
+  }
+  // A completion date already in the draft that the mortgage offer does not reach (exchange.md 2.8).
+  if (buyer && c.completionDate && ctx.offerExpiry && c.completionDate.slice(0, 10) > ctx.offerExpiry.slice(0, 10)) {
+    out.push({ code: 'COMPLETION_AFTER_OFFER', kind: 'mortgage_offer_expiring', severity: 'critical', gate: 'exchange', page: null, title: `The draft completion date (${c.completionDate.slice(0, 10)}) is after the mortgage offer expires (${ctx.offerExpiry.slice(0, 10)})`, detail: 'Ask the lender to extend the offer, or agree an earlier date with the seller, before exchange: the date becomes contractual and the advance will not be released after the offer ends.' });
   }
   if (c.noticeToCompleteDays != null && c.noticeToCompleteDays < 10) {
     out.push({ code: 'NOTICE_TO_COMPLETE_SHORT', kind: 'contract_term', severity: 'warning', gate: 'exchange', page: null, title: `Notice to complete shortened to ${c.noticeToCompleteDays} working days`, detail: 'The standard is 10 working days (SCS 6.8). A shorter notice gives the client less time to put things right after a missed completion: ask for the standard, or advise them in writing.' });
