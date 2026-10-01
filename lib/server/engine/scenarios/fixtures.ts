@@ -2,6 +2,7 @@
  * Fixture facts for the scenario library: what the fixture extractor hands the engine for a
  * sandbox document. Plainly marked as sandbox material; no real person, firm or property.
  */
+import { isWorkingDay } from '../working-days';
 import type { EnquiryReplyFacts, IdCheckFacts, LeaseFacts, ManagementPackFacts, MortgageOfferFacts, PropertyFormsFacts, SearchFacts, SearchType, TitleFacts } from '../types';
 import type { ProofOfFundsSubmission, StatementFacts } from '../proof-of-funds';
 
@@ -14,8 +15,10 @@ export const body = (title: string, lines: string[]): string => [SANDBOX_MARK, '
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 /** Dates relative to today, so a scenario run any day reads as a live case. */
-export const exchangeDate = (weeks = 6): string => iso(new Date(Date.now() + weeks * 7 * 86_400_000));
-export const completionDate = (weeksAfterExchange = 2): string => iso(new Date(Date.now() + (6 + weeksAfterExchange) * 7 * 86_400_000));
+/** The next banking day on or after a date: a completion (or exchange) never falls on a weekend or a bank holiday. */
+const banking = (d: Date): Date => { const x = new Date(d); while (!isWorkingDay(x)) x.setUTCDate(x.getUTCDate() + 1); return x; };
+export const exchangeDate = (weeks = 6): string => iso(banking(new Date(Date.now() + weeks * 7 * 86_400_000)));
+export const completionDate = (weeksAfterExchange = 2): string => iso(banking(new Date(Date.now() + (6 + weeksAfterExchange) * 7 * 86_400_000)));
 
 export const idClear = (): IdCheckFacts => ({ provider: 'sandbox-id', outcome: 'clear', flags: [], confidence: 0.99 });
 export const idRefer = (): IdCheckFacts => ({ provider: 'sandbox-id', outcome: 'refer', flags: [{ code: 'PEP_MATCH', severity: 'medium', description: 'Possible PEP match on one applicant', locator: { page: 2 } }], confidence: 0.97 });

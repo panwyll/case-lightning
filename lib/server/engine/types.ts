@@ -207,6 +207,7 @@ export const EVENT_TYPES = [
   'undertaking_given',
   'undertaking_discharged',
   'completion_information_received',
+  'longstop_date_recorded',
   'issue_severity_changed',
   'matter_closed',
   // transaction types (docs/transaction-types.md): sale, remortgage, transfer of equity, co-ownership
@@ -299,6 +300,8 @@ export interface SearchFacts {
   /** 0–1 per-document extraction confidence. Low confidence is routed to a human, never guessed. */
   confidence: number;
   summaryFields?: Record<string, string | number | boolean | null>;
+  /** The date the search was made, as printed on the result (its age runs from here, not from when it reached us). */
+  searchDate?: string | null;
 }
 
 export interface MortgageCondition {
@@ -1119,6 +1122,7 @@ export interface Payloads {
   undertaking_discharged: { note: string | null };
   /** The seller's solicitor's replies to completion information (TA13): the undertaking to redeem the seller's charges. */
   completion_information_received: { undertakingToRedeem: boolean; documentId: string | null };
+  longstop_date_recorded: { date: string };
   client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; /** further_investigation: the investigations this applies to (issue ids); absent = all open ones. */ scope?: string[] | null };
   /** Severity moved (by a person, or by the timer as a deadline nears). */
   issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };
@@ -1622,6 +1626,8 @@ export interface MatterState {
     interimSentAt?: string | null;
   };
   deposit: { received: boolean; at: string | null; /** What has come in towards it, and what the contract says it is. */ amountPennies?: number | null; contractPennies?: number | null };
+  /** A new build's long-stop date from the contract: past it either side may rescind. */
+  longStopDate?: string | null;
   /** Charges beyond the existing mortgage (a second charge, a secured loan, a charging order): each redeemed and discharged (engine/charges.ts). */
   otherCharges: OtherCharge[];
   /** Our undertaking on a sale to redeem every charge, and when the discharges went to the buyer's solicitor. */

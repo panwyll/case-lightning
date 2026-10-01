@@ -82,6 +82,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('payment_authorised'), payeeKind: z.enum(PAYEE_KINDS), bankDetailsId: z.string().min(1).max(60), amountPennies: z.number().int().nonnegative().nullish(), purpose: z.enum(['completion_monies', 'deposit', 'other']) }),
   z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client', 'buyer_solicitor', 'incoming_owner', 'isa_provider']), remitter: z.string().max(160).nullish(), amountPennies: z.number().int().nonnegative().nullish(), uncleared: z.boolean().nullish() }),
   z.object({ type: z.literal('funds_cleared'), receiptId: z.string().min(1).max(40) }),
+  z.object({ type: z.literal('longstop_date_recorded'), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
   z.object({ type: z.literal('record_other_charge'), chargee: z.string().min(1).max(160), text: z.string().max(600).nullish() }),
   z.object({ type: z.literal('charge_statement_received'), chargeId: z.string().min(1).max(20), redemptionPennies: z.number().int().nonnegative(), validUntil: z.string().max(10).nullish(), documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('charge_redeemed'), chargeId: z.string().min(1).max(20), amountPennies: z.number().int().nonnegative().nullish() }),

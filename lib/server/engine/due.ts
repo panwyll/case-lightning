@@ -154,6 +154,8 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   if (s.stage === 'pre_completion' && !completed && (s.completion.fundsReceivedAt || !fundsExpected) && (!buyer || paid('seller_solicitor', 'completion_monies')) && stageBlockers(s).every((b) => b === 'completion not confirmed'))
     add({ key: 'completion', lane: 'completion', title: 'Confirm completion', dueDate: completionDate });
 
+  // A new build's contract carries a long-stop date: on the case, so its clock is watched (dates.ts).
+  if (buyer && s.shapes?.includes('new_build') && !s.longStopDate && !completed && ['contract_review', 'pre_exchange', 'exchanged', 'pre_completion'].includes(s.stage)) add({ key: 'longstop_date', lane: 'exchange', title: 'Record the long-stop date from the new-build contract' });
   // ── Charges and undertakings (charges.ts) ──
   if ((seller || remo) && !exchanged && !completed) for (const c of (s.otherCharges ?? []).filter((x) => x.status === 'to_redeem')) add({ key: `charge_statement:${c.id}`, lane: 'redemption', title: `Get a redemption figure from ${c.chargee}` });
   if (seller && exchanged && !completed && anythingCharged(s) && !s.undertaking) add({ key: 'undertaking', lane: 'redemption', title: "Give the buyer's solicitor our undertaking to redeem (reply to their completion information)", dueDate: completionDate });

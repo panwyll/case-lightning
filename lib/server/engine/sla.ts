@@ -11,6 +11,7 @@
  * wait's numbers via engine_sla_override (store.ts loads them into an SlaConfig).
  */
 import type { MatterState, WaitKey, WaitState } from './types';
+import { auctionCompletionDue, firstRegistrationDue, isaReceivedAt, lisaWindowEnds } from './dates';
 import { openIssues, openWaits } from './types';
 import { duplicateIssue, ISSUE_KIND_SPEC, MORTGAGE_EXPIRY_CRITICAL_DAYS, MORTGAGE_EXPIRY_WARNING_DAYS, type IssueKind, type IssueSeverity } from './issues';
 import { openIssues as openIssuesOf } from './types';
@@ -130,7 +131,7 @@ function stripUndefined<T extends object>(o: T): Partial<T> {
 
 // ───────────────────────────── deadlines (eventualities) ─────────────────────────────
 
-export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry' | 'certificate_of_title';
+export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry' | 'certificate_of_title' | 'first_registration' | 'lisa_window' | 'auction_completion' | 'longstop_date';
 
 export interface DeadlineAction {
   kind: DeadlineKind;
@@ -146,7 +147,7 @@ export interface DeadlineAction {
  * How many working days before a deadline the engine raises it (one escalation per deadline, by subject).
  * `stale_issue` is the other way round: an open issue nobody has touched for this many working days is raised.
  */
-export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2, certificate_of_title: 3 };
+export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2, certificate_of_title: 3, first_registration: 10, lisa_window: 15, auction_completion: 5, longstop_date: 20 };
 /** Working days before completion a lender usually needs the certificate of title (UK Finance Handbook practice). */
 export const CERTIFICATE_OF_TITLE_NOTICE = 5;
 
@@ -199,6 +200,14 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
     if (r.respondedAt || !r.deadline) continue;
     push('requisition_reply', r.deadline.slice(0, 10), `HM Land Registry's requisition of ${r.receivedAt.slice(0, 10)} must be answered by ${r.deadline.slice(0, 10)} or the application is cancelled and priority is lost.`);
   }
+  // The clocks the law or a scheme sets (dates.ts).
+  const fr = firstRegistrationDue(state);
+  if (fr && !state.postCompletion.ap1SubmittedAt) push('first_registration', fr, `The land was unregistered: apply for first registration (FR1) by ${fr}, two months from completion. Miss it and the legal estate reverts to the seller, holding it on trust (LRA 2002 ss.6-7); the lender's charge is unprotected.`);
+  const lisa = lisaWindowEnds(state, isaReceivedAt(state));
+  if (lisa) push('lisa_window', lisa, `The Lifetime ISA bonus must be used to complete by ${lisa}, 90 days after we received it. If completion will not happen by then, the money goes back to the ISA manager (not the client), with no charge to them.`);
+  const auction = auctionCompletionDue(state, cal);
+  if (auction) push('auction_completion', auction, `An auction purchase completes 20 working days after the auction: by ${auction}. Late completion costs contractual interest and, after a notice to complete, the 10% deposit.`);
+  if (state.longStopDate && state.shapes?.includes('new_build') && !state.completion.confirmedAt) push('longstop_date', state.longStopDate, `The new-build long-stop date is ${state.longStopDate}. If the developer has not served notice of completion by then, either side may rescind; advise the client and tell the lender (the offer must still be valid).`);
   // Stale issues: the forum pattern is an issue that sits for weeks because both sides are waiting
   // for the other. Raised once per period of silence (subject carries the last-touched date).
   for (const i of openIssues(state)) {

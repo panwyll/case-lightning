@@ -426,7 +426,8 @@ export function toSearchFacts(out: z.infer<typeof SearchExtractionSchema>, expec
   if (mismatch) {
     flags.push({ code: 'SEARCH_TYPE_MISMATCH', severity: 'medium', description: `Document reads as a ${out.searchType} search but a ${expected} search was expected.`, locator: { page: 1 } });
   }
-  return { searchType: expected, flags, confidence: overallConfidence(out.confidence, [minConfidence], out.scanQuality), summaryFields };
+  const searchDate = /^\d{4}-\d{2}-\d{2}/.test(out.searchDate ?? '') ? out.searchDate.slice(0, 10) : null;
+  return { searchType: expected, flags, confidence: overallConfidence(out.confidence, [minConfidence], out.scanQuality), summaryFields, searchDate };
 }
 
 export function toEnquiryReplyFacts(out: z.infer<typeof EnquiryReplyExtractionSchema>, enquiryId: string): EnquiryReplyFacts | null {

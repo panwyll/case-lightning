@@ -177,7 +177,7 @@ test("the lender's Part 2 on the matter: the lease review compares the minimum t
   // Search age at exchange.
   const base = { ...initialState(TENANT, MATTER), enrolled: true, transactionType: 'freehold_purchase' as const, stage: 'pre_exchange' as const, hasLender: false, requireProofOfFunds: false, requireExchangeAuthority: false, requiredSearches: ['CON29' as const], exchange: { ...initialState(TENANT, MATTER).exchange, conditionsMet: true }, readiness: { ...initialState(TENANT, MATTER).readiness, contractApprovedAt: '2026-08-01T00:00:00Z', signedContractHeldAt: '2026-08-02T00:00:00Z' }, lenderRequirements: { minUnexpiredYears: null, maxSearchAgeMonths: 6, acceptsNonFamilyGift: null, requiresEws1: null, note: null, recordedAt: '2026-01-01T00:00:00Z' } };
   base.searches = { CON29: { searchType: 'CON29', status: 'cleared', cycle: 1, orderedAt: '2026-01-05T00:00:00Z', returnedAt: '2026-01-20T00:00:00Z', provider: null, documentId: 'd', decisionEventId: null, facts: null } as never };
-  assert.throws(() => decide(base, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-01' }, ctx), /searches under 6 months old and CON29 \(2026-01-20\) is older/);
+  assert.throws(() => decide(base, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-01' }, ctx), /searches under 6 months old at completion, and on 2026-12-01 CON29 \(made 2026-01-20\) will be older/);
   const fresh = { ...base, searches: { CON29: { ...base.searches.CON29, returnedAt: '2026-08-01T00:00:00Z' } } };
   assert.ok(decide(fresh, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-01' }, ctx).events.some((e) => e.type === 'contracts_exchanged'), 'a search inside the limit does not hold exchange');
 });

@@ -49,7 +49,7 @@ export const STEP_ACTION_LABEL: Record<string, string> = {
   priority_search: 'Record Made', funds_request: 'Request Funds', advance_request: 'Request The Advance', completion_monies: 'Record Received', consideration: 'Record Received',
   completion_payment: 'Authorise', redemption_payment: 'Authorise', completion: 'Confirm Completion', balance_to_client: 'Authorise',
   refund: 'Record Sent', shortfall_request: 'Ask The Client', funds_cleared: 'Record Cleared',
-  charge_statement: 'Record Figure', charge_redeemed: 'Record Paid Off', undertaking: 'Give Undertaking', completion_information: 'Record Replies', undertaking_discharge: 'Record Sent',
+  longstop_date: 'Record Date', charge_statement: 'Record Figure', charge_redeemed: 'Record Paid Off', undertaking: 'Give Undertaking', completion_information: 'Record Replies', undertaking_discharge: 'Record Sent',
   mortgage_redeemed: 'Record Redeemed', sdlt: 'Record Filed', ap1: 'Record Lodged', notice_of_assignment: 'Record Served', close_file: 'Close File',
 };
 

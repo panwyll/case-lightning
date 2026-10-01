@@ -30,6 +30,7 @@ import { propertyFormsIssues } from './property-forms';
 import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
 import { contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
+import { completionDateProblem, staleAtCompletion } from './dates';
 import { allDischarged, anythingCharged, chargesToAdd, isFinancialCharge, negativeEquity, openCharges } from './charges';
 import { heldOnAbandon, moneyOf, payersExpected, position, pounds, refundsDue, ROLE_LABEL } from './money';
 import {
@@ -212,6 +213,7 @@ type CommandBody =
   | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null; remitter?: string | null; uncleared?: boolean; /** Filled by the service from the contract read (a sale's expected money). */ contractPricePennies?: number | null; contractDepositPennies?: number | null }
   | { type: 'funds_cleared'; actor: Actor; receiptId: string }
   | { type: 'record_other_charge'; actor: Actor; chargee: string; text?: string | null }
+  | { type: 'longstop_date_recorded'; actor: Actor; date: string }
   | { type: 'charge_statement_received'; actor: Actor; chargeId: string; redemptionPennies: number; validUntil?: string | null; documentId?: string | null }
   | { type: 'charge_redeemed'; actor: Actor; chargeId: string; amountPennies?: number | null }
   | { type: 'charge_discharged'; actor: Actor; chargeId: string; reference?: string | null; documentId?: string | null }
@@ -285,6 +287,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'funds_cleared',
   'refund_paid',
   'record_other_charge',
+  'longstop_date_recorded',
   'charge_statement_received',
   'charge_redeemed',
   'charge_discharged',
@@ -1272,10 +1275,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (profile(s).side === 'buyer' && s.hasLender && !isResolved(s.mortgage.status)) reject(`Cannot exchange: the mortgage offer is ${s.mortgage.status} (withdrawn / awaiting re-issue).`);
       const open = profile(s).side === 'buyer' ? unresolvedSearches(s, false) : [];
       if (open.length) reject(`Cannot exchange: ${open.join('; ')}.`);
+      // Searches are aged on the completion day, from the date each was made (theme E: dates.ts).
       const maxAge = s.lenderRequirements?.maxSearchAgeMonths ?? null;
-      if (maxAge != null && profile(s).side === 'buyer') {
-        const stale = Object.values(s.searches).filter((sr) => sr.returnedAt && (ctx.now.getTime() - Date.parse(sr.returnedAt)) / (30.44 * 86_400_000) > maxAge).map((sr) => `${sr.searchType} (${sr.returnedAt!.slice(0, 10)})`);
-        if (stale.length) reject(`Cannot exchange: the lender requires searches under ${maxAge} months old and ${stale.join(', ')} ${stale.length === 1 ? 'is' : 'are'} older; re-order.`);
+      if (maxAge != null && profile(s).side === 'buyer' && !Number.isNaN(Date.parse(cmd.completionDate))) {
+        const stale = staleAtCompletion(s, cmd.completionDate);
+        if (stale.length) reject(`Cannot exchange: the lender requires searches under ${maxAge} months old at completion, and on ${cmd.completionDate} ${stale.join(', ')} will be older; re-order.`);
       }
       if (proofOfFundsHolds(s)) reject(`Cannot exchange: proof of funds ${s.proofOfFunds.status === 'submitted' ? 'is awaiting the conveyancer\'s sign-off' : s.proofOfFunds.status === 'requested' ? 'is still with the client' : proofOfFundsHoldReason(s)}.`);
       if (surveyHolds(s)) reject(`Cannot exchange: the client has not confirmed they are satisfied with the physical condition (survey ${s.survey.status.replace(/_/g, ' ')}). Record the client's decision.`);
@@ -1289,6 +1293,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!s.exchange.conditionsMet) reject('Exchange conditions are not met (deposit received?).');
       if (s.exchange.exchangedAt) reject('Contracts already exchanged.');
       if (Number.isNaN(Date.parse(cmd.completionDate))) reject('A valid completion date is required to exchange.', 400);
+      const dateWrong = completionDateProblem(s, cmd.completionDate, cmd.exchangedAt && !Number.isNaN(Date.parse(cmd.exchangedAt)) ? new Date(cmd.exchangedAt) : ctx.now);
+      if (dateWrong) reject(`Cannot exchange: ${dateWrong}`, 400);
       return [{ type: 'contracts_exchanged', actor: cmd.actor, payload: { completionDate: cmd.completionDate, exchangedAt: cmd.exchangedAt ?? null } }];
     }
 
@@ -1642,6 +1648,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.completion.confirmedAt) reject('Completion has already been confirmed.');
       if (Number.isNaN(Date.parse(cmd.completionDate))) reject('A valid completion date is required.', 400);
       if (cmd.completionDate === s.exchange.completionDate) reject('The completion date is unchanged.');
+      { const dateWrong = completionDateProblem(s, cmd.completionDate, ctx.now); if (dateWrong) reject(dateWrong, 400); }
+      if (s.lenderRequirements?.maxSearchAgeMonths != null) { const stale = staleAtCompletion(s, cmd.completionDate); if (stale.length) reject(`On ${cmd.completionDate} ${stale.join(', ')} will be older than the lender allows (${s.lenderRequirements.maxSearchAgeMonths} months): re-order before moving the date.`); }
       const moved: NewEvent[] = [{ type: 'completion_date_changed', actor: cmd.actor, payload: { from: s.exchange.completionDate ?? '', to: cmd.completionDate, reason: cmd.reason ?? null } }];
       // Everything dated to the old completion day follows it: the statement's apportionments and daily interest, the lender's certificate, the advance already sent, the linked case.
       const next = issueIds(s);
@@ -2290,6 +2298,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.validUntil && Number.isNaN(Date.parse(cmd.validUntil))) reject('validUntil must be YYYY-MM-DD.', 400);
       const received: NewEvent = { type: 'redemption_statement_received', actor: cmd.actor, payload: { lender: cmd.lender ?? s.redemption.lender ?? null, redemptionPennies: cmd.redemptionPennies ?? null, validUntil: cmd.validUntil ?? null, dailyInterestPennies: cmd.dailyInterestPennies ?? null }, sourceDocumentId: cmd.documentId ?? null };
       return [received, ...negativeEquityEvents(s, { ...s, redemption: { ...s.redemption, redemptionPennies: cmd.redemptionPennies ?? s.redemption.redemptionPennies } })];
+    }
+    case 'longstop_date_recorded': {
+      requireEnrolled(s);
+      if (!s.shapes?.includes('new_build')) reject('A long-stop date is recorded on a new-build purchase.');
+      if (!ISO_DAY.test(cmd.date)) reject('The long-stop date must be a date (YYYY-MM-DD).', 400);
+      if (cmd.date === s.longStopDate) reject('The long-stop date is unchanged.');
+      return [{ type: 'longstop_date_recorded', actor: cmd.actor, payload: { date: cmd.date } }];
     }
     case 'record_other_charge': {
       requireEnrolled(s);

@@ -488,6 +488,9 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null) && payersExpected(s).every((r) => s.completion.receivedFrom.includes(r))) s.completion.fundsReceivedAt = s.completion.fundsReceivedAt ?? e.createdAt;
       break;
     }
+    case 'longstop_date_recorded':
+      s.longStopDate = (e.payload as Payloads['longstop_date_recorded']).date;
+      break;
     case 'charge_found': {
       const p = e.payload as Payloads['charge_found'];
       s.otherCharges = [...(s.otherCharges ?? []), { id: p.chargeId, chargee: p.chargee, text: p.text, status: 'to_redeem', redemptionPennies: null, validUntil: null, redeemedAt: null, dischargedAt: null }];

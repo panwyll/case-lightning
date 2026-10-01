@@ -117,7 +117,7 @@ mortgage, smaller advance, retention, scheme money returned).
 |---|---|---|---|---|---|---|
 | 7.1 | LISA used on a property **over £450,000** or without a mortgage | shape + price + `hasLender` | reject the shape at enrol / raise on price change; client warned of 25% withdrawal charge | PARTIAL — limits in issue text (shapes.ts:58); not enforced | P1 | gov.uk Lifetime ISA |
 | 7.2 | LISA account open < 12 months | form date | hold; bonus-eligible date as wait | MISSING | P2 | gov.uk LISA |
-| 7.3 | LISA funds received, **completion not within 90 days** | `funds_received(isa_provider)` + no completion | wait with deadline at 90 days; on breach/abort the money **goes back to the ISA manager**, not the client | MISSING | P1 | gov.uk LISA (conveyancer 90-day rule) |
+| 7.3 | LISA funds received, **completion not within 90 days** | `funds_received(isa_provider)` + no completion | wait with deadline at 90 days; on breach/abort the money **goes back to the ISA manager**, not the client | **BUILT** — a deadline 90 days from the bonus reaching us; on abandonment it is owed back to the ISA manager (money.ts) | P1 | gov.uk LISA (conveyancer 90-day rule) |
 | 7.4 | HTB ISA bonus asked to fund the **exchange deposit** | deposit plan includes bonus | refuse; bonus only on completion | MISSING — `deposit_received` has no source | P1 | HTB ISA scheme rules |
 | 7.5 | HTB ISA bonus claim after closing statement (claim within 12 months of closing; by 1 Dec 2030) | closing statement date | deadline timer | PARTIAL — date in issue text (shapes.ts:99) | P2 | HTB ISA scheme rules |
 | 7.6 | Both LISA and HTB ISA bonuses on the same purchase | both shapes | only one bonus usable → flag at enrol | MISSING | P2 | gov.uk LISA |
