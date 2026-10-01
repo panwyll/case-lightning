@@ -284,6 +284,7 @@ test('remortgage end to end: no exchange — title, offer and redemption figure 
   assert.equal(s.stage, 'post_completion');
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER }), /Registration is not confirmed/);
   await h.svc.run(TENANT, MATTER, { type: 'ap1_confirmed', actor: USER });
+  await h.svc.run(TENANT, MATTER, { type: 'register_checked', actor: USER });
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER }), /discharge is not yet confirmed/);
   await h.svc.run(TENANT, MATTER, { type: 'discharge_confirmed', actor: USER });
   await h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER });
@@ -352,6 +353,7 @@ test('transfer of equity end to end: every party identified, lender\'s consent, 
   await h.svc.run(TENANT, MATTER, { type: 'sdlt_submitted', actor: USER, reference: 'SDLT-1' });
   await h.svc.run(TENANT, MATTER, { type: 'ap1_submitted', actor: USER, reference: 'AP1-2' });
   await h.svc.run(TENANT, MATTER, { type: 'ap1_confirmed', actor: USER });
+  await h.svc.run(TENANT, MATTER, { type: 'register_checked', actor: USER });
   await h.svc.run(TENANT, MATTER, { type: 'close_matter', actor: USER });
   s = await h.svc.getState(TENANT, MATTER);
   assert.ok(s.closedAt);

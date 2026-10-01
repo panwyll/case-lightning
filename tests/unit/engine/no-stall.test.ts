@@ -133,6 +133,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
         sdlt: () => run({ type: 'sdlt_submitted', reference: 'SDLT-1' }),
         ap1: () => run({ type: 'ap1_submitted' }),
         notice_of_assignment: () => run({ type: 'notice_of_assignment_served', servedOn: 'the landlord', reference: 'NOA-1' }),
+        register_check: () => run({ type: 'register_checked', lenderTold: true }),
         sdlt_facts: () => run({ type: 'record_sdlt_facts', mainResidence: true, anyEverOwned: true }),
         cgt_facts: () => run({ type: 'record_cgt_facts', mainResidenceThroughout: true, ukResident: true }),
         longstop_date: () => run({ type: 'longstop_date_recorded', date: F.completionDate(26) }),
@@ -186,6 +187,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
         property_forms: () => svc.propertyFormsReceived(TENANT, MATTER, doc(F.propertyForms(false, c.tt.startsWith('leasehold')))),
         redemption: () => run({ type: 'redemption_statement_received', redemptionPennies: 12_000_000, validUntil: F.completionDate(5) }),
         lender_consent: () => run({ type: 'lender_consent_received', conditions: 'Outgoing borrower released' }),
+        seller_discharge: () => run({ type: 'seller_discharge_received', reference: 'DS1' }),
         discharge: () => (w.subject ? run({ type: 'charge_discharged', chargeId: w.subject, reference: 'DS1' }) : run({ type: 'discharge_confirmed', reference: 'DS1' })),
         contract_pack: async () => {
           if (s.title.status === 'awaiting') await svc.titleReceived(TENANT, MATTER, doc(c.flagged ? F.titleWithCharge() : F.titleClear()));

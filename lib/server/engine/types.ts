@@ -210,6 +210,10 @@ export const EVENT_TYPES = [
   'longstop_date_recorded',
   'sdlt_facts_recorded',
   'party_event_recorded',
+  'ap1_cancelled',
+  'requisition_extended',
+  'register_checked',
+  'seller_discharge_received',
   'sar_made',
   'daml_response_recorded',
   'cgt_facts_recorded',
@@ -770,7 +774,7 @@ export interface Engagement {
 
 // ───────────────────────────── Waits / SLA (2.6) ─────────────────────────────
 
-export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack', 'transfer_deed', 'signed_documents', 'mortgage_offer', 'survey', 'deposit', 'client_decision', 'insurance'] as const;
+export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack', 'transfer_deed', 'signed_documents', 'mortgage_offer', 'survey', 'deposit', 'client_decision', 'insurance', 'seller_discharge'] as const;
 /** Things the client arranges in their own time (their mortgage, their survey): opened by the timer, not by a request of ours, so they are checked on rather than left to drift. */
 export const EXPECTATION_KEYS = ['mortgage_offer', 'survey'] as const;
 export type ExpectationKey = (typeof EXPECTATION_KEYS)[number];
@@ -1128,6 +1132,10 @@ export interface Payloads {
   /** The seller's solicitor's replies to completion information (TA13): the undertaking to redeem the seller's charges. */
   completion_information_received: { undertakingToRedeem: boolean; documentId: string | null };
   longstop_date_recorded: { date: string };
+  ap1_cancelled: { reason: string };
+  requisition_extended: { requisitionEventId: string; deadline: string; note: string };
+  register_checked: { ok: boolean; note: string | null; lenderTold: boolean };
+  seller_discharge_received: { reference: string | null };
   party_event_recorded: { event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; hasAttorney: boolean | null; note: string | null };
   sar_made: { noticeEnds: string };
   daml_response_recorded: { decision: 'granted' | 'refused'; moratoriumEnds: string | null };
@@ -1137,7 +1145,7 @@ export interface Payloads {
   /** Severity moved (by a person, or by the timer as a deadline nears). */
   issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };
   /** The file is closed: registered, everything served, nothing further. */
-  matter_closed: { reason?: string | null };
+  matter_closed: { reason?: string | null; /** When the file may be destroyed, and the CDD records (theme H). */ destroyAfter?: string | null; cddUntil?: string | null };
   // ── transaction types (docs/transaction-types.md) ──
   /** Sale: the protocol forms (TA6 / TA10 / TA7) asked of the client; the wait opens. */
   property_forms_requested: { forms: string[] };
@@ -1636,6 +1644,10 @@ export interface MatterState {
     interimSentAt?: string | null;
   };
   deposit: { received: boolean; at: string | null; /** What has come in towards it, and what the contract says it is. */ amountPennies?: number | null; contractPennies?: number | null };
+  /** After registration: the new register read against what it should say, and when (theme H). */
+  registerCheckedAt?: string | null;
+  /** When the file may be destroyed, and the CDD records, stamped on closing. */
+  retention?: { destroyAfter: string; cddUntil: string } | null;
   /** People events (theme G): who has died, lost capacity or become bankrupt, and when. */
   partyEvents?: Array<{ event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; at: string; hasAttorney: boolean | null }>;
   /** A suspicious activity report made with a request for consent (DAML): money and exchange wait; nothing is said to the client about it. */

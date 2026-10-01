@@ -11,7 +11,7 @@ import { SHAPE_SPEC } from './shapes';
 import { isResolved, type MatterState } from './types';
 import { moneyOf, position, pounds, ROLE_LABEL } from './money';
 import { allDischarged, anythingCharged } from './charges';
-import { subtractWorkingDays, addWorkingDays, EW_CALENDAR } from './working-days';
+import { subtractWorkingDays, addWorkingDays, workingDaysBetween, EW_CALENDAR } from './working-days';
 
 export interface DueStep {
   key: string;
@@ -159,6 +159,12 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   if (seller && !s.cgtFacts && !exchanged) add({ key: 'cgt_facts', lane: 'exchange', title: "Record the client's CGT answers (main home throughout? UK resident?)" });
   // A new build's contract carries a long-stop date: on the case, so its clock is watched (dates.ts).
   if (buyer && s.shapes?.includes('new_build') && !s.longStopDate && !completed && ['contract_review', 'pre_exchange', 'exchanged', 'pre_completion'].includes(s.stage)) add({ key: 'longstop_date', lane: 'exchange', title: 'Record the long-stop date from the new-build contract' });
+  // ── After registration (theme H): the new register read; a requisition that cannot be met in time ──
+  if (s.postCompletion.ap1ConfirmedAt && !s.registerCheckedAt && p.registration === 'ap1') add({ key: 'register_check', lane: 'registration', title: 'Check the new register: proprietors, the charges, any restriction' });
+  for (const r of s.postCompletion.requisitions.filter((x) => !x.respondedAt && x.deadline)) {
+    if (workingDaysBetween(now, new Date(r.deadline!), EW_CALENDAR) <= 5) add({ key: `requisition_extend:${r.eventId}`, lane: 'registration', title: `Answer the requisition by ${r.deadline!.slice(0, 10)}, or ask HM Land Registry for more time`, dueDate: r.deadline!.slice(0, 10) });
+  }
+
   // ── Charges and undertakings (charges.ts) ──
   if ((seller || remo) && !exchanged && !completed) for (const c of (s.otherCharges ?? []).filter((x) => x.status === 'to_redeem')) add({ key: `charge_statement:${c.id}`, lane: 'redemption', title: `Get a redemption figure from ${c.chargee}` });
   if (seller && exchanged && !completed && anythingCharged(s) && !s.undertaking) add({ key: 'undertaking', lane: 'redemption', title: "Give the buyer's solicitor our undertaking to redeem (reply to their completion information)", dueDate: completionDate });

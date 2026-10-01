@@ -219,6 +219,10 @@ type CommandBody =
   | { type: 'longstop_date_recorded'; actor: Actor; date: string }
   | { type: 'record_party_event'; actor: Actor; event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; hasAttorney?: boolean | null; note?: string | null }
   | { type: 'sar_made'; actor: Actor; note?: string | null }
+  | { type: 'ap1_cancelled'; actor: Actor; reason: string }
+  | { type: 'requisition_extended'; actor: Actor; requisitionEventId: string; deadline: string; note: string }
+  | { type: 'register_checked'; actor: Actor; wrong?: boolean | null; note?: string | null; lenderTold?: boolean | null }
+  | { type: 'seller_discharge_received'; actor: Actor; reference?: string | null; documentId?: string | null }
   | { type: 'daml_response'; actor: Actor; decision: 'granted' | 'refused'; note?: string | null }
   | ({ type: 'record_sdlt_facts'; actor: Actor } & SdltFacts)
   | ({ type: 'record_cgt_facts'; actor: Actor } & CgtFacts)
@@ -299,6 +303,10 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'record_party_event',
   'sar_made',
   'daml_response',
+  'ap1_cancelled',
+  'requisition_extended',
+  'register_checked',
+  'seller_discharge_received',
   'record_sdlt_facts',
   'record_cgt_facts',
   'charge_statement_received',
@@ -569,7 +577,7 @@ export function stageBlockers(s: MatterState): string[] {
       break;
     case 'post_completion':
       if (s.postCompletion.requisitions.some((r) => !r.respondedAt)) b.push('HMLR requisition outstanding');
-      b.push(s.postCompletion.ap1ConfirmedAt ? 'matter complete' : 'awaiting HMLR registration');
+      b.push(...afterRegistration(s));
       break;
   }
   return b;
@@ -688,7 +696,7 @@ function ownerBlockers(s: MatterState, p: TransactionProfile): string[] {
       if (s.postCompletion.requisitions.some((r) => !r.respondedAt)) b.push('HMLR requisition outstanding');
       if (remo && s.hasExistingMortgage && s.redemption.status !== 'discharged') b.push("awaiting the old lender's discharge");
       for (const c of openCharges(s)) b.push(c.status === 'received' ? `${c.chargee} not yet recorded as paid off` : `awaiting ${c.chargee}'s discharge`);
-      b.push(s.postCompletion.ap1ConfirmedAt ? 'matter complete' : 'awaiting HMLR registration');
+      b.push(...afterRegistration(s));
       break;
   }
   return b;
@@ -1725,7 +1733,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         summarisedBy: cmd.summary?.by ?? 'template',
       };
       assertDecisionSpec(decision);
-      return [{ type: 'hmlr_requisition_received', actor: cmd.actor, payload: { reference: cmd.reference ?? null, deadline: cmd.deadline ?? null, decision }, sourceDocumentId: cmd.documentId }];
+      // No date on it: HM Land Registry's standard period is 20 working days (PG50), so the timer still runs.
+      const deadline = cmd.deadline ?? addWorkingDays(ctx.now, 20).toISOString().slice(0, 10);
+      return [{ type: 'hmlr_requisition_received', actor: cmd.actor, payload: { reference: cmd.reference ?? null, deadline, decision }, sourceDocumentId: cmd.documentId }];
     }
     case 'record_correction': {
       requireEnrolledEvenIfAbandoned(s);
@@ -1756,15 +1766,16 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     // ── issues (docs/engine-issues.md) ──
     case 'raise_issue': {
       requireEnrolled(s);
-      if (s.completion.confirmedAt) reject('The purchase has completed: post-completion problems are HMLR requisitions or corrections, not issues.');
+      if (s.closedAt) reject('The file is closed.');
       const issueId = cmd.issueId?.trim() || nextIssueId(s);
       if (s.issues[issueId]) reject(`Issue ${issueId} already exists.`);
       const spec = ISSUE_KIND_SPEC[cmd.kind];
       if (!spec) reject(`Unknown issue kind "${cmd.kind}".`, 400);
       if (!cmd.title?.trim()) reject('An issue needs a title: what is wrong, in one line.', 400);
       let gate: IssueGate = cmd.gate ?? spec.gate;
-      // After exchange the only thing left to hold is completion.
+      // After exchange the only thing left to hold is completion; after completion nothing is held, but the file does not close while it is open.
       if (gate === 'exchange' && s.exchange.exchangedAt) gate = 'completion';
+      if (s.completion.confirmedAt) gate = 'none';
       if (cmd.causedBy && !s.issues[cmd.causedBy]) reject(`Issue ${cmd.causedBy} (causedBy) not found.`, 404);
       if (cmd.severity && !ISSUE_SEVERITIES.includes(cmd.severity)) reject(`Unknown severity "${cmd.severity}".`, 400);
       if (cmd.resolveBy && !ISO_DAY.test(cmd.resolveBy)) reject('The resolve-by date must be a date (YYYY-MM-DD).', 400);
@@ -1885,7 +1896,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (isLeasehold(s) && profile(s).side === 'buyer' && !s.postCompletion.noticeOfAssignmentAt) reject('Leasehold: serve the notice of assignment before closing the file.');
       if (Object.values(s.issues).some((i) => i.status === 'open' || i.status === 'negotiating')) reject('Open issues remain; resolve or withdraw them before closing.');
       if (refundsDue(s).length) reject(`Money is still owed back: ${refundsDue(s).map((r) => `${r.amountPennies != null ? pounds(r.amountPennies) : 'an amount'} to ${ROLE_LABEL[r.toRole]}`).join(', ')}. Record the refund first.`);
-      return [{ type: 'matter_closed', actor: cmd.actor, payload: { reason: cmd.reason ?? null } }];
+      if (profile(s).registration === 'ap1' && !s.registerCheckedAt) reject('Check the new register first (the proprietors, the charges, any restriction).');
+      if (s.waits.some((w) => w.key === 'seller_discharge' && !w.closedAt)) reject("The seller's DS1 has not arrived: their solicitor's undertaking is still open.");
+      return [{ type: 'matter_closed', actor: cmd.actor, payload: { reason: cmd.reason ?? null, ...retentionDates(s, ctx.now) } }];
     }
     case 'update_issue': {
       requireEnrolled(s);
@@ -2348,6 +2361,42 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (flags.length && !openOf(s, 'cgt_flag', 'Capital Gains Tax')) out.push(issue(s, issueIds(s)(), 'cgt_flag', 'Capital Gains Tax: tell the client a 60-day report may be due', `${flags.join(' ')} Never advise on the tax or give a figure: tell the client in writing and suggest they speak to their accountant before completion.`, 'none'));
       return out;
     }
+    // ── After completion (theme H) ──
+    case 'ap1_cancelled': {
+      requireEnrolled(s);
+      if (!s.postCompletion.ap1SubmittedAt || s.postCompletion.ap1ConfirmedAt) reject('There is no application waiting at HM Land Registry.');
+      if (!cmd.reason?.trim()) reject("Give HM Land Registry's reason.", 400);
+      const nextId = issueIds(s);
+      const critical = (e: NewEvent): NewEvent => ({ ...e, payload: { ...(e.payload as object), severity: 'critical' } }) as NewEvent;
+      const out: NewEvent[] = [{ type: 'ap1_cancelled', actor: cmd.actor, payload: { reason: cmd.reason.trim() } }];
+      out.push(critical(issue(s, nextId(), 'title_defect', 'HM Land Registry cancelled the application: priority is lost', `"${cmd.reason.trim()}". Make a fresh priority search (from the date of a new official copy) at once, put right what caused the cancellation, and lodge the application again. Check the register for anything entered since.`, 'none')));
+      if (s.hasLender) out.push(critical(issue(s, nextId(), 'lender_approval', 'Tell the lender: the application was cancelled', "Its charge is not registered and may not rank first if anything was lodged in between. Report it, and consider whether the firm's insurer must be told.", 'none')));
+      return out;
+    }
+    case 'requisition_extended': {
+      requireEnrolled(s);
+      const r = s.postCompletion.requisitions.find((x) => x.eventId === cmd.requisitionEventId);
+      if (!r) reject('No such requisition.', 404);
+      if (r!.respondedAt) reject('That requisition is answered.');
+      if (!ISO_DAY.test(cmd.deadline) || (r!.deadline && cmd.deadline <= r!.deadline.slice(0, 10))) reject('The new date must be later than the current one.', 400);
+      if (!cmd.note?.trim()) reject('Say what HM Land Registry agreed and what is awaited.', 400);
+      return [{ type: 'requisition_extended', actor: cmd.actor, payload: { requisitionEventId: r!.eventId, deadline: cmd.deadline, note: cmd.note.trim() } }];
+    }
+    case 'register_checked': {
+      requireEnrolled(s);
+      if (!s.postCompletion.ap1ConfirmedAt) reject('The AP1 is not registered yet: the register is checked once it is.');
+      if (s.registerCheckedAt) reject('The register has been checked.');
+      if (!isUserActor(cmd.actor)) reject('A person checks the register.', 403);
+      const ok = !cmd.wrong;
+      const out: NewEvent[] = [{ type: 'register_checked', actor: cmd.actor, payload: { ok, note: cmd.note?.trim() || null, lenderTold: !!cmd.lenderTold } }];
+      if (!ok) out.push(issue(s, issueIds(s)(), 'title_defect', 'The register is wrong after registration', `${cmd.note?.trim() || 'The new register does not say what it should.'} Apply to HM Land Registry to alter it (with the evidence), and tell the lender if its charge is affected.`, 'none'));
+      return out;
+    }
+    case 'seller_discharge_received': {
+      requireEnrolled(s);
+      if (!s.waits.some((w) => w.key === 'seller_discharge' && !w.closedAt)) reject("The seller's discharge is not awaited.");
+      return [{ type: 'seller_discharge_received', actor: cmd.actor, payload: { reference: cmd.reference?.trim() || null }, sourceDocumentId: cmd.documentId ?? null }];
+    }
     case 'record_party_event': {
       requireEnrolled(s);
       if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
@@ -2723,6 +2772,22 @@ const issue = (s: MatterState, id: string, kind: IssueKind, title: string, detai
 const openOf = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).some((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const openList = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).filter((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const resolvedBy = (id: string, note: string): NewEvent => ({ type: 'issue_resolved', actor: SYSTEM, payload: { issueId: id, resolution: 'funds_in_place', note, costPennies: null, paidBy: null } });
+
+// ── After completion (theme H) ──
+/** What is left once the application is in: registration, the register read, the seller's DS1. */
+function afterRegistration(s: MatterState): string[] {
+  if (!s.postCompletion.ap1ConfirmedAt) return ['awaiting HMLR registration'];
+  const left: string[] = [];
+  if (!s.registerCheckedAt) left.push('the new register not yet checked');
+  if (s.waits.some((w) => w.key === 'seller_discharge' && !w.closedAt)) left.push("awaiting the seller's DS1 (their solicitor's undertaking)");
+  return left.length ? left : ['matter complete'];
+}
+/** How long the file is kept (a purchase 15 years, a sale 6), and the CDD records (5 years from completion, MLR reg 40). */
+function retentionDates(s: MatterState, now: Date): { destroyAfter: string; cddUntil: string } {
+  const years = (from: Date, n: number) => new Date(Date.UTC(from.getUTCFullYear() + n, from.getUTCMonth(), from.getUTCDate())).toISOString().slice(0, 10);
+  const completed = s.completion.confirmedAt ? new Date(s.completion.confirmedAt) : now;
+  return { destroyAfter: years(now, profile(s).side === 'seller' ? 6 : 15), cddUntil: years(completed, 5) };
+}
 
 // ── People events (people.ts) ──
 /** Money, exchange and completion wait on an uncleared sanctions match or a pending consent request; the reason given is neutral (no tipping off). */

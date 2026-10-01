@@ -799,6 +799,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     if (key.startsWith('shortfall_request:')) { const acc = firmAccounts(); return acc.length ? act('completion', 'funds_requested', 'Ask The Client', { fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: Number(key.slice('shortfall_request:'.length)) }, { primary: true }) : <span className="ep-note">Verify our client account under Bank Details first.</span>; }
     if (key.startsWith('charge_statement:')) return act('redemption', 'charge_statement_received', 'Record Figure', { chargeId: key.slice('charge_statement:'.length) }, { primary: true });
     if (key.startsWith('charge_redeemed:')) return act('redemption', 'charge_redeemed', 'Record Paid Off', { chargeId: key.slice('charge_redeemed:'.length), amountPennies: (s.otherCharges ?? []).find((c) => c.id === key.slice('charge_redeemed:'.length))?.redemptionPennies ?? undefined }, { primary: true });
+    if (key === 'register_check') return act('registration', 'register_checked', 'Record Checked', {}, { primary: true });
+    if (key.startsWith('requisition_extend:')) return act('registration', 'requisition_extended', 'Record More Time', { requisitionEventId: key.slice('requisition_extend:'.length) });
     if (key === 'sdlt_facts') return act('exchange', 'record_sdlt_facts', 'Record Answers', {}, { primary: true });
     if (key === 'cgt_facts') return act('exchange', 'record_cgt_facts', 'Record Answers', {}, { primary: true });
     if (key === 'longstop_date') return act('exchange', 'longstop_date_recorded', 'Record Date', {}, { primary: true });
@@ -860,6 +862,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     switch (key) {
       case 'redemption': return act('redemption', 'redemption_statement_received', 'Record Received');
       case 'lender_consent': return act('lender_consent', 'lender_consent_received', 'Record Received');
+      case 'seller_discharge': return act('registration', 'seller_discharge_received', 'Record Received');
       case 'discharge': return subject ? act('registration', 'charge_discharged', 'Record Received', { chargeId: subject }) : act('registration', 'discharge_confirmed', 'Record Confirmed');
       case 'registration': return act('registration', 'ap1_confirmed', 'Record Registered');
       case 'deposit': return act('exchange', 'deposit_received', 'Record Received');

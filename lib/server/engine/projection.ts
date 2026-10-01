@@ -1,6 +1,8 @@
 import { addWorkingDays, subtractWorkingDays } from './working-days';
 import { resolveWithinWorkingDays, type IssueGate, type IssueKind } from './issues';
 import { moneyOf, payersExpected } from './money';
+import { isFinancialCharge } from './charges';
+import { profileOf } from './transactions';
 /**
  * Projection: fold the immutable event log into the current MatterState.
  *
@@ -488,6 +490,22 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null) && payersExpected(s).every((r) => s.completion.receivedFrom.includes(r))) s.completion.fundsReceivedAt = s.completion.fundsReceivedAt ?? e.createdAt;
       break;
     }
+    case 'ap1_cancelled':
+      s.postCompletion = { ...s.postCompletion, ap1SubmittedAt: null };
+      closeWait(s, 'registration', null, e);
+      break;
+    case 'requisition_extended': {
+      const p = e.payload as Payloads['requisition_extended'];
+      const r = s.postCompletion.requisitions.find((x) => x.eventId === p.requisitionEventId);
+      if (r) r.deadline = p.deadline;
+      break;
+    }
+    case 'register_checked':
+      s.registerCheckedAt = e.createdAt;
+      break;
+    case 'seller_discharge_received':
+      closeWait(s, 'seller_discharge', null, e);
+      break;
     case 'party_event_recorded': {
       const p = e.payload as Payloads['party_event_recorded'];
       s.partyEvents = [...(s.partyEvents ?? []), { event: p.event, party: p.party, at: e.createdAt, hasAttorney: p.hasAttorney }];
@@ -568,6 +586,8 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     case 'completion_confirmed': {
       const p = e.payload as Payloads['completion_confirmed'];
       s.completion.confirmedAt = p.completedAt ?? e.createdAt;
+      // A purchase from a charged seller: their solicitor's undertaking to send the DS1 is now owed, and chased (theme H).
+      if (profileOf(s.transactionType ?? 'freehold_purchase').side === 'buyer' && ((s.title.facts as { charges?: Array<{ text: string }> } | null)?.charges ?? []).some((c) => isFinancialCharge(c.text))) openWait(s, 'seller_discharge', '', e);
       break;
     }
 
@@ -1124,6 +1144,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'matter_closed': {
       s.closedAt = e.createdAt;
+      { const p = e.payload as Payloads['matter_closed']; if (p.destroyAfter && p.cddUntil) s.retention = { destroyAfter: p.destroyAfter, cddUntil: p.cddUntil }; }
       for (const w of s.waits) if (w.closedAt === null) w.closedAt = e.createdAt;
       break;
     }

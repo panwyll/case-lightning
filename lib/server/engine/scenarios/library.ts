@@ -296,6 +296,11 @@ const exchangeBuyer = (price: number, deposit: number, advance: number | null): 
   step('sdlt', 'SDLT return submitted', async (c) => { await c.run({ type: 'sdlt_submitted', reference: 'SDLT-SANDBOX-1' }); }),
   step('ap1', 'AP1 submitted to HM Land Registry', async (c) => { await c.run({ type: 'ap1_submitted', reference: 'AP1-SANDBOX-1' }); }),
   step('registered', 'Registration confirmed', async (c) => { await c.run({ type: 'ap1_confirmed' }); }),
+  step('register_check', 'The new register checked; the seller\'s DS1 in where their title was charged', async (c) => {
+    await c.run({ type: 'register_checked', lenderTold: true });
+    const st = await c.svc.getState(c.tenantId, c.matterId);
+    if (st.waits.some((w) => w.key === 'seller_discharge' && !w.closedAt)) await c.run({ type: 'seller_discharge_received', reference: 'DS1-SANDBOX' });
+  }),
   step('landlord_consents', "What the landlord required on assignment is done (deed of covenant signed, certificate of compliance obtained)", async (c) => {
     const s = await c.svc.getState(c.tenantId, c.matterId);
     for (const i of Object.values(s.issues).filter((i) => i.kind === 'missing_consent' && i.title.startsWith('After completion:') && (i.status === 'open' || i.status === 'negotiating'))) {
@@ -465,6 +470,11 @@ export const SCENARIOS: Scenario[] = [
       step('redeemed', 'Old mortgage redeemed', async (c) => { await c.run({ type: 'mortgage_redeemed' }); }),
       step('ap1', 'AP1 submitted for the new charge', async (c) => { await c.run({ type: 'ap1_submitted', reference: 'AP1-SANDBOX-1' }); }),
       step('registered', 'Registration confirmed', async (c) => { await c.run({ type: 'ap1_confirmed' }); }),
+      step('register_check', 'The new register checked; the seller\'s DS1 in where their title was charged', async (c) => {
+    await c.run({ type: 'register_checked', lenderTold: true });
+    const st = await c.svc.getState(c.tenantId, c.matterId);
+    if (st.waits.some((w) => w.key === 'seller_discharge' && !w.closedAt)) await c.run({ type: 'seller_discharge_received', reference: 'DS1-SANDBOX' });
+  }),
       step('discharge', 'Discharge of the old charge confirmed', async (c) => { await c.run({ type: 'discharge_confirmed' }); }),
       step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
     ],
@@ -490,6 +500,11 @@ export const SCENARIOS: Scenario[] = [
       step('sdlt', 'SDLT return submitted', async (c) => { await c.run({ type: 'sdlt_submitted', reference: 'SDLT-SANDBOX-1' }); }),
       step('ap1', 'AP1 submitted', async (c) => { await c.run({ type: 'ap1_submitted', reference: 'AP1-SANDBOX-2' }); }),
       step('registered', 'Registration confirmed', async (c) => { await c.run({ type: 'ap1_confirmed' }); }),
+      step('register_check', 'The new register checked; the seller\'s DS1 in where their title was charged', async (c) => {
+    await c.run({ type: 'register_checked', lenderTold: true });
+    const st = await c.svc.getState(c.tenantId, c.matterId);
+    if (st.waits.some((w) => w.key === 'seller_discharge' && !w.closedAt)) await c.run({ type: 'seller_discharge_received', reference: 'DS1-SANDBOX' });
+  }),
       step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
     ],
   },
