@@ -100,6 +100,10 @@ export function productionCommsDeps(): CommsDeps {
   const graphOk = missingFor('graph').length === 0;
   return {
     contactInfo,
+    portalLink: async (tenantId, matterId) => {
+      const { ensurePortal } = await import('../client-portal');
+      return ensurePortal(tenantId, matterId);
+    },
     renderReport: async (tenantId, matterId, body) => {
       const { renderReportOnTitleDocx } = await import('../doc-templates');
       const out = await renderReportOnTitleDocx(tenantId, matterId, body);

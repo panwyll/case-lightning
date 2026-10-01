@@ -22,12 +22,13 @@ const nextConfig: NextConfig = {
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=()' },
     ];
-    // The client's pages carry their secret link in the address: no referrer at all (bank logos are fetched from the provider), and never framed.
+    // The client's pages (proof of funds, file links, the portal) carry their secret link in the address: no referrer at all (bank logos are fetched from the provider), and never framed.
     const secret = [{ key: 'Referrer-Policy', value: 'no-referrer' }, { key: 'X-Frame-Options', value: 'DENY' }, { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" }];
     return [
       { source: '/:path*', headers: base },
       { source: '/pof/:path*', headers: secret },
       { source: '/f/:path*', headers: secret },
+      { source: '/portal/:path*', headers: secret },
       { source: `${APP_BASE}/:path*`, headers: [{ key: 'X-Frame-Options', value: 'SAMEORIGIN' }, { key: 'Content-Security-Policy', value: "frame-ancestors 'self'" }] },
     ];
   },

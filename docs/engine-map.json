@@ -1,5 +1,5 @@
 {
-  "version": "73e54e8d2d68",
+  "version": "6b8e045a16fa",
   "generatedFrom": "lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)",
   "transactionTypes": [
     {
@@ -3937,6 +3937,20 @@
       "implemented": true,
       "reaches": [
         "USER_COMMANDS"
+      ]
+    },
+    {
+      "id": "both.client_portal_upload",
+      "backend": "both",
+      "source": "user",
+      "feeds": "ingest",
+      "label": "Client uploads a file on their portal",
+      "description": "Code-gated portal (no login): the file is filed on the case and read like any arriving file, with the role of the task it was uploaded against (property forms, mortgage offer, survey); the conveyancer is notified. It never records a decision or clears a check.",
+      "entry": "app/api/v1/portal/[token]/upload",
+      "implemented": true,
+      "reaches": [
+        "property_forms_received",
+        "mortgage"
       ]
     },
     {

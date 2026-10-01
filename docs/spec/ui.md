@@ -24,3 +24,33 @@
 - **Icons ≥16px, no glyphs** (use `app/shared/icons`).
 - **An email is a conversation**: its source pane shows the thread as chat bubbles (ours right, theirs left, attachments as chips, quoted history recovered); clicking one opens the usual From / To / Cc / Date / Subject view (`EmailThread.tsx`, `email-thread.ts`).
 - **Checked at realistic widths** (1280–1400 desktop, narrow panel) on `/dev/harness` before shipping.
+
+## Client portal
+
+`/portal/<token>` (migration 121, `lib/server/client-portal.ts`, `engine/client-portal.ts`).
+
+**Access:**
+- One link per case.
+- It opens with the same emailed six-digit code as a secure file link, and the browser then stays in for 7 days.
+- The link goes at the foot of every message to the client (`withPortal`, above a short sign-off).
+- On the case page, **Client Portal** has Copy Link and Reset Link. Reset revokes the old link at once.
+- The page shows how often the client has opened the portal and how many files they have uploaded.
+
+**What the client sees** (phone first, plain words):
+- **For You:** each thing waiting on them, with the way to do it:
+  - the ID check link;
+  - the proof-of-funds form;
+  - an upload for property forms, mortgage offer, survey, signed papers or insurance;
+  - **Call Us** for any money. Bank details are never shown, with the "we never change bank details by email" warning.
+- **Progress:** their steps (Getting Started → … → Completed), each workstream as Done, In Progress, With You or Not Started, what we are waiting on from others, and the key dates.
+- **Documents:** what we have sent them by secure link, and what they have given us. Only listed files can be downloaded.
+- **Your Conveyancer:** phone and email.
+
+**Never shown:** an issue, a decision, a flag or an internal code. A step held by an issue reads In Progress; the conveyancer tells the client about a problem, the page does not.
+
+**Uploads:**
+- Uploads are 4 MB at most; photos are shrunk in the browser to fit. PDF, photo or Word only.
+- Each upload is filed on the case and goes through ingest like any arriving file. Uploaded against a task, the file carries that task's role.
+- The conveyancer is notified.
+
+A dev preview is at `/portal/dev-preview-portal-000000` (code 123456), showing the dev harness's case.

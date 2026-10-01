@@ -17,6 +17,7 @@ import type { CaseModel } from '@/app/shared/engine/CaseView';
 import { useEngine, type EngineBundle } from '@/app/shared/engine/useEngine';
 import { ContactsCard } from '@/app/shared/engine/ContactsCard';
 import { ChainCard } from '@/app/shared/engine/ChainCard';
+import { PortalCard } from '@/app/shared/engine/PortalCard';
 import { CaseDetailsEdit } from '@/app/shared/engine/CaseDetailsEdit';
 import { CaseQuickActions } from '@/app/shared/engine/CaseQuickActions';
 import { paths } from '@/lib/paths';
@@ -265,6 +266,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 <Field k="Reference" v={row.matterRef ?? ''} />
               </div>
               {view && enrolled && <ChainCard matterId={matterId} api={api} view={view} busy={eng.busy} cmd={eng.cmd} />}
+              <PortalCard matterId={matterId} api={api} />
               <hr className="mx-hr" />
               <div className="mx-k" style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: '#64748b', margin: '0 0 8px' }}>Contacts</div>
               <ContactsCard key={detailsVer} matterId={matterId} api={api} />

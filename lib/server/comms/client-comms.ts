@@ -85,6 +85,8 @@ export interface CommsDeps {
   templateOverride?(tenantId: string, key: string): Promise<{ subject: string; body: string } | null>;
   /** Acknowledgements go out at once or not at all; a drafted one defeats its purpose. */
   ackMode?: 'send' | 'off';
+  /** The case's client portal link (made the first time it is needed); it goes at the foot of every message to the client. */
+  portalLink?(tenantId: string, matterId: string): Promise<string | null>;
   /** The engine's account of a matter, for answering "any update?" from the case itself. */
   briefFor?(tenantId: string, matterId: string): Promise<CaseBrief | null>;
   onChaseDrafted?(input: { tenantId: string; matterId: string; messageId: string | null; title: string; detail: string }): Promise<void>;
@@ -130,6 +132,15 @@ const withOverview = (body: string, context: Record<string, unknown>): string =>
   return cut > 0 ? `${body.slice(0, cut)}\n\n${ov}${body.slice(cut)}` : `${body}\n\n${ov}`;
 };
 
+/** The portal line goes in before the sign-off (a short last paragraph), or at the end. */
+export const PORTAL_LINE = 'See where things stand, what we need from you and your documents at any time:';
+export function withPortal(body: string, url: string): string {
+  const line = `${PORTAL_LINE}\n${url}`;
+  const cut = body.trimEnd().lastIndexOf('\n\n');
+  const last = cut > 0 ? body.trimEnd().slice(cut + 2) : '';
+  return cut > 0 && last.length <= 60 && !/https?:\/\//.test(last) ? `${body.trimEnd().slice(0, cut)}\n\n${line}\n\n${last}` : `${body.trimEnd()}\n\n${line}`;
+}
+
 export class ProductionClientComms implements ClientComms {
   readonly name = 'client-comms';
   constructor(private deps: CommsDeps) {}
@@ -159,7 +170,10 @@ export class ProductionClientComms implements ClientComms {
   }
 
   /** Channel choice: WhatsApp only with explicit opt-in; else email; else nothing to send to. */
-  private async deliver(tenantId: string, matterId: string, info: MatterContactInfo, template: string, subject: string, body: string, attachments: MailAttachment[] = []): Promise<{ channel: 'whatsapp' | 'email' | 'mock'; messageId: string | null; address: string | null }> {
+  private async deliver(tenantId: string, matterId: string, info: MatterContactInfo, template: string, subject: string, text: string, attachments: MailAttachment[] = []): Promise<{ channel: 'whatsapp' | 'email' | 'mock'; messageId: string | null; address: string | null }> {
+    // Every message to the client carries their portal: where things stand, what we need, their documents.
+    const portal = this.deps.portalLink ? await this.deps.portalLink(tenantId, matterId).catch(() => null) : null;
+    const body = portal && !text.includes(portal) ? withPortal(text, portal) : text;
     if (info.clientPhone && info.clientWhatsAppOptIn && this.deps.whatsapp) {
       try {
         const r = await this.deps.whatsapp.sendText(info.clientPhone, body);
@@ -200,7 +214,9 @@ export class ProductionClientComms implements ClientComms {
     if (!base) throw new Error(`Unknown client update template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, base);
     const r = render(t, this.vars(info, input.context));
-    return { to: clientLine(info), ...clientAddress(info), subject: r.subject, body: withOverview(r.body, input.context) };
+    const body = withOverview(r.body, input.context);
+    const portal = this.deps.portalLink ? await this.deps.portalLink(input.tenantId, input.matterId).catch(() => null) : null;
+    return { to: clientLine(info), ...clientAddress(info), subject: r.subject, body: portal ? withPortal(body, portal) : body };
   }
 
   async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null; attachments?: MailAttachment[]; link?: FileLink | null }) {
