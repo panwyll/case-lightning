@@ -17,6 +17,8 @@ A typed problem (`issues.ts ISSUE_KIND_SPEC`) with what it stops, who owns the n
 
 - **Money raises and clears its own issues** (engine/money.ts): a receipt short of what was asked for raises `completion_funds_shortfall` (critical, holds completion) and the money arriving resolves it; a deposit short of the contract's raises `deposit_issue` (holds exchange) and the top-up resolves it. No one resolves these by hand unless the figures were wrong.
 
+- **Readings raise typed issues** (engine/findings.ts): the review decision says a title, lease, search or contract was read; each finding that changes what the file needs (a consent restriction, a creditor's charge, home rights, a covenant against works the seller did, a short lease, a doubling rent, an enforcement notice, a 5% deposit, compensation excluded) is an issue of its own kind with its gate, raised once per case (`issue.finding` holds the finding's code) however many times the document is read.
+
 ## Adding a kind
 
 Spec entry (label, group, gate, stages, resolutions, responsible, window), `ISSUE_CHIP`, its next steps in `STEPS_BY_KIND` if the defaults do not fit, and — if a resolution needs a new field — `RESOLUTION_FIELDS`. The simulator resolves issues with each kind's first outcome and its required fields.

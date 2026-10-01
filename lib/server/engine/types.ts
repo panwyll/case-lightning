@@ -1030,7 +1030,7 @@ export interface Payloads {
   matter_abandoned: { reason: AbandonReason; detail?: string | null; stage: Stage };
   /** Target exchange / completion dates re-planned (offers expire, chains move). */
   contract_filed: { documentId: string; points: number };
-  contract_review_raised: { documentId: string; decision: DecisionSpec };
+  contract_review_raised: { documentId: string; decision: DecisionSpec; /** The deposit the contract states, when read. */ depositPennies?: number | null };
   contract_reviewed: { decisionEventId: string; option: DecisionOption; note: string | null };
   clients_updated: { partyNames: string[]; previous: string[]; role: IdPartyCheck['role']; reason?: string | null };
   target_dates_changed: { targetExchangeDate: string | null; targetCompletionDate: string | null; reason?: string | null; previous: { targetExchangeDate: string | null; targetCompletionDate: string | null } };
@@ -1054,7 +1054,7 @@ export interface Payloads {
   auto_clear_confirmed: { decisionEventId: string; subFlow: SubFlow; subject: string; option: DecisionOption; note?: string | null };
   // ── issues (docs/engine-issues.md) ──
   /** A person (or, for lender_approval, the machine) recorded that something is wrong and the matter has to wait for it. */
-  issue_raised: { issueId: string; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; stage: Stage; sourceDocumentId: string | null; origin?: { issueId: string; resolution: IssueResolution } | null; party?: string | null; /** Severity at raise (defaults to the kind's). */ severity?: IssueSeverity | null; /** The issue whose investigation discovered this one (DISCOVERED_BY / chains of ordinary issues). */ causedBy?: string | null; resolveBy?: string | null };
+  issue_raised: { issueId: string; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; stage: Stage; sourceDocumentId: string | null; origin?: { issueId: string; resolution: IssueResolution } | null; party?: string | null; /** Severity at raise (defaults to the kind's). */ severity?: IssueSeverity | null; /** The issue whose investigation discovered this one (DISCOVERED_BY / chains of ordinary issues). */ causedBy?: string | null; resolveBy?: string | null; /** findings.ts code */ finding?: string | null };
   /** Progress on an open issue: negotiating, a note, a gate change (e.g. accepted to carry to completion), the party it concerns. */
   issue_updated: { issueId: string; status: 'open' | 'negotiating'; note: string | null; gate?: IssueGate | null; party?: string | null; resolveBy?: string | null };
   /** Resolved with one of the kind's realistic outcomes and, where money changed hands, what it cost and who paid. Side-effects (price change, lender approval) are separate events that follow it. */
@@ -1503,6 +1503,8 @@ export interface IssueState {
   resolvedBy: Actor | null;
   /** The issue this one was raised from (e.g. lender_approval raised off a price_reduced resolution). */
   origin: { issueId: string; resolution: IssueResolution } | null;
+  /** The reading's finding that raised it (findings.ts code): a finding is raised once per case. */
+  finding?: string | null;
   /** Who it concerns when a matter has more than one buyer / party (free text; null = the matter as a whole). */
   party: string | null;
   /** What the fix cost and who paid, once resolved (an indemnity premium, a retention, a reduction). */

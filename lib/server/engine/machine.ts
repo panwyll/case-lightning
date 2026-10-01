@@ -25,10 +25,11 @@ import { investigationGroups, investigationTitle } from './survey-review';
 import { duplicateIssue, ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, RESOLUTION_FIELDS, RESOLUTION_TITLE, FORMLESS_KINDS, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 import { SHAPE_SPEC, fundsFromFor, type CaseShape } from './shapes';
-import { buildDecision, offeredOptions, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
+import { buildDecision, leaseFlags, offeredOptions, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import { propertyFormsIssues } from './property-forms';
 import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
+import { contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
 import { heldOnAbandon, moneyOf, payersExpected, position, pounds, refundsDue, ROLE_LABEL } from './money';
 import {
   EngineError,
@@ -116,7 +117,7 @@ import {
   type SupportingDocFacts,
   openIssues,
   isManualStep,
-  isReopenableStep, type ManualStepFacts, MANUAL_STEP_REQUIRED, deedsToSign, type FundsRole } from './types';
+  isReopenableStep, type ManualStepFacts, MANUAL_STEP_REQUIRED, deedsToSign, type FundsRole, type ContractFacts } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
 export interface SummaryOverride {
@@ -151,7 +152,7 @@ type CommandBody =
   // ── eventualities (docs/engine-eventualities.md) ──
   | { type: 'abandon_matter'; actor: Actor; reason: AbandonReason; detail?: string | null }
   | { type: 'record_contract_filed'; documentId: string; points: number }
-  | { type: 'raise_contract_review'; documentId: string; summary: string; citations?: Citation[] }
+  | { type: 'raise_contract_review'; documentId: string; summary: string; citations?: Citation[]; /** What the contract read says, for the rules (findings.ts). */ terms?: Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'> | null }
   | { type: 'set_clients'; actor: Actor; names: string[]; reason?: string | null }
   | { type: 'set_target_dates'; actor: Actor; targetExchangeDate?: string | null; targetCompletionDate?: string | null; reason?: string | null }
   | { type: 'change_completion_date'; actor: Actor; completionDate: string; reason?: string | null }
@@ -1042,6 +1043,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           extra: { searchType: cmd.searchType },
           confidence: cmd.facts.confidence,
         }),
+        ...findingEvents(s, searchFindings(cmd.facts, findingContext(s)), sr.documentId),
       ];
     }
 
@@ -1122,9 +1124,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const txType = s.transactionType ?? 'freehold_purchase';
       const expectedTenure = profile(s).tenure;
       const verdict = evaluateTitle(cmd.facts, expectedTenure);
+      const fc = findingContext(s);
       const out = [
         extracted,
         ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', level: levelFor(ctx.levels, 'auto_clear', 'title'), subjectLabel: `Title ${cmd.facts.titleNumber}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence }),
+        // What a specific entry needs done is an issue of its own (findings.ts).
+        ...findingEvents(s, [...titleFindings(cmd.facts, fc), ...(cmd.facts.lease && fc.side === 'buyer' ? leaseFindings(leaseFlags(cmd.facts.lease, s.lenderRequirements?.minUnexpiredYears ?? null), cmd.facts.lease, fc) : [])], cmd.documentId),
       ];
       // Unregistered land: an epitome of title, not a register; first registration on completion. Outside what the engine reads (PG 1).
       if (cmd.facts.unregistered && !s.manualHandling.required) {
@@ -1147,9 +1152,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const extracted: NewEvent = { type: 'lease_extracted', actor: SYSTEM, payload: { facts: cmd.facts, extractor: cmd.extractor }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence ?? null };
       // The lease's flags are title flags: one decision, one sub-flow, the official copy and the lease side by side.
       const verdict = evaluateLease(cmd.facts, s.lenderRequirements?.minUnexpiredYears ?? null);
+      const fc = findingContext(s);
       return [
         extracted,
         ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', level: levelFor(ctx.levels, 'auto_clear', 'title'), subjectLabel: `Lease${cmd.facts.demise ? ` of ${cmd.facts.demise}` : ''}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence ?? 0 }),
+        ...(fc.side === 'buyer' ? findingEvents(s, leaseFindings(leaseFlags(cmd.facts, s.lenderRequirements?.minUnexpiredYears ?? null), cmd.facts, fc), cmd.documentId) : []),
       ];
     }
 
@@ -1478,7 +1485,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.exchange.exchangedAt || s.readiness.contractApprovedAt) reject('The contract is already approved.');
       if (Object.values(s.decisions).some((d) => d.kind === 'contract' && d.status === 'pending' && d.sourceDocumentId === cmd.documentId)) reject('This contract is already waiting for approval.');
       const decision: DecisionSpec = { kind: 'contract', summary: cmd.summary, sourceDocumentId: cmd.documentId, citations: cmd.citations ?? [], options: OPTIONS_FOR.contract, summarisedBy: 'template' };
-      return [{ type: 'contract_review_raised', actor: SYSTEM, payload: { documentId: cmd.documentId, decision }, sourceDocumentId: cmd.documentId }];
+      return [
+        { type: 'contract_review_raised', actor: SYSTEM, payload: { documentId: cmd.documentId, decision, depositPennies: cmd.terms?.depositPennies ?? null }, sourceDocumentId: cmd.documentId },
+        ...(cmd.terms ? findingEvents(s, contractFindings(cmd.terms, findingContext(s)), cmd.documentId) : []),
+      ];
     }
     case 'set_clients': {
       requireEnrolled(s);
@@ -2100,6 +2110,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const forms = cmd.forms?.length ? cmd.forms : cmd.facts?.forms?.length ? cmd.facts.forms : ['TA6'];
       const out: NewEvent[] = [{ type: 'seller_forms_received', actor: cmd.actor, payload: { forms, facts: cmd.facts }, sourceDocumentId: cmd.documentId }];
       if (cmd.facts) out.push(...formsIssueEvents(s, cmd.facts, 'buyer', cmd.documentId));
+      // The title was read before the forms said what works were done: a covenant against them is only visible now.
+      const works = cmd.facts?.answers?.alterations;
+      if (works && s.title.facts) out.push(...findingEvents(s, titleFindings(s.title.facts as TitleFacts, { ...findingContext(s), alterations: works }).filter((f) => f.code.startsWith('COVENANT_BREACH:')), s.title.documentId, issueIds(s, out)));
       return out;
     }
     case 'link_related_matter': {
@@ -2521,14 +2534,26 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
 // ───────────────────────────── consequences: a fact changed, so what rested on it is done again ─────────────────────────────
 
 /** Issue ids for several issues raised by one command (nextIssueId only sees issues already on the state). */
-function issueIds(s: MatterState): () => string {
+function issueIds(s: MatterState, pending: NewEvent[] = []): () => string {
+  // Ids already handed out in this batch (by events not yet folded) are taken too.
+  const taken = new Set([...Object.keys(s.issues), ...pending.filter((e) => e.type === 'issue_raised').map((e) => (e.payload as { issueId: string }).issueId)]);
   let n = Object.keys(s.issues).length;
-  return () => { do { n += 1; } while (s.issues[`ISS-${n}`]); return `ISS-${n}`; };
+  return () => { do { n += 1; } while (taken.has(`ISS-${n}`)); taken.add(`ISS-${n}`); return `ISS-${n}`; };
 }
 const issue = (s: MatterState, id: string, kind: IssueKind, title: string, detail: string, gate: IssueGate): NewEvent => ({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: id, kind, title, detail, gate, stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: ISSUE_KIND_SPEC[kind].severity, causedBy: null } });
 const openOf = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).some((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const openList = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).filter((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const resolvedBy = (id: string, note: string): NewEvent => ({ type: 'issue_resolved', actor: SYSTEM, payload: { issueId: id, resolution: 'funds_in_place', note, costPennies: null, paidBy: null } });
+
+// ── Readings become typed issues (findings.ts) ──
+function findingContext(s: MatterState): FindingContext {
+  return { side: profile(s).side, hasLender: s.hasLender, alterations: s.sellerForms?.facts?.answers?.alterations ?? null, pricePennies: s.purchasePricePennies ?? null, clients: Math.max(s.parties ?? 1, s.partyNames?.length ?? 0) };
+}
+/** Each finding once per case: a later reading of the same thing (a new edition, the lease after the register) never raises it again. */
+function findingEvents(s: MatterState, found: Finding[], documentId: string | null, nextId: () => string = issueIds(s)): NewEvent[] {
+  const seen = new Set(Object.values(s.issues).filter((i) => i.status !== 'withdrawn').map((i) => i.finding).filter(Boolean));
+  return found.filter((f, n) => !seen.has(f.code) && found.findIndex((x) => x.code === f.code) === n).map((f) => ({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextId(), kind: f.kind, title: f.title, detail: f.page != null ? `${f.detail} (p.${f.page})` : f.detail, gate: s.exchange.exchangedAt && f.gate === 'exchange' ? 'completion' : f.gate, stage: s.stage, sourceDocumentId: documentId, origin: null, party: null, severity: f.severity, causedBy: null, finding: f.code }, sourceDocumentId: documentId ?? undefined }) as NewEvent);
+}
 
 // ── Money reconciled (engine/money.ts) ──
 const SHORT_PREFIX = 'Completion money short';

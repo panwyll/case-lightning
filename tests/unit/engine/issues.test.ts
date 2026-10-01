@@ -161,8 +161,8 @@ test('indemnity as a decision option: choosing it on a flagged search on a lende
   await resolve(h, d.eventId, 'indemnity', USER, 'Cheaper than chasing the council for a 20-year-old notice');
   const s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.searches.CON29.status, 'reviewed');
-  const li = openIssues(s);
-  assert.equal(li.length, 1);
+  const li = openIssues(s).filter((i) => !i.finding);
+  assert.equal(li.length, 1, 'besides the enforcement entry itself (its own issue, findings.ts)');
   assert.equal(li[0].kind, 'lender_approval');
   assert.match(li[0].title, /indemnity policy proposed for search CON29/);
   assert.equal(li[0].sourceDocumentId, d.sourceDocumentId, 'the lender issue cites the search the policy covers');

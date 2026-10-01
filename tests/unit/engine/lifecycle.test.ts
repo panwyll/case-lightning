@@ -43,6 +43,11 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   assert.equal(con29Decision.status, 'pending');
   assert.match(con29Decision.citations[0].label, /p\.4, 3\.7/);
   assert.ok(!ports.clientComms.sent.some((m) => /^search_back/.test(m.template)), 'no email per search');
+  // The enforcement entry is an issue of its own (findings.ts), holding exchange until it is dealt with.
+  const enforcement = Object.values(r.state.issues).find((i) => i.finding === 'CON29:PLANNING_ENFORCEMENT')!;
+  assert.equal(enforcement.kind, 'planning_permission_missing');
+  assert.equal(enforcement.gate, 'exchange');
+  await svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: enforcement.id, resolution: 'evidence_provided', note: "Council's letter: the notice was complied with.", documentId: h.doc({ content: 'council letter' }) });
 
   // An unreadable ENVIRONMENTAL → low confidence → decision, never a guess.
   r = await svc.searchReturned(TENANT, MATTER, 'ENVIRONMENTAL', h.doc(searchLowConfidence('ENVIRONMENTAL')));

@@ -67,13 +67,13 @@ test('audit report: replay vs read model, summary counts, CSV export', async () 
   const report = buildAuditReport(TENANT, MATTER, log, cached, new Date('2026-09-15T00:00:00Z'));
   assert.equal(report.chain.ok, true);
   assert.equal(report.replay.ok, true);
-  assert.equal(report.summary.decisions, 3, 'the flagged search, the assist-level review of the clear ID check, and the "searches back" update to the other side');
+  assert.equal(report.summary.decisions, 2, 'the flagged search and the assist-level review of the clear ID check; the "searches back" update to the other side waits while the enforcement entry is an open issue');
   assert.equal(report.summary.autoClearReviews, 1);
   assert.equal(report.summary.decisionsResolvedWithoutOpeningSource, 0);
   assert.equal(report.summary.aiSentWithoutApproval, 0);
   assert.ok(report.summary.byActorKind.user >= 3);
   assert.ok(report.summary.byActorKind.system >= 3);
-  assert.equal(report.summary.byActorKind.ai, 3, 'search_flagged, the auto_clear_review_raised for the ID check, and the proposed update to the other side');
+  assert.equal(report.summary.byActorKind.ai, 2, 'search_flagged and the auto_clear_review_raised for the ID check');
   // a drifted read model is caught
   const drifted = JSON.parse(JSON.stringify(cached));
   drifted.stage = 'completed';

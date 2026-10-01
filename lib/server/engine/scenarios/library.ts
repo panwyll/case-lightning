@@ -7,6 +7,7 @@
  * sandbox material; Claude never reads them. Timers run on the real clock, so chases are
  * not part of a script.
  */
+import { ISSUE_KIND_SPEC } from '../issues';
 import type { EngineService } from '../service';
 import type { CaseShape } from '../shapes';
 import { openPofQueries, type DecisionKind, type DecisionOption, type TransactionType } from '../types';
@@ -78,7 +79,26 @@ const searches = (types: F.SearchTypeLike[]): ScenarioStep[] => [
     await c.svc.searchReturned(c.tenantId, c.matterId, t, doc);
   })),
   step('search_decision', 'The flagged CON29 is decided by a person', async (c) => { await c.resolve('search', 'approve', 'Enforcement notice relates to the previous owner; indemnity policy to be obtained.'); }, { flaggedOnly: true, decision: 'search' }),
+  step('search_findings', "The enforcement entry investigated: the council confirms the notice was complied with", async (c) => {
+    await resolveFindings(c, /search\)$/, { evidence_provided: "Council's letter confirming the 2024 enforcement notice was complied with and closed." });
+  }, { flaggedOnly: true }),
 ];
+
+/** Each issue a reading raised (findings.ts), dealt with the way a conveyancer would: the evidence on file for the outcome given. */
+async function resolveFindings(c: ScenarioContext, title: RegExp, outcomes: Partial<Record<'evidence_provided' | 'lease_extended' | 'deed_of_variation' | 'restriction_complied', string>>) {
+  const s = await c.svc.getState(c.tenantId, c.matterId);
+  for (const i of Object.values(s.issues).filter((x) => x.finding && title.test(x.title) && (x.status === 'open' || x.status === 'negotiating'))) {
+    const resolution = (Object.keys(outcomes) as Array<keyof typeof outcomes>).find((r) => ISSUE_KIND_SPEC[i.kind].resolutions.includes(r as never));
+    if (!resolution) continue;
+    const note = outcomes[resolution]!;
+    if (resolution === 'lease_extended') { await c.run({ type: 'resolve_issue', issueId: i.id, resolution, note, details: { newTerm: '990 years from completion' } }); continue; }
+    const evidence = await c.doc({ docType: 'SUPPORTING_DOCUMENT', fileName: `${resolution.replace(/_/g, '-')}.txt`, facts: { content: note }, body: note });
+    await c.run({ type: 'resolve_issue', issueId: i.id, resolution, note, documentId: evidence });
+  }
+  // A deed of variation or an extension is reported to the lender (the engine raises that itself); the lender confirms.
+  const after = await c.svc.getState(c.tenantId, c.matterId);
+  for (const i of Object.values(after.issues).filter((x) => x.kind === 'lender_approval' && (x.status === 'open' || x.status === 'negotiating'))) await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'lender_confirmed', note: 'Lender content.' });
+}
 
 const mortgage = (): ScenarioStep[] => [
   step('offer', 'Mortgage offer received', async (c) => {
@@ -118,6 +138,9 @@ const title = (leasehold: boolean): ScenarioStep[] => [
     await c.svc.titleReceived(c.tenantId, c.matterId, doc);
   }),
   step('title_decision', 'The title entries are decided by a person', async (c) => { await c.resolve('title', 'approve', leasehold ? 'Short lease and doubling rent reported to the client and lender; extension to be negotiated.' : 'Registered charge: undertaking to discharge on completion.'); }, { flaggedOnly: true, decision: 'title' }),
+  step('title_findings', leasehold ? 'The short lease extended and the ground rent varied before exchange' : 'The title entries dealt with', async (c) => {
+    await resolveFindings(c, /./, { lease_extended: 'Seller served the statutory notice and the lease is extended to 990 years on completion; benefit assigned.', deed_of_variation: 'Landlord agreed a deed of variation fixing the ground rent at a peppercorn.', restriction_complied: 'Certificate of compliance obtained from the management company.', evidence_provided: 'Evidence on file.' });
+  }, { flaggedOnly: true }),
 ];
 
 const enquiries = (): ScenarioStep[] => [

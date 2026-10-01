@@ -120,6 +120,8 @@ export const ISSUE_KINDS = [
   'transaction_at_risk',
   // a fact the case rests on changed, and something built on it must be done again (consequences.ts)
   'client_change',
+  // a term of the draft contract the client must be advised on before exchange (findings.ts)
+  'contract_term',
   'mortgage_at_risk',
   'unknown_correspondent',
   'document_revised',
@@ -280,6 +282,7 @@ const KIND_SPECS_BASE: Array<Omit<IssueKindSpec, 'severity' | 'workstreams' | 't
   // ── completion ──
   { kind: 'completion_failure', group: 'completion', label: 'Completion failure', arisesFrom: 'lender funds late, the CHAPS cut-off missed, chain money not through, keys not released, a removal van on the drive and no money', gate: 'completion', stages: ['pre_completion'], resolutions: ['completed_late', 'funds_in_place', 'other'], note: 'Late-completion interest under the standard conditions; a notice to complete if it slips further.' },
   { kind: 'survey_report_outstanding', group: 'property', label: 'Survey done, report not on file', arisesFrom: 'the client or the agent says the survey has been carried out, but no report has been filed', gate: 'none', stages: PRE, resolutions: ['received', 'accepted_as_is', 'other'], note: 'Raised from an email or a note. The surveyor reports to the client, not to us: ask the client for it. Nothing about the physical condition is recorded until the report itself is on file and read.' },
+  { kind: 'contract_term', group: 'parties_chain', label: 'Contract term', arisesFrom: 'a special condition that changes the standard bargain: late-completion compensation excluded, a short notice to complete, no requisitions, the buyer relying on its own survey, a conditional contract, a sale "as seen"', gate: 'exchange', stages: ['contract_review', 'pre_exchange'], resolutions: ['deed_of_variation', 'lender_confirmed', 'accepted_as_is', 'other'], note: 'Ask for it to be amended or struck out; if it stays, advise the client in writing before they sign and tell the lender where it touches the security.' },
   { kind: 'client_change', group: 'parties_chain', label: 'Change to the clients', arisesFrom: 'a client added or taken off the case, before or after exchange: the contract and transfer parties, the lender, the funds and the tax all rest on who the clients are', gate: 'exchange', stages: ['instruction', ...PRE, ...POST_EX], resolutions: ['evidence_provided', 'accepted_as_is', 'other'], note: 'Before exchange: amend the draft contract and the TR1, re-take instructions on how they will own it. After exchange: the contract binds every original buyer, so a change needs the seller\'s agreement (a deed of variation or assignment) and the lender\'s consent.' },
   { kind: 'transaction_at_risk', group: 'parties_chain', label: 'Transaction at risk', arisesFrom: 'someone says a party is pulling out, the chain has broken or the sale has fallen through', gate: 'exchange', stages: PRE, resolutions: ['proceeding_confirmed', 'chain_ready', 'dates_replanned', 'accepted_as_is', 'other'], note: 'Raised from an email or a note. Confirm with the solicitors, never on an agent\'s word alone. Abandoning the file is a separate, deliberate step a person takes.' },
   { kind: 'mortgage_at_risk', group: 'mortgage', label: 'Mortgage at risk', arisesFrom: 'a change in the client\'s circumstances (job, income, credit) or word that the lender is reconsidering', gate: 'exchange', stages: PRE, resolutions: ['lender_confirmed', 'new_lender', 'offer_extended', 'accepted_as_is', 'other'], note: 'Raised from an email or a note. A material change must be reported to the lender before exchange; exchanging on an offer that is about to be withdrawn is the classic disaster.' },
@@ -340,6 +343,7 @@ const BEHAVIOUR: Record<IssueKind, { severity: IssueSeverity; workstreams: Works
   deposit_issue: { severity: 'warning', workstreams: ['deposit'], threatens: ['exchange'], actions: ['Agree a reduced deposit or a deposit up the chain in the contract', 'Confirm cleared funds before exchange'], responsible: 'client', escalateAfterWorkingDays: 5 },
   completion_funds_shortfall: { severity: 'critical', workstreams: ['completion', 'deposit'], threatens: ['completion'], actions: ['Recalculate the completion statement', 'Establish where the shortfall is coming from and evidence it', 'Warn the chain if completion may move'], responsible: 'client', escalateAfterWorkingDays: 2 },
   lender_funds_delayed: { severity: 'critical', workstreams: ['completion', 'mortgage'], threatens: ['completion'], actions: ['Chase the lender\'s completions team', 'Check the certificate of title and the conditions', 'Warn the seller\'s solicitor'], responsible: 'lender', escalateAfterWorkingDays: 1 },
+  contract_term: { severity: 'warning', workstreams: ['contract'], threatens: ['exchange'], actions: ['Ask for the condition to be amended or struck out', 'If it stays, advise the client in writing before they sign', 'Tell the lender if it touches the security'], responsible: 'conveyancer', escalateAfterWorkingDays: 5 },
   client_change: { severity: 'critical', workstreams: ['contract'], threatens: ['exchange', 'completion'], actions: ['Amend the draft contract and the transfer (TR1) to the new parties', 'Take instructions from every client on how they will own it', 'Agree the change with the other side (after exchange: a deed of variation or assignment)'], responsible: 'conveyancer', escalateAfterWorkingDays: 3 },
   chain_dependency: { severity: 'warning', workstreams: ['chain'], threatens: ['exchange', 'completion'], actions: ['Get the chain position from the agents', 'Confirm with the solicitors, not the agents', 'Re-plan target dates'], responsible: 'third_party', escalateAfterWorkingDays: 5 },
   seller_delay: { severity: 'info', workstreams: ['chain', 'enquiries'], threatens: ['exchange'], actions: ['Chase the seller\'s solicitor', 'Escalate via the agent'], responsible: 'seller_side', escalateAfterWorkingDays: 5 },
@@ -552,7 +556,7 @@ export const resolveWithinWorkingDays = (kind: IssueKind): number => ISSUE_KIND_
 
 /** A kind's name on a chip: short, Title Case. */
 export const ISSUE_CHIP: Record<IssueKind, string> = {
-  client_change: 'Client Change',
+  client_change: 'Client Change', contract_term: 'Contract Term',
   company_buyer_checks: 'Company Buyer', buy_to_let_conditions: 'Buy To Let', new_build_pack: 'New Build', auction_conditions: 'Auction', isa_bonus: 'ISA Bonus',
   second_charge_consent: 'Second Charge', shared_ownership_terms: 'Shared Ownership', unrepresented_counterparty: 'Unrepresented', court_order_transfer: 'Court Order',
   right_to_buy_terms: 'Right To Buy', flying_freehold: 'Flying Freehold', commonhold_terms: 'Commonhold', sdlt_basis: 'SDLT', cdd_refresh: 'CDD Refresh',

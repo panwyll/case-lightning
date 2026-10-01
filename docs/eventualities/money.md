@@ -130,7 +130,7 @@ mortgage, smaller advance, retention, scheme money returned).
 | # | Eventuality | Signal | Correct response | Engine today | Priority | Source |
 |---|---|---|---|---|---|---|
 | 8.1 | Deposit received **≠ contract deposit** | `deposit_received.amountPennies` vs `contract.deposit_pennies` | short → `deposit_issue` (exchange); over → hold the excess for completion with the client's consent | **BUILT** — `deposit_received` compared with the contract deposit (service fills it from the register): short → `deposit_issue` holding exchange, topped up by a further receipt (machine.ts `depositConsequences`) | P1 | SCS 2.2 |
-| 8.2 | Deposit **under 10%** agreed | contract deposit < 10% price | special condition needed (balance payable on default); client advised | MISSING — `deposit_issue` manual; no % check | P2 | SCS 2.2.1 |
+| 8.2 | Deposit **under 10%** agreed | contract deposit < 10% price | special condition needed (balance payable on default); client advised | **BUILT** — see exchange.md 2.3 (findings.ts) | P2 | SCS 2.2.1 |
 | 8.3 | Deposit is the **deposit from the client's own sale** passed up the chain | linked sale | SCS 2.2.5 use; chain dependency already holds exchange | PARTIAL — chain gate (link_related_matter); no deposit-source fact | P2 | SCS 2.2.5 |
 | 8.4 | Deposit before PoF sign-off | receipt | `aml_kyc_problem` holds exchange | BUILT (machine.ts:1210) | — | LSAG |
 | 8.5 | Deposit from a third party | receipt remitter | stranger → `aml_kyc_problem` | BUILT (machine.ts:2119-2130) | — | LSAG 6.17.2 |

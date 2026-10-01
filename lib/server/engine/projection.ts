@@ -840,6 +840,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
         resolvedAt: null,
         resolvedBy: null,
         origin: p.origin ?? null,
+        finding: p.finding ?? null,
         party: p.party ?? null,
         costPennies: null,
         paidBy: null,
@@ -923,8 +924,11 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       closePackIfIn(s, e);
       break;
     }
-    case 'contract_review_raised':
+    case 'contract_review_raised': {
+      const dep = (e.payload as Payloads['contract_review_raised']).depositPennies;
+      if (dep != null) s.deposit = { ...s.deposit, contractPennies: dep };
       break;
+    }
     case 'contract_reviewed': {
       const p = e.payload as Payloads['contract_reviewed'];
       resolveDecision(s, p.decisionEventId, p.option, p.note, e);
