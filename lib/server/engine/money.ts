@@ -93,3 +93,19 @@ export function heldOnAbandon(s: MatterState): Array<{ toRole: FundsRole; amount
 }
 
 export const ROLE_LABEL: Record<FundsRole, string> = { client: 'the client', isa_provider: 'the ISA manager', lender: 'the lender', buyer_solicitor: "the buyer's solicitor", incoming_owner: 'the incoming owner' };
+
+/**
+ * Interest on client money (SRA Accounts Rules 7.1; money.md 10.2): a fair sum on what the client's money earned while we held
+ * it, worked out from the receipts to completion. The rate and the floor below which nothing is paid are the firm's policy.
+ */
+export const CLIENT_INTEREST = { ratePercent: 1, minimumPennies: 2000 };
+export function interestDue(s: MatterState, until: Date, policy = CLIENT_INTEREST): number {
+  const end = s.completion.confirmedAt ? new Date(s.completion.confirmedAt) : until;
+  let total = 0;
+  for (const r of s.receipts ?? []) {
+    if (!r.amountPennies || r.purpose === 'fees') continue;
+    const days = Math.max(0, (end.getTime() - Date.parse(r.at)) / 86_400_000);
+    total += (r.amountPennies * policy.ratePercent * days) / (100 * 365);
+  }
+  return Math.round(total);
+}

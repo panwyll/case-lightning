@@ -10,6 +10,7 @@
  * All durations are E&W WORKING days. Defaults live here; a tenant can override a
  * wait's numbers via engine_sla_override (store.ts loads them into an SlaConfig).
  */
+import { chargeableConsideration } from './sdlt-facts';
 import type { MatterState, WaitKey, WaitState } from './types';
 import { auctionCompletionDue, firstRegistrationDue, isaReceivedAt, lisaWindowEnds } from './dates';
 import { profileOf } from './transactions';
@@ -186,7 +187,7 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
   if (state.completion.confirmedAt && !state.postCompletion.sdltSubmittedAt && !state.sdltNotRequiredAt) {
     const wales = !!state.sdltBasis?.wales;
     const due = new Date(new Date(state.completion.confirmedAt).getTime() + (wales ? 30 : 14) * 86_400_000).toISOString().slice(0, 10);
-    const price = state.purchasePricePennies;
+    const price = chargeableConsideration(state);
     const basis = { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false };
     const est = price ? computeSdlt(price, basis) : null;
     if (wales) push('sdlt_filing', due, `The Land Transaction Tax return and payment are due to the Welsh Revenue Authority within 30 days of completion (${state.completion.confirmedAt.slice(0, 10)}) — by ${due}.${est ? ` Estimate: £${(est.totalPennies / 100).toLocaleString('en-GB')} (${est.scheme}).` : ''}`);

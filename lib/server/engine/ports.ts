@@ -245,7 +245,7 @@ export interface EnginePorts {
   /** Optional; only used when a matter's counterparty is internal. */
   linked?: LinkedMatterNotifier | null;
   /** Optional: the firm's lender directory; a mortgage offer naming a lender in it records that lender's requirements on the matter. */
-  lenderDirectory?: { find(tenantId: string, lenderName: string): Promise<{ minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; note: string | null } | null> } | null;
+  lenderDirectory?: { find(tenantId: string, lenderName: string): Promise<{ minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; acceptsLoanDeposit?: boolean | null; acceptsDonorAbroad?: boolean | null; requiresEws1: boolean | null; note: string | null } | null> } | null;
   documents: DocumentRepository;
   /** Optional: whether the firm is paid up (or in its grace period). A suspended firm's cases are not swept: nothing is chased or sent until they pay. */
   entitled?(tenantId: string): Promise<boolean>;

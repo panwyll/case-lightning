@@ -7,7 +7,7 @@
 import type { Side } from './transactions';
 import type { IssueGate, IssueKind } from './issues';
 
-export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa', 'second_charge', 'shared_ownership', 'unrepresented_counterparty', 'court_order_transfer', 'right_to_buy', 'flying_freehold', 'commonhold', 'equity_loan_redemption', 'overseas_entity', 'client_abroad', 'minor_party', 'attorney_benefits', 'deputy', 'trust_client', 'charity', 'vulnerable_client', 'introducer_fee', 'related_party', 'undervalue', 'separating_owners'] as const;
+export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa', 'second_charge', 'shared_ownership', 'unrepresented_counterparty', 'court_order_transfer', 'right_to_buy', 'flying_freehold', 'commonhold', 'equity_loan_redemption', 'overseas_entity', 'client_abroad', 'minor_party', 'attorney_benefits', 'deputy', 'trust_client', 'charity', 'vulnerable_client', 'introducer_fee', 'related_party', 'undervalue', 'separating_owners', 'shared_ownership_sale'] as const;
 export type CaseShape = (typeof CASE_SHAPES)[number];
 
 export type FundsRole = 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider';
@@ -121,6 +121,11 @@ export const SHAPE_SPEC: Record<CaseShape, ShapeSpec> = {
     id: 'separating_owners', label: 'Separating Owners', sides: ['seller', 'owner'],
     summary: 'Owners separating: any order or freezing order checked, both instruct, the proceeds split agreed.',
     issue: { kind: 'joint_client_conflict', title: 'Separating owners: the order, both instructions, the proceeds', detail: 'Ask whether there is a court order (financial remedy, freezing order, or a pending land action registered against the title) and check it permits this sale; the other spouse\'s solicitors consent where it says so. Both owners instruct in writing; agree in writing how the proceeds are paid out before completion (or hold them on an undertaking). If their instructions differ we may not act for both.', gate: 'exchange' },
+  },
+  shared_ownership_sale: {
+    id: 'shared_ownership_sale', label: 'Shared Ownership Sale', sides: ['seller'],
+    summary: "Selling a shared-ownership share: the provider's nomination period, its valuation, staircasing first if selling outright.",
+    issue: { kind: 'shared_ownership_terms', title: "Shared ownership sale: the provider's nomination period and valuation", detail: "Tell the housing association before marketing: most leases give it a nomination period (often 4 to 8 weeks) to find a buyer at the RICS valuation it instructs (valid 3 months). Only after it ends, or it releases the client, can the share go on the open market. Selling 100%: staircase first, completing the staircasing at the same time as the sale. Get the provider's consent to assign, its fees, and its pack.", gate: 'exchange' },
   },
   equity_loan_redemption: {
     id: 'equity_loan_redemption', label: 'Help To Buy Loan To Repay', sides: ['seller', 'owner'],

@@ -5,6 +5,7 @@
  * filed as a document and checked like every other draft, so the balance and the
  * apportionments (which are computed, not read) are allowed and the source figures cite.
  */
+import { chargeableConsideration } from './sdlt-facts';
 import { canon, type RegisterFact } from './draft-check';
 import type { MatterState } from './types';
 import { computeSdlt, sdltLabel } from './sdlt';
@@ -85,7 +86,7 @@ export function buildCompletionStatement(input: { state: MatterState; side: 'buy
   // SDLT on the declared basis: an estimate the person filing checks, never the figure itself.
   if (!sale && side === 'buyer' && pricePennies != null && pricePennies > 0) {
     const basis = { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false };
-    const est = computeSdlt(pricePennies, basis);
+    const est = computeSdlt(chargeableConsideration(state) ?? pricePennies, basis);
     lines.push({ label: `${basis.wales ? 'Land Transaction Tax' : 'Stamp Duty Land Tax'} (estimate, ${est.scheme}${state.sdltBasis ? '' : ', no basis declared'})`, pennies: est.totalPennies, sign: 1, factId: priceFact?.id ?? null, note: `${sdltLabel(basis)} basis` });
     allowed.push(pounds(est.totalPennies));
     toConfirm.push(`SDLT: ${pounds(est.totalPennies)} is the estimate on the ${sdltLabel(basis)} basis; confirm against HMRC's calculator before the return.`);

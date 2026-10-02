@@ -211,6 +211,7 @@ export const EVENT_TYPES = [
   'sdlt_facts_recorded',
   'party_event_recorded',
   'shape_added',
+  'isa_recorded',
   'chain_link_recorded',
   'contributions_recorded',
   'completion_payment_sent',
@@ -334,6 +335,10 @@ export interface MortgageCondition {
 
 export interface MortgageOfferFacts {
   lender: string;
+  /** Who the offer is made to, the property and the price it was made on (money.md 5.2): compared with the case. */
+  borrowerNames?: string[];
+  propertyAddress?: string | null;
+  purchasePricePennies?: number | null;
   amountPennies?: number;
   expiryDate?: string; // ISO date
   conditions: MortgageCondition[];
@@ -1158,7 +1163,7 @@ export interface Payloads {
   final_bill_delivered: { amountPennies: number; documentId: string | null };
   formula_c_release_given: { until: string; givenTo: string };
   formula_c_release_lapsed: { reason: string };
-  deal_event_recorded: { event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant' | 'nominee' | 'buy_out'; detail: string; until: string | null; amountPennies: number | null };
+  deal_event_recorded: { event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant' | 'nominee' | 'buy_out' | 'incentive' | 'deposit_direct'; detail: string; until: string | null; amountPennies: number | null };
   property_event_recorded: { event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays'; detail: string };
   retention_released: { amountPennies: number | null };
   redemption_figure_adjusted: { redemptionPennies: number; days: number; reason: string };
@@ -1168,6 +1173,7 @@ export interface Payloads {
   register_checked: { ok: boolean; note: string | null; lenderTold: boolean };
   seller_discharge_received: { reference: string | null };
   shape_added: { shape: string };
+  isa_recorded: { isa: string; openedOn: string | null; closedOn: string | null };
   chain_link_recorded: { linkId: string; label: string; status: 'ready' | 'not_ready' | 'unknown' | 'removed'; note: string | null };
   party_event_recorded: { event: string; party: string; hasAttorney: boolean | null; note: string | null };
   sar_made: { noticeEnds: string };
@@ -1192,7 +1198,7 @@ export interface Payloads {
   manual_step_undone: { step: string; completionEventId: string; reason: string };
   step_reopened: { step: string; reason: string };
   /** The lender's Part 2 answers that change a rule on this matter. */
-  lender_requirements_recorded: { minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null };
+  lender_requirements_recorded: { minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; acceptsLoanDeposit?: boolean | null; acceptsDonorAbroad?: boolean | null; requiresEws1?: boolean | null; note?: string | null };
   /** A credit on client account that is not the completion money: recorded so the sender is checked (LSAG 5.6.3.2, 6.17.2). */
   client_account_receipt_recorded: { remitter: string; amountPennies: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; reference?: string | null };
   /** A person's name differs across documents for a documented reason (marriage, deed poll): the two names are the same person from here on. */
@@ -1488,6 +1494,8 @@ export interface ManualStepFacts {
   minUnexpiredYears?: number | null;
   maxSearchAgeMonths?: number | null;
   acceptsNonFamilyGift?: boolean | null;
+  acceptsLoanDeposit?: boolean | null;
+  acceptsDonorAbroad?: boolean | null;
   requiresEws1?: boolean | null;
 }
 /** The facts a step cannot sensibly be completed without (a person may still skip them, with a reason). */
@@ -1716,7 +1724,7 @@ export interface MatterState {
   /** Each link further along the chain and whether it is ready (exchange.md 8.6). */
   chainLinks?: Array<{ id: string; label: string; status: 'ready' | 'not_ready' | 'unknown'; note: string | null; at: string }>;
   /** The lender's own (Part 2) requirements recorded on this matter; null = the defaults. */
-  lenderRequirements: { minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; note: string | null; recordedAt: string } | null;
+  lenderRequirements: { minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; acceptsLoanDeposit?: boolean | null; acceptsDonorAbroad?: boolean | null; requiresEws1: boolean | null; note: string | null; recordedAt: string } | null;
   /** Documented name changes: [from, to] pairs the cross-checks treat as one person. */
   nameAliases: Array<{ from: string; to: string; party: string | null }>;
   /** Pre-completion checks the Lenders' Handbook requires on a lender-funded purchase (and good practice on a cash one). */

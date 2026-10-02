@@ -11,8 +11,8 @@ import { paths } from '@/lib/paths';
  * When a mortgage offer names a lender here, its requirements are recorded on the matter and
  * the rules read them: the lease review, the search-age check at exchange, the gift flag.
  */
-interface Lender { id: string; lenderName: string; minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; acceptsDigitalDeed?: boolean | null; note: string | null; updatedAt: string }
-const blank = { lenderName: '', minUnexpiredYears: '', maxSearchAgeMonths: '', acceptsNonFamilyGift: '', requiresEws1: '', acceptsDigitalDeed: '', note: '' };
+interface Lender { id: string; lenderName: string; minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; acceptsDigitalDeed?: boolean | null; acceptsLoanDeposit?: boolean | null; acceptsDonorAbroad?: boolean | null; note: string | null; updatedAt: string }
+const blank = { lenderName: '', minUnexpiredYears: '', maxSearchAgeMonths: '', acceptsNonFamilyGift: '', requiresEws1: '', acceptsDigitalDeed: '', acceptsLoanDeposit: '', acceptsDonorAbroad: '', note: '' };
 
 const CSS = `
 .ld-list{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:hidden;margin-bottom:14px}
@@ -36,12 +36,12 @@ export default function LendersPage() {
   const save = async () => {
     setBusy(true); setErr(null);
     try {
-      await api('/engine/lenders', { method: 'PUT', body: JSON.stringify({ lenderName: form.lenderName.trim(), minUnexpiredYears: form.minUnexpiredYears.trim() ? Number(form.minUnexpiredYears) : null, maxSearchAgeMonths: form.maxSearchAgeMonths.trim() ? Number(form.maxSearchAgeMonths) : null, acceptsNonFamilyGift: form.acceptsNonFamilyGift === '' ? null : form.acceptsNonFamilyGift === 'yes', requiresEws1: form.requiresEws1 === '' ? null : form.requiresEws1 === 'yes', acceptsDigitalDeed: form.acceptsDigitalDeed === '' ? null : form.acceptsDigitalDeed === 'yes', note: form.note.trim() || null }) });
+      await api('/engine/lenders', { method: 'PUT', body: JSON.stringify({ lenderName: form.lenderName.trim(), minUnexpiredYears: form.minUnexpiredYears.trim() ? Number(form.minUnexpiredYears) : null, maxSearchAgeMonths: form.maxSearchAgeMonths.trim() ? Number(form.maxSearchAgeMonths) : null, acceptsNonFamilyGift: form.acceptsNonFamilyGift === '' ? null : form.acceptsNonFamilyGift === 'yes', requiresEws1: form.requiresEws1 === '' ? null : form.requiresEws1 === 'yes', acceptsLoanDeposit: form.acceptsLoanDeposit === '' ? null : form.acceptsLoanDeposit === 'yes', acceptsDonorAbroad: form.acceptsDonorAbroad === '' ? null : form.acceptsDonorAbroad === 'yes', acceptsDigitalDeed: form.acceptsDigitalDeed === '' ? null : form.acceptsDigitalDeed === 'yes', note: form.note.trim() || null }) });
       setForm(blank);
       await load();
     } catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not save.'); } finally { setBusy(false); }
   };
-  const edit = (l: Lender) => setForm({ lenderName: l.lenderName, minUnexpiredYears: l.minUnexpiredYears?.toString() ?? '', maxSearchAgeMonths: l.maxSearchAgeMonths?.toString() ?? '', acceptsNonFamilyGift: l.acceptsNonFamilyGift == null ? '' : l.acceptsNonFamilyGift ? 'yes' : 'no', requiresEws1: l.requiresEws1 == null ? '' : l.requiresEws1 ? 'yes' : 'no', acceptsDigitalDeed: l.acceptsDigitalDeed == null ? '' : l.acceptsDigitalDeed ? 'yes' : 'no', note: l.note ?? '' });
+  const edit = (l: Lender) => setForm({ lenderName: l.lenderName, minUnexpiredYears: l.minUnexpiredYears?.toString() ?? '', maxSearchAgeMonths: l.maxSearchAgeMonths?.toString() ?? '', acceptsNonFamilyGift: l.acceptsNonFamilyGift == null ? '' : l.acceptsNonFamilyGift ? 'yes' : 'no', requiresEws1: l.requiresEws1 == null ? '' : l.requiresEws1 ? 'yes' : 'no', acceptsDigitalDeed: l.acceptsDigitalDeed == null ? '' : l.acceptsDigitalDeed ? 'yes' : 'no', acceptsLoanDeposit: l.acceptsLoanDeposit == null ? '' : l.acceptsLoanDeposit ? 'yes' : 'no', acceptsDonorAbroad: l.acceptsDonorAbroad == null ? '' : l.acceptsDonorAbroad ? 'yes' : 'no', note: l.note ?? '' });
   const remove = async (l: Lender) => {
     if (!window.confirm(`Remove ${l.lenderName} from the directory?`)) return;
     setBusy(true);
@@ -76,6 +76,8 @@ export default function LendersPage() {
         <label>Min unexpired lease term (years)<input type="number" min={0} value={form.minUnexpiredYears} onChange={(e) => setForm({ ...form, minUnexpiredYears: e.target.value })} /></label>
         <label>Max search age at exchange (months)<input type="number" min={1} max={24} value={form.maxSearchAgeMonths} onChange={(e) => setForm({ ...form, maxSearchAgeMonths: e.target.value })} /></label>
         <label>Accepts a non-family gift<select value={form.acceptsNonFamilyGift} onChange={(e) => setForm({ ...form, acceptsNonFamilyGift: e.target.value })}><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+        <label>Accepts a borrowed deposit<select value={form.acceptsLoanDeposit} onChange={(e) => setForm({ ...form, acceptsLoanDeposit: e.target.value })}><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+        <label>Accepts a gift from a donor abroad<select value={form.acceptsDonorAbroad} onChange={(e) => setForm({ ...form, acceptsDonorAbroad: e.target.value })}><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></label>
         <label>Requires an EWS1<select value={form.requiresEws1} onChange={(e) => setForm({ ...form, requiresEws1: e.target.value })}><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></label>
         <label>E-signed mortgage deed<select value={form.acceptsDigitalDeed} onChange={(e) => setForm({ ...form, acceptsDigitalDeed: e.target.value })}><option value="">Not stated (wet ink)</option><option value="yes">Accepted</option><option value="no">Wet ink only</option></select></label>
         <label className="wide">Note (anything else from its Part 2 the handler must know)<textarea rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>

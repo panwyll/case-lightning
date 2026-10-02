@@ -34,9 +34,11 @@ const submissionSchema = z.object({
         accountHolder: z.string().max(140).nullish(),
         bankName: z.string().max(140).nullish(),
         evidenceDocumentIds: z.array(docId).max(12).default([]),
-        gift: z.object({ donorName: z.string().min(2).max(140), donorRelationship: z.string().min(1).max(80), donorAddress: z.string().max(300).nullish(), repayable: z.boolean(), donorAbroad: z.boolean(), jointDonorName: z.string().max(140).nullish(), donorEvidenceDocumentIds: z.array(docId).max(12).default([]) }).nullish(),
+        gift: z.object({ donorName: z.string().min(2).max(140), donorRelationship: z.string().min(1).max(80), donorAddress: z.string().max(300).nullish(), repayable: z.boolean(), donorAbroad: z.boolean(), jointDonorName: z.string().max(140).nullish(), donorEvidenceDocumentIds: z.array(docId).max(12).default([]), donorCountry: z.string().max(80).nullish(), expectsShare: z.boolean().optional(), willLiveThere: z.boolean().optional(), via: z.string().max(140).nullish(), forBuyer: z.string().max(140).nullish() }).nullish(),
         jointHolderName: z.string().max(140).nullish(),
         overseas: z.object({ country: z.string().min(2).max(80), alreadyInUk: z.boolean() }).nullish(),
+        owner: z.string().max(140).nullish(),
+        notYetReceived: z.boolean().optional(),
       })
     )
     .max(20),
@@ -79,7 +81,7 @@ async function context(token: string) {
       /** The conveyancer's questions sent with this round — the client answers each in the form. */
       queries: state && state.proofOfFunds.requestId === req.id ? Object.values(state.proofOfFunds.queries).filter((q) => q.status === 'sent').map((q) => ({ id: q.id, question: q.question, transaction: q.transaction ? { date: q.transaction.date, description: q.transaction.description, amountPennies: q.transaction.amountPennies } : null })) : [],
       /** What the client declared last time, so a follow-up round starts from it. */
-      previous: prev?.submission ? { purchasePricePennies: prev.submission.purchasePricePennies, mortgageAdvancePennies: prev.submission.mortgageAdvancePennies, sources: prev.submission.sources.map((s) => ({ kind: s.kind, amountPennies: s.amountPennies, description: s.description, bankName: s.bankName ?? null, accountHolder: s.accountHolder ?? null, gift: s.gift ? { ...s.gift, files: named(s.gift.donorEvidenceDocumentIds) } : null, overseas: s.overseas ?? null, files: named(s.evidenceDocumentIds) })) } : null,
+      previous: prev?.submission ? { purchasePricePennies: prev.submission.purchasePricePennies, mortgageAdvancePennies: prev.submission.mortgageAdvancePennies, sources: prev.submission.sources.map((s) => ({ kind: s.kind, amountPennies: s.amountPennies, description: s.description, bankName: s.bankName ?? null, accountHolder: s.accountHolder ?? null, gift: s.gift ? { ...s.gift, files: named(s.gift.donorEvidenceDocumentIds) } : null, overseas: s.overseas ?? null, owner: s.owner ?? null, notYetReceived: !!s.notYetReceived, files: named(s.evidenceDocumentIds) })) } : null,
     },
   };
 }

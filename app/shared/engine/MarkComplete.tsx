@@ -27,6 +27,8 @@ const FIELDS: Record<string, { details: Field[]; requirements?: Field[] }> = {
       { key: 'minUnexpiredYears', label: 'Minimum Lease Term', kind: 'years' },
       { key: 'maxSearchAgeMonths', label: 'Maximum Search Age', kind: 'months' },
       { key: 'acceptsNonFamilyGift', label: 'Non-Family Gifts', kind: 'yesno' },
+      { key: 'acceptsLoanDeposit', label: 'Borrowed Deposit', kind: 'yesno' },
+      { key: 'acceptsDonorAbroad', label: 'Donor Abroad', kind: 'yesno' },
       { key: 'requiresEws1', label: 'EWS1 Required', kind: 'yesno' },
     ],
   },

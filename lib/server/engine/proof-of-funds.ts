@@ -34,6 +34,12 @@ export const FUND_SOURCE_KINDS = [
   'lifetime_isa',
   'loan',
   'business_income',
+  'dividend',
+  'directors_loan',
+  'drawings',
+  'bonus',
+  'bridging_loan',
+  'cash',
   'crypto',
   'overseas',
   'other',
@@ -53,6 +59,12 @@ export const FUND_SOURCE_LABEL: Record<FundSourceKind, string> = {
   lifetime_isa: 'Lifetime ISA',
   loan: 'Loan (family, employer, other)',
   business_income: 'Business income / dividends',
+  dividend: 'Dividend from my own company',
+  directors_loan: "Director's loan from my company",
+  drawings: 'Sole trader / partnership drawings',
+  bonus: 'Bonus, commission or redundancy pay',
+  bridging_loan: 'Bridging loan',
+  cash: 'Cash',
   crypto: 'Cryptoassets',
   overseas: 'Funds from overseas',
   other: 'Other',
@@ -72,6 +84,12 @@ export const EVIDENCE_EXPECTED: Record<FundSourceKind, string> = {
   lifetime_isa: 'LISA statement (the bonus is claimed by your conveyancer).',
   loan: 'Loan agreement and evidence of the lender\'s funds; your mortgage lender must be told.',
   business_income: 'Business bank statements and the latest accounts / dividend vouchers.',
+  dividend: 'The dividend voucher, the board minute declaring it, the latest filed accounts (showing the reserves) and the statement showing it paid to you.',
+  directors_loan: "The director's loan account ledger or loan agreement, and the company statement showing the payment. Your mortgage lender must be told: it is borrowing.",
+  drawings: 'Business bank statements and your latest tax calculation (SA302) or accounts.',
+  bonus: 'The payslip showing the bonus or commission, or the settlement agreement for a redundancy payment, and the statement showing it paid in.',
+  bridging_loan: "The bridging lender's offer and how it is repaid (usually the sale of your current home). Your mortgage lender must agree.",
+  cash: 'Most firms do not accept cash: pay it into your own bank account first, and show where it came from (how it was earned or saved).',
   crypto: 'Exchange statements showing purchases, the sale to sterling and the transfer to your bank.',
   overseas: 'Statements from the overseas account, evidence of the transfer, and how the money was earned.',
   other: 'Whatever shows where the money came from and that it is now yours.',
@@ -80,7 +98,17 @@ export const EVIDENCE_EXPECTED: Record<FundSourceKind, string> = {
 /** Close family as the Lenders' Handbook defines it for a gifted deposit (spouse, partner, parent, grandparent, sibling, child, aunt / uncle, in-law, step). Free text from the client, so a loose match. */
 const FAMILY_RE = /\b(mum|mother|dad|father|parent|parents|step[- ]?(mum|mother|dad|father|parent|son|daughter|brother|sister)|grand\s?(ma|mother|pa|father|parent|parents|son|daughter)|nan|nana|gran|grandad|husband|wife|spouse|partner|fianc|civil partner|brother|sister|sibling|son|daughter|child|aunt|auntie|uncle|in[- ]law|mother in law|father in law|cousin)\b/i;
 /** Sources the AML regime treats as higher risk (enhanced due diligence questions follow). */
-export const HIGH_RISK_SOURCES: ReadonlySet<FundSourceKind> = new Set(['crypto', 'overseas', 'loan', 'business_income']);
+export const HIGH_RISK_SOURCES: ReadonlySet<FundSourceKind> = new Set(['crypto', 'overseas', 'loan', 'business_income', 'dividend', 'directors_loan', 'bridging_loan', 'cash']);
+/** Sources that are borrowing: the mortgage lender must be told and may refuse (money.md 2.2, 5.14). */
+/** Lump sums with a document of their own: a credit of the declared amount is that source, not an unknown. */
+const ONE_OFF_SOURCES: ReadonlySet<FundSourceKind> = new Set(['bonus', 'pension', 'inheritance', 'investment_sale', 'dividend', 'sale_proceeds', 'remortgage_equity']);
+export const BORROWED_SOURCES: ReadonlySet<FundSourceKind> = new Set(['loan', 'directors_loan', 'bridging_loan']);
+/**
+ * High-risk third countries (MLR 2017 Sch 3ZA, which follows the FATF lists): enhanced due diligence is mandatory and the
+ * MLRO signs off (money.md 3.1, 4.6). The MLRO keeps this current as the lists change.
+ */
+export const HIGH_RISK_COUNTRIES = ['afghanistan', 'algeria', 'angola', 'bolivia', 'bulgaria', 'burkina faso', 'cameroon', "cote d'ivoire", 'ivory coast', 'democratic republic of the congo', 'drc', 'haiti', 'iran', 'kenya', 'laos', 'lebanon', 'monaco', 'mozambique', 'myanmar', 'burma', 'namibia', 'nepal', 'nigeria', 'north korea', 'dprk', 'south sudan', 'syria', 'venezuela', 'vietnam', 'british virgin islands', 'virgin islands', 'yemen', 'russia', 'belarus'];
+export const highRiskCountry = (country: string | null | undefined): boolean => { const c = (country ?? '').trim().toLowerCase().replace(/[’']/g, "'").replace(/^the\s+/, ''); return !!c && HIGH_RISK_COUNTRIES.some((h) => c === h || c.includes(h)); };
 
 /** One row of the client's declaration. */
 export interface FundSource {
@@ -107,8 +135,21 @@ export interface FundSource {
     /** The gift comes from a joint account: the other holder owns the money too, so they are a donor in their own right. */
     jointDonorName?: string | null;
     donorEvidenceDocumentIds: string[];
+    /** Where the donor lives (abroad: checked against the high-risk list). */
+    donorCountry?: string | null;
+    /** The donor expects a share of the property, or will live there: not a gift (money.md 4.3). */
+    expectsShare?: boolean;
+    willLiveThere?: boolean;
+    /** The gift reached the client through someone else's account (money.md 4.5). */
+    via?: string | null;
+    /** On a joint purchase, the buyer the gift is for (money.md 10.7). */
+    forBuyer?: string | null;
   } | null;
   overseas?: { country: string; alreadyInUk: boolean } | null;
+  /** Whose money it is, on a joint purchase (money.md 1.3): feeds the contributions for the declaration of trust. */
+  owner?: string | null;
+  /** The money is not in the client's account yet (an estate, a share sale, a remortgage, a transfer from abroad): exchange waits for it. */
+  notYetReceived?: boolean;
 }
 
 /** The whole form as the client submitted it (stored verbatim on proof_of_funds_request.submission). */
@@ -147,7 +188,7 @@ export interface ProofOfFundsFacts {
   requiredPennies: number | null;
   totalDeclaredPennies: number;
   shortfallPennies: number | null;
-  sources: Array<{ kind: FundSourceKind; amountPennies: number; description: string; evidenceCount: number; gift: FundSource['gift']; overseas: FundSource['overseas']; jointHolderName?: string | null }>;
+  sources: Array<{ kind: FundSourceKind; amountPennies: number; description: string; evidenceCount: number; gift: FundSource['gift']; overseas: FundSource['overseas']; jointHolderName?: string | null; owner?: string | null; notYetReceived?: boolean }>;
   giftedPennies: number;
   declarations: ProofOfFundsSubmission['declarations'];
   confidence: number;
@@ -171,7 +212,7 @@ export function factsFromSubmission(requestId: string, sub: ProofOfFundsSubmissi
     requiredPennies: required,
     totalDeclaredPennies: total,
     shortfallPennies: required != null ? Math.max(0, required - total) : null,
-    sources: sub.sources.map((s) => ({ kind: s.kind, amountPennies: s.amountPennies, description: s.description, evidenceCount: s.evidenceDocumentIds.length + (s.gift?.donorEvidenceDocumentIds.length ?? 0), gift: s.gift ?? null, overseas: s.overseas ?? null, jointHolderName: s.jointHolderName?.trim() || null })),
+    sources: sub.sources.map((s) => ({ kind: s.kind, amountPennies: s.amountPennies, description: s.description, evidenceCount: s.evidenceDocumentIds.length + (s.gift?.donorEvidenceDocumentIds.length ?? 0), gift: s.gift ?? null, overseas: s.overseas ?? null, owner: s.owner?.trim() || null, notYetReceived: !!s.notYetReceived || (s.kind === 'overseas' && s.overseas?.alreadyInUk === false), jointHolderName: s.jointHolderName?.trim() || null })),
     giftedPennies: sub.sources.filter((s) => s.kind === 'gift').reduce((n, s) => n + s.amountPennies, 0),
     declarations: sub.declarations,
     // The client typed it; there is no extraction uncertainty. 1 unless the form is internally inconsistent.
@@ -187,7 +228,7 @@ export const gbp = (p: number): string => `£${(p / 100).toLocaleString('en-GB',
  * the conveyancer decides what each means for this client.
  */
 /** What the matter knows that the form does not: who else is buying, whether a linked sale exists, what the lender accepts. */
-export interface PofMatterContext { coBuyers?: string[]; hasLinkedSale?: boolean; acceptsNonFamilyGift?: boolean | null }
+export interface PofMatterContext { coBuyers?: string[]; hasLinkedSale?: boolean; acceptsNonFamilyGift?: boolean | null; acceptsLoanDeposit?: boolean | null; acceptsDonorAbroad?: boolean | null }
 
 export function evaluateProofOfFunds(f: ProofOfFundsFacts, m: PofMatterContext = {}): Verdict {
   const flags: Flag[] = [];
@@ -213,8 +254,13 @@ export function evaluateProofOfFunds(f: ProofOfFundsFacts, m: PofMatterContext =
       const g = s.gift;
       if (!g) flags.push({ code: 'POF_GIFT_NO_DONOR', severity: 'high', description: `A gift of ${gbp(s.amountPennies)} was declared without donor details.`, locator: where });
       else {
-        flags.push({ code: 'POF_GIFT', severity: 'medium', description: `Gifted deposit of ${gbp(s.amountPennies)} from ${g.donorName} (${g.donorRelationship}). Donor ID, a gift letter and the donor's statements are required, and the lender must be told.`, locator: where });
-        if (g.repayable) flags.push({ code: 'POF_GIFT_REPAYABLE', severity: 'high', description: `The "gift" from ${g.donorName} is stated to be repayable: it is a loan, which the lender must approve and which may affect affordability.`, locator: where });
+        flags.push({ code: 'POF_GIFT', severity: 'medium', description: `Gifted deposit of ${gbp(s.amountPennies)} from ${g.donorName} (${g.donorRelationship}). Donor ID, a gift letter and the donor's statements are required, and the lender must be told. If ${g.donorName} dies within seven years the gift may be taxed as part of their estate: they should take their own advice.`, locator: where });
+        if (g.expectsShare || g.willLiveThere) flags.push({ code: 'POF_GIFT_NOT_A_GIFT', severity: 'high', description: `${g.donorName} ${g.expectsShare ? 'expects a share of the property' : 'will live in the property'}: ${g.expectsShare ? 'that is not a gift but a beneficial interest, recorded in a declaration of trust (and the lender told); no gift letter can be signed' : 'they sign the lender\'s occupier consent after independent advice, and the gift letter must say they claim no interest'}.`, locator: where });
+        if (g.via?.trim()) flags.push({ code: 'POF_GIFT_VIA', severity: 'medium', description: `The gift from ${g.donorName} reaches the client through ${g.via.trim()}'s account: trace each step, and ${g.via.trim()} confirms in writing they are only passing it on.`, locator: where });
+        if (g.forBuyer?.trim() && (m.coBuyers ?? []).length) flags.push({ code: 'POF_GIFT_ONE_BUYER', severity: 'medium', description: `The gift is for ${g.forBuyer.trim()} only: it is their contribution, the gift letter names them, and the declaration of trust should ring-fence it.`, locator: where });
+        if (g.donorAbroad && m.acceptsDonorAbroad === false) flags.push({ code: 'POF_LENDER_RULE', severity: 'high', description: `The lender does not accept a gift from a donor abroad: report it and wait for the lender's written instructions.`, locator: where });
+        if (highRiskCountry(g.donorCountry)) flags.push({ code: 'POF_HIGH_RISK_COUNTRY', severity: 'high', description: `The donor is in ${g.donorCountry}, a high-risk third country: enhanced due diligence is mandatory and the MLRO signs off.`, locator: where });
+        if (g.repayable) flags.push({ code: 'POF_GIFT_REPAYABLE', severity: 'high', description: `The "gift" from ${g.donorName} is stated to be repayable: it is a loan, which the lender must approve and which may affect affordability. Record its terms; if ${g.donorName} wants it secured on the property it is a second charge (the main lender's consent), and if they want a share in return it is a declaration of trust, not a loan or a gift.`, locator: where });
         if (g.donorAbroad) flags.push({ code: 'POF_GIFT_DONOR_ABROAD', severity: 'medium', description: `The donor (${g.donorName}) is outside the UK: identity and source of the donor's funds need extra care.`, locator: where });
         if (!FAMILY_RE.test(g.donorRelationship) && m.acceptsNonFamilyGift !== true) flags.push({ code: 'POF_GIFT_NON_FAMILY', severity: 'high', description: `The donor (${g.donorName}) is described as "${g.donorRelationship}", not a close family member. Most lenders accept gifted deposits only from family (spouse or partner, parent, grandparent, sibling, child, aunt or uncle, in-law or step relation) and refuse gifts from friends or employers: report it to the lender and wait for written instructions.`, locator: where });
         if (g.jointDonorName?.trim()) flags.push({ code: 'POF_GIFT_JOINT_ACCOUNT', severity: 'medium', description: `The gift comes from an account ${g.donorName} holds jointly with ${g.jointDonorName.trim()}: the money is theirs too, so ${g.jointDonorName.trim()} is a donor in their own right — ID / AML check, the gift letter signed by both, and both named to the lender.`, locator: where });
@@ -224,9 +270,44 @@ export function evaluateProofOfFunds(f: ProofOfFundsFacts, m: PofMatterContext =
     if (s.kind !== 'gift' && s.jointHolderName) flags.push({ code: 'POF_JOINT_HOLDER', severity: 'medium', description: `${FUND_SOURCE_LABEL[s.kind]} of ${gbp(s.amountPennies)} sits in an account held jointly with ${s.jointHolderName}, who is not buying: their share is a third-party contribution — ID / AML check, a signed confirmation that they gift their share and claim no interest in the property, and the lender told.`, locator: where });
     if (HIGH_RISK_SOURCES.has(s.kind)) flags.push({ code: `POF_HIGH_RISK:${s.kind.toUpperCase()}`, severity: 'high', description: `${FUND_SOURCE_LABEL[s.kind]} (${gbp(s.amountPennies)}) is a higher-risk source under the firm's AML policy: enhanced due diligence questions apply.${s.kind === 'overseas' && s.overseas ? ` Country: ${s.overseas.country}; ${s.overseas.alreadyInUk ? 'already in a UK account' : 'not yet transferred to the UK'}.` : ''}`, locator: where });
     if (s.kind === 'loan') flags.push({ code: 'POF_LOAN', severity: 'high', description: `A loan of ${gbp(s.amountPennies)} forms part of the funds: the mortgage lender must be told and may decline.`, locator: where });
+    if (s.kind === 'directors_loan') flags.push({ code: 'POF_LOAN', severity: 'high', description: `A director's loan of ${gbp(s.amountPennies)} is borrowing, not income: the mortgage lender must be told (most refuse a borrowed deposit). See the loan account ledger; an unrepaid loan can carry a tax charge on the company (CTA 2010 s.455).`, locator: where });
+    if (s.kind === 'bridging_loan') flags.push({ code: 'POF_BRIDGING', severity: 'high', description: `A bridging loan of ${gbp(s.amountPennies)}: the bridging lender's offer, how it is repaid (the exit, usually a sale: link it), any charge it takes over this property (a second charge, the main lender's consent), and the daily interest if completion slips.`, locator: where });
+    if (s.kind === 'dividend') flags.push({ code: 'POF_DIVIDEND', severity: 'medium', description: `A dividend of ${gbp(s.amountPennies)} from the client's company: the voucher and board minute, the filed accounts showing reserves to pay it, a Companies House check that the client is a shareholder, and whether it is declared for tax.`, locator: where });
+    if (s.kind === 'cash') flags.push({ code: 'POF_CASH', severity: 'high', description: `${gbp(s.amountPennies)} in cash: the firm does not take cash into client account. It must be banked in the client's own account first and its origin evidenced; consider the reporting obligations.`, locator: where });
+    if (s.kind === 'pension') flags.push({ code: 'POF_PENSION', severity: 'low', description: `A pension lump sum of ${gbp(s.amountPennies)}: the provider's letter shows the amount and the tax taken. Only 25% is normally tax-free, and pension money is available from 55 (57 from April 2028): tell the client to check the net figure with the provider.`, locator: where });
+    if (s.kind === 'other') flags.push({ code: 'POF_SOURCE_UNCLEAR', severity: 'medium', description: `"${s.description}" (${gbp(s.amountPennies)}) is not a source the rules can classify: ask what it is and for the evidence.`, locator: where });
+    if (BORROWED_SOURCES.has(s.kind) && m.acceptsLoanDeposit === false) flags.push({ code: 'POF_LENDER_RULE', severity: 'high', description: `The lender does not accept borrowed money towards the deposit: ${FUND_SOURCE_LABEL[s.kind].toLowerCase()} of ${gbp(s.amountPennies)} needs its written agreement or other funds.`, locator: where });
+    if (s.overseas && highRiskCountry(s.overseas.country)) flags.push({ code: 'POF_HIGH_RISK_COUNTRY', severity: 'high', description: `Money from ${s.overseas.country}, a high-risk third country: enhanced due diligence is mandatory and the MLRO signs off.`, locator: where });
+    if (s.notYetReceived) flags.push({ code: 'POF_NOT_YET_RECEIVED', severity: 'medium', description: `${FUND_SOURCE_LABEL[s.kind]} of ${gbp(s.amountPennies)} is not in the client's account yet${s.kind === 'overseas' ? ' (still abroad: allow for the exchange rate and the receiving bank\'s checks)' : ''}: exchange waits until it is.`, locator: where });
   });
   if (flags.length) return { outcome: 'flag', flags, reasons: flags.map((x) => x.code) };
   return { outcome: 'clear', reasons: ['every source evidenced', 'no gift, loan or higher-risk source', f.shortfallPennies === 0 ? 'declared funds cover the balance' : 'price not checked'] };
+}
+
+/** Questions the declaration itself raises (money.md 1.4, 2.1, 4.3, 4.5): drafted as queries to the client, once each. */
+export function declarationQueries(f: ProofOfFundsFacts): Array<{ key: string; flagCode: string; question: string }> {
+  const out: Array<{ key: string; flagCode: string; question: string }> = [];
+  f.sources.forEach((s, i) => {
+    if (s.kind === 'other') out.push({ key: `POF_SOURCE_UNCLEAR:${f.requestId}:${i}`, flagCode: 'POF_SOURCE_UNCLEAR', question: `You described ${gbp(s.amountPennies)} as "${s.description}". Please tell us what this money is, how you came to have it, and attach a document that shows it (a statement, a letter or an agreement).` });
+    if (s.kind === 'dividend') out.push({ key: `POF_DIVIDEND:${f.requestId}:${i}`, flagCode: 'POF_DIVIDEND', question: 'For the dividend: please send the dividend voucher, the board minute declaring it and the company\'s latest filed accounts, and confirm it will be declared on your tax return.' });
+    if (s.gift?.expectsShare || s.gift?.willLiveThere) out.push({ key: `POF_GIFT_NOT_A_GIFT:${f.requestId}:${i}`, flagCode: 'POF_GIFT_NOT_A_GIFT', question: `You told us ${s.gift.donorName} ${s.gift.expectsShare ? 'expects a share of the property' : 'will live in the property'}. Please tell us what you have agreed with them: if they are to own part of it we record that in a declaration of trust instead of a gift letter.` });
+    if (s.gift?.via?.trim()) out.push({ key: `POF_GIFT_VIA:${f.requestId}:${i}`, flagCode: 'POF_GIFT_VIA', question: `The gift from ${s.gift.donorName} comes through ${s.gift.via.trim()}. Please send a statement showing it reach ${s.gift.via.trim()} from ${s.gift.donorName} and leave for your account, and ask ${s.gift.via.trim()} to confirm in writing they are only passing it on.` });
+  });
+  return out;
+}
+
+/** What each buyer puts in, from the sources attributed to them (money.md 1.3): the contributions for the declaration of trust. */
+export function contributionsFrom(f: ProofOfFundsFacts, buyers: string[]): Array<{ party: string; pennies: number }> | null {
+  if (buyers.length < 2 || !f.sources.some((s) => s.owner || s.gift?.forBuyer)) return null;
+  const by = new Map(buyers.map((b) => [b, 0]));
+  for (const s of f.sources) {
+    if (s.kind === 'mortgage') continue;
+    const who = (s.gift?.forBuyer ?? s.owner)?.trim();
+    const hit = who ? buyers.find((b) => samePerson(who, [b])) : null;
+    if (hit) by.set(hit, (by.get(hit) ?? 0) + s.amountPennies);
+    else for (const b of buyers) by.set(b, (by.get(b) ?? 0) + Math.round(s.amountPennies / buyers.length));
+  }
+  return [...by].map(([party, pennies]) => ({ party, pennies }));
 }
 
 /** The declaration rendered as the source document the decision cites (what the conveyancer opens). */
@@ -552,7 +633,9 @@ export function reviewTransactions(facts: ProofOfFundsFacts, evidence: EvidenceD
         push({ code: 'LOAN_CREDIT', severity: 'high', description: `Credit that looks like a loan — ${desc}.`, locator: cite(doc, t) }, { key: key('LOAN_CREDIT'), flagCode: 'LOAN_CREDIT', documentId: doc.id, transaction: t, question: `On ${t.date} ${gbp(t.amountPennies)} arrived from "${t.description}", which looks like borrowing. Is any of the purchase money borrowed? If so, from whom and on what terms — your mortgage lender will need to know.` });
         return;
       }
-      if (large && !isSalary) {
+      // A one-off the client declared (a bonus, a redundancy payment, a pension lump sum, an inheritance): evidenced by its own document, not queried as unknown (money.md 2.6).
+      const declaredOneOff = facts.sources.some((x) => ONE_OFF_SOURCES.has(x.kind) && x.evidenceCount > 0 && Math.abs(x.amountPennies - t.amountPennies) <= x.amountPennies * 0.05);
+      if (large && !isSalary && !declaredOneOff) {
         const thirdParty = t.counterparty && !looksLike(t.counterparty, [...expectedHolders, ...knownParties].filter(Boolean));
         const round = t.amountPennies % policy.roundSumPennies === 0;
         const code = thirdParty ? 'THIRD_PARTY_CREDIT' : 'LARGE_CREDIT';
@@ -607,7 +690,7 @@ export interface PofQuery {
 }
 
 /** Enhanced due diligence is required by regulation in these situations (docs/proof-of-funds.md §4); the machine records the rating, the MLRO applies it. */
-export const EDD_TRIGGER_CODES = ['POF_HIGH_RISK:CRYPTO', 'POF_HIGH_RISK:OVERSEAS', 'POF_HIGH_RISK:LOAN', 'POF_HIGH_RISK:BUSINESS_INCOME', 'POF_GIFT_DONOR_ABROAD', 'CRYPTO_CREDIT', 'GAMBLING_CREDIT', 'OVERSEAS_CREDIT', 'CASH_PATTERN', 'IN_AND_OUT', 'HOLDER_MISMATCH', 'GAMBLING_SPEND', 'GIFT_DONOR_FUNDS_RECENT'] as const;
+export const EDD_TRIGGER_CODES = ['POF_HIGH_RISK_COUNTRY', 'POF_CASH', 'POF_HIGH_RISK:CASH', 'POF_HIGH_RISK:DIRECTORS_LOAN', 'POF_HIGH_RISK:BRIDGING_LOAN', 'POF_HIGH_RISK:DIVIDEND', 'POF_HIGH_RISK:CRYPTO', 'POF_HIGH_RISK:OVERSEAS', 'POF_HIGH_RISK:LOAN', 'POF_HIGH_RISK:BUSINESS_INCOME', 'POF_GIFT_DONOR_ABROAD', 'CRYPTO_CREDIT', 'GAMBLING_CREDIT', 'OVERSEAS_CREDIT', 'CASH_PATTERN', 'IN_AND_OUT', 'HOLDER_MISMATCH', 'GAMBLING_SPEND', 'GIFT_DONOR_FUNDS_RECENT'] as const;
 
 export type PofRiskRating = 'standard' | 'enhanced';
 export function riskRating(flags: Flag[]): PofRiskRating {
@@ -651,5 +734,10 @@ export const FLAG_GUIDANCE: Record<string, string> = {
   PAYSLIPS_NOT_STATEMENTS: 'Payslips evidence the income, not the money: ask for the statements of the account the salary is paid into and the account the funds are held in.',
   PAYSLIP_NAME_MISMATCH: 'Income in another name is a third party\'s money until explained: whose, and how it reaches the deposit account.',
   COVERAGE_SHORT: 'Three months is the usual minimum; less may be acceptable with a reason, and the MLRO decides.',
+  POF_HIGH_RISK_COUNTRY: 'A high-risk third country makes enhanced due diligence mandatory (MLR 2017 reg 33): source of wealth, the purpose of the money, and the MLRO\'s approval before sign-off. Escalate the decision to the MLRO.',
+  POF_NOT_YET_RECEIVED: 'Money still to arrive (an estate, a share sale, a remortgage, money abroad) is not money in hand: the estate\'s or lender\'s letter with the expected date, and exchange held until it is in client account or the other solicitor undertakes to send it.',
+  POF_GIFT_NOT_A_GIFT: 'Money given in return for a share, or to someone who will live there, is not a gift: a declaration of trust, or the occupier\'s consent after independent advice, and the lender told.',
+  POF_LENDER_RULE: "The lender's own rules (its Part 2) forbid this kind of deposit: report it and act only on its written reply.",
+  POF_CASH: 'Cash is the highest-risk form of money: refuse it into client account and trace it from where it was banked.',
   QUERY_UNANSWERED: 'A query the client has not answered leaves the flag open; sign-off is not available until every query is answered or withdrawn.',
 };

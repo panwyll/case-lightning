@@ -25,6 +25,8 @@
  * puts the connection on the conveyi_automation role: the database refuses human-gated
  * events from there whatever this code does.
  */
+import { pounds } from './money';
+import { chargeableConsideration } from './sdlt-facts';
 import { clientMessagesStopped } from './people';
 import { computeSdlt } from './sdlt';
 import { workingDaysBetween } from './working-days';
@@ -102,6 +104,9 @@ export interface RunResult {
  * Third parties go at the chase trust level, the client at the client-update level. `optional`: no
  * address for them on the case is not a failure (an agent is not always involved).
  */
+/** Source-of-funds issues still open (what a further proof-of-funds round must answer). */
+const openFundsIssues = (s: MatterState) => Object.values(s.issues).filter((i) => i.kind === 'source_of_funds' && (i.status === 'open' || i.status === 'negotiating') && !i.title.startsWith('Money still to arrive'));
+
 export interface FirstRequest { to: 'seller_solicitor' | 'lender' | 'estate_agent' | 'client'; template: string; buyerOnly?: boolean; optional?: boolean }
 export const FIRST_REQUESTS: Partial<Record<EventType, FirstRequest>> = {
   contract_pack_requested: { to: 'seller_solicitor', template: 'request_contract_pack' },
@@ -473,6 +478,8 @@ export class EngineService {
   async requestProofOfFunds(tenantId: string, matterId: string, actor: string, opts: { noteToClient?: string | null; followUpOf?: string | null } = {}): Promise<RunResult> {
     if (!this.ports.pofForms) throw Object.assign(new Error('Proof-of-funds forms are not configured on this deployment.'), { status: 501 });
     const state = await this.getState(tenantId, matterId);
+    // Already signed off: this is a further round (money.md 1.1, a gift or loan mentioned later).
+    if (!opts.followUpOf && state.proofOfFunds.status === 'reviewed' && state.proofOfFunds.resolution === 'approve' && state.proofOfFunds.requestId && openFundsIssues(state).length) opts = { ...opts, followUpOf: state.proofOfFunds.requestId, noteToClient: opts.noteToClient ?? openFundsIssues(state).map((i) => i.title).join('; ') };
     const form = await this.ports.pofForms.create({ tenantId, matterId, requestedBy: actor, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null });
     // Drafted queries go out with this round; the client answers them in the form.
     const queryIds = openPofQueries(state).filter((q) => q.status === 'draft').map((q) => q.id);
@@ -506,7 +513,7 @@ export class EngineService {
     const state = await this.getState(tenantId, matterId);
     const sub: ProofOfFundsSubmission = { ...submission, round: submission.round ?? state.proofOfFunds.rounds ?? 1 };
     // What the client must find includes the Stamp Duty, worked out on the case's basis (money.md 1.2).
-    const sdltEstimate = state.purchasePricePennies && profileOf(state.transactionType).side === 'buyer' ? computeSdlt(state.purchasePricePennies, { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false }).totalPennies : null;
+    const sdltEstimate = state.purchasePricePennies && profileOf(state.transactionType).side === 'buyer' ? computeSdlt(chargeableConsideration(state) ?? state.purchasePricePennies, { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false }).totalPennies : null;
     const facts = factsFromSubmission(requestId, sub, state.purchasePricePennies, sdltEstimate);
     // Read every attached document: statements transaction by transaction (the regulations want the
     // statements scrutinised, not filed). Answers' evidence counts too. Unreadable ones become a flag.
@@ -545,7 +552,7 @@ export class EngineService {
     const review = { ...lineReview, flags: [...lineReview.flags.filter((f) => !isExplained(f)), ...analysis.flags], queries: [...lineReview.queries.filter((q) => !analysis.explainedKeys.includes(q.key)), ...analysis.queries] };
     const declaration = renderDeclaration(facts, sub, evidenceNames) + (analysis.report ? `\n${analysis.report}` : '');
     const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'PROOF_OF_FUNDS_DECLARATION', fileName: readableName(`Proof of funds declaration${facts.round > 1 ? ` (round ${facts.round})` : ''}`, this.ports.now()), content: declaration });
-    const verdict = evaluateProofOfFunds(facts, { coBuyers: state.partyNames.slice(1), hasLinkedSale: state.relatedMatter?.relation === 'sale' ? true : state.relatedMatter ? undefined : false, acceptsNonFamilyGift: state.lenderRequirements?.acceptsNonFamilyGift ?? null });
+    const verdict = evaluateProofOfFunds(facts, { coBuyers: state.partyNames.slice(1), hasLinkedSale: state.relatedMatter?.relation === 'sale' ? true : state.relatedMatter ? undefined : false, acceptsNonFamilyGift: state.lenderRequirements?.acceptsNonFamilyGift ?? null, acceptsLoanDeposit: state.lenderRequirements?.acceptsLoanDeposit ?? null, acceptsDonorAbroad: state.lenderRequirements?.acceptsDonorAbroad ?? null });
     const flags = [...(verdict.outcome === 'flag' ? verdict.flags : []), ...review.flags];
     let summary = null;
     if (this.ports.pofSummariser) {
@@ -679,8 +686,8 @@ export class EngineService {
     // The firm's lender directory: this lender's Part 2 answers go on the matter before the offer is judged, so the rules read them.
     if (this.ports.lenderDirectory && facts.lender && facts.lender !== 'unknown') {
       const profile = await this.ports.lenderDirectory.find(tenantId, facts.lender).catch((err) => { this.ports.log('lender directory lookup failed', err); return null; });
-      if (profile && (profile.minUnexpiredYears != null || profile.maxSearchAgeMonths != null || profile.acceptsNonFamilyGift != null || profile.requiresEws1 != null || profile.note)) {
-        await this.run(tenantId, matterId, { type: 'record_lender_requirements', actor: SYSTEM, minUnexpiredYears: profile.minUnexpiredYears, maxSearchAgeMonths: profile.maxSearchAgeMonths, acceptsNonFamilyGift: profile.acceptsNonFamilyGift, requiresEws1: profile.requiresEws1, note: profile.note ? `${facts.lender} (directory): ${profile.note}` : `${facts.lender} (directory)` }).catch((err) => this.ports.log('lender requirements from the directory not recorded', err));
+      if (profile && (profile.minUnexpiredYears != null || profile.maxSearchAgeMonths != null || profile.acceptsNonFamilyGift != null || profile.acceptsLoanDeposit != null || profile.acceptsDonorAbroad != null || profile.requiresEws1 != null || profile.note)) {
+        await this.run(tenantId, matterId, { type: 'record_lender_requirements', actor: SYSTEM, minUnexpiredYears: profile.minUnexpiredYears, maxSearchAgeMonths: profile.maxSearchAgeMonths, acceptsNonFamilyGift: profile.acceptsNonFamilyGift, acceptsLoanDeposit: profile.acceptsLoanDeposit ?? null, acceptsDonorAbroad: profile.acceptsDonorAbroad ?? null, requiresEws1: profile.requiresEws1, note: profile.note ? `${facts.lender} (directory): ${profile.note}` : `${facts.lender} (directory)` }).catch((err) => this.ports.log('lender requirements from the directory not recorded', err));
       }
     }
     const state = await this.getState(tenantId, matterId);
@@ -1684,6 +1691,17 @@ export class EngineService {
           const other = state.relatedMatter.matterId;
           const was = state.relatedMatter.relation === 'sale' ? 'purchase' : 'sale';
           await this.run(tenantId, other, { type: 'raise_issue', actor: SYSTEM, issueId: `CHAIN-FELL-${matterId.slice(0, 8)}`, kind: 'chain_dependency', title: `The client's linked ${was} has fallen through`, detail: `The ${was} on the linked file was abandoned (${String((e.payload as { reason?: string }).reason ?? '').replace(/_/g, ' ')}). Take the client's instructions: ${was === 'sale' ? 'can they still buy (bridging, other funds), or does this purchase stop too?' : 'do they still want to sell, and when?'} Tell the other side and the lender.`, gate: 'exchange', severity: 'critical' } as never).catch((err) => this.ports.log('linked file could not be told', err));
+        }
+        // The client's sale nets less than their purchase counts on (money.md 9.10): the purchase file is told.
+        if (e.type === 'completion_statement_generated' && state.relatedMatter?.relation === 'purchase' && profileOf(state.transactionType).side === 'seller') {
+          const net = (e.payload as { balancePennies?: number | null }).balancePennies ?? null;
+          const other = state.relatedMatter.matterId;
+          const purchase = await this.getState(tenantId, other).catch(() => null);
+          const planned = purchase?.proofOfFunds.facts?.sources.filter((x) => x.kind === 'sale_proceeds').reduce((a, x) => a + x.amountPennies, 0) ?? 0;
+          if (net != null && planned > 0 && net < planned - 100) {
+            const short = planned - net;
+            await this.run(tenantId, other, { type: 'raise_issue', actor: SYSTEM, issueId: `CHAIN-SHORT-${matterId.slice(0, 8)}`, kind: 'completion_funds_shortfall', title: `The client's sale nets ${pounds(short)} less than planned`, detail: `The proof of funds counted on ${pounds(planned)} from the sale; its completion statement leaves ${pounds(net)} after the mortgage, fees and costs. The client must find ${pounds(short)} before completion of the purchase (with its own proof of funds).`, gate: 'completion' } as never).catch((err) => this.ports.log('chain shortfall could not be raised on the purchase', err));
+          }
         }
         // The seller's forms: ONE enquiry to the seller's solicitor covering every point they raise and every "not known"
         // answer, numbered, proposed (never sent unasked below auto) and tied to the one issue that lists them.

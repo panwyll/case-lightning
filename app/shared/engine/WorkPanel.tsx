@@ -822,6 +822,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       case 'management_pack_sale': return act('leasehold', 'management_pack_requested', 'Record Requested', {}, { primary: true });
       case 'contract_approved_sale': return act('exchange', 'contract_approved', 'Record Approved', {}, { primary: true });
       case 'report_on_title_redraft': return <BusyButton busyLabel="Drafting…" doneLabel="Drafted" disabled={busy} onClick={() => cmd({ type: 'draft_report_on_title' })}>Draft Again</BusyButton>;
+      case 'proof_of_funds_followup':
       case 'proof_of_funds_request': return <BusyButton busyLabel="Sending…" doneLabel="Sent" disabled={busy} onClick={() => cmd({ type: 'request_proof_of_funds' })}>Send The Form</BusyButton>;
       case 'contract_approve': return act('exchange', 'contract_approved', 'Approve Contract', {}, { primary: true });
       case 'buyer_enquiries': return act('enquiries', 'enquiry_replies_sent', 'Record Replies Sent', { enquiryIds: unreplied }, { primary: true });
@@ -928,7 +929,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
           const r = await api<{ document: CaseDocument }>(`/matters/${matterId}/documents/upload-scan`, { method: 'POST', body: JSON.stringify({ fileName: file.name, mimeType: file.type || 'application/pdf', base64, docType: 'SIGNED_DEED' }) });
           return r.document;
         } : undefined}
-        contract={contracts[sheet.type]}
+        contract={{ ...contracts[sheet.type], fields: contracts[sheet.type].fields?.filter((f) => !(f as { shape?: string }).shape || (s.shapes ?? []).includes((f as { shape?: string }).shape!)) }}
         initial={sheet.extra}
         docs={docs}
         context={sheetContext}

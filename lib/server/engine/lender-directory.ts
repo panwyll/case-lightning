@@ -15,6 +15,9 @@ export interface LenderProfile {
   requiresEws1: boolean | null;
   /** Takes an electronically signed mortgage deed (null: not known, so wet ink). */
   acceptsDigitalDeed?: boolean | null;
+  /** Part 2 deposit rules (migration 123): borrowed money, a donor abroad. */
+  acceptsLoanDeposit?: boolean | null;
+  acceptsDonorAbroad?: boolean | null;
   note: string | null;
   updatedAt: string;
 }
@@ -29,7 +32,10 @@ type Row = Parameters<typeof row>[0];
 
 export async function listLenders(tenantId: string): Promise<LenderProfile[]> {
   const rows = await query<Row>(`select id, lender_name, min_unexpired_years, max_search_age_months, accepts_non_family_gift, requires_ews1, accepts_digital_deed, note, updated_at::text from lender_profile where tenant_id = $1 order by lower(lender_name)`, [tenantId]).catch(() => query<Row>(`select id, lender_name, min_unexpired_years, max_search_age_months, accepts_non_family_gift, requires_ews1, null::boolean as accepts_digital_deed, note, updated_at::text from lender_profile where tenant_id = $1 order by lower(lender_name)`, [tenantId]));
-  return rows.map(row);
+  // The deposit rules ride columns added by migration 123; before it, the rest still loads.
+  const extra = await query<{ id: string; accepts_loan_deposit: boolean | null; accepts_donor_abroad: boolean | null }>(`select id, accepts_loan_deposit, accepts_donor_abroad from lender_profile where tenant_id = $1`, [tenantId]).catch(() => []);
+  const by = new Map(extra.map((x) => [x.id, x]));
+  return rows.map(row).map((l) => ({ ...l, acceptsLoanDeposit: by.get(l.id)?.accepts_loan_deposit ?? null, acceptsDonorAbroad: by.get(l.id)?.accepts_donor_abroad ?? null }));
 }
 
 export async function upsertLender(tenantId: string, userId: string, p: Omit<LenderProfile, 'id' | 'updatedAt'>): Promise<LenderProfile> {
@@ -42,7 +48,8 @@ export async function upsertLender(tenantId: string, userId: string, p: Omit<Len
   );
   // The e-signed deed flag rides a column added by migration 102; before it, the rest still saves.
   if (p.acceptsDigitalDeed !== undefined) await query(`update lender_profile set accepts_digital_deed = $3 where tenant_id = $1 and id = $2`, [tenantId, r!.id, p.acceptsDigitalDeed]).catch(() => {});
-  return { ...row(r!), acceptsDigitalDeed: p.acceptsDigitalDeed ?? null };
+  if (p.acceptsLoanDeposit !== undefined || p.acceptsDonorAbroad !== undefined) await query(`update lender_profile set accepts_loan_deposit = $3, accepts_donor_abroad = $4 where tenant_id = $1 and id = $2`, [tenantId, r!.id, p.acceptsLoanDeposit ?? null, p.acceptsDonorAbroad ?? null]).catch(() => {});
+  return { ...row(r!), acceptsDigitalDeed: p.acceptsDigitalDeed ?? null, acceptsLoanDeposit: p.acceptsLoanDeposit ?? null, acceptsDonorAbroad: p.acceptsDonorAbroad ?? null };
 }
 
 export async function deleteLender(tenantId: string, id: string): Promise<void> {

@@ -1369,7 +1369,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     case 'lender_requirements_recorded': {
       const p = e.payload as Payloads['lender_requirements_recorded'];
       const prev = s.lenderRequirements;
-      s.lenderRequirements = { minUnexpiredYears: p.minUnexpiredYears ?? prev?.minUnexpiredYears ?? null, maxSearchAgeMonths: p.maxSearchAgeMonths ?? prev?.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: p.acceptsNonFamilyGift ?? prev?.acceptsNonFamilyGift ?? null, requiresEws1: p.requiresEws1 ?? prev?.requiresEws1 ?? null, note: p.note ?? prev?.note ?? null, recordedAt: e.createdAt };
+      s.lenderRequirements = { minUnexpiredYears: p.minUnexpiredYears ?? prev?.minUnexpiredYears ?? null, maxSearchAgeMonths: p.maxSearchAgeMonths ?? prev?.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: p.acceptsNonFamilyGift ?? prev?.acceptsNonFamilyGift ?? null, acceptsLoanDeposit: p.acceptsLoanDeposit ?? prev?.acceptsLoanDeposit ?? null, acceptsDonorAbroad: p.acceptsDonorAbroad ?? prev?.acceptsDonorAbroad ?? null, requiresEws1: p.requiresEws1 ?? prev?.requiresEws1 ?? null, note: p.note ?? prev?.note ?? null, recordedAt: e.createdAt };
       break;
     }
     case 'client_account_receipt_recorded': {

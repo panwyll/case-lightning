@@ -30,6 +30,9 @@ export interface SdltFacts {
   mixedUse?: boolean;
   /** Transfer of equity: the mortgage debt the incoming owner takes on (chargeable consideration). */
   debtAssumedPennies?: number | null;
+  /** Shared ownership: the buyer elects to pay on the full market value now (FA 2003 Sch 9 para 2), rather than on each share as bought. */
+  soMarketValue?: boolean;
+  soMarketValuePennies?: number | null;
 }
 
 export interface CgtFacts {
@@ -85,5 +88,8 @@ export function chargeableConsideration(s: MatterState): number | null {
     const debt = (s.sdltFacts as SdltFacts | null | undefined)?.debtAssumedPennies ?? 0;
     return s.considerationPennies != null || debt ? (s.considerationPennies ?? 0) + debt : null;
   }
+  // Shared ownership (money.md 7.8): with the election, the tax is on the full market value now and staircasing later is free; without it, on the share's price.
+  const f = s.sdltFacts as SdltFacts | null | undefined;
+  if (s.shapes?.includes('shared_ownership') && f?.soMarketValue && f.soMarketValuePennies) return f.soMarketValuePennies;
   return s.purchasePricePennies ?? null;
 }

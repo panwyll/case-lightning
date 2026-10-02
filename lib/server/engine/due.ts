@@ -31,6 +31,7 @@ const RESEND_TITLE: Record<string, (d: { searchType?: string }) => string> = {
   search_order: (d) => `Order the ${d.searchType ?? ''} search`.replace('  ', ' '),
   id_check_request: () => 'Send the client the ID check',
   proof_of_funds_request: () => 'Send the client the proof-of-funds form',
+  proof_of_funds_followup: () => 'Ask the client for proof of funds again',
   signing_pack: () => 'Send the client the signing pack',
   deposit_request: () => 'Ask the client for the deposit',
   property_forms_request: () => 'Send the client the property forms',
@@ -39,7 +40,7 @@ const RESEND_TITLE: Record<string, (d: { searchType?: string }) => string> = {
   ownership_basis_request: () => 'Ask the clients how they will own the property',
   buildings_insurance_request: () => 'Ask the client for buildings insurance from exchange',
 };
-const RESEND_LANE: Record<string, string> = { search_order: 'searches', id_check_request: 'id_aml', proof_of_funds_request: 'source_of_funds', signing_pack: 'signing', deposit_request: 'exchange', property_forms_request: 'property_forms', exchange_authority_request: 'exchange', balance_request: 'completion', ownership_basis_request: 'co_ownership', buildings_insurance_request: 'pre_completion_checks' };
+const RESEND_LANE: Record<string, string> = { search_order: 'searches', id_check_request: 'id_aml', proof_of_funds_request: 'source_of_funds', proof_of_funds_followup: 'source_of_funds', signing_pack: 'signing', deposit_request: 'exchange', property_forms_request: 'property_forms', exchange_authority_request: 'exchange', balance_request: 'completion', ownership_basis_request: 'co_ownership', buildings_insurance_request: 'pre_completion_checks' };
 
 /** Money owed back and money not yet cleared: on our list even on a file that has stopped, until it is dealt with. */
 function moneySteps(s: MatterState): DueStep[] {
@@ -99,6 +100,10 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   const everProposed = (kind: string) => Object.values(s.proposals).some((q) => ((q.detail as { kind?: string }).kind === kind || (q.detail as { template?: string }).template === kind) && (q.status === 'pending' || (q.status === 'rejected' && !!q.resolvedBy && q.resolvedBy !== 'system')));
   if (buyer && s.requireProofOfFunds && s.proofOfFunds.status === 'not_started' && !exchanged && !completed && !everProposed('proof_of_funds_request'))
     add({ key: 'proof_of_funds_request', lane: 'proof_of_funds', title: 'Send the client the proof-of-funds form' });
+  // Signed off, then something new about the money (a gift or loan mentioned later): the sign-off no longer covers it (money.md 1.1).
+  const fundsQuestion = Object.values(s.issues).find((i) => i.kind === 'source_of_funds' && (i.status === 'open' || i.status === 'negotiating') && !/^Money still to arrive/.test(i.title));
+  if (buyer && s.proofOfFunds.status === 'reviewed' && s.proofOfFunds.resolution === 'approve' && fundsQuestion && !exchanged && !completed && !everProposed('proof_of_funds_request'))
+    add({ key: 'proof_of_funds_followup', lane: 'proof_of_funds', title: `Ask the client for proof of funds again: ${fundsQuestion.title.slice(0, 80)}` });
   if (!completed && (seller || remo || toe) && s.title.status === 'awaiting')
     add({ key: 'official_copies', lane: 'title', title: 'Get the official copies from HM Land Registry and file them' });
   if (seller && p.hasExchange && atLeast('pre_contract') && !s.contractPack.sentAt && s.propertyForms.status === 'received' && s.title.status !== 'awaiting')

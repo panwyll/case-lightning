@@ -4,6 +4,7 @@
  * replayed the same log; here the state is projected once and every view is derived from it.
  * The single-purpose routes still exist and call the same builders.
  */
+import { chargeableConsideration } from './sdlt-facts';
 import { dismissedRefs } from '../task-dismissal';
 import { dueSteps } from './due';
 import { query, queryOne } from '../db';
@@ -73,7 +74,7 @@ export async function engineView(svc: EngineService, tenantId: string, matterId:
     chain,
     // The transaction profile (docs/transaction-types.md): which phases, workstreams and gates this type has — the UI draws from it.
     profile: { ...profile, fundsFrom: fundsFromFor(profile.fundsFrom, state.shapes ?? []), lifecycle: lifecycleFor(profile), gates: gatesFor(state) },
-    sdlt: profile.side === 'buyer' && state.purchasePricePennies ? (() => { const basis = { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false }; const est = computeSdlt(state.purchasePricePennies, basis); return { estimatePennies: est.totalPennies, scheme: est.scheme, basis: sdltLabel(basis), declared: !!state.sdltBasis }; })() : null,
+    sdlt: profile.side === 'buyer' && state.purchasePricePennies ? (() => { const basis = { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false }; const est = computeSdlt(chargeableConsideration(state) ?? state.purchasePricePennies, basis); return { estimatePennies: est.totalPennies, scheme: est.scheme, basis: sdltLabel(basis), declared: !!state.sdltBasis }; })() : null,
     lifecycle: { id: lifecycle(state), label: LIFECYCLE_LABEL[lifecycle(state)] },
     blockers: stageBlockers(state),
     waits: openWaits(state).map((w) => ({ ...w, chase: sla[w.key] ? nextChase(w, sla[w.key], new Date()) : null })),

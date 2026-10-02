@@ -20,7 +20,13 @@ const KINDS: Array<{ id: string; label: string; evidence: string; gift?: boolean
   { id: 'help_to_buy_isa', label: 'Help to Buy ISA', evidence: 'Your ISA statement.' },
   { id: 'lifetime_isa', label: 'Lifetime ISA', evidence: 'Your LISA statement.' },
   { id: 'loan', label: 'A loan (family, employer, other)', evidence: 'The loan agreement and evidence of the lender\'s funds. Your mortgage lender will need to know.' },
-  { id: 'business_income', label: 'Business income / dividends', evidence: 'Business bank statements and the latest accounts or dividend vouchers.' },
+  { id: 'business_income', label: 'Business income', evidence: 'Business bank statements and the latest accounts.' },
+  { id: 'dividend', label: 'A dividend from my own company', evidence: 'The dividend voucher, the board minute declaring it, the company\'s latest filed accounts, and the statement showing it paid to you.' },
+  { id: 'directors_loan', label: 'A loan from my company (director\'s loan)', evidence: 'The director\'s loan account or loan agreement, and the company statement showing the payment. Your mortgage lender will need to know.' },
+  { id: 'drawings', label: 'Sole trader or partnership drawings', evidence: 'Business bank statements and your latest tax calculation (SA302) or accounts.' },
+  { id: 'bonus', label: 'Bonus, commission or redundancy pay', evidence: 'The payslip showing it, or the settlement agreement for redundancy, and the statement showing it paid in.' },
+  { id: 'bridging_loan', label: 'A bridging loan', evidence: 'The bridging lender\'s offer and how it will be repaid. Your mortgage lender will need to agree.' },
+  { id: 'cash', label: 'Cash', evidence: 'We cannot take cash. Pay it into your own bank account first, and tell us where it came from.' },
   { id: 'crypto', label: 'Cryptoassets', evidence: 'Exchange statements showing the purchases, the sale to pounds and the transfer to your bank.' },
   { id: 'overseas', label: 'Money from overseas', evidence: 'Statements from the overseas account, evidence of the transfer, and how the money was earned.', overseas: true },
   { id: 'other', label: 'Something else', evidence: 'Whatever shows where the money came from and that it is now yours.' },
@@ -35,8 +41,13 @@ interface Source {
   files: Array<{ id: string; fileName: string }>;
   jointHolderName: string; gift: { donorName: string; donorRelationship: string; donorAddress: string; repayable: boolean; donorAbroad: boolean; jointDonorName: string; files: Array<{ id: string; fileName: string }> };
   overseas: { country: string; alreadyInUk: boolean };
+  owner: string;
+  notYetReceived: boolean;
+  giftMore: { donorCountry: string; expectsShare: boolean; willLiveThere: boolean; via: string; forBuyer: string };
 }
-const blank = (kind = 'savings'): Source => ({ kind, amount: '', description: '', bankName: '', accountHolder: '', jointHolderName: '', files: [], gift: { donorName: '', donorRelationship: '', donorAddress: '', repayable: false, donorAbroad: false, jointDonorName: '', files: [] }, overseas: { country: '', alreadyInUk: true } });
+const blank = (kind = 'savings'): Source => ({ kind, amount: '', description: '', bankName: '', accountHolder: '', jointHolderName: '', files: [], gift: { donorName: '', donorRelationship: '', donorAddress: '', repayable: false, donorAbroad: false, jointDonorName: '', files: [] }, overseas: { country: '', alreadyInUk: true }, owner: '', notYetReceived: false, giftMore: { donorCountry: '', expectsShare: false, willLiveThere: false, via: '', forBuyer: '' } });
+/** Money that may still be on its way when the form is filled in. */
+const LATER = new Set(['inheritance', 'investment_sale', 'pension', 'remortgage_equity', 'sale_proceeds', 'bonus', 'bridging_loan']);
 const pennies = (s: string): number => Math.round(Number(String(s).replace(/[^0-9.]/g, '') || 0) * 100);
 const gbp = (p: number) => `£${(p / 100).toLocaleString('en-GB')}`;
 
@@ -106,7 +117,7 @@ export default function ProofOfFundsPage() {
         if (j.previous) {
           if (j.previous.purchasePricePennies) setPrice(String(j.previous.purchasePricePennies / 100));
           if (j.previous.mortgageAdvancePennies) setMortgage(String(j.previous.mortgageAdvancePennies / 100));
-          setSources((j.previous.sources as Array<{ kind: string; amountPennies: number; description: string; bankName?: string | null; accountHolder?: string | null; jointHolderName?: string | null; files?: Array<{ id: string; fileName: string }>; gift: { donorName: string; donorRelationship: string; donorAddress?: string | null; repayable: boolean; donorAbroad: boolean; jointDonorName?: string | null; files?: Array<{ id: string; fileName: string }> } | null; overseas: { country: string; alreadyInUk: boolean } | null }>).map((s) => ({ ...blank(s.kind), amount: String(s.amountPennies / 100), description: s.description, bankName: s.bankName ?? '', accountHolder: s.accountHolder ?? '', jointHolderName: s.jointHolderName ?? '', files: s.files ?? [], gift: s.gift ? { donorName: s.gift.donorName, donorRelationship: s.gift.donorRelationship, donorAddress: s.gift.donorAddress ?? '', repayable: s.gift.repayable, donorAbroad: s.gift.donorAbroad, jointDonorName: s.gift.jointDonorName ?? '', files: s.gift.files ?? [] } : blank().gift, overseas: s.overseas ?? blank().overseas })));
+          setSources((j.previous.sources as Array<{ kind: string; amountPennies: number; description: string; bankName?: string | null; accountHolder?: string | null; jointHolderName?: string | null; files?: Array<{ id: string; fileName: string }>; gift: { donorName: string; donorRelationship: string; donorAddress?: string | null; repayable: boolean; donorAbroad: boolean; jointDonorName?: string | null; files?: Array<{ id: string; fileName: string }> } | null; overseas: { country: string; alreadyInUk: boolean } | null; owner?: string | null; notYetReceived?: boolean }>).map((s) => ({ ...blank(s.kind), owner: s.owner ?? '', notYetReceived: !!s.notYetReceived, giftMore: { donorCountry: (s.gift as { donorCountry?: string | null } | null)?.donorCountry ?? '', expectsShare: !!(s.gift as { expectsShare?: boolean } | null)?.expectsShare, willLiveThere: !!(s.gift as { willLiveThere?: boolean } | null)?.willLiveThere, via: (s.gift as { via?: string | null } | null)?.via ?? '', forBuyer: (s.gift as { forBuyer?: string | null } | null)?.forBuyer ?? '' }, amount: String(s.amountPennies / 100), description: s.description, bankName: s.bankName ?? '', accountHolder: s.accountHolder ?? '', jointHolderName: s.jointHolderName ?? '', files: s.files ?? [], gift: s.gift ? { donorName: s.gift.donorName, donorRelationship: s.gift.donorRelationship, donorAddress: s.gift.donorAddress ?? '', repayable: s.gift.repayable, donorAbroad: s.gift.donorAbroad, jointDonorName: s.gift.jointDonorName ?? '', files: s.gift.files ?? [] } : blank().gift, overseas: s.overseas ?? blank().overseas })));
         }
       }
       // Back from the bank: the form as it was, with the accounts shared attached to the source they were for.
@@ -222,9 +233,11 @@ export default function ProofOfFundsPage() {
           bankName: s.bankName.trim() || null,
           accountHolder: s.accountHolder.trim() || null,
           evidenceDocumentIds: s.files.map((f) => f.id),
-          gift: s.kind === 'gift' ? { donorName: s.gift.donorName.trim(), donorRelationship: s.gift.donorRelationship.trim(), donorAddress: s.gift.donorAddress.trim() || null, repayable: s.gift.repayable, donorAbroad: s.gift.donorAbroad, jointDonorName: s.gift.jointDonorName.trim() || null, donorEvidenceDocumentIds: s.gift.files.map((f) => f.id) } : null,
+          gift: s.kind === 'gift' ? { donorName: s.gift.donorName.trim(), donorRelationship: s.gift.donorRelationship.trim(), donorAddress: s.gift.donorAddress.trim() || null, repayable: s.gift.repayable, donorAbroad: s.gift.donorAbroad, jointDonorName: s.gift.jointDonorName.trim() || null, donorEvidenceDocumentIds: s.gift.files.map((f) => f.id), donorCountry: s.gift.donorAbroad ? s.giftMore.donorCountry.trim() || null : null, expectsShare: s.giftMore.expectsShare, willLiveThere: s.giftMore.willLiveThere, via: s.giftMore.via.trim() || null, forBuyer: s.giftMore.forBuyer || null } : null,
           jointHolderName: s.kind !== 'gift' && s.kind !== 'mortgage' ? s.jointHolderName.trim() || null : null,
           overseas: s.kind === 'overseas' ? { country: s.overseas.country.trim(), alreadyInUk: s.overseas.alreadyInUk } : null,
+          owner: s.owner || null,
+          notYetReceived: LATER.has(s.kind) ? s.notYetReceived : false,
         })),
         declarations: dec,
         clientNote: note.trim() || null,
@@ -343,6 +356,12 @@ export default function ProofOfFundsPage() {
                 <input id={`pf-jdonor-${i}`} type="text" value={s.gift.jointDonorName} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, gift: { ...x.gift, jointDonorName: e.target.value } } : x)))} placeholder="e.g. my father, if the gift comes from my parents' joint account" />
                 <div className="hint">Both account holders are giving the money, so both will be asked for ID and to sign the gift letter.</div>
                 <div className="chk"><input id={`pf-abroad-${i}`} type="checkbox" checked={s.gift.donorAbroad} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, gift: { ...x.gift, donorAbroad: e.target.checked } } : x)))} /><label htmlFor={`pf-abroad-${i}`} style={{ margin: 0, fontWeight: 400 }}>They live outside the UK</label></div>
+                {s.gift.donorAbroad && <><label htmlFor={`pf-dcountry-${i}`}>Which country they live in</label><input id={`pf-dcountry-${i}`} type="text" value={s.giftMore.donorCountry} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, giftMore: { ...x.giftMore, donorCountry: e.target.value } } : x)))} /></>}
+                <div className="chk"><input id={`pf-share-${i}`} type="checkbox" checked={s.giftMore.expectsShare} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, giftMore: { ...x.giftMore, expectsShare: e.target.checked } } : x)))} /><label htmlFor={`pf-share-${i}`} style={{ margin: 0, fontWeight: 400 }}>They expect to own part of the property</label></div>
+                <div className="chk"><input id={`pf-live-${i}`} type="checkbox" checked={s.giftMore.willLiveThere} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, giftMore: { ...x.giftMore, willLiveThere: e.target.checked } } : x)))} /><label htmlFor={`pf-live-${i}`} style={{ margin: 0, fontWeight: 400 }}>They will live in the property</label></div>
+                <label htmlFor={`pf-via-${i}`}>Is it coming to you through someone else's account? Whose</label>
+                <input id={`pf-via-${i}`} type="text" value={s.giftMore.via} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, giftMore: { ...x.giftMore, via: e.target.value } } : x)))} placeholder="Leave blank if it comes straight from them" />
+                {(ctx?.coBuyers?.length ?? 0) > 0 && <><label htmlFor={`pf-for-${i}`}>Who the gift is for</label><select id={`pf-for-${i}`} value={s.giftMore.forBuyer} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, giftMore: { ...x.giftMore, forBuyer: e.target.value } } : x)))}><option value="">All of us</option>{[fullName, ...(ctx?.coBuyers ?? [])].filter(Boolean).map((n) => <option key={n} value={n}>{n}</option>)}</select></>}
                 <label>Documents from the person giving it (ID, gift letter, their statements)</label>
                 {obAvailable && <div style={{ margin: '6px 0' }}><button type="button" className="btn primary" disabled={busy} onClick={() => { setBankQ(''); setBankFor({ i, party: 'donor' }); }}>Connect Their Bank</button><div className="hint">The quickest way: {s.gift.donorName || 'they'} sign in to their own bank and share the account the gift comes from. We never see their login.</div></div>}
                 <input type="file" multiple accept="application/pdf,image/*" onChange={(e) => void attach(i, e.target.files, true)} disabled={busy} />
@@ -355,6 +374,8 @@ export default function ProofOfFundsPage() {
                 <div className="chk" style={{ marginTop: 28 }}><input id={`pf-inuk-${i}`} type="checkbox" checked={s.overseas.alreadyInUk} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, overseas: { ...x.overseas, alreadyInUk: e.target.checked } } : x)))} /><label htmlFor={`pf-inuk-${i}`} style={{ margin: 0, fontWeight: 400 }}>It is already in a UK bank account</label></div>
               </div>
             )}
+            {!k.gift && s.kind !== 'mortgage' && (ctx?.coBuyers?.length ?? 0) > 0 && <><label htmlFor={`pf-owner-${i}`}>Whose money this is</label><select id={`pf-owner-${i}`} value={s.owner} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, owner: e.target.value } : x)))}><option value="">All of us</option>{[fullName, ...(ctx?.coBuyers ?? [])].filter(Boolean).map((n) => <option key={n} value={n}>{n}</option>)}</select></>}
+            {LATER.has(s.kind) && <div className="chk"><input id={`pf-later-${i}`} type="checkbox" checked={s.notYetReceived} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, notYetReceived: e.target.checked } : x)))} /><label htmlFor={`pf-later-${i}`} style={{ margin: 0, fontWeight: 400 }}>I have not received this money yet</label></div>}
             <label>{k.gift ? 'Your own statement showing the gift arriving (optional)' : 'Attach evidence'}</label>
             <div className="hint">{k.gift ? 'A statement for the account the gift was (or will be) paid into.' : k.evidence}</div>
             {obAvailable && k.id !== 'mortgage' && <div style={{ margin: '6px 0' }}><button type="button" className="btn primary" disabled={busy} onClick={() => { setBankQ(''); setBankFor({ i, party: 'client' }); }}>Connect Your Bank</button><div className="hint">The quickest way: sign in to your bank and share the account, instead of uploading statements. We never see your login.</div></div>}

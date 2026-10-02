@@ -191,11 +191,11 @@ const MSG_PARTY: Record<string, { chip: string; the: string }> = {
 };
 const partyOf = (role: unknown) => MSG_PARTY[String(role ?? 'client')] ?? { chip: 'Other Side', the: 'the other side' };
 /** Client messages that ask them to do something (a Client Request); the rest of a client's messages are updates. */
-const CLIENT_REQUESTS = new Set(['id_check_request', 'proof_of_funds_request', 'deposit_request', 'property_forms_request', 'exchange_authority_request', 'balance_request', 'ownership_basis_request', 'buildings_insurance_request', 'request_survey_report', 'mortgage_change_query']);
+const CLIENT_REQUESTS = new Set(['id_check_request', 'proof_of_funds_request', 'proof_of_funds_followup', 'deposit_request', 'property_forms_request', 'exchange_authority_request', 'balance_request', 'ownership_basis_request', 'buildings_insurance_request', 'request_survey_report', 'mortgage_change_query']);
 /** A due step's chip: whose it is, and what kind of thing. */
 /** A due step's chip is the kind of work (the title says what exactly); files going out are "Send <who> Documents". */
 export const DUE_CHIP: Record<string, string> = {
-  official_copies: 'Upload Documents', proof_of_funds_request: 'Client Request', report_on_title_redraft: 'Draft Document', contract_pack: "Send Buyer's Solicitor Documents", management_pack_sale: 'Managing Agent Request',
+  official_copies: 'Upload Documents', proof_of_funds_request: 'Client Request', proof_of_funds_followup: 'Client Request', report_on_title_redraft: 'Draft Document', contract_pack: "Send Buyer's Solicitor Documents", management_pack_sale: 'Managing Agent Request',
   contract_approved_sale: 'Record Outcome', contract_approve: 'Document Sign-Off', buyer_enquiries: 'Reply To Enquiries', exchange: 'Exchange Contracts', completion_statement: 'Send Client Documents',
   funds_cleared: 'Record Receipt', refund: 'Return Money', shortfall_request: 'Request Funds',
   deposit_in: 'Record Receipt', final_bill: 'Send Client Documents', completion_payment_sent: 'Record Outcome', contributions: 'Record Outcome', register_check: 'Record Outcome', requisition_extend: 'Record Outcome', sdlt_facts: 'Record Outcome', cgt_facts: 'Record Outcome', longstop_date: 'Record Outcome', charge_statement: 'Record Receipt', charge_redeemed: 'Record Outcome', undertaking: "Send Buyer's Solicitor Documents", completion_information: 'Record Receipt', undertaking_discharge: "Send Buyer's Solicitor Documents",

@@ -11,7 +11,7 @@
  * same document (a new edition, the lease read after the register) never raises it again.
  */
 import type { IssueGate, IssueKind, IssueSeverity } from './issues';
-import type { ContractFacts, Flag, LeaseFacts, SearchFacts, TitleFacts } from './types';
+import type { ContractFacts, Flag, LeaseFacts, MortgageOfferFacts, SearchFacts, TitleFacts } from './types';
 
 export interface Finding { code: string; kind: IssueKind; title: string; detail: string; severity: IssueSeverity; gate: IssueGate; page: number | null }
 export interface FindingContext {
@@ -209,6 +209,32 @@ export function contractFindings(c: Pick<ContractFacts, 'pricePennies' | 'deposi
       if (out.some((x) => x.title === title)) continue;
       out.push({ code: `TERM:${title.toUpperCase().replace(/[^A-Z]+/g, '_')}`, kind: 'contract_term', severity: 'warning', gate: 'exchange', page: pageOf(sc.locator), title, detail: `Special condition ${sc.code}: "${clip(sc.text)}". ${detail}${ctx.hasLender && /survey|conditional|indemn/i.test(title) ? ' Tell the lender.' : ''}` });
     }
+  }
+  return out;
+}
+
+// ── The mortgage offer against the case (money.md 5.1, 5.2, 5.5, 5.6) ──
+export interface OfferContext { clients: string[]; pricePennies: number | null; declaredAdvancePennies: number | null; previous: MortgageOfferFacts | null; exchanged: boolean }
+const sameName = (a: string, b: string) => { const n = (x: string) => x.toLowerCase().replace(/\b(mr|mrs|ms|miss|dr|mx)\b\.?/g, ' ').replace(/[^a-z ]/g, ' ').split(/\s+/).filter(Boolean); const x = n(a), y = n(b); return !!x.length && !!y.length && x[x.length - 1] === y[y.length - 1] && x[0][0] === y[0][0]; };
+export function offerFindings(o: MortgageOfferFacts, ctx: OfferContext): Finding[] {
+  const out: Finding[] = [];
+  const gate: IssueGate = ctx.exchanged ? 'completion' : 'exchange';
+  const borrowers = o.borrowerNames ?? [];
+  if (borrowers.length && ctx.clients.length) {
+    const missing = ctx.clients.filter((c) => !borrowers.some((b) => sameName(b, c)));
+    const extra = borrowers.filter((b) => !ctx.clients.some((c) => sameName(b, c)));
+    if (missing.length || extra.length) out.push({ code: 'OFFER_BORROWERS', kind: 'lender_approval', severity: 'critical', gate, page: null, title: 'The offer is not made to the buyers', detail: `The offer names ${borrowers.join(' and ')}; the buyers are ${ctx.clients.join(' and ')}.${missing.length ? ` Not on the offer: ${missing.join(', ')}.` : ''}${extra.length ? ` On the offer but not buying: ${extra.join(', ')} (a borrower who is not an owner is not allowed by most lenders).` : ''} Ask the lender for a corrected offer before exchange.` });
+  }
+  if (o.purchasePricePennies && ctx.pricePennies && Math.abs(o.purchasePricePennies - ctx.pricePennies) >= 100) out.push({ code: 'OFFER_PRICE', kind: 'lender_approval', severity: 'critical', gate, page: null, title: `The offer is on a price of ${pounds(o.purchasePricePennies)}; the price is ${pounds(ctx.pricePennies)}`, detail: 'The lender lent on a different price: tell it the agreed price and get a corrected offer (or its written confirmation the offer stands) before exchange.' });
+  if (o.amountPennies && ctx.declaredAdvancePennies && o.amountPennies < ctx.declaredAdvancePennies - 100) out.push({ code: 'OFFER_ADVANCE_SHORT', kind: 'source_of_funds', severity: 'warning', gate, page: null, title: `The advance is ${pounds(ctx.declaredAdvancePennies - o.amountPennies)} less than the client declared`, detail: `The client's proof of funds assumed ${pounds(ctx.declaredAdvancePennies)}; the offer is for ${pounds(o.amountPennies)}. The client must find the difference: a further proof-of-funds round for the extra money.` });
+  if (ctx.previous) {
+    const was = new Set(ctx.previous.conditions.filter((c) => !c.standard).map((c) => c.text.trim().toLowerCase()));
+    const added = o.conditions.filter((c) => !c.standard && !was.has(c.text.trim().toLowerCase()));
+    if (added.length) out.push({ code: `OFFER_REISSUED:${added.map((c) => c.code).join(',')}`, kind: 'lender_approval', severity: 'warning', gate, page: null, title: `Re-issued offer: ${added.length} new condition${added.length === 1 ? '' : 's'}`, detail: `New on this offer: ${added.map((c) => `${c.code}: ${c.text.slice(0, 160)}`).join(' | ')}. The new expiry replaces the old one; tell the client what changed.` });
+  }
+  // A special condition that asks for something before completion: an issue each, cleared by the evidence.
+  for (const c of o.conditions.filter((x) => !x.standard && !/retention|retained|withh[eo]ld/i.test(x.text) && /(prior to|before) (completion|the advance|release)|evidence|confirm(ation)?|occupier|undertak|satisf/i.test(x.text))) {
+    out.push({ code: `OFFER_CONDITION:${c.code}`, kind: 'mortgage_condition_outstanding', severity: 'warning', gate: 'completion', page: c.locator?.page ?? null, title: `Offer condition ${c.code}: ${c.text.slice(0, 80)}`, detail: `"${c.text.slice(0, 400)}". Get what it asks for and confirm it to the lender before the certificate of title.` });
   }
   return out;
 }

@@ -27,16 +27,16 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 import { SHAPE_SPEC, fundsFromFor, type CaseShape } from './shapes';
 import { buildDecision, leaseFlags, offeredOptions, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import { propertyFormsIssues } from './property-forms';
-import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
+import { contributionsFrom, declarationQueries, evaluateProofOfFunds, FUND_SOURCE_LABEL, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
-import { conditionalLongStop, contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
+import { conditionalLongStop, offerFindings, contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
 import { computeSdlt } from './sdlt';
 import { sharesAtPurchase, sharesText, unequal } from './co-owners';
 import { amlHoldActive, damlNoticeEnds, damlMoratoriumEnds, partyEventConsequences, sanctionsHold, SANCTIONS_PREFIX, type PartyEvent } from './people';
 import { cgtFlags, chargeableConsideration, deriveSdltBasis, type CgtFacts, type SdltFacts } from './sdlt-facts';
 import { completionDateProblem, staleAtCompletion } from './dates';
 import { allDischarged, anythingCharged, chargesToAdd, isFinancialCharge, negativeEquity, openCharges } from './charges';
-import { heldOnAbandon, moneyOf, payersExpected, position, pounds, refundsDue, ROLE_LABEL } from './money';
+import { CLIENT_INTEREST, heldOnAbandon, interestDue, moneyOf, payersExpected, position, pounds, refundsDue, ROLE_LABEL } from './money';
 import {
   EngineError,
   isResolved,
@@ -221,12 +221,13 @@ type CommandBody =
   | { type: 'record_party_event'; actor: Actor; event: PartyEvent; party: string; hasAttorney?: boolean | null; note?: string | null }
   | { type: 'sar_made'; actor: Actor; note?: string | null }
   | { type: 'add_shape'; actor: Actor; shape: string }
+  | { type: 'record_isa'; actor: Actor; isa: 'lifetime_isa' | 'help_to_buy_isa'; openedOn?: string | null; closedOn?: string | null }
   | { type: 'record_chain_link'; actor: Actor; linkId?: string | null; label: string; status: 'ready' | 'not_ready' | 'unknown' | 'removed'; note?: string | null }
   | { type: 'completion_payment_sent'; actor: Actor; reference: string; sentAt?: string | null }
-  | { type: 'final_bill_delivered'; actor: Actor; amountPennies: number; documentId?: string | null }
+  | { type: 'final_bill_delivered'; actor: Actor; amountPennies: number; documentId?: string | null; balanceLeftPennies?: number | null }
   | { type: 'formula_c_release_given'; actor: Actor; until: string; givenTo: string }
   | { type: 'formula_c_release_lapsed'; actor: Actor; reason: string }
-  | { type: 'record_deal_event'; actor: Actor; event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant' | 'nominee' | 'buy_out'; detail: string; until?: string | null; amountPennies?: number | null }
+  | { type: 'record_deal_event'; actor: Actor; event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant' | 'nominee' | 'buy_out' | 'incentive' | 'deposit_direct'; detail: string; until?: string | null; amountPennies?: number | null }
   | { type: 'record_property_event'; actor: Actor; event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays'; detail: string }
   | { type: 'retention_released'; actor: Actor; amountPennies?: number | null }
   | { type: 'record_contributions'; actor: Actor; model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent?: Record<string, number> | null }
@@ -263,7 +264,7 @@ type CommandBody =
   | { type: 'complete_step_manually'; actor: Actor; step: string; note: string; documentIds?: string[]; facts?: ManualStepFacts | null; skipReason?: string | null }
   | { type: 'undo_manual_step'; actor: Actor; step: string; reason: string }
   | { type: 'reopen_step'; actor: Actor; step: string; reason: string }
-  | { type: 'record_lender_requirements'; actor: Actor; minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null }
+  | { type: 'record_lender_requirements'; actor: Actor; minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; acceptsLoanDeposit?: boolean | null; acceptsDonorAbroad?: boolean | null; requiresEws1?: boolean | null; note?: string | null }
   | { type: 'name_change_evidenced'; actor: Actor; party?: string | null; from: string; to: string; reason: string; documentId?: string | null }
   | { type: 'client_account_receipt'; actor: Actor; remitter: string; amountPennies?: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; reference?: string | null }
   | { type: 'buildings_insurance_confirmed'; actor: Actor; insurer?: string | null; fromDate?: string | null; documentId?: string | null }
@@ -322,6 +323,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'record_property_event',
   'record_deal_event',
   'add_shape',
+  'record_isa',
   'record_chain_link',
   'retention_released',
   'ap1_cancelled',
@@ -978,6 +980,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (officers.length) conditionIssues.push(issue('company_buyer_checks', `Company client: directors and PSCs identified — ${officers.join(', ')}`, 'Each director and person with significant control named here has an ID / AML check of their own (LSAG 6.14.11, 6.16). Check the PSC register at Companies House against the names given and report any discrepancy (reg. 30A). Board minute or resolution authorising the transaction and naming the signatories.'));
       if (executors.length) conditionIssues.push(issue('probate_issue', `Personal representatives / trustees acting: ${executors.join(', ')}`, 'The grant of probate or letters of administration (or the trust deed) seen and a copy on file; the death certificate. At least two personal representatives verified where there are two or more (LSAG 6.14.16); all of them sign the contract and the transfer. A sale before the grant issues cannot exchange.'));
       if (occupiers.length && side === 'buyer') conditionIssues.push(issue('occupier_consent', `Adult occupiers not buying: ${occupiers.join(', ')}`, 'The lender wants a signed consent / deed of postponement from every occupier aged 17 or over who is not a borrower, with separate advice, in our hands before the certificate of title (Lenders\' Handbook: occupiers). Tell the lender if any occupier claims an interest.'));
+      // Only one government bonus can go towards a home (money.md 7.6).
+      if (shapes.includes('lifetime_isa') && shapes.includes('help_to_buy_isa')) conditionIssues.push(issue('isa_bonus', 'Both a Lifetime ISA and a Help to Buy ISA: only one bonus can be used', 'A buyer cannot use both bonuses on the same home: the Help to Buy ISA can be transferred into the Lifetime ISA (and its bonus counts towards that ISA), or the client chooses one. Settle it with the client before any withdrawal or claim.'));
       const sdlt = cmd.sdlt ?? null;
       if (sdlt && (sdlt.firstTimeBuyer || sdlt.additionalProperty || sdlt.nonUkResident) && side === 'buyer') conditionIssues.push(issue('sdlt_basis', `SDLT basis declared: ${[sdlt.firstTimeBuyer && 'first-time buyer relief claimed', sdlt.additionalProperty && 'higher rates (additional property)', sdlt.nonUkResident && 'non-UK resident surcharge'].filter(Boolean).join('; ')}`, 'Check the basis against the facts before the return is filed: every buyer must qualify for first-time buyer relief (never owned anywhere in the world); the higher rates apply if any buyer or their spouse owns another dwelling at completion (a replaced main residence may be excepted); the 2% surcharge applies if any buyer was non-UK resident in the year before completion. A wrong basis is a penalty and, if deliberate, evasion (LSAG 18.5.5).'));
       return [
@@ -1205,6 +1209,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           extra: {},
           confidence: cmd.facts.confidence,
         }),
+        // The offer against the case: borrowers, price, the advance the client declared, a re-issue's new conditions, conditions to satisfy.
+        ...findingEvents(s, offerFindings(cmd.facts, { clients: s.partyNames ?? [], pricePennies: s.purchasePricePennies, declaredAdvancePennies: s.proofOfFunds.facts?.mortgageAdvancePennies ?? null, previous: (s.mortgage.facts as MortgageOfferFacts | null) ?? null, exchanged: !!s.exchange.exchangedAt }), s.mortgage.documentId),
       ];
     }
 
@@ -1420,6 +1426,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         const received = { ...moneyOf(s).received, [cmd.fromRole]: (moneyOf(s).received[cmd.fromRole] ?? 0) + cmd.amountPennies };
         out.push(...moneyConsequences(s, received, { pricePennies: cmd.contractPricePennies ?? null, depositPennies: cmd.contractDepositPennies ?? null }, nextId, cmd.remitter?.trim() || null));
       }
+      // The Help to Buy ISA bonus is for completion, never the exchange deposit (money.md 7.4).
+      if (cmd.fromRole === 'isa_provider' && !s.exchange.exchangedAt && s.shapes?.includes('help_to_buy_isa') && !openOf(s, 'isa_bonus', 'Help to Buy ISA bonus before exchange')) out.push(issue(s, nextId(), 'isa_bonus', 'Help to Buy ISA bonus before exchange: not for the deposit', 'The bonus can only go towards completion. Hold it for completion; the exchange deposit must come from the client\'s own money.', 'exchange'));
       // The client's money must come from where the source-of-funds evidence said it was (LSAG 6.17.2; red flag 18.4 "the source changes at the last minute").
       const remitter = cmd.remitter?.trim();
       // A company paying for an individual buyer (money.md 2.4): a third-party payment, and a loan or a distribution the lender may need to know about.
@@ -2084,6 +2092,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.hasLender && !s.exchange.exchangedAt && LENDER_NOTIFY_RESOLUTIONS.has(cmd.resolution) && i.kind !== 'lender_approval') {
         out.push(lenderApprovalIssue(s, `${i.id}:lender`, `Tell the lender: ${RESOLUTION_LABEL[cmd.resolution]} on "${i.title}"`, i.sourceDocumentId, { issueId: i.id, resolution: cmd.resolution }));
       }
+      // The buyer makes up a gap with new money: it needs its own proof of funds (money.md 5.9).
+      if (cmd.resolution === 'buyer_covers_shortfall' && profile(s).side === 'buyer' && s.requireProofOfFunds && !openOf(s, 'source_of_funds', 'Extra money from the client')) {
+        out.push(issue(s, issueIds(s, out)(), 'source_of_funds', `Extra money from the client: ${i.title.slice(0, 80)}`, 'The client is making up the difference with money of their own: it is new money, so it needs its own proof of funds (where it comes from, the evidence), and the lender is told the deposit changed.', s.exchange.exchangedAt ? 'completion' : 'exchange'));
+      }
       if (REOPENS_OFFER.has(cmd.resolution) && s.hasLender && !s.exchange.exchangedAt && s.mortgage.status !== 'awaiting' && s.mortgage.status !== 'not_required') {
         out.push({ type: 'mortgage_offer_withdrawn', actor: cmd.actor, payload: { reason: `${spec.label} resolved by a new lender / fresh valuation: the current offer no longer applies`, lender: s.mortgage.facts?.lender ?? null } });
       }
@@ -2110,6 +2122,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'record_price_change': {
       if (s.exchange.release && Date.parse(s.exchange.release.until) > ctx.now.getTime()) reject('A Formula C release is live: nothing in the deal may change until it lapses or contracts are exchanged.');
       requireEnrolled(s);
+      // Reduced after completion (a retention paid back, a defect settled; money.md 6.4): the SDLT return is amended, the contract stands.
+      if (s.completion.confirmedAt && s.purchasePricePennies != null && cmd.toPennies < s.purchasePricePennies && profile(s).side === 'buyer') {
+        if (!cmd.reason?.trim()) reject('Say why the price changed.', 400);
+        const filed = s.postCompletion.sdltSubmittedAt;
+        const by = filed ? new Date(Date.UTC(new Date(filed).getUTCFullYear() + 1, new Date(filed).getUTCMonth(), new Date(filed).getUTCDate())).toISOString().slice(0, 10) : null;
+        return [issueWith(s, issueIds(s)(), 'sdlt_basis', `Price reduced after completion to £${(cmd.toPennies / 100).toLocaleString('en-GB')}: amend the SDLT return`, `${cmd.reason.trim()}. The tax was paid on £${(s.purchasePricePennies / 100).toLocaleString('en-GB')}. Amend the return${by ? ` by ${by} (12 months from filing)` : ' within 12 months of filing'} to claim the difference back; after that, an overpayment relief claim within four years.`, 'none', 'warning', by)];
+      }
       if (s.exchange.exchangedAt) reject('Contracts are exchanged: the price is contractual now.');
       if (!Number.isInteger(cmd.toPennies) || cmd.toPennies <= 0) reject('The price must be a positive whole number of pennies.', 400);
       if (cmd.toPennies === s.purchasePricePennies) reject('The price is unchanged.');
@@ -2166,7 +2185,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         out.push({ type: 'proof_of_funds_query_answered', actor: cmd.actor, payload: { requestId: cmd.requestId, queryId: q.id, answer: a.answer?.trim() || '', evidenceDocumentIds: a.evidenceDocumentIds } });
       }
       // 2. Declaration-level rules, then the transaction-level review (each transaction flag drafts a query, deduplicated by key).
-      const verdict = evaluateProofOfFunds(cmd.facts, { coBuyers: s.partyNames.slice(1), hasLinkedSale: s.relatedMatter?.relation === 'sale' ? true : s.relatedMatter ? undefined : false, acceptsNonFamilyGift: s.lenderRequirements?.acceptsNonFamilyGift ?? null });
+      const verdict = evaluateProofOfFunds(cmd.facts, { coBuyers: s.partyNames.slice(1), hasLinkedSale: s.relatedMatter?.relation === 'sale' ? true : s.relatedMatter ? undefined : false, acceptsNonFamilyGift: s.lenderRequirements?.acceptsNonFamilyGift ?? null, acceptsLoanDeposit: s.lenderRequirements?.acceptsLoanDeposit ?? null, acceptsDonorAbroad: s.lenderRequirements?.acceptsDonorAbroad ?? null });
       const flags: Flag[] = verdict.outcome === 'flag' ? [...verdict.flags] : [];
       const review = cmd.review ?? null;
       if (review) {
@@ -2180,6 +2199,17 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           const q: PofQuery = { id, key: dq.key, flagCode: dq.flagCode, documentId: dq.documentId || null, transaction: dq.transaction, question: dq.question, raisedAt: now, raisedBy: SYSTEM, status: 'draft', sentAt: null, answer: null, answerEvidenceDocumentIds: [], answeredAt: null };
           queries[id] = q;
           out.push({ type: 'proof_of_funds_query_raised', actor: SYSTEM, payload: { requestId: cmd.requestId, query: { id, key: q.key, flagCode: q.flagCode, documentId: q.documentId, transaction: q.transaction, question: q.question } } });
+        }
+      }
+      // The declaration's own questions (a source the rules cannot classify, a dividend, a "gift" with strings, a gift passed through someone else).
+      {
+        const known = new Set(Object.values(queries).map((q) => q.key));
+        for (const dq of declarationQueries(cmd.facts)) {
+          if (known.has(dq.key)) continue;
+          known.add(dq.key);
+          const id = `Q${Object.keys(queries).length + 1}`;
+          queries[id] = { id, key: dq.key, flagCode: dq.flagCode, documentId: null, transaction: null, question: dq.question, raisedAt: now, raisedBy: SYSTEM, status: 'draft', sentAt: null, answer: null, answerEvidenceDocumentIds: [], answeredAt: null };
+          out.push({ type: 'proof_of_funds_query_raised', actor: SYSTEM, payload: { requestId: cmd.requestId, query: { id, key: dq.key, flagCode: dq.flagCode, documentId: null, transaction: null, question: dq.question } } });
         }
       }
       // 3. Queries sent and not answered stay open as a flag of their own.
@@ -2353,8 +2383,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (missing.length && !cmd.skipReason?.trim()) reject(`Enter ${missing.map((m) => m.label).join(', ')}, or skip ${missing.length === 1 ? 'it' : 'them'} with a reason.`, 400);
       const out: NewEvent[] = [{ type: 'step_completed_manually', actor: cmd.actor, payload: { step: cmd.step, note: cmd.note.trim(), documentIds: cmd.documentIds ?? [], facts: Object.keys(f).length ? f : null, skipReason: missing.length ? cmd.skipReason!.trim() : null } }];
       // The lender's requirements go where the rules read them, as the directory would have put them.
-      if (cmd.step === 'mortgage' && (f.minUnexpiredYears != null || f.maxSearchAgeMonths != null || f.acceptsNonFamilyGift != null || f.requiresEws1 != null))
-        out.push({ type: 'lender_requirements_recorded', actor: cmd.actor, payload: { minUnexpiredYears: f.minUnexpiredYears ?? null, maxSearchAgeMonths: f.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: f.acceptsNonFamilyGift ?? null, requiresEws1: f.requiresEws1 ?? null, note: f.lender ? `${f.lender} (entered by hand)` : 'entered by hand' } });
+      if (cmd.step === 'mortgage' && (f.minUnexpiredYears != null || f.maxSearchAgeMonths != null || f.acceptsNonFamilyGift != null || f.acceptsLoanDeposit != null || f.acceptsDonorAbroad != null || f.requiresEws1 != null))
+        out.push({ type: 'lender_requirements_recorded', actor: cmd.actor, payload: { minUnexpiredYears: f.minUnexpiredYears ?? null, maxSearchAgeMonths: f.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: f.acceptsNonFamilyGift ?? null, acceptsLoanDeposit: f.acceptsLoanDeposit ?? null, acceptsDonorAbroad: f.acceptsDonorAbroad ?? null, requiresEws1: f.requiresEws1 ?? null, note: f.lender ? `${f.lender} (entered by hand)` : 'entered by hand' } });
       return out;
     }
     case 'undo_manual_step': {
@@ -2395,8 +2425,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'record_lender_requirements': {
       requireEnrolled(s);
       if (!s.hasLender) reject('No lender on this matter.');
-      if (cmd.minUnexpiredYears == null && cmd.maxSearchAgeMonths == null && cmd.acceptsNonFamilyGift == null && cmd.requiresEws1 == null && !cmd.note?.trim()) reject('Nothing to record.', 400);
-      return [{ type: 'lender_requirements_recorded', actor: cmd.actor, payload: { minUnexpiredYears: cmd.minUnexpiredYears ?? null, maxSearchAgeMonths: cmd.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: cmd.acceptsNonFamilyGift ?? null, requiresEws1: cmd.requiresEws1 ?? null, note: cmd.note?.trim() || null } }];
+      if (cmd.minUnexpiredYears == null && cmd.maxSearchAgeMonths == null && cmd.acceptsNonFamilyGift == null && cmd.acceptsLoanDeposit == null && cmd.acceptsDonorAbroad == null && cmd.requiresEws1 == null && !cmd.note?.trim()) reject('Nothing to record.', 400);
+      return [{ type: 'lender_requirements_recorded', actor: cmd.actor, payload: { minUnexpiredYears: cmd.minUnexpiredYears ?? null, maxSearchAgeMonths: cmd.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: cmd.acceptsNonFamilyGift ?? null, acceptsLoanDeposit: cmd.acceptsLoanDeposit ?? null, acceptsDonorAbroad: cmd.acceptsDonorAbroad ?? null, requiresEws1: cmd.requiresEws1 ?? null, note: cmd.note?.trim() || null } }];
     }
     case 'client_account_receipt': {
       requireEnrolled(s);
@@ -2475,6 +2505,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.postCompletion.sdltSubmittedAt) reject('The return has been filed: correct it with HMRC (an amendment within 12 months), then here.');
       const { type: _t, actor: _a, completion: _c, ...facts } = cmd as SdltFacts & { type: string; actor: string; completion?: unknown };
       if (facts.debtAssumedPennies != null && (!Number.isInteger(facts.debtAssumedPennies) || facts.debtAssumedPennies < 0)) reject('The debt taken on must be a sum in pennies.', 400);
+      if (facts.soMarketValue && !facts.soMarketValuePennies) reject('The market value election needs the full market value.', 400);
       const d = deriveSdltBasis(facts, s);
       const out: NewEvent[] = [{ type: 'sdlt_facts_recorded', actor: cmd.actor, payload: { facts, basis: d.basis, reasons: d.reasons, refundDiary: d.refundDiary } }];
       const nextId = issueIds(s);
@@ -2482,7 +2513,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const price = chargeableConsideration(s);
       if (s.sdltBasis && price) {
         const before = computeSdlt(price, { ...s.sdltBasis, company: s.shapes?.includes('company_buyer') ?? false });
-        const after = computeSdlt(price, d.basis);
+        const after = computeSdlt(chargeableConsideration({ ...s, sdltFacts: facts } as MatterState) ?? price, d.basis);
         if (before.totalPennies !== after.totalPennies) out.push(issue(s, nextId(), 'sdlt_basis', `${TAX_CHANGED}: estimate ${pounds(before.totalPennies)} → ${pounds(after.totalPennies)}`, `${d.reasons.join(' ')} Update the completion statement and tell the client: the money they need has changed.`, 'none'));
       }
       for (const c of d.contradictions) if (!Object.values(s.issues).some((i) => i.kind === 'sdlt_basis' && i.title === `Tax answers contradict the case: ${c.split(':')[0]}`)) out.push(issue(s, nextId(), 'sdlt_basis', `Tax answers contradict the case: ${c.split(':')[0]}`, c, 'exchange'));
@@ -2570,6 +2601,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           // Separating owners: the sale is replaced by one buying the other out (parties.md 2.11).
           raise('client_change', 'The sale is replaced by a buy-out between the owners', `${d}. Tell the buyer's solicitor and the agent the sale is withdrawn; abandon this case with the reason, and open a transfer of equity for the owner staying (with the court order, if there is one: the Court Order Transfer shape). The money on account and the searches can move across; the staying owner's lender (or a new one) must agree to them taking the mortgage alone.`, 'exchange', 'critical');
           break;
+        case 'incentive':
+          // Cashback, a deposit contribution, paid fees or extras from the seller or developer (money.md 5.15).
+          raise('lender_approval', `Incentive from the seller: ${d.slice(0, 70)}`, `${d}. Tell the lender on the UK Finance disclosure of incentives form (a new build) or in writing: it lends on the price net of incentives, and may reduce the advance. Put it in the contract; show it on the statement.${cmd.amountPennies ? ` Value: £${(cmd.amountPennies / 100).toLocaleString('en-GB')}.` : ''}`, 'exchange', 'warning');
+          break;
+        case 'deposit_direct':
+          // A deposit (or a reservation fee) paid to the seller or the agent, not through us (money.md 8.6).
+          raise('deposit_issue', `Deposit paid directly, not through us: ${d.slice(0, 70)}`, `${d}. Get the receipt or the statement showing it, and who holds it (as stakeholder or agent for the seller); the contract must credit it. ${s.hasLender ? 'Tell the lender: a deposit not through our client account is one it may need to approve.' : 'It is money we have not seen: its source still needs evidencing.'}`, 'exchange', 'warning');
+          break;
         case 'sitting_tenant':
           raise('third_party_encumbrance', `Tenant in occupation: ${d.slice(0, 70)}`, side === 'buyer'
             ? `${d}. Sold with vacant possession: the tenant's notice, the tenant gone and the property checked on the day (completion is held until then). Sold subject to the tenancy: the tenancy agreement, the rent, the deposit protection certificate and its transfer, the gas, EPC and electrical certificates, and the lender's consent to let; rent and deposit on the completion statement.`
@@ -2603,7 +2642,15 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!isUserActor(cmd.actor)) reject('A person delivers the bill.', 403);
       if (!Number.isInteger(cmd.amountPennies) || cmd.amountPennies < 0) reject('Give the bill total.', 400);
       if (s.finalBill) reject('The final bill is already delivered.');
-      return [{ type: 'final_bill_delivered', actor: cmd.actor, payload: { amountPennies: cmd.amountPennies, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      if (cmd.balanceLeftPennies != null && (!Number.isInteger(cmd.balanceLeftPennies) || cmd.balanceLeftPennies < 0)) reject('The balance left must be a sum in pennies.', 400);
+      const out: NewEvent[] = [{ type: 'final_bill_delivered', actor: cmd.actor, payload: { amountPennies: cmd.amountPennies, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      // What is left once everything is paid (the SDLT came in under the estimate, a search fee refunded) goes back with the bill (money.md 10.3).
+      let n = moneyOf(s).refunds.length;
+      if (cmd.balanceLeftPennies) out.push({ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${++n}`, toRole: 'client', to: null, amountPennies: cmd.balanceLeftPennies, reason: 'The balance left on the client account after completion' } });
+      // A fair sum of interest on the client's money while we held it (money.md 10.2).
+      const interest = interestDue(s, ctx.now);
+      if (interest >= CLIENT_INTEREST.minimumPennies) out.push({ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${++n}`, toRole: 'client', to: null, amountPennies: interest, reason: `Interest on the client's money while we held it (${CLIENT_INTEREST.ratePercent}% a year, the firm's policy)` } });
+      return out;
     }
     // ── Co-owners' money (co-owners.ts) ──
     case 'record_contributions': {
@@ -2663,7 +2710,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
       if (!cmd.party?.trim()) reject('Who is it about?', 400);
-      const afterwards = ['died', 'complaint', 'ceasing_to_act'].includes(cmd.event);
+      const afterwards = ['died', 'complaint', 'ceasing_to_act', 'fee_dispute', 'third_party_payment'].includes(cmd.event);
       if (s.completion.confirmedAt && !afterwards) reject('The matter has completed.');
       if ((s.partyEvents ?? []).some((p) => p.event === cmd.event && p.party.trim().toLowerCase() === cmd.party.trim().toLowerCase())) reject('Already recorded.');
       const ev: NewEvent = { type: 'party_event_recorded', actor: cmd.actor, payload: { event: cmd.event, party: cmd.party.trim(), hasAttorney: cmd.hasAttorney ?? null, note: cmd.note?.trim() || null } };
@@ -2672,6 +2719,26 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const note = cmd.note?.trim();
       const found = partyEventConsequences(s, { event: cmd.event, party: cmd.party.trim(), hasAttorney: cmd.hasAttorney ?? null }, profile(s).side);
       return [ev, ...found.map((c) => { const e = issue(s, nextId(), c.kind, c.title, note ? `${c.detail} (${note})` : c.detail, c.gate); return { ...e, payload: { ...(e.payload as object), severity: c.severity } } as NewEvent; })];
+    }
+    case 'record_isa': {
+      // The ISA's own dates (money.md 7.2, 7.5): a Lifetime ISA open under 12 months; a Help to Buy ISA bonus claimed within 12 months of closing.
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
+      if (!s.shapes?.includes(cmd.isa)) reject(`This case has no ${cmd.isa === 'lifetime_isa' ? 'Lifetime ISA' : 'Help to Buy ISA'}.`);
+      for (const d of [cmd.openedOn, cmd.closedOn]) if (d && !ISO_DAY.test(d)) reject('Dates are YYYY-MM-DD.', 400);
+      const out: NewEvent[] = [{ type: 'isa_recorded', actor: cmd.actor, payload: { isa: cmd.isa, openedOn: cmd.openedOn ?? null, closedOn: cmd.closedOn ?? null } }];
+      const plusYear = (d: string) => { const x = new Date(`${d}T00:00:00Z`); return new Date(Date.UTC(x.getUTCFullYear() + 1, x.getUTCMonth(), x.getUTCDate())).toISOString().slice(0, 10); };
+      if (cmd.isa === 'lifetime_isa' && cmd.openedOn) {
+        const eligible = plusYear(cmd.openedOn);
+        const when = s.exchange.completionDate ?? s.targetCompletionDate ?? ctx.now.toISOString();
+        if (eligible > when.slice(0, 10)) out.push(issueWith(s, issueIds(s)(), 'isa_bonus', `Lifetime ISA open only since ${cmd.openedOn}: no penalty-free withdrawal until ${eligible}`, `The account must have been open 12 months before the money can go to a first home without the 25% charge. Complete on or after ${eligible}, or plan the money without the ISA.`, 'completion', 'warning', eligible));
+      }
+      if (cmd.isa === 'help_to_buy_isa' && cmd.closedOn) {
+        const byYear = plusYear(cmd.closedOn);
+        const by = byYear < '2030-12-01' ? byYear : '2030-12-01';
+        out.push(issueWith(s, issueIds(s)(), 'isa_bonus', `Claim the Help to Buy ISA bonus by ${by}`, `The ISA closed on ${cmd.closedOn}: the bonus claim must be made within 12 months of closing, and by 1 December 2030 at the latest. Claim it in time for completion.`, 'completion', 'warning', by));
+      }
+      return out;
     }
     case 'add_shape': {
       // A shape found after enrolment (an attorney who benefits, a vulnerable client, a related-party sale): its checklist is raised as at enrolment.
@@ -3053,6 +3120,8 @@ function issueIds(s: MatterState, pending: NewEvent[] = []): () => string {
 }
 const issue = (s: MatterState, id: string, kind: IssueKind, title: string, detail: string, gate: IssueGate): NewEvent => ({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: id, kind, title, detail, gate, stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: ISSUE_KIND_SPEC[kind].severity, causedBy: null } });
 const openOf = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).some((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
+/** An issue with its own severity and resolve-by date. */
+const issueWith = (s: MatterState, id: string, kind: IssueKind, title: string, detail: string, gate: IssueGate, severity: IssueSeverity, resolveBy?: string | null): NewEvent => { const r = issue(s, id, kind, title, detail, gate); return { ...r, payload: { ...(r.payload as object), severity, ...(resolveBy ? { resolveBy } : {}) } } as NewEvent; };
 const openList = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).filter((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const resolvedBy = (id: string, note: string): NewEvent => ({ type: 'issue_resolved', actor: SYSTEM, payload: { issueId: id, resolution: 'funds_in_place', note, costPennies: null, paidBy: null } });
 
@@ -3386,7 +3455,10 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
             // Settled by its own command (a verification, a reply, the note's actions): the escalation only records the senior's view.
           } else if (od.kind === 'contract') {
             if (yes) out.push({ type: 'contract_approved', actor: userId, payload: { note, decisionEventId: od.eventId }, sourceDocumentId: od.sourceDocumentId });
-          } else out.push(reviewedEvent(s, od, option, note, userId, od.subject ?? ''));
+          } else {
+            out.push(reviewedEvent(s, od, option, note, userId, od.subject ?? ''));
+            if (od.kind === 'proof_of_funds') pofConsequences(s, od, option, note, userId, out, true);
+          }
         }
       }
       return out;
@@ -3429,7 +3501,12 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   }
   // Proof of funds (docs/proof-of-funds.md): sign-off closes the source-of-funds issues it answers; a gift on a
   // lender-funded purchase must be declared to the lender; rejection is a hard stop like a failed ID check.
-  if (d.kind === 'proof_of_funds') {
+  if (d.kind === 'proof_of_funds') pofConsequences(s, d, option, note, userId, out);
+  return out;
+}
+
+/** What a proof-of-funds sign-off does (by the handler, or by the senior it was escalated to). */
+function pofConsequences(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, out: NewEvent[], escalated = false): void {
     const facts = s.proofOfFunds.facts;
     const open = openPofQueries(s);
     const donorsPending = Object.values(s.partyChecks).filter((pc) => pc.role === 'donor' && !isResolved(pc.status));
@@ -3440,9 +3517,27 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
       for (const q of open) out.push({ type: 'proof_of_funds_query_withdrawn', actor: userId, payload: { queryId: q.id, reason: `Signed off with this query outstanding: ${note.trim()}` } });
     }
     if (option === 'request_further' && open.length === 0 && !note?.trim()) reject('There is nothing to put to the client: add a query first, or write what you need in the reason.', 400);
+    // Money from a high-risk third country: enhanced due diligence is mandatory and the MLRO signs off (money.md 3.1).
+    if (option === 'approve' && !escalated && (s.proofOfFunds.flags ?? []).some((f) => f.code === 'POF_HIGH_RISK_COUNTRY')) reject('Money from a high-risk third country: escalate this to the MLRO, who signs it off.', 412);
     if (option === 'approve') {
       for (const i of Object.values(s.issues)) {
-        if (i.kind === 'source_of_funds' && (i.status === 'open' || i.status === 'negotiating')) out.push({ type: 'issue_resolved', actor: userId, payload: { issueId: i.id, resolution: 'evidence_provided', note: `Proof of funds signed off${note ? `: ${note}` : ''}`, costPennies: null, paidBy: null }, sourceDocumentId: d.sourceDocumentId });
+        if (i.kind === 'source_of_funds' && (i.status === 'open' || i.status === 'negotiating') && !i.title.startsWith('Money still to arrive')) out.push({ type: 'issue_resolved', actor: userId, payload: { issueId: i.id, resolution: 'evidence_provided', note: `Proof of funds signed off${note ? `: ${note}` : ''}`, costPennies: null, paidBy: null }, sourceDocumentId: d.sourceDocumentId });
+      }
+      // Money still to arrive holds exchange until it is in client account (money.md 3.3, 3.6, 3.7, 3.9).
+      if (facts) {
+        const pend = [...out];
+        for (const src of facts.sources.filter((x) => x.notYetReceived)) {
+          const title = `Money still to arrive: ${FUND_SOURCE_LABEL[src.kind].toLowerCase()} ${gbp(src.amountPennies)}`;
+          if (openOf(s, 'source_of_funds', title)) continue;
+          const e = issue(s, issueIds(s, pend)(), 'source_of_funds', title, `${src.description}. Not in the client's account at sign-off. Get the letter that says when it comes (the executors' solicitor, the platform, the new lender${src.kind === 'overseas' ? ', the bank sending it: allow for the exchange rate and the receiving bank\'s checks' : ''}); exchange waits until it is in client account or the other solicitor undertakes to send it.`, s.exchange.exchangedAt ? 'completion' : 'exchange');
+          pend.push(e); out.push(e);
+        }
+        // What each buyer puts in, from the sources attributed to them (money.md 1.3, 10.7): unequal money is a declaration-of-trust question.
+        const cs = contributionsFrom(facts, s.partyNames ?? []);
+        if (cs && unequal(cs) && !s.coOwnership && !openOf(s, 'co_ownership_advice', 'Record what each buyer')) {
+          const e = issue(s, issueIds(s, pend)(), 'co_ownership_advice', 'Record what each buyer puts in', `From the proof of funds: ${cs.map((c) => `${c.party} ${gbp(c.pennies)}`).join(', ')}. Unequal money: advise on holding as tenants in common with a declaration of trust, and record the contributions.`, s.exchange.exchangedAt ? 'completion' : 'exchange');
+          pend.push(e); out.push(e);
+        }
       }
       if (facts && facts.giftedPennies > 0 && s.hasLender && !s.exchange.exchangedAt) {
         const donors = facts.sources.filter((x) => x.kind === 'gift' && x.gift).flatMap((x) => [x.gift!.donorName, ...(x.gift!.jointDonorName?.trim() ? [`${x.gift!.jointDonorName.trim()} (joint account)`] : [])]).join(', ');
@@ -3453,8 +3548,6 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
       out.push({ type: 'manual_handling_required', actor: userId, payload: { reason: 'proof_of_funds_rejected', detail: note ?? undefined } });
     }
   }
-  return out;
-}
 
 function reviewedEvent(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, subject: string, engagement: Engagement | null = null): NewEvent {
   const base = { decisionEventId: d.eventId, option, note, engagement };

@@ -44,7 +44,7 @@ export async function uploadFor(api: Api, matterId: string, spec: { wants: strin
 /** The button a step shows on the Tasks list: its own action (the same words as on the case), which opens its form in place. A key with an id after a colon (refund:RF-1) takes its kind's label. */
 export const stepActionLabel = (key: string): string | undefined => STEP_ACTION_LABEL[key] ?? STEP_ACTION_LABEL[key.split(':')[0]];
 export const STEP_ACTION_LABEL: Record<string, string> = {
-  contract_pack: 'Record Sent', management_pack_sale: 'Record Requested', contract_approved_sale: 'Record Approved', contract_approve: 'Approve Contract', proof_of_funds_request: 'Send The Form', report_on_title_redraft: 'Draft Again', buyer_enquiries: 'Record Replies Sent',
+  contract_pack: 'Record Sent', management_pack_sale: 'Record Requested', contract_approved_sale: 'Record Approved', contract_approve: 'Approve Contract', proof_of_funds_request: 'Send The Form', proof_of_funds_followup: 'Send The Form', report_on_title_redraft: 'Draft Again', buyer_enquiries: 'Record Replies Sent',
   exchange: 'Contracts Exchanged', completion_statement: 'Send To Client', certificate_of_title: 'Record Sent', bankruptcy_search: 'Record Clear',
   priority_search: 'Record Made', funds_request: 'Request Funds', advance_request: 'Request The Advance', completion_monies: 'Record Received', consideration: 'Record Received',
   completion_payment: 'Authorise', redemption_payment: 'Authorise', completion: 'Confirm Completion', balance_to_client: 'Authorise',
@@ -85,7 +85,7 @@ export const WAIT_ACTIONS: Record<string, WaitAction> = {
 /** Steps with nothing to fill in: done straight from the row (no form to open). The command each one sends. */
 export function directStep(key: string): { label: string; busy: string; done: string; body: Record<string, unknown> } | null {
   if (key.startsWith('resend:')) return { label: 'Send It', busy: 'Sending…', done: 'Sent', body: { type: 'retry_action', proposalEventId: key.slice('resend:'.length) } };
-  if (key === 'proof_of_funds_request') return { label: 'Send The Form', busy: 'Sending…', done: 'Sent', body: { type: 'request_proof_of_funds' } };
+  if (key === 'proof_of_funds_request' || key === 'proof_of_funds_followup') return { label: 'Send The Form', busy: 'Sending…', done: 'Sent', body: { type: 'request_proof_of_funds' } };
   if (key === 'report_on_title_redraft') return { label: 'Draft Again', busy: 'Drafting…', done: 'Drafted', body: { type: 'draft_report_on_title' } };
   if (key.startsWith('funds_cleared:')) return { label: 'Record Cleared', busy: 'Recording…', done: 'Cleared', body: { type: 'funds_cleared', receiptId: key.slice('funds_cleared:'.length) } };
   if (key === 'undertaking_discharge') return { label: 'Record Sent', busy: 'Recording…', done: 'Recorded', body: { type: 'undertaking_discharged' } };

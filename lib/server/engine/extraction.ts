@@ -97,6 +97,7 @@ export const MortgageOfferExtractionSchema = z.object({
   lender: z.string(),
   borrowerNames: z.array(z.string()),
   propertyAddress: z.string(),
+  purchasePricePennies: z.number().int().min(0).describe('The purchase price the offer is based on, in pennies; 0 if not stated.').optional(),
   amountPennies: z.number().int().min(0).describe('Loan amount in pennies; 0 if not stated.'),
   expiryDate: z.string().describe('ISO date the offer expires, or empty string.'),
   conditions: z.array(
@@ -463,6 +464,9 @@ export function toMortgageFacts(out: z.infer<typeof MortgageOfferExtractionSchem
   const conditions = out.conditions.map((c) => ({ code: normaliseCode(c.code), text: c.text.trim(), standard: c.standard, locator: { page: c.locator.page, section: c.locator.section || undefined, quote: c.locator.quote || undefined } }));
   return {
     lender: out.lender.trim() || 'unknown lender',
+    borrowerNames: out.borrowerNames.map((n) => n.trim()).filter(Boolean),
+    propertyAddress: out.propertyAddress.trim() || null,
+    purchasePricePennies: out.purchasePricePennies || null,
     amountPennies: out.amountPennies || undefined,
     expiryDate: out.expiryDate || undefined,
     conditions,

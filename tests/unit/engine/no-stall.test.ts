@@ -109,6 +109,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
       const completion = s.exchange.completionDate ?? F.completionDate();
       const cmds: Record<string, () => Promise<unknown>> = {
         proof_of_funds_request: () => svc.requestProofOfFunds(TENANT, MATTER, USER),
+        proof_of_funds_followup: () => svc.requestProofOfFunds(TENANT, MATTER, USER),
         report_on_title_redraft: () => svc.draftReportOnTitle(TENANT, MATTER),
         official_copies: () => svc.titleReceived(TENANT, MATTER, doc(c.flagged ? F.titleWithCharge() : F.titleClear())),
         contract_pack: () => run({ type: 'contract_pack_sent' }),
