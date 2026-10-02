@@ -86,7 +86,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('formula_c_release_given'), until: z.string().max(40), givenTo: z.string().min(1).max(200) }),
   z.object({ type: z.literal('formula_c_release_lapsed'), reason: z.string().min(1).max(500) }),
   z.object({ type: z.literal('record_deal_event'), event: z.enum(['contract_race', 'lockout', 'reservation', 'renegotiated', 'sitting_tenant', 'nominee', 'buy_out', 'incentive', 'deposit_direct']), detail: z.string().min(1).max(1000), until: z.string().max(10).nullish(), amountPennies: z.number().int().nonnegative().nullish() }),
-  z.object({ type: z.literal('record_property_event'), event: z.enum(['damaged', 'not_vacant', 'early_access', 'seller_stays']), detail: z.string().min(1).max(1000) }),
+  z.object({ type: z.literal('record_property_event'), event: z.enum(['damaged', 'not_vacant', 'early_access', 'seller_stays', 'boundary_mismatch', 'adverse_possession', 'deeds_lost', 'land_charge_entry', 'searches_declined']), detail: z.string().min(1).max(1000) }),
   z.object({ type: z.literal('final_bill_delivered'), amountPennies: z.number().int().nonnegative(), documentId: z.string().uuid().nullish(), balanceLeftPennies: z.number().int().nonnegative().nullish() }),
   z.object({ type: z.literal('completion_payment_sent'), reference: z.string().min(1).max(120), sentAt: z.string().max(40).nullish() }),
   z.object({ type: z.literal('record_contributions'), model: z.enum(['FIXED', 'RING_FENCE', 'CONTRIBUTION', 'FLOATING']), contributions: z.array(z.object({ party: z.string().min(1).max(160), pennies: z.number().int().nonnegative() })).min(2).max(8), ratioPercent: z.record(z.string(), z.number().min(0).max(100)).nullish() }),

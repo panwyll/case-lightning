@@ -25,6 +25,8 @@ export interface FindingContext {
   offerExpiry?: string | null;
   /** The purchase price, for the deposit percentage. */
   pricePennies?: number | null;
+  /** The seller's forms say access or services are shared (TA6), to check against the rights on the register. */
+  sharedAccess?: boolean;
 }
 
 const clip = (s: string, n = 160) => { const t = s.replace(/\s+/g, ' ').trim(); return t.length <= n ? t : `${t.slice(0, n - 1).replace(/[,;:.\s]+$/, '')}…`; };
@@ -75,6 +77,26 @@ export function titleFindings(t: TitleFacts, ctx: FindingContext): Finding[] {
   if (ctx.side === 'buyer') { const risk = sellerIdentityRisk(t); if (risk) out.push(risk); }
   // The seller has owned it under six months (a back-to-back sale): lenders want to know, and the price uplift is a fraud marker (parties.md 9.4).
   if (ctx.side === 'buyer' && t.proprietorSince && Date.now() - Date.parse(t.proprietorSince) < 182 * 86_400_000) out.push({ code: 'OWNED_UNDER_SIX_MONTHS', kind: 'lender_approval', severity: 'warning', gate: 'exchange', page: null, title: `The seller has owned it only since ${t.proprietorSince}`, detail: `A sale within six months of the seller buying${t.pricePaidPennies ? ` (they paid ${pounds(t.pricePaidPennies)})` : ''}. Tell the lender (most want to know, and some will not lend), ask the seller's solicitor why, and compare the price with what was paid: a large uplift without works is a marker of mortgage fraud.` });
+  // What else the register says (property.md 1.3, 1.8, 1.11, 1.17-1.19; 8.3).
+  const every = [...t.restrictions, ...t.charges, ...t.covenants, ...(t.notices ?? []), ...(t.propertyEntries ?? [])];
+  const seen = new Set<string>();
+  const once = (code: string, f: Omit<Finding, 'code'>) => { if (!seen.has(code)) { seen.add(code); out.push({ code, ...f }); } };
+  for (const e of every) {
+    const x = e.text, pg = pageOf(e.locator);
+    if (/pre-?emption|right of first refusal|overage|clawback|option to (purchase|buy)|section 157|housing act 1985|right to buy/i.test(x)) once(`ENCUMBRANCE_RIGHT:${e.code}`, { kind: 'third_party_encumbrance', severity: 'warning', gate: 'exchange', page: pg, title: `A third party's right over the land: ${clip(x, 70)}`, detail: `"${clip(x)}". A pre-emption or option must be released or the notice served and expired; an overage is a sum payable on a later sale or planning permission (work out whether this sale triggers it, and what is due); a Right to Buy restriction needs the landlord's certificate. Tell the lender.` });
+    if (/rent ?charge/i.test(x)) once('RENTCHARGE', { kind: 'third_party_encumbrance', severity: ctx.hasLender ? 'critical' : 'warning', gate: 'exchange', page: pg, title: 'A rentcharge on the land', detail: `"${clip(x)}". The owner of a rentcharge can take possession or grant a lease if it is unpaid (LPA 1925 s.121). Ask for the last receipt, a deed of variation excluding s.121 or an indemnity policy; a plain rentcharge can be redeemed under the Rentcharges Act 1977. Lenders' Part 2 usually requires this before exchange.` });
+    if (/chancel/i.test(x)) once('CHANCEL_NOTICE', { kind: 'search_adverse_entry', severity: 'warning', gate: 'exchange', page: pg, title: 'Chancel repair liability is registered', detail: `"${clip(x)}". A registered notice binds the buyer: an indemnity policy is not normally available once a liability is known; ask the parochial church council for the amount and history, advise the client, and tell the lender.` });
+    if (/mines and minerals|minerals? (are |is )?(excepted|reserved)|manorial/i.test(x)) once('MINES_MANORIAL', { kind: 'third_party_encumbrance', severity: 'info', gate: 'none', page: pg, title: 'Mines and minerals or manorial rights are excepted', detail: `"${clip(x)}". Someone else may own what is under the land or have manorial rights over it. Tell the client; a mining search where the area calls for it; an indemnity on request; tell the lender if its Part 2 asks.` });
+    if (/positive covenant|to (maintain|repair|contribute)|contribut\w* (to|towards) the (cost|expense)|indemnity covenant|deed of covenant/i.test(x)) once('POSITIVE_COVENANT', { kind: 'restrictive_covenant', severity: 'warning', gate: 'exchange', page: pg, title: 'Positive covenants that pass with the land', detail: `"${clip(x)}". Positive covenants do not bind a buyer automatically: the transfer must contain an indemnity covenant (the chain of indemnity), and a deed of covenant with the estate or management company may be required, with its fee on the statement.` });
+    if (!t.restrictions.includes(e) && /estate (management|rent ?charge|charge)|management company|maintenance charge/i.test(x)) once('ESTATE_CHARGE', { kind: 'third_party_encumbrance', severity: 'warning', gate: 'exchange', page: pg, title: 'Estate charges or a management company', detail: `"${clip(x)}". Tell the client what is payable and to whom; get the company's pack (the charge, arrears); a deed of covenant to the company on completion; and check any estate rentcharge excludes LPA s.121.` });
+  }
+  // A leasehold house (property.md 7.13): the right to buy the freehold, estate charges, the lender's view.
+  if (t.tenure === 'leasehold' && /\b(house|bungalow|cottage|semi-detached|detached|terraced)\b/i.test(t.propertyDescription ?? '') && !/\bflat|maisonette|apartment\b/i.test(t.propertyDescription ?? '')) once('LEASEHOLD_HOUSE', { kind: 'lease_defect', severity: 'warning', gate: 'exchange', page: null, title: 'A leasehold house', detail: 'Advise the client on buying the freehold (Leasehold Reform Act 1967, and the 2024 Act reforms as they come in), the ground rent and any permission fees, and resale. Many lenders restrict lending on leasehold houses: check the Part 2.' });
+  // A lease extension or variation in progress (property.md 7.12): it completes before ours.
+  for (const p of t.pendingApplications ?? []) if (/variation|extension|new lease|surrender/i.test(p)) once('PENDING_LEASE_CHANGE', { kind: 'lease_defect', severity: 'warning', gate: 'exchange', page: null, title: `The lease is being changed: ${clip(p, 70)}`, detail: 'A lease extension or deed of variation is pending at HM Land Registry. It must be registered before we complete (or the benefit of a section 42 notice assigned to the buyer with the contract), and the lender told what it lends on.' });
+  for (const p of t.pendingApplications ?? []) once(`PENDING:${p.slice(0, 20)}`, { kind: 'title_defect', severity: 'warning', gate: 'exchange', page: null, title: `An application is pending at HM Land Registry: ${clip(p, 70)}`, detail: `"${clip(p)}". Ask the seller's solicitor what it is and when it will complete; exchange waits until it is registered (or the official copies are downloaded again after it), so the title being bought is the title shown.` });
+  if (t.editionDate && Date.now() - Date.parse(t.editionDate) > 30 * 86_400_000) once('STALE_COPIES', { kind: 'title_defect', severity: 'info', gate: 'none', page: null, title: `The official copies are dated ${t.editionDate}`, detail: 'Download fresh official copies before the report on title and again before exchange: anything registered since will not show on these.' });
+  { const gap = accessGap(t, ctx); if (gap) out.push(gap); }
   // A covenant against building or altering, where the seller says works were done.
   const works = ctx.alterations?.trim();
   if (works && !/^(none|no|n\/a|not applicable|nil)\.?$/i.test(works)) {
@@ -109,6 +131,14 @@ export function sellerIdentityRisk(t: TitleFacts): Finding | null {
 const homeRights = (code: string, text: string, page: number | null): Finding => ({ code: `HOME_RIGHTS:${code}`, kind: 'title_defect', severity: 'critical', gate: 'exchange', page, title: 'Home rights notice on the register', detail: `"${clip(text)}". A spouse or civil partner has registered home rights (Family Law Act 1996). They must release them (or the notice is cancelled on form HR4 with their consent) before exchange; vacant possession cannot be given while it stands.` });
 const unilateral = (code: string, text: string, page: number | null): Finding => ({ code: `UNILATERAL_NOTICE:${code}`, kind: 'title_defect', severity: 'warning', gate: 'exchange', page, title: 'Unilateral notice on the register', detail: `"${clip(text)}". Someone claims an interest in the property. The notice must be removed (form UN4 by the beneficiary) or the claim dealt with before exchange.` });
 
+/** Shared access or services on the forms, and no right over the neighbouring land on the register (property.md 1.12, 1.13). */
+export function accessGap(t: TitleFacts, ctx: FindingContext): Finding | null {
+  if (!ctx.sharedAccess || ctx.side !== 'buyer' || t.planOnly) return null;
+  const rights = [...t.covenants, ...(t.propertyEntries ?? [])].some((e) => /right of way|rights? to pass|easement|together with|the right (to|of)|drain|services|access/i.test(e.text));
+  if (rights) return null;
+  return { code: 'MISSING_EASEMENT', kind: 'missing_easement', severity: 'warning', gate: 'exchange', page: null, title: 'Shared access or services, and no right on the register', detail: `The seller's forms say the access, a drive or the services are shared or cross other land, but the register shows no right of way or easement for them. Ask the seller's solicitor for the deed granting it; failing that, a statutory declaration of 20 years' use (prescription) with an indemnity policy. For an unadopted road, the right of way and who pays for upkeep.${ctx.hasLender ? ' Tell the lender.' : ''}` };
+}
+
 /** The lease (from the lease itself, or the leasehold title). */
 export function leaseFindings(flags: Flag[], l: LeaseFacts | null, ctx: FindingContext): Finding[] {
   const out: Finding[] = [];
@@ -125,6 +155,9 @@ export function leaseFindings(flags: Flag[], l: LeaseFacts | null, ctx: FindingC
       default: break;
     }
   }
+  // What the lease leaves out (property.md 7.3): no one repairing the structure, no insurance covenant.
+  if (l && l.repairs != null && !/structure|main walls|roof|foundations|exterior/i.test(l.repairs)) out.push({ code: 'LEASE_NO_STRUCTURE_REPAIR', kind: 'lease_defect', severity: 'warning', gate: 'exchange', page: null, title: 'The lease does not say who repairs the structure', detail: `"${clip(l.repairs)}". Most lenders require the landlord (or a management company) to repair the structure, the roof and the common parts, with the cost recoverable through the service charge. Options: a deed of variation, a missing-covenant indemnity policy, or a variation under LTA 1987 s.35.${lender}` });
+  if (l && l.insurance != null && !l.insurance.trim() && !out.some((x) => x.code === 'NO_BUILDINGS_INSURANCE')) out.push({ code: 'LEASE_NO_INSURANCE_COVENANT', kind: 'lease_defect', severity: 'warning', gate: 'exchange', page: null, title: 'The lease has no insurance covenant', detail: `No one is obliged to insure the building. A deed of variation or an indemnity policy; the lender's Part 2 decides.${lender}` });
   return out;
 }
 
@@ -142,6 +175,10 @@ const SEARCH_RULES: Record<string, { kind: IssueKind; severity: IssueSeverity; t
   BUILD_OVER_AGREEMENT: { kind: 'search_adverse_entry', severity: 'warning', title: 'Building over a public sewer', action: 'Ask for the water company\'s build-over agreement; without it, an indemnity policy.' },
   CIL_LIABILITY: { kind: 'search_adverse_entry', severity: 'warning', title: 'Community Infrastructure Levy liability', action: 'Confirm the levy was paid or that an exemption applies; an unpaid levy can bind the land.' },
   MINING_AREA: { kind: 'environmental_risk', severity: 'warning', title: 'In a mining area', action: 'Order the mining report (CON29M); tell the lender if it shows a claim or a risk.' },
+  LISTED_BUILDING: { kind: 'planning_permission_missing', severity: 'warning', title: 'A listed building', action: 'Every alteration the seller lists is checked against the listed building consent history: works without consent are a criminal offence with no time limit, and no indemnity policy covers them. Tell the lender; advise the client that future works need consent.' },
+  S106_AGREEMENT: { kind: 'search_adverse_entry', severity: 'warning', title: 'A section 106 agreement', action: 'Get the agreement: an affordable-housing or occupancy restriction can limit who may buy or lend, and payments under it may be outstanding. Check the lender accepts it.' },
+  STOP_NOTICE: { kind: 'planning_permission_missing', severity: 'critical', title: 'A stop notice', action: 'Get the notice: the activity it names must stop. An indemnity is not available once the council is involved. Advise the client in writing; this may end the purchase.' },
+  PRIVATE_WATER_SUPPLY: { kind: 'environmental_risk', severity: 'warning', title: 'A private water supply', action: 'A recent water quality test, the council\'s risk assessment, an easement for any pipe across other land, and the lender told.' },
   CHANCEL_LIABILITY: { kind: 'search_adverse_entry', severity: 'info', title: 'Chancel repair liability risk', action: 'Since October 2013 only a notice on the register binds a buyer; check the register, and offer indemnity if the lender or client wants it.' },
 };
 

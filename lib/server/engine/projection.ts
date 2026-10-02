@@ -369,6 +369,8 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     case 'title_extracted': {
       const p = e.payload as Payloads['title_extracted'];
       s.title.status = 'extracted';
+      // Read again after the report went: a supplementary report is due (property.md 9.3).
+      if (s.reportOnTitle.status === 'sent' && !s.exchange.exchangedAt) s.reportOnTitle = { ...s.reportOnTitle, status: 'not_started', interim: false, interimSentAt: s.reportOnTitle.sentAt, sentAt: null };
       s.title.facts = s.title.lease && !p.facts.lease ? { ...p.facts, lease: s.title.lease } : p.facts;
       if (p.facts.lease) s.title.lease = p.facts.lease;
       s.title.documentId = e.sourceDocumentId ?? s.title.documentId;
@@ -555,6 +557,10 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       const at = (s.chainLinks ?? []).findIndex((l) => l.id === p.linkId);
       const next = p.status === 'removed' ? null : { id: p.linkId, label: p.label, status: p.status, note: p.note, at: e.createdAt };
       s.chainLinks = next ? (at >= 0 ? [...rest.slice(0, at), next, ...rest.slice(at)] : [...rest, next]) : rest;
+      break;
+    }
+    case 'additional_title_read': {
+      s.additionalTitles = [...(s.additionalTitles ?? []), (e.payload as Payloads['additional_title_read']).facts];
       break;
     }
     case 'shape_added': {

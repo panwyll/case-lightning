@@ -211,6 +211,7 @@ export const EVENT_TYPES = [
   'sdlt_facts_recorded',
   'party_event_recorded',
   'shape_added',
+  'additional_title_read',
   'completion_event_recorded',
   'bankruptcy_search_entry_found',
   'isa_recorded',
@@ -421,6 +422,9 @@ export interface TitleFacts {
   planOnly?: boolean | null;
   /** Notices in the charges register: agreed or unilateral notices, home rights, leases noted. */
   notices?: TitleEntry[];
+  /** The property register's own entries (rights, mines and minerals, rentcharges) and applications pending at HMLR. */
+  propertyEntries?: TitleEntry[];
+  pendingApplications?: string[];
   /** The registered proprietors as named, their addresses for service, and when they were registered. */
   proprietors?: string[];
   proprietorAddresses?: string[];
@@ -1166,7 +1170,7 @@ export interface Payloads {
   formula_c_release_given: { until: string; givenTo: string };
   formula_c_release_lapsed: { reason: string };
   deal_event_recorded: { event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant' | 'nominee' | 'buy_out' | 'incentive' | 'deposit_direct'; detail: string; until: string | null; amountPennies: number | null };
-  property_event_recorded: { event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays'; detail: string };
+  property_event_recorded: { event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays' | 'boundary_mismatch' | 'adverse_possession' | 'deeds_lost' | 'land_charge_entry' | 'searches_declined'; detail: string };
   retention_released: { amountPennies: number | null };
   redemption_figure_adjusted: { redemptionPennies: number; days: number; reason: string };
   contributions_recorded: { model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent: Record<string, number> | null; shares: Array<{ party: string; shareBp: number }> };
@@ -1175,6 +1179,7 @@ export interface Payloads {
   register_checked: { ok: boolean; note: string | null; lenderTold: boolean };
   seller_discharge_received: { reference: string | null };
   shape_added: { shape: string };
+  additional_title_read: { facts: TitleFacts };
   completion_event_recorded: { event: string; detail: string; amountPennies: number | null; until: string | null };
   bankruptcy_search_entry_found: { subject: string; entry: string };
   isa_recorded: { isa: string; openedOn: string | null; closedOn: string | null };
@@ -1292,6 +1297,15 @@ export interface PropertyFormsFacts {
     leaseholdArrearsOrDispute?: boolean | null;
     epcRating?: string | null;
     councilTaxBand?: string | null;
+    alterationsYear?: string | null;
+    windowsReplacedSince2002?: boolean | null;
+    windowsCertificate?: boolean | null;
+    electricalWorkSince2005?: boolean | null;
+    electricalCertificate?: boolean | null;
+    gasApplianceNoRecord?: boolean | null;
+    knotweedCategory?: string | null;
+    solarPanelsOwned?: boolean | null;
+    privateWater?: boolean | null;
   } | null;
   /** Questions the seller answered "not known" or left blank: each is an enquiry to draft (the engine proposes them; a person sends). */
   notKnown?: Array<{ question: string; section: string | null; page: number | null }> | null;
@@ -1725,6 +1739,8 @@ export interface MatterState {
   fileDelivery?: 'link' | 'attachments';
   /** The client has said we may tell the other side about their own sale or purchase (their chain). */
   shareChain?: boolean;
+  /** Titles beyond the main one (a garage, a garden strip): read for their own entries (property.md 1.20). */
+  additionalTitles?: TitleFacts[];
   /** Each link further along the chain and whether it is ready (exchange.md 8.6). */
   chainLinks?: Array<{ id: string; label: string; status: 'ready' | 'not_ready' | 'unknown'; note: string | null; at: string }>;
   /** The lender's own (Part 2) requirements recorded on this matter; null = the defaults. */

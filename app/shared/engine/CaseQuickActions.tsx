@@ -105,6 +105,11 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
               <option value="not_vacant">Vacant Possession Not Given</option>
               <option value="early_access">Early Access Before Completion</option>
               <option value="seller_stays">The Seller Stays On After Completion</option>
+              <option value="boundary_mismatch">The Boundary On The Ground Differs From The Plan</option>
+              <option value="adverse_possession">Part Of It Is Held Without Title</option>
+              <option value="deeds_lost">The Deeds Are Lost</option>
+              <option value="land_charge_entry">The Land Charges Search Shows An Entry</option>
+              <option value="searches_declined">The Client Does Not Want Searches</option>
             </optgroup>}
             {!completed && <optgroup label="The Deal">
               <option value="contract_race">Contract Race</option>
@@ -157,7 +162,7 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
             <BusyButton disabled={(isIsa && !until) || (isParty && !who.trim()) || (!isParty && !isShape && !isIsa && !['sar', 'daml_granted', 'daml_refused'].includes(what) && !reason.trim())} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
               setErr(null);
               const deal = ['contract_race', 'lockout', 'reservation', 'renegotiated', 'sitting_tenant', 'nominee', 'buy_out', 'incentive', 'deposit_direct'].includes(what);
-              const body = isCe ? { type: 'record_completion_event', event: what.slice(3), detail: reason.trim(), amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null, until: until || null } : isIsa ? { type: 'record_isa', isa: what.slice(4), ...(what === 'isa:lifetime_isa' ? { openedOn: until } : { closedOn: until }) } : isShape ? { type: 'add_shape', shape: what.slice(6) } : deal ? { type: 'record_deal_event', event: what, detail: reason.trim(), until: until || null, amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null } : ['damaged', 'not_vacant', 'early_access', 'seller_stays'].includes(what) ? { type: 'record_property_event', event: what, detail: reason.trim() } : what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };
+              const body = isCe ? { type: 'record_completion_event', event: what.slice(3), detail: reason.trim(), amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null, until: until || null } : isIsa ? { type: 'record_isa', isa: what.slice(4), ...(what === 'isa:lifetime_isa' ? { openedOn: until } : { closedOn: until }) } : isShape ? { type: 'add_shape', shape: what.slice(6) } : deal ? { type: 'record_deal_event', event: what, detail: reason.trim(), until: until || null, amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null } : ['damaged', 'not_vacant', 'early_access', 'seller_stays', 'boundary_mismatch', 'adverse_possession', 'deeds_lost', 'land_charge_entry', 'searches_declined'].includes(what) ? { type: 'record_property_event', event: what, detail: reason.trim() } : what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };
               try { await cmd(body); setTimeout(() => setOpen(null), 900); return true; }
               catch (e: unknown) { setErr(e instanceof Error ? e.message : 'It did not save.'); return false; }
             }}>Record</BusyButton>

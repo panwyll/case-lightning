@@ -30,7 +30,7 @@ import { buildDecision, leaseFlags, offeredOptions, evaluateEnquiryReply, evalua
 import { propertyFormsIssues } from './property-forms';
 import { contributionsFrom, declarationQueries, evaluateProofOfFunds, FUND_SOURCE_LABEL, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
-import { conditionalLongStop, offerFindings, contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
+import { accessGap, conditionalLongStop, offerFindings, contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
 import { computeSdlt } from './sdlt';
 import { sharesAtPurchase, sharesText, unequal } from './co-owners';
 import { amlHoldActive, damlNoticeEnds, damlMoratoriumEnds, partyEventConsequences, sanctionsHold, SANCTIONS_PREFIX, type PartyEvent } from './people';
@@ -230,7 +230,7 @@ type CommandBody =
   | { type: 'formula_c_release_given'; actor: Actor; until: string; givenTo: string }
   | { type: 'formula_c_release_lapsed'; actor: Actor; reason: string }
   | { type: 'record_deal_event'; actor: Actor; event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant' | 'nominee' | 'buy_out' | 'incentive' | 'deposit_direct'; detail: string; until?: string | null; amountPennies?: number | null }
-  | { type: 'record_property_event'; actor: Actor; event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays'; detail: string }
+  | { type: 'record_property_event'; actor: Actor; event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays' | 'boundary_mismatch' | 'adverse_possession' | 'deeds_lost' | 'land_charge_entry' | 'searches_declined'; detail: string }
   | { type: 'retention_released'; actor: Actor; amountPennies?: number | null }
   | { type: 'record_contributions'; actor: Actor; model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent?: Record<string, number> | null }
   | { type: 'ap1_cancelled'; actor: Actor; reason: string }
@@ -768,7 +768,7 @@ function issueBlockers(s: MatterState, gate: IssueGate): string[] {
 export function reportReady(s: MatterState): boolean {
   if (!s.enrolled || s.closedAt || s.abandoned) return false;
   if (profileOf(s.transactionType ?? 'freehold_purchase').side !== 'buyer') return false;
-  if (s.stage !== 'contract_review' || s.reportOnTitle.status !== 'not_started') return false;
+  if (!(s.stage === 'contract_review' || (s.stage === 'pre_exchange' && s.reportOnTitle.interimSentAt)) || s.reportOnTitle.status !== 'not_started') return false;
   return isResolved(s.title.status) && !unresolvedSearches(s, true).length && Object.values(s.enquiries).every((q) => isResolved(q.status));
 }
 
@@ -963,6 +963,9 @@ function formsIssueEvents(s: MatterState, facts: PropertyFormsFacts, side: 'buye
   const detail = points.map((p, n) => `${n + 1}. ${p.title}${p.page ? ` (p.${p.page})` : ''}\n   ${p.detail}`).join('\n');
   const gate: IssueGate = s.exchange.exchangedAt ? 'completion' : 'exchange';
   out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'disclosure_concern', title, detail, gate, stage: s.stage, sourceDocumentId: documentId, origin: null, party: null, severity: worst >= 3 ? 'warning' : 'info' }, sourceDocumentId: documentId ?? undefined });
+  // The register already read: shared access on the forms needs a right on it (property.md 1.12).
+  const titleFacts = s.title.facts as TitleFacts | null;
+  if (titleFacts && side === 'buyer') { const gap = accessGap(titleFacts, { ...findingContext(s), sharedAccess: !!merged.answers?.sharedAccessOrServices }); if (gap) out.push(...findingEvents(s, [gap], documentId, issueIds(s, out))); }
   return out;
 }
 
@@ -1155,7 +1158,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const existing = s.searches[cmd.searchType];
       // A resolved search may be ordered again (re-issued result, lender freshness rule, provider error); an open one may not.
       if (existing && !isResolved(existing.status)) reject(`${cmd.searchType} search already ${existing.status}.`);
-      return [{ type: 'search_ordered', actor: cmd.actor, payload: { searchType: cmd.searchType, provider: cmd.provider, reference: cmd.reference ?? null, reissue: !!existing } }];
+      const ordered: NewEvent[] = [{ type: 'search_ordered', actor: cmd.actor, payload: { searchType: cmd.searchType, provider: cmd.provider, reference: cmd.reference ?? null, reissue: !!existing } }];
+      // Searches from the seller's or the auction pack (property.md 4.2): the lender must accept them, and they age from their own date.
+      if (/seller|pack|auction|personal search/i.test(cmd.provider) && s.hasLender && profile(s).side === 'buyer' && !openOf(s, 'lender_approval', "Searches from the seller's pack")) ordered.push(issue(s, issueIds(s)(), 'lender_approval', "Searches from the seller's pack: the lender must accept them", 'Searches the buyer did not order: check the lender accepts them (personal or official, its name on them or search insurance in its favour) and their date (most lenders want them under six months old at exchange). Otherwise order fresh ones.', 'exchange'));
+      return ordered;
     }
     case 'search_returned': {
       requireEnrolled(s);
@@ -1262,8 +1268,20 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'title_extracted': {
       // The pack is asked for at instruction, so it may arrive while the client's checks are still running: the title is read when it lands, whatever the stage.
       requireEnrolled(s);
+      // A second title (a garage, a garden strip, the freehold of a share of freehold: property.md 1.20) sits beside the first: its entries are read, it does not replace it.
+      const main = s.title.facts as TitleFacts | null;
+      if (main && !main.planOnly && !cmd.facts.planOnly && cmd.facts.titleNumber && main.titleNumber && cmd.facts.titleNumber.replace(/\s+/g, '').toUpperCase() !== main.titleNumber.replace(/\s+/g, '').toUpperCase()) {
+        if ((s.additionalTitles ?? []).some((x) => x.titleNumber === cmd.facts.titleNumber)) reject(`Title ${cmd.facts.titleNumber} is already on file.`);
+        const fcx = findingContext(s);
+        const extra: NewEvent[] = [{ type: 'additional_title_read', actor: SYSTEM, payload: { facts: cmd.facts }, sourceDocumentId: cmd.documentId }];
+        extra.push(...findingEvents(s, titleFindings(cmd.facts, fcx).map((f) => ({ ...f, code: `${cmd.facts.titleNumber}:${f.code}`, title: `${cmd.facts.titleNumber}: ${f.title}` })), cmd.documentId, issueIds(s, extra)));
+        if (fcx.side === 'seller' || profile(s).type === 'remortgage') chargesToAdd({ ...s, otherCharges: s.otherCharges } as MatterState, cmd.facts).forEach((c, n) => extra.push({ type: 'charge_found', actor: SYSTEM, payload: { chargeId: `CH-${(s.otherCharges ?? []).length + n + 1}`, chargee: c.chargee, text: c.text }, sourceDocumentId: cmd.documentId }));
+        if (cmd.facts.tenure !== 'unknown' && main.tenure !== 'unknown' && cmd.facts.tenure !== main.tenure) extra.push(issue(s, issueIds(s, extra)(), 'title_defect', `Title ${cmd.facts.titleNumber} is ${cmd.facts.tenure}, the main title ${main.tenure}`, 'Two tenures on one transaction (a share of freehold, a garage held freehold with a leasehold flat): the contract and the transfer must cover both titles, and the lender lends on both.', 'exchange'));
+        return extra;
+      }
       if (s.title.status === 'flagged') reject('A title decision is pending; resolve it before re-extracting.');
-      if (s.reportOnTitle.status === 'sent') reject('The report on title has already been sent; re-reviewing title now needs manual handling.');
+      // After the report went (property.md 9.3): the title is read again and a supplementary report follows, before exchange.
+      if (s.reportOnTitle.status === 'sent' && s.exchange.exchangedAt) reject('Contracts are exchanged: new title information now needs manual handling.');
       const extracted: NewEvent = { type: 'title_extracted', actor: SYSTEM, payload: { facts: cmd.facts, extractor: cmd.extractor }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence };
       const txType = s.transactionType ?? 'freehold_purchase';
       const expectedTenure = profile(s).tenure;
@@ -1278,8 +1296,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // A sale or remortgage redeems every charge on the register, not only the mortgage it was enrolled with.
       if ((fc.side === 'seller' || profile(s).type === 'remortgage') && !cmd.facts.planOnly) chargesToAdd(s, cmd.facts).forEach((c, n) => out.push({ type: 'charge_found', actor: SYSTEM, payload: { chargeId: `CH-${(s.otherCharges ?? []).length + n + 1}`, chargee: c.chargee, text: c.text }, sourceDocumentId: cmd.documentId }));
       // Unregistered land: an epitome of title, not a register; first registration on completion. Outside what the engine reads (PG 1).
-      if (cmd.facts.unregistered && !s.manualHandling.required) {
-        out.push({ type: 'manual_handling_required', actor: SYSTEM, payload: { reason: 'unregistered_land', detail: 'The title is unregistered: an epitome / deeds bundle rather than official copies. Investigate the root of title (15 years), the index map search (SIM) and the land charges searches (K15) by hand; first registration follows completion.' } });
+      // Its own checklist, not a halt (property.md 2.1); the two-month first-registration clock runs from completion (dates.ts).
+      if (cmd.facts.unregistered && !openOf(s, 'title_defect', 'Unregistered title')) {
+        out.push(issueWith(s, issueIds(s, out)(), 'title_defect', 'Unregistered title: the epitome to examine', `The title is an epitome / deeds bundle, not official copies. Before exchange: an index map search (SIM) to confirm it is not registered and nothing is pending; a land charges search (K15) against every estate owner since the root (each name, the years they owned it); a good root of title at least 15 years old, every link in the chain dated, stamped and executed; ${profile(s).side === 'buyer' || profile(s).type === 'remortgage' ? 'a K16 against the buyers; ' : ''}any deeds missing explained by statutory declaration. After completion, first registration (FR1) within two months or the transfer is void (LRA 2002 ss.6-7).`, 'exchange', 'warning'));
       }
       // A tenure the matter was not enrolled for (read clearly as the other one): flag it AND halt automation until a person resolves it.
       // A tenure that could not be read is only a flag on the title for a person; it does not stop the case.
@@ -1337,7 +1356,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireSide(s, ['buyer'], 'A report on title');
       // Once the title is resolved it can be written: in pre-contract it is an interim report (searches, enquiries or the
       // offer still to come) and a supplementary one follows before exchange; in contract review it is the full report.
-      if (s.stage !== 'pre_contract' && s.stage !== 'contract_review') reject(`The report on title is written in pre-contract or contract review; this case is at ${s.stage.replace(/_/g, ' ')}.`);
+      if (s.stage !== 'pre_contract' && s.stage !== 'contract_review' && !(s.stage === 'pre_exchange' && s.reportOnTitle.interimSentAt)) reject(`The report on title is written in pre-contract or contract review; this case is at ${s.stage.replace(/_/g, ' ')}.`);
       if (!isResolved(s.title.status)) reject(`Title is ${s.title.status}; resolve it before drafting the report.`);
       if (s.reportOnTitle.status === 'drafted') reject('A draft is already awaiting approval.');
       if (s.reportOnTitle.status === 'approved') reject('An approved draft is awaiting sending.');
@@ -2033,6 +2052,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         // A record of what the surveyor suggested, not a gate: the survey holds exchange until the client says how to proceed, once.
         out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: `ISS-${n}`, kind: 'survey_further_investigation', title, detail: g.items.map((r) => `• ${r.text}`).join('\n'), gate: 'none', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: 'info', causedBy: null }, sourceDocumentId: cmd.documentId });
       }
+      // Valued below the price (property.md 6.5): renegotiate, top up (a new source of funds), challenge, or another lender.
+      const mv = cmd.facts.marketValuePennies;
+      if (mv && s.purchasePricePennies && mv < s.purchasePricePennies && profile(s).side === 'buyer' && !openOf(s, 'valuation_issue', 'Valued at')) out.push(issueWith(s, issueIds(s, out)(), 'valuation_issue', `Valued at ${pounds(mv)}, ${pounds(s.purchasePricePennies - mv)} below the price`, `The ${cmd.surveyType === 'valuation' ? 'valuation' : 'surveyor'} puts the value below the agreed price. Options: renegotiate the price, the client makes up the gap (new money: its own proof of funds), challenge it with comparables, or another lender. ${s.hasLender ? 'The lender may reduce the advance: check the offer.' : ''}`, s.exchange.exchangedAt ? 'completion' : 'exchange', 'warning'));
       return out;
     }
     case 'specialist_report_received': {
@@ -2392,6 +2414,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         const missing = [bsa.leaseholderDeedOfCertificate === false && 'leaseholder deed of certificate', bsa.landlordCertificate === false && "landlord's certificate"].filter(Boolean).join(' and ');
         packEvents.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'building_safety', title: `Building Safety Act: no ${missing} for a relevant building`, detail: `The management pack says the building is a relevant building (11 m / 5 storeys or more) and the ${missing} ${missing.includes(' and ') ? 'have' : 'has'} not been given.${bsa.remediation ? ` Remediation position as stated: ${bsa.remediation}.` : ''} The lender will want the certificates (and, depending on its Part 2, an EWS1 or remediation evidence) before it lends, and the buyer's leaseholder protections depend on the certificate chain. Ask the seller's solicitor for them and report to the lender.`, gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: 'warning', causedBy: null } });
       }
+      // What the pack means for a buyer, each its own issue (property.md 7.4, 7.5, 7.9, 7.10).
+      if (facts && profile(s).side === 'buyer') {
+        const raise = (kind: IssueKind, title: string, detail: string, gate: IssueGate) => { if (!openOf(s, kind, title.split(':')[0])) packEvents.push(issue(s, issueIds(s, packEvents)(), kind, title, detail, gate)); };
+        if (facts.arrearsPennies) raise('service_charge_issue', `Arrears on the account: ${gbp(facts.arrearsPennies)}`, "The seller pays them from the sale price on completion (a line on their statement), or a retention is held. Ask the seller's solicitor to confirm, and get the landlord's receipt after completion.", 'completion');
+        if (facts.majorWorks || facts.section20Notice) raise('service_charge_issue', `Major works: ${(facts.majorWorks ?? 'a section 20 consultation').slice(0, 70)}`, `${facts.majorWorks ?? 'Section 20 consultation under way.'} Demands served before completion are the seller's, after it the buyer's: agree who pays in a special condition, usually with a retention from the price released when the demand is settled. Advise the client.`, 'exchange');
+        if (facts.consentsRequired) raise('missing_consent', `Landlord's requirements on assignment: ${facts.consentsRequired.slice(0, 60)}`, `"${facts.consentsRequired.slice(0, 300)}". A licence to assign, or the deed of covenant, in agreed form before exchange (the landlord's solicitor's draft approved, their fees agreed); the rest at completion.`, 'exchange');
+        if (s.lenderRequirements?.requiresEws1 && !/ews1/i.test(facts.buildingSafety?.remediation ?? '')) raise('building_safety', 'EWS1: the lender requires one', `The lender's Part 2 requires an EWS1 for this building and the pack does not show one${facts.buildingSafety?.remediation ? ` (it says: "${facts.buildingSafety.remediation.slice(0, 160)}")` : ''}. Ask the managing agent; without it the lender will not lend. Where cladding is not remediated: the remediation plan, its funding (Building Safety Fund, developer pledge) and the leaseholder cap.`, 'exchange');
+      }
       return packEvents;
     }
     case 'notice_of_assignment_served': {
@@ -2699,6 +2729,19 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!cmd.detail?.trim()) reject('Say what happened.', 400);
       const buyer = profile(s).side === 'buyer';
       const gate: IssueGate = s.completion.confirmedAt ? 'none' : s.exchange.exchangedAt ? 'completion' : 'exchange';
+      // The title on the ground (property.md 1.14, 1.15, 2.4, 2.5, 4.3): what the papers do not show.
+      const PROP: Record<string, [IssueKind, string, string, IssueSeverity]> = {
+        boundary_mismatch: ['boundary_discrepancy', 'The boundary on the ground differs from the plan', 'Registered boundaries are general (LRA 2002 s.60): find out what lies outside the red edging and whether the seller owns it. Options: the seller rectifies or transfers the strip, a statutory declaration of use with a possessory application, or an indemnity policy. Tell the lender if any of the property it lends on is outside the title.', 'warning'],
+        adverse_possession: ['title_defect', 'Part of the property is held without title', 'The seller claims a strip (a garden, a parking space) by possession. A statutory declaration of at least 10 years\' (registered) or 12 years\' (unregistered) adverse possession, a possessory application at HM Land Registry, and an indemnity policy; many lenders will not lend on the strip. Advise the client in writing.', 'warning'],
+        deeds_lost: ['title_defect', 'The title deeds are lost or incomplete', 'Unregistered land without a full chain of deeds: a statutory declaration of ownership and of the loss, a possessory application (possessory title, upgradable later), and an indemnity policy. Tell the lender before exchange.', 'critical'],
+        land_charge_entry: ['third_party_encumbrance', 'The land charges search shows an entry', 'Read the entry by its class: C(iv) an estate contract (an option or pre-emption: release it), D(ii) a restrictive covenant (as on a registered title), F home rights (the spouse releases them before exchange), or a bankruptcy entry (a bankruptcy issue: the same person?). Clear or explain it before exchange.', 'warning'],
+        searches_declined: ['search_adverse_entry', 'The client does not want searches', 'Advise the client in writing of the risks (roads, planning, drainage, contamination) and get their written decision. With a lender, its search-indemnity policy is the usual answer (the lender must accept it); put its premium on the statement.', 'warning'],
+      };
+      if (PROP[cmd.event]) {
+        if (s.exchange.exchangedAt && cmd.event !== 'boundary_mismatch') reject('Contracts are exchanged.');
+        const [kind, title, detail, severity] = PROP[cmd.event];
+        return [{ type: 'property_event_recorded', actor: cmd.actor, payload: { event: cmd.event, detail: cmd.detail.trim() } }, issueWith(s, issueIds(s)(), kind, `${title}: ${cmd.detail.trim().slice(0, 60)}`, `${cmd.detail.trim()}. ${detail}`, gate, severity)];
+      }
       // Agreements outside the contract (exchange.md 6.3-6.5): each needs its own terms, the lender and the insurance.
       if (cmd.event === 'early_access' || cmd.event === 'seller_stays') {
         const early = cmd.event === 'early_access';
@@ -2859,7 +2902,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!s.shapes?.includes('new_build')) reject('A long-stop date is recorded on a new-build purchase.');
       if (!ISO_DAY.test(cmd.date)) reject('The long-stop date must be a date (YYYY-MM-DD).', 400);
       if (cmd.date === s.longStopDate) reject('The long-stop date is unchanged.');
-      return [{ type: 'longstop_date_recorded', actor: cmd.actor, payload: { date: cmd.date } }];
+      const ls: NewEvent[] = [{ type: 'longstop_date_recorded', actor: cmd.actor, payload: { date: cmd.date } }];
+      // The offer must outlast the long-stop, or the build can finish after the money has gone (property.md 8.1).
+      const expiry = s.mortgage.facts?.expiryDate;
+      if (s.hasLender && expiry && expiry.slice(0, 10) < cmd.date && !openOf(s, 'lender_approval', 'The mortgage offer expires before the long-stop')) ls.push(issue(s, issueIds(s)(), 'lender_approval', `The mortgage offer expires before the long-stop date (${expiry.slice(0, 10)}, long-stop ${cmd.date})`, 'If the developer finishes late the offer will have lapsed and the client is bound to complete without it. Ask the lender for an extension to cover the long-stop (most new-build offers can be extended), and advise the client in writing before exchange.', s.exchange.exchangedAt ? 'completion' : 'exchange'));
+      return ls;
     }
     case 'record_other_charge': {
       requireEnrolled(s);
@@ -3311,7 +3358,7 @@ const sellerTitleCharged = (s: MatterState): boolean => ((s.title.facts as Title
 
 // ── Readings become typed issues (findings.ts) ──
 function findingContext(s: MatterState): FindingContext {
-  return { side: profile(s).side, hasLender: s.hasLender, alterations: s.sellerForms?.facts?.answers?.alterations ?? null, pricePennies: s.purchasePricePennies ?? null, clients: Math.max(s.parties ?? 1, s.partyNames?.length ?? 0), offerExpiry: s.hasLender ? ((s.mortgage.facts as { expiryDate?: string | null } | null)?.expiryDate ?? null) : null };
+  return { side: profile(s).side, hasLender: s.hasLender, sharedAccess: !!s.sellerForms?.facts?.answers?.sharedAccessOrServices, alterations: s.sellerForms?.facts?.answers?.alterations ?? null, pricePennies: s.purchasePricePennies ?? null, clients: Math.max(s.parties ?? 1, s.partyNames?.length ?? 0), offerExpiry: s.hasLender ? ((s.mortgage.facts as { expiryDate?: string | null } | null)?.expiryDate ?? null) : null };
 }
 /** Each finding once per case: a later reading of the same thing (a new edition, the lease after the register) never raises it again. */
 function findingEvents(s: MatterState, found: Finding[], documentId: string | null, nextId: () => string = issueIds(s)): NewEvent[] {

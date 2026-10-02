@@ -351,6 +351,13 @@ export const SCENARIOS: Scenario[] = [
         await c.svc.managementPackReceived(c.tenantId, c.matterId, doc);
       }),
       step('pack_decision', 'The management pack is decided by a person', async (c) => { await c.resolve('management_pack', c.flagged ? 'refer_to_client' : 'approve', c.flagged ? 'Major works: client advised; retention to be negotiated.' : 'Pack in order.'); }, { decision: 'management_pack' }),
+      step('pack_points', 'What the pack needs settled before exchange', async (c) => {
+        const s = await c.svc.getState(c.tenantId, c.matterId);
+        for (const i of Object.values(s.issues).filter((x) => x.status === 'open')) {
+          if (i.title.startsWith('Major works')) await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'retention_agreed', note: 'Special condition: £6,000 retained from the price until the roof demand is settled.', costPennies: 600_000, paidBy: 'seller', details: { releasedWhen: 'The section 20 demand for the roof is paid by the seller' } });
+          else if (i.title.startsWith("Landlord's requirements on assignment")) await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'other', note: 'Deed of covenant agreed in the management company\'s form; their fee on the statement.' });
+        }
+      }),
       step('lease', 'The lease received and read', async (c) => {
         const doc = await c.doc({ docType: 'LEASE', fileName: 'lease.txt', facts: F.lease(c.flagged), body: F.body('Lease', ['Term: 125 years from 1 January 1998', c.flagged ? 'Rent: £350 a year, doubling every 10 years' : 'Rent: £250 a year, fixed', 'Lessee repairs the interior; lessor repairs the structure and roof', 'Not to assign without the lessor\'s prior written consent, not to be unreasonably withheld']) });
         await c.svc.leaseReceived(c.tenantId, c.matterId, doc);
@@ -362,6 +369,10 @@ export const SCENARIOS: Scenario[] = [
       ...enquiries(),
       ...reportOnTitle(),
       ...exchangeBuyer(PRICE, DEPOSIT, ADVANCE).filter((s) => s.id !== 'close'),
+      step('retention_release', 'The retention released once the condition is met', async (c) => {
+        const s = await c.svc.getState(c.tenantId, c.matterId);
+        if (s.waits.some((w) => w.key === 'retention_release' && !w.closedAt)) await c.run({ type: 'retention_released', amountPennies: 600_000 });
+      }),
       step('notice', 'Notice of assignment served on the landlord', async (c) => { await c.run({ type: 'notice_of_assignment_served', servedOn: 'Block Managers Ltd for Mill Lane Freeholds Limited', reference: 'NOA-1' }); }),
       step('final_bill', 'The final bill sent to the client', async (c) => { if (!(await c.svc.getState(c.tenantId, c.matterId)).finalBill) await c.run({ type: 'final_bill_delivered', amountPennies: 150_000 }); }),
       step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),

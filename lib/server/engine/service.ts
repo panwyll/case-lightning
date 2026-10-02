@@ -30,7 +30,7 @@ import { chargeableConsideration } from './sdlt-facts';
 import { clientMessagesStopped } from './people';
 import { computeSdlt } from './sdlt';
 import { workingDaysBetween } from './working-days';
-import { checkDraft, draftCheckLine, renderChecked, type DraftCheck } from './draft-check';
+import { checkDraft, draftCheckLine, pointsNotInReport, renderChecked, type DraftCheck } from './draft-check';
 import { buildCompletionStatement } from './completion-statement';
 import { caseBrief } from './brief';
 import { decide, assertCanSendReport, reportReady, type Command } from './machine';
@@ -1187,6 +1187,10 @@ export class EngineService {
       content = renderChecked(draft.content, check);
       summary = `${draft.summary}\n${draftCheckLine(check)}${check.notFromFile.length ? `\nNot from the file: ${check.notFromFile.map((n) => n.text).join('; ')}.` : ''}`;
     }
+    // Every point found on the title, the searches and the lease reaches the client (property.md 9.4).
+    const points = Object.values(state.issues).filter((i) => i.status !== 'withdrawn' && i.finding).map((i) => i.title);
+    const missing = pointsNotInReport(draft.content, points);
+    if (missing.length) summary = `${summary}\nNot yet in the report (add or say why not): ${missing.join('; ')}.`;
     const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'REPORT_ON_TITLE_DRAFT', fileName: readableName(state.reportOnTitle.interim || state.stage === 'pre_contract' ? 'Report on title (interim draft)' : 'Report on title (draft)', this.ports.now()), content });
     if (check && this.ports.documents.writeDraftCheck) await this.ports.documents.writeDraftCheck(tenantId, doc.id, check).catch(() => {});
     const citations = [...draft.citations];

@@ -98,7 +98,7 @@ test('proof of funds: a gift from outside the family, a cash purchase, and the s
   assert.ok(v3.outcome === 'flag' && v3.flags.some((f) => f.code === 'POF_CASH_PURCHASE'), 'no advance → cash purchase flag');
 });
 
-test('a relevant building without its certificates raises a Building Safety Act issue holding exchange; unregistered land halts automation; CDD over a year old is raised by the timer', async () => {
+test('a relevant building without its certificates raises a Building Safety Act issue holding exchange; unregistered land raises its own checklist (not a halt); CDD over a year old is raised by the timer', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, transactionType: 'leasehold_purchase', hasLender: true, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
@@ -111,7 +111,8 @@ test('a relevant building without its certificates raises a Building Safety Act 
   assert.equal((bsa!.payload as { gate: string }).gate, 'exchange');
   // Unregistered land: the epitome is read, and automation stops.
   const unreg = decide({ ...s, title: { ...s.title, status: 'requested' as never, documentId: 'd-title' } }, { type: 'title_extracted', actor: 'system', documentId: 'd-title', facts: { titleNumber: 'n/a', tenure: 'leasehold', restrictions: [], charges: [], covenants: [], confidence: 0.9, unregistered: true }, extractor: 'fixture' } as never, ctx);
-  assert.ok(unreg.events.some((e) => e.type === 'manual_handling_required' && (e.payload as { reason: string }).reason === 'unregistered_land'));
+  assert.ok(!unreg.events.some((e) => e.type === 'manual_handling_required'), 'not a halt');
+  assert.ok(unreg.events.some((e) => e.type === 'issue_raised' && /^Unregistered title/.test((e.payload as { title: string }).title)));
   // Ongoing monitoring: a year and a day after the first client's check cleared, the timer asks for a refresh; holds nothing.
   s = await h.svc.getState(TENANT, MATTER);
   assert.ok(s.idCheck.resolvedAt, 'the ID clock is set');

@@ -7,7 +7,7 @@
 import type { Side } from './transactions';
 import type { IssueGate, IssueKind } from './issues';
 
-export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa', 'second_charge', 'shared_ownership', 'unrepresented_counterparty', 'court_order_transfer', 'right_to_buy', 'flying_freehold', 'commonhold', 'equity_loan_redemption', 'overseas_entity', 'client_abroad', 'minor_party', 'attorney_benefits', 'deputy', 'trust_client', 'charity', 'vulnerable_client', 'introducer_fee', 'related_party', 'undervalue', 'separating_owners', 'shared_ownership_sale'] as const;
+export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa', 'second_charge', 'shared_ownership', 'unrepresented_counterparty', 'court_order_transfer', 'right_to_buy', 'flying_freehold', 'commonhold', 'equity_loan_redemption', 'overseas_entity', 'client_abroad', 'minor_party', 'attorney_benefits', 'deputy', 'trust_client', 'charity', 'vulnerable_client', 'introducer_fee', 'related_party', 'undervalue', 'separating_owners', 'shared_ownership_sale', 'share_of_freehold', 'repossession'] as const;
 export type CaseShape = (typeof CASE_SHAPES)[number];
 
 export type FundsRole = 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider';
@@ -126,6 +126,16 @@ export const SHAPE_SPEC: Record<CaseShape, ShapeSpec> = {
     id: 'shared_ownership_sale', label: 'Shared Ownership Sale', sides: ['seller'],
     summary: "Selling a shared-ownership share: the provider's nomination period, its valuation, staircasing first if selling outright.",
     issue: { kind: 'shared_ownership_terms', title: "Shared ownership sale: the provider's nomination period and valuation", detail: "Tell the housing association before marketing: most leases give it a nomination period (often 4 to 8 weeks) to find a buyer at the RICS valuation it instructs (valid 3 months). Only after it ends, or it releases the client, can the share go on the open market. Selling 100%: staircase first, completing the staircasing at the same time as the sale. Get the provider's consent to assign, its fees, and its pack.", gate: 'exchange' },
+  },
+  share_of_freehold: {
+    id: 'share_of_freehold', label: 'Share Of Freehold', sides: ['buyer', 'seller'],
+    summary: 'A lease plus a share in the company (or the owners) holding the freehold: both titles, the share transfer, the directorship.',
+    issue: { kind: 'lease_defect', title: 'Share of freehold: both titles, the company and the share', detail: 'Read the leasehold title and the freehold title (who holds it: a company, or the owners as trustees). The company: its articles, its accounts, the share certificate and a stock transfer form, the seller resigning as a director and the buyer appointed. The lender\'s share-of-freehold requirements (often a long lease regardless). Check any lease extension the owners granted themselves is registered.', gate: 'exchange' },
+  },
+  repossession: {
+    id: 'repossession', label: 'Repossession Or Probate Sale', sides: ['buyer'],
+    summary: 'A lender or personal representatives selling: no TA6 to rely on, a limited title guarantee, sold as seen.',
+    issue: { kind: 'disclosure_concern', title: 'Repossession or probate sale: no seller knowledge to rely on', detail: "The seller (a lender selling under its power of sale, LPA 1925 ss.101 and 103, or personal representatives) did not live there: expect no TA6 or a limited one and no title guarantee. Check the power of sale (the charge and the default) or the grant; the mortgagee's transfer overreaches the borrower. Order more searches, take indemnities where needed, and press for a full survey. Advise the client in writing that they have little remedy for anything not disclosed, and check for occupiers.", gate: 'exchange' },
   },
   equity_loan_redemption: {
     id: 'equity_loan_redemption', label: 'Help To Buy Loan To Repay', sides: ['seller', 'owner'],

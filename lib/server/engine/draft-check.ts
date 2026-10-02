@@ -197,3 +197,18 @@ export function draftCheckLine(c: DraftCheck): string {
   if (!c.summary.claims) return 'No figures, dates or names to check.';
   return `${c.summary.matched} of ${c.summary.claims} figures, dates and names match the file; ${c.summary.struck} not from the file; ${c.summary.cited} source facts cited.`;
 }
+
+/**
+ * Every point found on the title, the searches and the lease must reach the client (property.md 9.4): a point counts as
+ * covered when the report uses its distinctive words. What is left is listed for the person approving the report.
+ */
+export function pointsNotInReport(text: string, points: string[]): string[] {
+  const body = text.toLowerCase();
+  const STOP = new Set(['there', 'their', 'which', 'about', 'title', 'search', 'property', 'notice', 'register', 'should', 'would', 'before', 'after', 'under', 'with', 'from', 'that', 'this', 'have']);
+  return points.filter((p) => {
+    const words = [...new Set(p.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 4 && !STOP.has(w)))];
+    if (!words.length) return false;
+    const hits = words.filter((w) => body.includes(w.slice(0, Math.max(5, w.length - 2)))).length;
+    return hits < Math.min(2, words.length);
+  });
+}

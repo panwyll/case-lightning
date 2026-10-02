@@ -116,6 +116,21 @@ export function buildCompletionStatement(input: { state: MatterState; side: 'buy
     }
   }
 
+  // Retentions agreed on an issue (property.md 9.2, 6.3, 7.5): on a sale the buyer's solicitor holds them back; on a purchase they are held from the seller.
+  for (const i of Object.values(state.issues)) {
+    if (i.status !== 'resolved' || i.resolution !== 'retention_agreed' || !i.costPennies) continue;
+    lines.push({ label: sale ? `Less retention held by the buyer's solicitor (${i.title.slice(0, 50)})` : `Of which held back as a retention (${i.title.slice(0, 50)})`, pennies: i.costPennies, sign: sale ? -1 : 0, factId: null, note: 'released under the contract condition' });
+    allowed.push(pounds(i.costPennies));
+  }
+  // Indemnity premiums (property.md 9.1): on the statement of whoever pays them.
+  for (const i of Object.values(state.issues)) {
+    if (i.status !== 'resolved' || i.resolution !== 'indemnity_policy' || !i.costPennies) continue;
+    const payer = (i as { paidBy?: string | null }).paidBy;
+    if ((sale && payer === 'seller') || (!sale && payer === 'buyer')) { lines.push({ label: `${sale ? 'Less indemnity' : 'Indemnity'} policy premium (${i.title.slice(0, 50)})`, pennies: i.costPennies, sign: sale ? -1 : 1, factId: null }); allowed.push(pounds(i.costPennies)); }
+  }
+  // Leasehold arrears are cleared from the sale price on completion (property.md 7.4).
+  const arrears = (state.managementPack?.facts as { arrearsPennies?: number | null } | null)?.arrearsPennies;
+  if (sale && arrears) { lines.push({ label: 'Less service charge / ground rent arrears, paid to the landlord', pennies: arrears, sign: -1, factId: null }); allowed.push(pounds(arrears)); }
   // Lines only the firm can fill.
   const sdltEstimated = lines.some((l) => l.label.startsWith('Stamp Duty Land Tax ('));
   for (const l of sale ? ['Our fees', 'Disbursements', 'Land Registry fee for official copies'] : ['Our fees', ...(sdltEstimated ? [] : ['Stamp Duty Land Tax']), 'Land Registry registration fee', 'Searches and disbursements', 'Bank transfer fee']) {
