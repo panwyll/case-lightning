@@ -85,3 +85,45 @@ test("a completion date in the draft contract after the offer expires is raised 
   const f = contractFindings({ pricePennies: 1, depositPennies: 1, depositHolder: null, noticeToCompleteDays: 10, specialConditions: [], completionDate: '2027-03-01' }, { side: 'buyer', hasLender: true, offerExpiry: '2027-02-01' });
   assert.equal(f[0].code, 'COMPLETION_AFTER_OFFER');
 });
+
+test('a Formula C release locks the deal until it lapses or contracts are exchanged', () => {
+  const authorised = { ...ready({ requireExchangeAuthority: true }), clientDecisions: { exchange_authority: { decision: 'authorised', at: 'x', by: USER, note: null } } } as MatterState;
+  assert.throws(() => fold(authorised, { type: 'formula_c_release_given', until: '2026-10-02T15:00:00Z', givenTo: 'J' }), /same day/);
+  const released = fold(authorised, { type: 'formula_c_release_given', until: '2026-10-01T15:00:00Z', givenTo: 'Jane at Smith & Co' });
+  assert.throws(() => fold(released, { type: 'record_price_change', toPennies: 29_000_000, reason: 'late cut' }), /release is live/);
+  assert.throws(() => fold(released, { type: 'client_decision_recorded', subject: 'exchange_authority', decision: 'withdrawn', note: 'changed mind' }), /release is live/);
+  const lapsed = fold(released, { type: 'formula_c_release_lapsed', reason: 'Not called by 3pm' });
+  assert.equal(lapsed.exchange.release, null);
+});
+
+test('damage between exchange and completion, and vacant possession not given, are critical issues holding completion', () => {
+  const exchanged = ready({ stage: 'pre_completion', exchange: { ...i0.exchange, exchangedAt: '2026-09-20T10:00:00Z', completionDate: '2026-10-16' } });
+  const damaged = fold(exchanged, { type: 'record_property_event', event: 'damaged', detail: 'Burst pipe flooded the kitchen' });
+  const d = Object.values(damaged.issues)[0];
+  assert.equal(d.gate, 'completion');
+  assert.match(d.detail ?? '', /seller keeps the risk until completion/);
+  const occupied = fold(exchanged, { type: 'record_property_event', event: 'not_vacant', detail: 'The tenant has not moved out' });
+  assert.match(Object.values(occupied.issues)[0].detail ?? '', /Do not complete without the client's instructions/);
+});
+
+test("on a sale the buyer's deposit is ours to confirm after exchange; a completion months away is raised at exchange", async () => {
+  const { dueSteps } = await import('../../../lib/server/engine/due');
+  const sale = ready({ transactionType: 'freehold_sale', stage: 'exchanged', exchange: { ...i0.exchange, exchangedAt: '2026-09-30T10:00:00Z', completionDate: '2026-10-16' } });
+  assert.ok(dueSteps(sale, NOW).some((x) => x.key === 'deposit_in'));
+  const far = fold(ready(), { type: 'contracts_exchanged', completionDate: '2027-02-01', formula: 'B', spokeWith: 'J' });
+  assert.ok(Object.values(far.issues).some((x) => /more than three months after exchange/.test(x.title)));
+});
+
+test('a client who withdraws before exchange: the other side and the agent are told, but never on an AML stop', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requireProofOfFunds: false, requireExchangeAuthority: false, requiredSearches: [] } as never);
+  await h.svc.run(TENANT, MATTER, { type: 'abandon_matter', actor: USER, reason: 'client_withdrew' } as never);
+  const s = await h.svc.getState(TENANT, MATTER);
+  const told = Object.values(s.proposals).filter((p) => p.dedupKey.startsWith('cp:withdrawn:')).length + h.ports.chaser.notices.filter((n: { template?: string; context?: { milestone?: string } }) => n.context?.milestone === 'withdrawn').length;
+  assert.ok(told >= 1);
+  const h2 = harness();
+  await h2.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requireProofOfFunds: false, requireExchangeAuthority: false, requiredSearches: [] } as never);
+  await h2.svc.run(TENANT, MATTER, { type: 'abandon_matter', actor: USER, reason: 'aml' } as never);
+  const s2 = await h2.svc.getState(TENANT, MATTER);
+  assert.equal(Object.values(s2.proposals).filter((p) => p.dedupKey.startsWith('cp:withdrawn:')).length, 0);
+});

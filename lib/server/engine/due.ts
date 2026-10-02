@@ -173,6 +173,9 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
     if (workingDaysBetween(now, new Date(r.deadline!), EW_CALENDAR) <= 5) add({ key: `requisition_extend:${r.eventId}`, lane: 'registration', title: `Answer the requisition by ${r.deadline!.slice(0, 10)}, or ask HM Land Registry for more time`, dueDate: r.deadline!.slice(0, 10) });
   }
 
+  // A sale: the buyer's deposit is ours to receive on exchange (unless it went up the chain) (exchange.md 5.4).
+  if (seller && exchanged && !completed && !s.deposit.received && s.exchange.depositRoute !== 'up_the_chain') add({ key: 'deposit_in', lane: 'exchange', title: "Confirm the buyer's deposit has arrived", dueDate: s.exchange.exchangedAt ? day(addWorkingDays(new Date(s.exchange.exchangedAt), 1, EW_CALENDAR)) : null });
+
   // ── Charges and undertakings (charges.ts) ──
   if ((seller || remo) && !exchanged && !completed) for (const c of (s.otherCharges ?? []).filter((x) => x.status === 'to_redeem')) add({ key: `charge_statement:${c.id}`, lane: 'redemption', title: `Get a redemption figure from ${c.chargee}` });
   if (seller && exchanged && !completed && anythingCharged(s) && !s.undertaking) add({ key: 'undertaking', lane: 'redemption', title: "Give the buyer's solicitor our undertaking to redeem (reply to their completion information)", dueDate: completionDate });

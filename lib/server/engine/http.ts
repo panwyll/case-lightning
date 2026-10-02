@@ -83,6 +83,9 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client', 'buyer_solicitor', 'incoming_owner', 'isa_provider']), remitter: z.string().max(160).nullish(), amountPennies: z.number().int().nonnegative().nullish(), uncleared: z.boolean().nullish() }),
   z.object({ type: z.literal('funds_cleared'), receiptId: z.string().min(1).max(40) }),
   z.object({ type: z.literal('retention_released'), amountPennies: z.number().int().nonnegative().nullish() }),
+  z.object({ type: z.literal('formula_c_release_given'), until: z.string().max(40), givenTo: z.string().min(1).max(200) }),
+  z.object({ type: z.literal('formula_c_release_lapsed'), reason: z.string().min(1).max(500) }),
+  z.object({ type: z.literal('record_property_event'), event: z.enum(['damaged', 'not_vacant']), detail: z.string().min(1).max(1000) }),
   z.object({ type: z.literal('final_bill_delivered'), amountPennies: z.number().int().nonnegative(), documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('completion_payment_sent'), reference: z.string().min(1).max(120), sentAt: z.string().max(40).nullish() }),
   z.object({ type: z.literal('record_contributions'), model: z.enum(['FIXED', 'RING_FENCE', 'CONTRIBUTION', 'FLOATING']), contributions: z.array(z.object({ party: z.string().min(1).max(160), pennies: z.number().int().nonnegative() })).min(2).max(8), ratioPercent: z.record(z.string(), z.number().min(0).max(100)).nullish() }),
@@ -130,6 +133,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   // Report on title lifecycle (the service does the I/O; these are the human-triggered steps).
   z.object({ type: z.literal('draft_report_on_title') }),
   z.object({ type: z.literal('draft_completion_statement') }),
+  z.object({ type: z.literal('draft_notice_to_complete') }),
   z.object({ type: z.literal('chase_now'), waitKey: z.enum(WAIT_KEYS), subject: z.string().max(120).nullish() }),
   z.object({ type: z.literal('send_report_on_title') }),
   // Eventualities (docs/engine-eventualities.md).
@@ -183,6 +187,7 @@ export function toCommand(input: UserCommandInput, userId: string): Command | nu
     case 'request_proof_of_funds':
     case 'draft_report_on_title':
     case 'draft_completion_statement':
+    case 'draft_notice_to_complete':
     case 'chase_now':
     case 'send_report_on_title':
     case 'record_bank_details':

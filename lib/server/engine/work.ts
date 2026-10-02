@@ -198,7 +198,7 @@ export const DUE_CHIP: Record<string, string> = {
   official_copies: 'Upload Documents', proof_of_funds_request: 'Client Request', report_on_title_redraft: 'Draft Document', contract_pack: "Send Buyer's Solicitor Documents", management_pack_sale: 'Managing Agent Request',
   contract_approved_sale: 'Record Outcome', contract_approve: 'Document Sign-Off', buyer_enquiries: 'Reply To Enquiries', exchange: 'Exchange Contracts', completion_statement: 'Send Client Documents',
   funds_cleared: 'Record Receipt', refund: 'Return Money', shortfall_request: 'Request Funds',
-  final_bill: 'Send Client Documents', completion_payment_sent: 'Record Outcome', contributions: 'Record Outcome', register_check: 'Record Outcome', requisition_extend: 'Record Outcome', sdlt_facts: 'Record Outcome', cgt_facts: 'Record Outcome', longstop_date: 'Record Outcome', charge_statement: 'Record Receipt', charge_redeemed: 'Record Outcome', undertaking: "Send Buyer's Solicitor Documents", completion_information: 'Record Receipt', undertaking_discharge: "Send Buyer's Solicitor Documents",
+  deposit_in: 'Record Receipt', final_bill: 'Send Client Documents', completion_payment_sent: 'Record Outcome', contributions: 'Record Outcome', register_check: 'Record Outcome', requisition_extend: 'Record Outcome', sdlt_facts: 'Record Outcome', cgt_facts: 'Record Outcome', longstop_date: 'Record Outcome', charge_statement: 'Record Receipt', charge_redeemed: 'Record Outcome', undertaking: "Send Buyer's Solicitor Documents", completion_information: 'Record Receipt', undertaking_discharge: "Send Buyer's Solicitor Documents",
   certificate_of_title: 'Send Lender Documents', bankruptcy_search: 'Run Search', priority_search: 'Run Search', funds_request: 'Request Funds', advance_request: 'Request Funds', completion_monies: 'Record Receipt', consideration: 'Record Receipt',
   completion_payment: 'Authorise Payment', redemption_payment: 'Authorise Payment', completion: 'Confirm Completion', balance_to_client: 'Authorise Payment', mortgage_redeemed: 'Record Outcome',
   sdlt: 'File Return', ap1: 'Submit Application', notice_of_assignment: 'Send Landlord Documents', close_file: 'Close File',
@@ -340,7 +340,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
 export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkContext = {}, sla: SlaConfig = DEFAULT_SLA, cal: WorkingCalendar = EW_CALENDAR): MatterWork {
   const health = caseHealth(s, now, sla, cal);
   const out: WorkItem[] = [];
-  if (!s.enrolled || s.abandoned || s.closedAt) return { matterId: s.matterId, band: health.band, health: summariseHealth(health), items: out };
+  if (!s.enrolled || s.closedAt) return { matterId: s.matterId, band: health.band, health: summariseHealth(health), items: out };
   const owner = ctx.assignedTo ?? null;
   const base = { matterId: s.matterId, matterRef: ctx.matterRef ?? null, propertyAddress: ctx.propertyAddress ?? null, clients: profileOf(s.transactionType).side === 'seller' ? ctx.sellers ?? [] : ctx.buyers ?? [], responsibilityOwner: owner };
   const bandOf = (code: string): HealthBand => health.reasons.find((r) => r.ref.id === code)?.band ?? 'normal';
@@ -526,6 +526,8 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   const rank: Record<HealthBand, number> = { critical: 0, blocked: 1, delayed: 2, attention: 3, normal: 4 };
   out.sort((a, b) => rank[a.urgency] - rank[b.urgency] || (b.sinceWorkingDays ?? 0) - (a.sinceWorkingDays ?? 0));
   void bandOf;
+  // A file that stopped still owes what it owes: money back, and the message telling the other side. Nothing else.
+  if (s.abandoned) return { matterId: s.matterId, band: health.band, health: summariseHealth(health), items: out.filter((x) => x.kind === 'step' || (x.ref.type === 'decision' && s.decisions[x.ref.id]?.kind === 'proposal')) };
   return { matterId: s.matterId, band: health.band, health: summariseHealth(health), items: out };
 }
 

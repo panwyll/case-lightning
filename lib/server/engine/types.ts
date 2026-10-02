@@ -213,6 +213,9 @@ export const EVENT_TYPES = [
   'contributions_recorded',
   'completion_payment_sent',
   'final_bill_delivered',
+  'formula_c_release_given',
+  'formula_c_release_lapsed',
+  'property_event_recorded',
   'retention_released',
   'redemption_figure_adjusted',
   'ap1_cancelled',
@@ -1150,6 +1153,9 @@ export interface Payloads {
   longstop_date_recorded: { date: string };
   completion_payment_sent: { reference: string; sentAt: string };
   final_bill_delivered: { amountPennies: number; documentId: string | null };
+  formula_c_release_given: { until: string; givenTo: string };
+  formula_c_release_lapsed: { reason: string };
+  property_event_recorded: { event: 'damaged' | 'not_vacant'; detail: string };
   retention_released: { amountPennies: number | null };
   redemption_figure_adjusted: { redemptionPennies: number; days: number; reason: string };
   contributions_recorded: { model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent: Record<string, number> | null; shares: Array<{ party: string; shareBp: number }> };
@@ -1689,7 +1695,7 @@ export interface MatterState {
   completionInformation: { receivedAt: string; undertakingToRedeem: boolean; documentId: string | null } | null;
   /** The client's money on this file, reconciled (engine/money.ts): asked for, received and cleared by payer; what is owed back. */
   money: ClientMoney;
-  exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null; formula?: 'A' | 'B' | 'C' | null; spokeWith?: string | null; depositRoute?: 'held_by_us' | 'sent_to_seller_solicitor' | 'up_the_chain' | null };
+  exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null; /** Formula C: our release given until a time today; while it is live we are bound to exchange if called (exchange.md 5.2). */ release?: { until: string; givenTo: string; at: string } | null; formula?: 'A' | 'B' | 'C' | null; spokeWith?: string | null; depositRoute?: 'held_by_us' | 'sent_to_seller_solicitor' | 'up_the_chain' | null };
   /** Purchase side: the seller's forms as read. */
   /** The seller's forms as a set: they come as separate files (TA6, TA10, TA7), each adding forms and answers. */
   sellerForms: { receivedAt: string | null; forms: string[]; documentId: string | null; facts: PropertyFormsFacts | null; documents?: Array<{ documentId: string; forms: string[] }> };

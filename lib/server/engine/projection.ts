@@ -455,6 +455,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       s.exchange.exchangedAt = p.exchangedAt ?? e.createdAt;
       s.exchange.completionDate = p.completionDate;
       s.exchange.formula = p.formula ?? null;
+      s.exchange.release = null;
       s.exchange.spokeWith = p.spokeWith ?? null;
       s.exchange.depositRoute = p.depositRoute ?? null;
       // Exchanged: the offer and the survey are behind us.
@@ -493,6 +494,16 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null) && payersExpected(s).every((r) => s.completion.receivedFrom.includes(r))) s.completion.fundsReceivedAt = s.completion.fundsReceivedAt ?? e.createdAt;
       break;
     }
+    case 'formula_c_release_given': {
+      const p = e.payload as Payloads['formula_c_release_given'];
+      s.exchange = { ...s.exchange, release: { until: p.until, givenTo: p.givenTo, at: e.createdAt } };
+      break;
+    }
+    case 'formula_c_release_lapsed':
+      s.exchange = { ...s.exchange, release: null };
+      break;
+    case 'property_event_recorded':
+      break;
     case 'retention_released':
       closeWait(s, 'retention_release', null, e);
       break;

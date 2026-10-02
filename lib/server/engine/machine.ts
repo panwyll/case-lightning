@@ -222,6 +222,9 @@ type CommandBody =
   | { type: 'sar_made'; actor: Actor; note?: string | null }
   | { type: 'completion_payment_sent'; actor: Actor; reference: string; sentAt?: string | null }
   | { type: 'final_bill_delivered'; actor: Actor; amountPennies: number; documentId?: string | null }
+  | { type: 'formula_c_release_given'; actor: Actor; until: string; givenTo: string }
+  | { type: 'formula_c_release_lapsed'; actor: Actor; reason: string }
+  | { type: 'record_property_event'; actor: Actor; event: 'damaged' | 'not_vacant'; detail: string }
   | { type: 'retention_released'; actor: Actor; amountPennies?: number | null }
   | { type: 'record_contributions'; actor: Actor; model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent?: Record<string, number> | null }
   | { type: 'ap1_cancelled'; actor: Actor; reason: string }
@@ -311,6 +314,9 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'record_contributions',
   'completion_payment_sent',
   'final_bill_delivered',
+  'formula_c_release_given',
+  'formula_c_release_lapsed',
+  'record_property_event',
   'retention_released',
   'ap1_cancelled',
   'requisition_extended',
@@ -1351,7 +1357,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         ].filter(Boolean);
         if (missing.length) reject(`Cannot exchange and complete today without ${missing.join(', ')}: once exchanged, the client is bound to complete this afternoon.`);
       }
-      return [{ type: 'contracts_exchanged', actor: cmd.actor, payload: { completionDate: cmd.completionDate, exchangedAt: cmd.exchangedAt ?? null, formula: formula as 'A' | 'B' | 'C' | null, spokeWith: cmd.spokeWith?.trim() || null, depositRoute: cmd.depositRoute ?? null } }];
+      // A completion months away: the offer, the insurance and the searches all have to last that long (exchange.md 5.7).
+      const far = (Date.parse(cmd.completionDate) - exchangeDay.getTime()) / 86_400_000 > 90;
+      const delayed = far ? [issue(s, issueIds(s)(), s.hasLender ? 'lender_approval' : 'chain_dependency', `Completion is more than three months after exchange (${cmd.completionDate})`, `${s.hasLender ? `Check the mortgage offer runs past ${cmd.completionDate} and the searches will not be too old for the lender at completion. ` : ''}Buildings insurance must be in place for the whole period. Consider a larger deposit if the seller asked for the delay.`, 'completion')] : [];
+      return [{ type: 'contracts_exchanged', actor: cmd.actor, payload: { completionDate: cmd.completionDate, exchangedAt: cmd.exchangedAt ?? null, formula: formula as 'A' | 'B' | 'C' | null, spokeWith: cmd.spokeWith?.trim() || null, depositRoute: cmd.depositRoute ?? null } }, ...delayed];
     }
 
     // ── Completion ──
@@ -1659,6 +1668,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [{ type: 'expectation_opened', actor: SYSTEM, payload: { key: cmd.key } }];
     }
     case 'set_funding': {
+      if (s.exchange.release && Date.parse(s.exchange.release.until) > ctx.now.getTime()) reject('A Formula C release is live: nothing in the deal may change until it lapses or contracts are exchanged.');
       requireEnrolled(s);
       if (!isUserActor(cmd.actor)) reject('How the purchase is funded is set by a person.', 403);
       if (!isPurchase(s)) reject('Only a purchase changes between cash and a mortgage.');
@@ -1925,6 +1935,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.subject === 'exchange_authority' && !profile(s).hasExchange) reject(`A ${profile(s).label.toLowerCase()} has no exchange to authorise.`);
       if (cmd.subject === 'ownership_basis' && s.parties < 2) reject('Only one client on this matter: there is no co-ownership to decide.');
       if (!cmd.note?.trim() && cmd.decision !== 'satisfied' && cmd.decision !== 'authorised' && cmd.decision !== 'accepted' && cmd.decision !== 'agreed' && cmd.decision !== 'evidence') reject('Record what the client said (note).', 400);
+      if (cmd.subject === 'exchange_authority' && cmd.decision !== 'authorised' && s.exchange.release && Date.parse(s.exchange.release.until) > ctx.now.getTime()) reject('A Formula C release is live: we are bound to exchange if called before it lapses. The authority cannot be withdrawn until then.');
       // Joint clients each give (or withdraw) their own authority to exchange; one saying yes while another says no is a conflict.
       const party = cmd.party?.trim() || null;
       if (party && !(s.partyNames ?? []).some((n) => n.trim().toLowerCase() === party.toLowerCase())) reject(`${party} is not one of the clients (${(s.partyNames ?? []).join(', ')}).`, 400);
@@ -2050,6 +2061,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       ];
     }
     case 'record_price_change': {
+      if (s.exchange.release && Date.parse(s.exchange.release.until) > ctx.now.getTime()) reject('A Formula C release is live: nothing in the deal may change until it lapses or contracts are exchanged.');
       requireEnrolled(s);
       if (s.exchange.exchangedAt) reject('Contracts are exchanged: the price is contractual now.');
       if (!Number.isInteger(cmd.toPennies) || cmd.toPennies <= 0) reject('The price must be a positive whole number of pennies.', 400);
@@ -2451,6 +2463,38 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!s.waits.some((w) => w.key === 'retention_release' && !w.closedAt)) reject('No retention is awaited.');
       return [{ type: 'retention_released', actor: cmd.actor, payload: { amountPennies: cmd.amountPennies ?? null } }];
     }
+    // ── Formula C (exchange.md 5.2, 5.3) ──
+    case 'formula_c_release_given': {
+      requireEnrolled(s);
+      requireStage(s, 'pre_exchange', 'A Formula C release');
+      if (!isUserActor(cmd.actor)) reject('Only a person gives a release.', 403);
+      if (s.exchange.release && Date.parse(s.exchange.release.until) > ctx.now.getTime()) reject('A release is already live.');
+      if (Number.isNaN(Date.parse(cmd.until)) || Date.parse(cmd.until) <= ctx.now.getTime()) reject('The release runs until a time later today.', 400);
+      if (cmd.until.slice(0, 10) !== ctx.now.toISOString().slice(0, 10)) reject('A Formula C release lasts until a stated time on the same day.', 400);
+      if (!cmd.givenTo?.trim()) reject('Who was the release given to?', 400);
+      if (exchangeAuthorityHolds(s)) reject("The client has not authorised exchange: a release binds us to exchange if called.");
+      return [{ type: 'formula_c_release_given', actor: cmd.actor, payload: { until: new Date(cmd.until).toISOString(), givenTo: cmd.givenTo.trim() } }];
+    }
+    case 'formula_c_release_lapsed': {
+      requireEnrolled(s);
+      if (!s.exchange.release) reject('No release was given.');
+      if (!cmd.reason?.trim()) reject('Say what happened (not called by the deadline, a link above failed to release).', 400);
+      return [{ type: 'formula_c_release_lapsed', actor: cmd.actor, payload: { reason: cmd.reason.trim() } }];
+    }
+    // ── The property between exchange and completion (exchange.md 6.2, 7.6) ──
+    case 'record_property_event': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
+      if (s.completion.confirmedAt && cmd.event === 'damaged') reject('Completed: damage now is the owner\'s insurance, not the contract.');
+      if (!cmd.detail?.trim()) reject('Say what happened.', 400);
+      const buyer = profile(s).side === 'buyer';
+      const gate: IssueGate = s.completion.confirmedAt ? 'none' : s.exchange.exchangedAt ? 'completion' : 'exchange';
+      const [title, detail] = cmd.event === 'damaged'
+        ? [`The property was damaged: ${cmd.detail.trim().slice(0, 80)}`, `${cmd.detail.trim()}. ${s.exchange.exchangedAt ? `Under the standard conditions the seller keeps the risk until completion and must hand over the property in the same state (SCS 7.1); a buyer may rescind if it is unusable for its purpose. ${buyer ? "Tell the lender (its security is affected) and the client's insurer, get the seller's proposal for repair or a price reduction, and take the client's instructions before completing." : "Tell the client's insurer at once; the buyer may claim a reduction or rescind. Get the client's instructions."}` : 'Before exchange: re-inspect or re-value, and renegotiate or withdraw on the client\'s instructions; tell the lender.'}`]
+        : [`Vacant possession not given: ${cmd.detail.trim().slice(0, 80)}`, `${cmd.detail.trim()}. ${buyer ? "Do not complete without the client's instructions: the seller must give vacant possession (an occupier still there, or goods left). Hold the money; agree a retention or a delayed completion with the seller's solicitor; tell the lender if an occupier stays." : 'Our client must give vacant possession on completion: occupiers out and the property cleared, or the buyer may refuse to complete and claim compensation.'}`];
+      const raised = issue(s, issueIds(s)(), cmd.event === 'damaged' ? 'survey_defect' : 'completion_failure', title, detail, gate);
+      return [{ type: 'property_event_recorded', actor: cmd.actor, payload: { event: cmd.event, detail: cmd.detail.trim() } }, { ...raised, payload: { ...(raised.payload as object), severity: 'critical' } } as NewEvent];
+    }
     case 'final_bill_delivered': {
       requireEnrolled(s);
       if (!isUserActor(cmd.actor)) reject('A person delivers the bill.', 403);
@@ -2805,7 +2849,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [{ type: 'action_rejected', actor: SYSTEM, payload: { proposalEventId: p.eventId, action: p.action, detail: p.detail, note: `Withdrawn by the system: ${cmd.reason}` } }];
     }
     case 'propose_action': {
-      requireEnrolled(s);
+      // A stopped file may still tell the other side it has stopped (exchange.md 1.7); nothing else is proposed on it.
+      if (s.abandoned && cmd.action === 'counterparty_update' && cmd.dedupKey.startsWith('cp:withdrawn:')) requireEnrolledEvenIfAbandoned(s);
+      else requireEnrolled(s);
       if (Object.values(s.proposals).some((p) => p.action === cmd.action && p.dedupKey === cmd.dedupKey && p.status === 'pending')) reject(`That ${cmd.action.replace(/_/g, ' ')} is already proposed and waiting.`, 409);
       const decision: DecisionSpec = {
         kind: 'proposal',
@@ -2863,7 +2909,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [{ type: 'escalation_raised', actor: AI, payload: { waitKey: cmd.waitKey, subject: cmd.subject, reason: cmd.reason, decision, origin: null }, sourceDocumentId: cmd.sourceDocumentId }];
     }
     case 'record_client_update': {
-      requireEnrolled(s);
+      if (s.abandoned && cmd.update.template.startsWith('cp_withdrawn:')) requireEnrolledEvenIfAbandoned(s);
+      else requireEnrolled(s);
       return [{ type: 'client_update_sent', actor: SYSTEM, payload: cmd.update }];
     }
   }

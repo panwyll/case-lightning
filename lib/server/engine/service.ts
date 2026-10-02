@@ -1166,6 +1166,39 @@ export class EngineService {
     return this.run(tenantId, matterId, { type: 'draft_report_on_title', draftId, draftDocumentId: doc.id, model: draft.model, summary, citations, basedOn: draft.basedOn });
   }
 
+  /**
+   * Our notice to complete (SCS 6.8; exchange.md 7.3): drafted under Documents for the person to check, sign and serve.
+   * Ten working days after the day it is served, our client being ready, able and willing to complete.
+   */
+  async draftNoticeToComplete(tenantId: string, matterId: string): Promise<{ documentId: string }> {
+    const s = await this.getState(tenantId, matterId);
+    if (!s.exchange.exchangedAt || s.completion.confirmedAt) throw Object.assign(new Error('A notice to complete follows exchange and a missed completion.'), { status: 409 });
+    if (!s.exchange.completionDate || Date.parse(s.exchange.completionDate) > this.ports.now().getTime()) throw Object.assign(new Error('The completion date has not passed yet.'), { status: 409 });
+    const record = await this.caseRecord(tenantId, matterId).catch(() => null);
+    const side = profileOf(s.transactionType).side === 'seller' ? 'seller' : 'buyer';
+    const other = side === 'seller' ? 'buyer' : 'seller';
+    const content = [
+      'NOTICE TO COMPLETE (DRAFT — check, sign and serve)',
+      '',
+      `Property: ${record?.propertyAddress ?? '[PROPERTY]'}`,
+      `Contract dated: ${s.exchange.exchangedAt.slice(0, 10)}`,
+      `Contractual completion date: ${s.exchange.completionDate}`,
+      '',
+      `To the ${other} and their solicitors.`,
+      '',
+      `We act for the ${side}. Completion did not take place on the contractual completion date. Our client is ready, able and willing to complete. We give you notice under standard condition 6.8 of the Standard Conditions of Sale (as incorporated in the contract) to complete the contract in accordance with that condition.`,
+      '',
+      `Completion must take place within ten working days, excluding the day of service. Time is of the essence of this notice.`,
+      '',
+      'Dated: [DATE OF SERVICE]',
+      'Signed: [SOLICITOR], for the ' + side,
+      '',
+      'Check before serving: the contract incorporates the standard conditions and has not changed the notice period; our client can complete on the day (money, deeds, vacant possession); serve as the contract allows and record the time of service.',
+    ].join('\n');
+    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'NOTICE_TO_COMPLETE', fileName: readableName('Notice to complete', this.ports.now()), content });
+    return { documentId: doc.id };
+  }
+
   /** The price and deposit the contract states, from the register (null when it has not been read). */
   async contractTerms(tenantId: string, matterId: string): Promise<{ pricePennies: number | null; depositPennies: number | null }> {
     const register = this.ports.documents.loadRegister ? await this.ports.documents.loadRegister(tenantId, matterId).catch(() => null) : null;
@@ -1607,6 +1640,17 @@ export class EngineService {
           const ROUTE: Record<string, string> = { held_by_us: 'held by us as stakeholder', sent_to_seller_solicitor: "sent to the seller's solicitor", up_the_chain: 'passed up the chain (SCS 2.2.5)' };
           const content = ['MEMORANDUM OF EXCHANGE', '', `Exchanged: ${(p.exchangedAt ?? e.createdAt).replace('T', ' ').slice(0, 16)}`, `Formula: ${p.formula ? `Law Society Formula ${p.formula}` : 'not recorded'}`, `With: ${p.spokeWith ?? 'not recorded'}`, `Recorded by: ${e.actor}`, `Completion date: ${p.completionDate}`, `Deposit: ${deposit != null ? `£${(deposit / 100).toLocaleString('en-GB', { minimumFractionDigits: 2 })}` : 'not recorded'}${p.depositRoute ? `, ${ROUTE[p.depositRoute] ?? p.depositRoute}` : ''}`].join('\n');
           await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'EXCHANGE_MEMORANDUM', fileName: readableName('Exchange memorandum', this.ports.now()), content }).catch((err) => this.ports.log('exchange memorandum could not be filed', err));
+        }
+        // A client who withdraws before exchange: the other side and the agent are told (never on an AML or fraud stop: no tipping off) (exchange.md 1.7).
+        if (e.type === 'matter_abandoned' && !state.exchange.exchangedAt && !['aml', 'fraud_suspected'].includes(String((e.payload as { reason?: string }).reason))) {
+          const property = (await this.caseRecord(tenantId, matterId).catch(() => null))?.propertyAddress ?? 'the property';
+          const ours = profileOf(state.transactionType).side === 'seller' ? 'seller' : 'buyer';
+          for (const to of ['seller_solicitor', 'estate_agent'] as const) {
+            const detail = { to, milestone: 'withdrawn', title: 'Our client is not proceeding', subject: `${property}: our client is not proceeding`, body: `We write to let you know that our ${ours} client has instructed us that they are not proceeding with the ${ours === 'seller' ? 'sale' : 'purchase'} of ${property}. Please treat the transaction as withdrawn${ours === 'buyer' ? ' and return any documents we sent on your side' : ''}.`, triggeredByEventId: e.id };
+            try {
+              if (!(await this.proposeUnless(tenantId, matterId, subflows, 'counterparty_update', 'withdrawn', `cp:withdrawn:${to}`, detail, `UPDATE TO ${to === 'seller_solicitor' ? "THE OTHER SIDE'S SOLICITOR" : 'THE ESTATE AGENT'}\n\nWhat: our client is not proceeding\n\n${detail.body}`))) await this.perform(tenantId, matterId, 'counterparty_update', detail);
+            } catch (err) { this.ports.log('withdrawal notice could not be sent', err); }
+          }
         }
         // A linked sale or purchase falling through: the other file is told at once (exchange.md 8.3).
         if (e.type === 'matter_abandoned' && state.relatedMatter) {

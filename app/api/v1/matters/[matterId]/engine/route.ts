@@ -80,6 +80,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       }
       else if (input.type === 'unlink_related_matter') return await svc.unlinkChain(user.tenantId, matterId, user.userId, input.reason);
       else if (input.type === 'chase_now') return await svc.chaseNow(user.tenantId, matterId, input.waitKey, input.subject ?? null, user.userId, user.displayName ?? user.email);
+      else if (input.type === 'draft_notice_to_complete') {
+        const drafted = await svc.draftNoticeToComplete(user.tenantId, matterId);
+        return { state: await svc.getState(user.tenantId, matterId), events: [], warning: 'Notice to complete drafted under Documents: check it, sign it and serve it, then record it as served.', ...drafted } as never;
+      }
       else if (input.type === 'draft_completion_statement') {
         const drafted = await svc.draftCompletionStatement(user.tenantId, matterId);
         await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_DRAFT', actionStatus: 'SUCCESS', payload: { kind: 'completion_statement', documentId: (drafted as unknown as { documentId: string }).documentId } }).catch(() => {});

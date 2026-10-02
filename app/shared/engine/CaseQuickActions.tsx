@@ -31,7 +31,7 @@ const CSS = `
 export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matterId: string; onChanged?: () => void }) {
   const [state, setState] = useState<EngineState | null>(null);
   const [open, setOpen] = useState<'issue' | 'manual' | 'person' | null>(null);
-  const [what, setWhat] = useState<'died' | 'capacity_lost' | 'bankrupt' | 'sar' | 'daml_granted' | 'daml_refused'>('died');
+  const [what, setWhat] = useState<'died' | 'capacity_lost' | 'bankrupt' | 'sar' | 'daml_granted' | 'daml_refused' | 'damaged' | 'not_vacant'>('died');
   const [who, setWho] = useState('');
   const [lpa, setLpa] = useState(false);
   const [reason, setReason] = useState('');
@@ -77,6 +77,8 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
             <option value="died">Someone Has Died</option>
             <option value="capacity_lost">Someone Has Lost Capacity</option>
             <option value="bankrupt">Someone Is Bankrupt</option>
+            <option value="damaged">The Property Was Damaged</option>
+            <option value="not_vacant">Vacant Possession Not Given</option>
             {!holdPending && <option value="sar">Report Made To The NCA (Hold)</option>}
             {holdPending && <option value="daml_granted">NCA Consent Received</option>}
             {holdPending && <option value="daml_refused">NCA Consent Refused</option>}
@@ -89,13 +91,13 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
             </>
           )}
           {what === 'sar' && <span className="warn"><AlertTriangle size={16} /><span>No money moves and nothing exchanges for seven working days, or until consent. Say nothing to the client about it.</span></span>}
-          <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Note" aria-label="Note" />
+          <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={what === 'damaged' || what === 'not_vacant' ? 'What happened' : 'Note'} aria-label="Note" />
           {err && <span className="bad">{err}</span>}
           <span className="f">
             <button type="button" className="ep-btn" style={{ margin: 0 }} onClick={() => setOpen(null)}>Cancel</button>
-            <BusyButton disabled={(what === 'died' || what === 'capacity_lost' || what === 'bankrupt') && !who.trim()} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
+            <BusyButton disabled={((what === 'died' || what === 'capacity_lost' || what === 'bankrupt') && !who.trim()) || ((what === 'damaged' || what === 'not_vacant') && !reason.trim())} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
               setErr(null);
-              const body = what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };
+              const body = what === 'damaged' || what === 'not_vacant' ? { type: 'record_property_event', event: what, detail: reason.trim() } : what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };
               try { await cmd(body); setTimeout(() => setOpen(null), 900); return true; }
               catch (e: unknown) { setErr(e instanceof Error ? e.message : 'It did not save.'); return false; }
             }}>Record</BusyButton>

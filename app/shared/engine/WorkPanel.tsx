@@ -807,6 +807,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     if (key.startsWith('shortfall_request:')) { const acc = firmAccounts(); return acc.length ? act('completion', 'funds_requested', 'Ask The Client', { fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: Number(key.slice('shortfall_request:'.length)) }, { primary: true }) : <span className="ep-note">Verify our client account under Bank Details first.</span>; }
     if (key.startsWith('charge_statement:')) return act('redemption', 'charge_statement_received', 'Record Figure', { chargeId: key.slice('charge_statement:'.length) }, { primary: true });
     if (key.startsWith('charge_redeemed:')) return act('redemption', 'charge_redeemed', 'Record Paid Off', { chargeId: key.slice('charge_redeemed:'.length), amountPennies: (s.otherCharges ?? []).find((c) => c.id === key.slice('charge_redeemed:'.length))?.redemptionPennies ?? undefined }, { primary: true });
+    if (key === 'deposit_in') return act('exchange', 'deposit_received', 'Record Received', {}, { primary: true });
     if (key === 'final_bill') return act('registration', 'final_bill_delivered', 'Record Sent', {}, { primary: true });
     if (key === 'completion_payment_sent') return act('completion', 'completion_payment_sent', 'Record Sent', {}, { primary: true });
     if (key === 'contributions') return <ContributionsForm names={s.partyNames ?? []} busy={busy} onSubmit={(body) => cmd(body)} />;
@@ -1256,7 +1257,12 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         ...(s.requireExchangeAuthority ? [{ label: "Client's authority to exchange", status: s.clientDecisions?.exchange_authority?.decision === 'authorised' ? 'done' : 'not_started',
           action: live && s.clientDecisions?.exchange_authority?.decision !== 'authorised' ? authorityAction() : undefined }] : []),
         { label: 'Exchange', status: exchanged ? 'done' : s.exchange.conditionsMet ? 'approved' : 'awaiting', detail: exchanged ? undefined : s.exchange.conditionsMet ? 'everything is in place; exchange when the client instructs' : 'waits on every item above and the client\'s go-ahead',
-          action: s.stage === 'pre_exchange' && s.exchange.conditionsMet && !exchanged ? act('exchange', 'contracts_exchanged', 'Contracts Exchanged', {}, { primary: true }) : undefined },
+          action: s.stage === 'pre_exchange' && s.exchange.conditionsMet && !exchanged ? <>
+            {act('exchange', 'contracts_exchanged', 'Contracts Exchanged', {}, { primary: true })}
+            {s.exchange.release && Date.parse(s.exchange.release.until) > Date.now()
+              ? act('exchange', 'formula_c_release_lapsed', `Release Until ${new Date(s.exchange.release.until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} Lapsed`)
+              : act('exchange', 'formula_c_release_given', 'Give Formula C Release')}
+          </> : undefined },
         ...(exchanged || s.stage === 'pre_exchange' ? [{ label: 'Completion statement', status: s.completion.statementGeneratedAt ? 'done' : 'not_started',
           action: completed || s.completion.statementGeneratedAt ? undefined : <>
             <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'draft_completion_statement' })}>Draft</button>
@@ -1343,6 +1349,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         {p.fundsFrom.includes('incoming_owner') && (s.considerationPennies ?? 0) > 0 && !s.completion.fundsReceivedAt && act('completion', 'funds_received', 'Consideration Received', { fromRole: 'incoming_owner' }, { primary: true })}
         {buyer && !paidTo('seller_solicitor', 'completion_monies') && authorise('seller_solicitor', 'completion_monies', 'Authorise completion payment')}
         {act('completion', 'completion_confirmed', 'Completion Confirmed', {}, { primary: true })}
+        {s.exchange.completionDate && s.exchange.completionDate < new Date().toISOString().slice(0, 10) && !s.noticeToComplete && <BusyButton className="ep-btn" busyLabel="Drafting…" doneLabel="Drafted" disabled={busy} onClick={() => cmd({ type: 'draft_notice_to_complete' })}>Draft Notice To Complete</BusyButton>}
       </> : seller && completed && !paidTo('client') ? authorise('client', 'other', 'Authorise balance to the client') : null });
   }
 

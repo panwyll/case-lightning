@@ -242,6 +242,7 @@ export interface EngineState {
   tenantId?: string;
   enrolled: boolean;
   authorityByParty?: Record<string, string>;
+  noticeToComplete?: { servedBy: 'buyer' | 'seller'; servedAt: string; expiresAt: string } | null;
   coOwnership?: { model: string; contributions: Array<{ party: string; pennies: number }>; ratioPercent: Record<string, number> | null; shares: Array<{ party: string; shareBp: number }>; recordedAt: string } | null;
   amlHold?: { since: string; noticeEnds: string; status: 'awaiting' | 'granted' | 'refused'; moratoriumEnds: string | null } | null;
   partyEvents?: Array<{ event: string; party: string; at: string; hasAttorney: boolean | null }>;
@@ -279,7 +280,7 @@ export interface EngineState {
   title: { status: string; facts: { titleNumber?: string; tenure?: string } | null; documentId?: string | null; lease?: { unexpiredYears?: number | null; groundRentPenniesPa?: number | null; demise?: string | null } | null; leaseDocumentId?: string | null };
   reportOnTitle: { status: string; draftId: string | null; approvedBy: string | null; sentAt: string | null; interim?: boolean; interimSentAt?: string | null };
   deposit: { received: boolean; at: string | null };
-  exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
+  exchange: { release?: { until: string; givenTo: string; at: string } | null; conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
   sellerForms?: { receivedAt: string | null; forms: string[]; documentId: string | null; facts: unknown };
   relatedMatter?: { matterId: string; relation: 'sale' | 'purchase'; linkedAt: string } | null;
   manualSteps?: Record<string, { at: string; note: string; skipReason?: string | null }>;
