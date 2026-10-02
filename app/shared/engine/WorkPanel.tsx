@@ -849,6 +849,8 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       case 'redemption_payment': return authorise('lender', 'other', 'Authorise', s.redemption?.redemptionPennies);
       case 'completion': return act('completion', 'completion_confirmed', 'Confirm Completion', {}, { primary: true });
       case 'balance_to_client': return authorise('client', 'other', 'Authorise');
+      case 'agent_commission': return authorise('estate_agent', 'other', 'Authorise');
+      case 'sdlt_payment': return authorise('hmrc', 'other', 'Authorise');
       case 'mortgage_redeemed': return act('redemption', 'mortgage_redeemed', 'Record Redeemed', {}, { primary: true });
       case 'sdlt': return <>{act('registration', 'sdlt_submitted', 'Record Filed', {}, { primary: true })}{act('registration', 'sdlt_not_required', 'No Return Due')}</>;
       case 'ap1': return act('registration', 'ap1_submitted', 'Record Lodged', {}, { primary: true });
@@ -929,7 +931,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
           const r = await api<{ document: CaseDocument }>(`/matters/${matterId}/documents/upload-scan`, { method: 'POST', body: JSON.stringify({ fileName: file.name, mimeType: file.type || 'application/pdf', base64, docType: 'SIGNED_DEED' }) });
           return r.document;
         } : undefined}
-        contract={{ ...contracts[sheet.type], fields: contracts[sheet.type].fields?.filter((f) => !(f as { shape?: string }).shape || (s.shapes ?? []).includes((f as { shape?: string }).shape!)) }}
+        contract={(() => { const c = contracts[sheet.type]; const fits = (x: { shape?: string; lender?: boolean }) => (!x.shape || (s.shapes ?? []).includes(x.shape)) && (!x.lender || s.hasLender); const checklist = c.checklist?.filter((x) => fits(x as { shape?: string })); return { ...c, fields: c.fields?.filter((x) => fits(x as { shape?: string })), checklist: checklist?.length ? checklist : undefined }; })()}
         initial={sheet.extra}
         docs={docs}
         context={sheetContext}
@@ -1493,7 +1495,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
         ))}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
           <select className="ep-input" value={bd.payeeKind} onChange={(e) => setBd({ ...bd, payeeKind: e.target.value })}>
-            {([['seller_solicitor', "Seller's Solicitor"], ['firm_client_account', 'Our Client Account'], ['client', 'Client'], ['lender', 'Lender'], ['estate_agent', 'Estate Agent'], ['other', 'Other']] as const).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            {([['seller_solicitor', "Seller's Solicitor"], ['firm_client_account', 'Our Client Account'], ['client', 'Client'], ['lender', 'Lender'], ['estate_agent', 'Estate Agent'], ['hmrc', 'HMRC (Stamp Duty)'], ['other', 'Other']] as const).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
           <input className="ep-input" placeholder="Who (Firm / Contact)" value={bd.payeeRef} onChange={(e) => setBd({ ...bd, payeeRef: e.target.value })} style={{ width: 150 }} />
           <input className="ep-input" placeholder="Account Name" value={bd.accountName} onChange={(e) => setBd({ ...bd, accountName: e.target.value })} style={{ width: 160 }} />

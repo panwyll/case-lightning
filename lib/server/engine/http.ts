@@ -150,7 +150,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('notice_to_complete_served'), servedBy: z.enum(['buyer', 'seller']), servedAt: z.string().datetime().nullish(), expiresAt: isoDate, documentId: z.string().uuid() }),
   z.object({ type: z.literal('mortgage_offer_withdrawn'), reason: z.string().min(1).max(500), lender: z.string().max(200).nullish() }),
   z.object({ type: z.literal('withdraw_enquiry'), enquiryId: z.string().min(1).max(60), reason: z.string().min(1).max(500) }),
-  z.object({ type: z.literal('hmlr_requisition_received'), documentId: z.string().uuid(), reference: z.string().max(100).nullish(), deadline: isoDate.nullish() }),
+  z.object({ type: z.literal('hmlr_requisition_received'), documentId: z.string().uuid(), reference: z.string().max(100).nullish(), deadline: isoDate.nullish(), text: z.string().max(2000).nullish() }),
   z.object({ type: z.literal('record_correction'), aboutEventId: z.string().uuid(), reason: z.string().min(1).max(2000) }),
   z.object({ type: z.literal('record_handler_change'), fromUserId: z.string().uuid().nullish(), toUserId: z.string().uuid(), reason: z.string().max(500).nullish() }),
   // issues

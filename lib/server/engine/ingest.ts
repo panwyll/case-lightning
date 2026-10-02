@@ -37,6 +37,7 @@ export type IngestAction =
   | { kind: 'contract' }
   | { kind: 'survey' }
   | { kind: 'specialist_report'; forIssueId: string | null }
+  | { kind: 'hmlr_requisition' }
   | { kind: 'skip'; reason: string };
 
 /** Pure: decide what to do with a classified document given the matter's projected state. */
@@ -86,6 +87,9 @@ export function routeClassification(state: MatterState, c: DocumentClassificatio
     case 'survey':
       if (state.exchange.exchangedAt) return { kind: 'skip', reason: 'contracts exchanged — a survey now is manual handling' };
       return { kind: 'survey' };
+    case 'hmlr_requisition':
+      if (!state.postCompletion.ap1SubmittedAt || state.postCompletion.ap1ConfirmedAt) return { kind: 'skip', reason: 'a Land Registry requisition arrived but no application is pending' };
+      return { kind: 'hmlr_requisition' };
     case 'specialist_report': {
       if (state.survey.status === 'not_started') return { kind: 'skip', reason: 'a specialist report arrived but no survey is on file' };
       const open = Object.values(state.issues).filter((i) => i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating'));
@@ -177,6 +181,8 @@ export async function runAction(svc: EngineService, tenantId: string, matterId: 
       return svc.surveyReceived(tenantId, matterId, documentId);
     case 'specialist_report':
       return svc.specialistReportReceived(tenantId, matterId, documentId, action.forIssueId);
+    case 'hmlr_requisition':
+      return svc.hmlrRequisitionReceived(tenantId, matterId, documentId);
     case 'skip':
       return null;
   }

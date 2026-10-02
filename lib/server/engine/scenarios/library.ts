@@ -500,7 +500,12 @@ export const SCENARIOS: Scenario[] = [
       }),
       step('title_decision', 'The charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Charge stays; lender to consent.'); }, { decision: 'title' }),
       step('consent_request', 'Lender\'s consent requested', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.lenderConsent.status === 'not_started') await c.run({ type: 'request_lender_consent', lender: 'Big Bank plc' }); }),
-      step('consent', 'Lender\'s consent received', async (c) => { await c.run({ type: 'lender_consent_received', conditions: 'Outgoing borrower released on completion; deed of substituted security.' }); }),
+      step('consent', 'Lender\'s consent received', async (c) => {
+        await c.run({ type: 'lender_consent_received', conditions: 'Outgoing borrower released on completion; deed of substituted security.' });
+        // Each condition is met with its evidence: the deed of release and the substituted security, signed for completion.
+        const s = await c.svc.getState(c.tenantId, c.matterId);
+        for (const i of Object.values(s.issues).filter((x) => x.kind === 'third_party_consent' && x.status === 'open')) await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'other', note: 'Lender\'s deed of release and the deed of substituted security signed and held for completion.' });
+      }),
       step('basis', 'The clients decide how they hold', async (c) => { await c.run({ type: 'client_decision_recorded', subject: 'ownership_basis', decision: 'tenants_in_common_unequal', note: '70/30 reflecting contributions; advised separately.' }); }),
       step('transfer_deed', 'Transfer deed executed', async (c) => { await c.run({ type: 'transfer_deed_executed', parties: ['Sandbox Owner A', 'Sandbox Owner B'] }); }),
       step('trust_deed', 'Declaration of trust executed', async (c) => { await c.run({ type: 'deed_of_trust_executed', parties: ['Sandbox Owner A', 'Sandbox Owner B'], shares: '70/30' }); }),

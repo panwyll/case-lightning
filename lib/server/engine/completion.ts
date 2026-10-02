@@ -23,6 +23,10 @@ export interface Field {
 export interface ChecklistItem {
   key: string;
   label: string;
+  /** Asked only on a case with this shape (shapes.ts). */
+  shape?: string;
+  /** Asked only where there is a lender. */
+  lender?: boolean;
 }
 export interface CompletionContract {
   /** The button label, in Title Case. */
@@ -76,7 +80,7 @@ export const COMPLETION_CONTRACTS: Partial<Record<CommandType, CompletionContrac
   formula_c_release_given: { label: 'Formula C Release', fields: [{ key: 'until', label: 'Released until (today)', kind: 'datetime', required: true }, text('givenTo', 'Given to', true, 'Who at the other firm')], effect: 'Until then we must exchange if called: the price, the funding and the client\'s authority are locked.' },
   formula_c_release_lapsed: { label: 'Release Lapsed', fields: [text('reason', 'What happened')], effect: 'No contract: exchange is planned again.' },
   final_bill_delivered: { label: 'Final Bill Sent', documentLabel: 'The bill', fields: [money('amountPennies', 'Bill total (with VAT and disbursements)'), money('balanceLeftPennies', 'Left on the client account after everything is paid', false)], effect: 'Fees may be taken from client money once the bill is delivered; the file can close.' },
-  register_checked: { label: 'Register Checked', documentRoles: ['TITLE_REGISTER', 'OFFICIAL_COPY', 'title'], documentLabel: 'The new official copy', fields: [flag('wrong', 'Something on it is wrong (a name, a charge missing or out of order, a seller\'s charge left, no Form A for tenants in common)'), text('note', 'What is wrong', false), flag('lenderTold', 'Registration confirmed to the lender, if it asks')], effect: 'The file can close once the register says what it should; a mistake becomes an issue to put right.' },
+  register_checked: { label: 'Register Checked', documentRoles: ['TITLE_REGISTER', 'OFFICIAL_COPY', 'title'], documentLabel: 'The new official copy', fields: [flag('wrong', 'Something on it is wrong (a name, a charge missing or out of order, a seller\'s charge left, no Form A for tenants in common)'), text('note', 'What is wrong', false), flag('lenderTold', 'Registration confirmed to the lender, if it asks')], checklist: [{ key: 'second_charge', label: 'Both charges registered, the first lender\'s first and the second charge (Help to Buy, equity loan) behind it', shape: 'second_charge' }], effect: 'The file can close once the register says what it should; a mistake becomes an issue to put right.' },
   ap1_cancelled: { label: 'Application Cancelled', documentLabel: "HM Land Registry's notice", fields: [text('reason', 'Why HM Land Registry cancelled it')], effect: 'Priority is lost: a fresh priority search and a new application, and the lender told.' },
   requisition_extended: { label: 'More Time Agreed', documentLabel: "HM Land Registry's agreement", fields: [date('deadline', 'New reply date'), text('note', 'What is awaited and what HM Land Registry agreed')], effect: 'The new date replaces the old one; the timer watches it.' },
   seller_discharge_received: { label: "Seller's DS1 Received", documentRoles: ['DS1', 'EDS1', 'DISCHARGE', 'discharge'], documentLabel: 'The DS1 or confirmation of the e-DS1', fields: [text('reference', 'Reference', false)], effect: "The seller's charge comes off; their solicitor's undertaking is done." },
@@ -102,7 +106,7 @@ export const COMPLETION_CONTRACTS: Partial<Record<CommandType, CompletionContrac
   sdlt_submitted: { label: 'SDLT Return Filed', documentRoles: ['SDLT5', 'SDLT', 'sdlt'], documentLabel: 'SDLT5 certificate', documentRequired: true, fields: [text('reference', 'UTRN', true, '11 characters')], effect: 'The return is filed and the certificate is on file for HM Land Registry.' },
   ap1_submitted: { label: 'AP1 Lodged', documentLabel: 'Application receipt', fields: [text('reference', 'HM Land Registry reference', true)], effect: 'Registration is applied for within the priority period.' },
   ap1_confirmed: { label: 'Registration Confirmed', documentRoles: ['title', 'TITLE', 'OFFICIAL_COPY'], documentLabel: 'Completed registration or updated official copy', documentRequired: true, fields: [text('titleNumber', 'Title number', false)], effect: 'The client is the registered proprietor.' },
-  notice_of_assignment_served: { label: 'Notice of Assignment Served', documentRoles: ['NOTICE_OF_ASSIGNMENT', 'notice'], documentLabel: 'The notice as served', fields: [text('servedOn', 'Served on', true), text('reference', 'Reference', false)], effect: 'The landlord or managing agent is told of the new owner.' },
+  notice_of_assignment_served: { label: 'Notice of Assignment Served', documentRoles: ['NOTICE_OF_ASSIGNMENT', 'notice'], documentLabel: 'The notice as served', fields: [text('servedOn', 'Served on', true), text('reference', 'Reference', false)], checklist: [{ key: 'notice_of_charge', label: "Notice of the lender's charge served with it", lender: true }], effect: 'The landlord or managing agent is told of the new owner (and of the lender\'s charge).' },
   client_decision_recorded: { label: 'Record Client Decision', documentLabel: 'The email or signed instruction, if there is one', party: { label: 'Which client confirmed, how, and when' }, effect: "The client's own decision, recorded in their words." },
 };
 
@@ -115,7 +119,7 @@ export class CompletionError extends Error {
 }
 
 /** Refuse a contracted command that lacks what its contract asks for. Lists everything missing. */
-export function assertCompletion(type: string, cmd: Record<string, unknown>): void {
+export function assertCompletion(type: string, cmd: Record<string, unknown>, shapes: readonly string[] = [], hasLender = false): void {
   const c = COMPLETION_CONTRACTS[type as CommandType];
   if (!c) return;
   const completion = (cmd.completion ?? {}) as Completion;
@@ -123,12 +127,12 @@ export function assertCompletion(type: string, cmd: Record<string, unknown>): vo
   const docId = (cmd.documentId as string | undefined) ?? completion.documentId ?? null;
   if (c.documentRequired && !docId) missing.push((c.documentLabel ?? 'the document').replace(/^[A-Z]/, (ch) => ch.toLowerCase()));
   for (const f of c.fields ?? []) {
-    if (!f.required) continue;
+    if (!f.required || (f.shape && !shapes.includes(f.shape))) continue;
     const v = cmd[f.key];
     const empty = v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0);
     if (empty) missing.push(f.label.toLowerCase());
   }
-  for (const item of c.checklist ?? []) if (!completion.checklist?.[item.key]) missing.push(`confirm: ${item.label.toLowerCase()}`);
+  for (const item of c.checklist ?? []) if ((!item.shape || shapes.includes(item.shape)) && (!item.lender || hasLender) && !completion.checklist?.[item.key]) missing.push(`confirm: ${item.label.toLowerCase()}`);
   if (c.party && (!completion.party?.who?.trim() || !completion.party?.channel?.trim())) missing.push('who confirmed and how');
   if (missing.length) throw new CompletionError(`${c.label} needs ${missing.join(', ')}.`);
 }

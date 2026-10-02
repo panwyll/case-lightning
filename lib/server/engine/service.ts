@@ -587,6 +587,14 @@ export class EngineService {
     return this.run(tenantId, matterId, { type: 'specialist_report_received', actor: EXTERNAL, documentId, facts: { ...facts, surveyType: 'specialist' }, forIssueId, extractor: this.ports.extractor.name });
   }
 
+  /** HM Land Registry's requisition arrived: the decision, with what it asks for named from its text (completion.md 6.20). */
+  async hmlrRequisitionReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
+    const doc = await this.requireDoc(tenantId, matterId, documentId);
+    const f = doc.extractedFacts as { content?: string; text?: string } | null;
+    const text = `${doc.fileName ?? ''} ${f?.content ?? f?.text ?? ''}`.slice(0, 2000);
+    return this.run(tenantId, matterId, { type: 'hmlr_requisition_received', actor: EXTERNAL, documentId, text });
+  }
+
   // ───────────── leasehold ─────────────
 
   /** The management pack (LPE1) arrived: read into the review table, then always a decision citing it (a failed read still raises the decision, with nothing filled in). */

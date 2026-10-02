@@ -4,6 +4,8 @@
  * emails, drafts); what is left is here, and on the Tasks tab, each with the form that records it.
  * Things owed by the client or a third party are waits (chased, with a Confirm on the tab), not these.
  */
+import { chargeableConsideration } from './sdlt-facts';
+import { computeSdlt } from './sdlt';
 import { k16Stale } from './machine';
 import { certificateOfTitleUnmet } from './machine';
 import { stageBlockers } from './machine';
@@ -125,7 +127,7 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
     add({ key: 'exchange', lane: 'exchange', title: 'Exchange contracts' });
 
   // ── Exchange to completion ──
-  if (exchanged && !s.completion.statementGeneratedAt && !completed)
+  if ((exchanged || ((remo || toe) && s.stage === 'pre_completion')) && !s.completion.statementGeneratedAt && !completed)
     add({ key: 'completion_statement', lane: 'exchange', title: 'Check the completion statement and send it to the client' });
   // The certificate of title, only once it can be given unqualified (the checks below done, the client's money in), due the lender's notice before completion.
   if (s.hasLender && (buyer || remo) && isResolved(s.mortgage.status) && !s.deeds.certificateOfTitleAt && !completed && (exchanged || remo) && certificateOfTitleUnmet(s, now).length === 0) {
@@ -191,9 +193,14 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
 
   // ── After completion ──
   if (seller && completed && !paid('client')) add({ key: 'balance_to_client', lane: 'completion', title: 'Authorise the balance to the client' });
+  // The agent's invoice came in with its bank details: their commission is paid from the proceeds, against the client's authority (completion.md 4.12).
+  if (seller && completed && Object.values(s.bankDetails).some((b) => b.payeeKind === 'estate_agent') && !paid('estate_agent')) add({ key: 'agent_commission', lane: 'completion', title: "Pay the estate agent's commission (check the invoice against the agreed fee)" });
   if (completed && (seller || remo) && s.redemption.status === 'received') add({ key: 'mortgage_redeemed', lane: 'redemption', title: 'Record the mortgage as redeemed' });
   if (completed && p.registration === 'ap1' && (buyer || toe) && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt)
     add({ key: 'sdlt', lane: 'registration', title: s.sdltBasis?.wales ? 'File the LTT return (Welsh Revenue Authority)' : 'File the SDLT return', dueDate: day(new Date(Date.parse(s.completion.confirmedAt!) + (s.sdltBasis?.wales ? 30 : 14) * 86_400_000)) });
+  // The tax goes with the return (completion.md 6.3): paid to HMRC's account, verified like any other.
+  if (completed && (buyer || toe) && s.postCompletion.sdltSubmittedAt && !s.sdltBasis?.wales && !paid('hmrc') && (() => { const c = chargeableConsideration(s); return !!c && computeSdlt(c, { ...(s.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: s.shapes?.includes('company_buyer') ?? false }).totalPennies > 0; })())
+    add({ key: 'sdlt_payment', lane: 'registration', title: 'Pay the Stamp Duty to HMRC' });
   const sdltDone = !(buyer || toe) || !!s.postCompletion.sdltSubmittedAt || !!s.sdltNotRequiredAt;
   if (completed && p.registration === 'ap1' && sdltDone && !s.postCompletion.ap1SubmittedAt)
     add({ key: 'ap1', lane: 'registration', title: 'Lodge the AP1 at HM Land Registry', dueDate: s.preCompletion.prioritySearchExpiresAt ?? null });

@@ -200,7 +200,7 @@ export const DUE_CHIP: Record<string, string> = {
   funds_cleared: 'Record Receipt', refund: 'Return Money', shortfall_request: 'Request Funds',
   deposit_in: 'Record Receipt', final_bill: 'Send Client Documents', completion_payment_sent: 'Record Outcome', contributions: 'Record Outcome', register_check: 'Record Outcome', requisition_extend: 'Record Outcome', sdlt_facts: 'Record Outcome', cgt_facts: 'Record Outcome', longstop_date: 'Record Outcome', charge_statement: 'Record Receipt', charge_redeemed: 'Record Outcome', undertaking: "Send Buyer's Solicitor Documents", completion_information: 'Record Receipt', undertaking_discharge: "Send Buyer's Solicitor Documents",
   certificate_of_title: 'Send Lender Documents', bankruptcy_search: 'Run Search', priority_search: 'Run Search', funds_request: 'Request Funds', advance_request: 'Request Funds', completion_monies: 'Record Receipt', consideration: 'Record Receipt',
-  completion_payment: 'Authorise Payment', redemption_payment: 'Authorise Payment', completion: 'Confirm Completion', balance_to_client: 'Authorise Payment', mortgage_redeemed: 'Record Outcome',
+  completion_payment: 'Authorise Payment', redemption_payment: 'Authorise Payment', completion: 'Confirm Completion', balance_to_client: 'Authorise Payment', agent_commission: 'Authorise Payment', sdlt_payment: 'Authorise Payment', mortgage_redeemed: 'Record Outcome',
   sdlt: 'File Return', ap1: 'Submit Application', notice_of_assignment: 'Send Landlord Documents', close_file: 'Close File',
 };
 /** "your proof of funds form" → "proof-of-funds form": what an acknowledgement is for, without the letter's own pronoun. */

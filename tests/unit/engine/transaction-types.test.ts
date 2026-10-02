@@ -321,6 +321,10 @@ test('transfer of equity end to end: every party identified, lender\'s consent, 
   assert.ok(h.ports.chaser.chases.some((c) => c.template === 'chase_lender_consent'));
   await h.svc.run(TENANT, MATTER, { type: 'lender_consent_received', actor: USER, conditions: 'Outgoing borrower released on completion; deed of substituted security' });
   s = await h.svc.getState(TENANT, MATTER);
+  const conditions = Object.values(s.issues).filter((i) => i.kind === 'third_party_consent' && i.status === 'open');
+  assert.deepEqual(conditions.map((i) => i.title), ["Lender's condition: Outgoing borrower released on completion", "Lender's condition: deed of substituted security"], 'each condition is its own task');
+  for (const i of conditions) await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: i.id, resolution: 'other', note: 'Signed and held' });
+  s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.lenderConsent.status, 'received');
   assert.equal(s.stage, 'pre_contract', 'the clients\' decision on co-ownership still holds the stage');
 

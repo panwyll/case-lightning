@@ -204,7 +204,7 @@ export interface DocumentClassifier {
 }
 
 export interface DocumentClassification {
-  role: 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'title_plan' | 'supporting_document' | 'id_check' | 'contract' | 'survey' | 'specialist_report' | 'management_pack' | 'lease' | 'property_forms' | 'other';
+  role: 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'title_plan' | 'supporting_document' | 'id_check' | 'contract' | 'survey' | 'specialist_report' | 'management_pack' | 'lease' | 'property_forms' | 'hmlr_requisition' | 'other';
   searchType: SearchType | null;
   enquiryReferences: string[];
   titleNumber: string | null;

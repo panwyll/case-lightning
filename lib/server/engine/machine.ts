@@ -178,7 +178,7 @@ type CommandBody =
   | { type: 'notice_to_complete_served'; actor: Actor; servedBy: 'buyer' | 'seller'; servedAt?: string | null; expiresAt: string; documentId: string }
   | { type: 'mortgage_offer_withdrawn'; actor: Actor; reason: string; lender?: string | null }
   | { type: 'withdraw_enquiry'; actor: Actor; enquiryId: string; reason: string }
-  | { type: 'hmlr_requisition_received'; actor: Actor; documentId: string; reference?: string | null; deadline?: string | null; summary?: SummaryOverride | null }
+  | { type: 'hmlr_requisition_received'; actor: Actor; documentId: string; reference?: string | null; deadline?: string | null; summary?: SummaryOverride | null; text?: string | null }
   | { type: 'record_correction'; actor: Actor; aboutEventId: string; reason: string }
   | { type: 'record_handler_change'; actor: Actor; fromUserId: string | null; toUserId: string; reason?: string | null }
   | { type: 'raise_deadline_escalation'; kind: DeadlineKind; dueDate: string; subject: string; summary: string; sourceDocumentId: string }
@@ -905,7 +905,7 @@ export function decide(state: MatterState, cmd: Command, ctx: DecideContext): De
   // so automation, ingestion and scripts are not asked for a sheet they cannot fill.
   if (cmd.completion !== undefined) {
     try {
-      assertCompletion(cmd.type, cmd as unknown as Record<string, unknown>);
+      assertCompletion(cmd.type, cmd as unknown as Record<string, unknown>, state.shapes ?? [], state.hasLender);
     } catch (err) {
       if (err instanceof CompletionError) reject(err.message, 400);
       throw err;
@@ -1434,7 +1434,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     // ── Completion ──
     case 'completion_statement_generated': {
       requireEnrolled(s);
-      requireStage(s, 'exchanged', 'Generating the completion statement');
+      if (s.stage !== 'exchanged' && !(s.stage === 'pre_completion' && (profile(s).side === 'owner' || s.completion.statementGeneratedAt))) requireStage(s, 'exchanged', 'Generating the completion statement');
       const st: NewEvent[] = [{ type: 'completion_statement_generated', actor: cmd.actor, payload: { documentId: cmd.documentId ?? null, balancePennies: cmd.balancePennies ?? null }, sourceDocumentId: cmd.documentId ?? null }];
       // A statement re-issued with a different balance after the client was asked for money (completion.md 2.3): tell them the new figure.
       const was = moneyOf(s).statementBalancePennies;
@@ -1538,7 +1538,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           if (!cur || cur.id !== auth.bankDetailsId || cur.status !== 'verified') reject("HARD STOP: the lender's bank details the payment was authorised against are no longer the current verified record.", 423);
         }
         if (p.side === 'seller' && anythingCharged(s) && !s.undertaking) reject("Give the buyer's solicitor our undertaking to redeem the charges (the reply to their completion information) before completing.");
-        return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }, ...lateCompletion(s, cmd.completedAt ?? null, ctx.now)];
+        // A remortgage or transfer that releases money: the surplus goes to the client and the file cannot close until it has (completion.md 5.3).
+        const surplus = p.side === 'owner' ? moneyOf(s).statementBalancePennies ?? 0 : 0;
+        const toClient: NewEvent[] = surplus > 0 ? [{ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${moneyOf(s).refunds.length + 1}`, toRole: 'client', to: null, amountPennies: surplus, reason: 'The surplus released by the remortgage, per the statement of account' } }] : [];
+        return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }, ...lateCompletion(s, cmd.completedAt ?? null, ctx.now), ...toClient];
       }
       // A purchase completes on paper first: the transfer deed, and with a lender the mortgage deed and the certificate of title.
       if (!s.deeds.transferDeedAt) reject('The transfer deed (TR1) has not been executed.');
@@ -1572,7 +1575,15 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const completed: NewEvent[] = [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }, ...lateCompletion(s, cmd.completedAt ?? null, ctx.now)];
       // Leasehold: what the landlord requires on assignment (deed of covenant, certificate of compliance for a restriction) is owed after completion and before the AP1 can go in clean.
       const consents = s.managementPack.facts?.consentsRequired?.trim();
-      if (isLeasehold(s) && consents && !Object.values(s.issues).some((i) => i.kind === 'missing_consent' && i.title.startsWith('After completion:'))) {
+      // Each thing the landlord or management company requires is its own task (completion.md 6.19).
+      const parts = consents ? [
+        /deed of covenant/i.test(consents) && ['After completion: deed of covenant', 'Sign the deed of covenant with the landlord or management company (the buyer covenants to observe the lease) and get it back completed; its fee is on the statement.'],
+        /share|member|stock transfer/i.test(consents) && ['After completion: management company share', "Get the seller's share certificate and a signed stock transfer form at completion; send them to the company secretary for the buyer to be entered in the register of members and a new certificate issued."],
+        /certificate of compliance|restriction|consent/i.test(consents) && ['After completion: certificate of compliance', 'The register carries a restriction: get the certificate of compliance (or the consent) from the landlord or management company and send it with the AP1, or HM Land Registry will requisition it.'],
+      ].filter((x): x is [string, string] => !!x) : [];
+      if (isLeasehold(s) && parts.length) {
+        for (const [title, detail] of parts) if (!openOf(s, 'missing_consent', title)) completed.push(issueWith(s, issueIds(s, completed)(), 'missing_consent', title, `${detail} (The management pack: "${consents!.slice(0, 200)}".)`, 'none', 'warning'));
+      } else if (isLeasehold(s) && consents && !Object.values(s.issues).some((i) => i.kind === 'missing_consent' && i.title.startsWith('After completion:'))) {
         completed.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'missing_consent', title: `After completion: ${consents}`, detail: 'The management pack says the landlord or management company requires this on assignment. A deed of covenant or share transfer is signed at or after completion; a certificate of compliance is needed with the AP1 where the register carries a restriction, or HM Land Registry will raise a requisition. Pay the fee quoted in the pack.', gate: 'none', stage: 'completed', sourceDocumentId: s.managementPack.documentId, origin: null, party: null, severity: 'warning', causedBy: null } });
       }
       return completed;
@@ -1909,9 +1920,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       if (!s.postCompletion.ap1SubmittedAt) reject('No AP1 has been submitted; a requisition cannot relate to this matter yet.');
       if (s.postCompletion.ap1ConfirmedAt) reject('Registration is already confirmed.');
+      // What it is about, so the right thing is done (completion.md 6.20).
+      const reqText = `${cmd.text ?? ''} ${cmd.summary?.text ?? ''}`;
+      const topic = requisitionTopic(reqText);
       const decision: DecisionSpec = {
         kind: 'requisition',
-        summary: cmd.summary?.text ?? `HM Land Registry has raised a requisition on the AP1${cmd.reference ? ` (${cmd.reference})` : ''}${cmd.deadline ? `, to be answered by ${cmd.deadline.slice(0, 10)}` : ''}. Read the requisition and respond; an unanswered requisition cancels the application and loses priority.`,
+        summary: (topic ? `${topic}\n\n` : '') + (cmd.summary?.text ?? `HM Land Registry has raised a requisition on the AP1${cmd.reference ? ` (${cmd.reference})` : ''}${cmd.deadline ? `, to be answered by ${cmd.deadline.slice(0, 10)}` : ''}. Read the requisition and respond; an unanswered requisition cancels the application and loses priority.`),
         sourceDocumentId: cmd.documentId,
         citations: [{ documentId: cmd.documentId, label: 'HMLR requisition' }],
         options: OPTIONS_FOR.requisition,
@@ -2966,7 +2980,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireType(s, ['transfer_of_equity'], "The lender's consent to a transfer");
       if (!s.hasExistingMortgage) reject('The property is not charged; no consent is needed.');
       if (s.lenderConsent.status === 'received') reject('Consent is already on file.');
-      return [{ type: 'lender_consent_received', actor: cmd.actor, payload: { lender: cmd.lender ?? s.lenderConsent.lender ?? null, conditions: cmd.conditions ?? null } }];
+      const consent: NewEvent[] = [{ type: 'lender_consent_received', actor: cmd.actor, payload: { lender: cmd.lender ?? s.lenderConsent.lender ?? null, conditions: cmd.conditions ?? null } }];
+      // Each condition of the consent is its own task, holding completion (completion.md 5.6).
+      const conds = (cmd.conditions ?? '').split(/\n+|;\s+|(?<=\.)\s+(?=\d+[.)]\s)/).map((c) => c.replace(/^\s*(\d+[.)]|[-•*])\s*/, '').trim()).filter((c) => c.length > 3);
+      const nextId = issueIds(s);
+      for (const c of conds.slice(0, 10)) consent.push(issue(s, nextId(), 'third_party_consent', `Lender's condition: ${c.slice(0, 90)}`, `"${c.slice(0, 400)}". Meet it (and keep the evidence) before completion; the lender relies on it.`, 'completion'));
+      // Someone leaving the mortgage is released only by the lender (completion.md 5.7).
+      if (!conds.some((c) => /releas/i.test(c))) consent.push(issue(s, nextId(), 'third_party_consent', 'Release of the outgoing borrower', "If an owner is leaving, get the lender's deed of release (or its written confirmation that they are released) before completion. If the lender will not release them, tell them in writing that they stay liable for the whole mortgage, and advise them to take their own advice.", 'completion'));
+      return consent;
     }
     case 'transfer_deed_executed': {
       requireEnrolled(s);
@@ -3192,6 +3213,16 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
 // ───────────────────────────── consequences: a fact changed, so what rested on it is done again ─────────────────────────────
 
 /** Issue ids for several issues raised by one command (nextIssueId only sees issues already on the state). */
+/** What an HM Land Registry requisition asks for, in one line (completion.md 6.20). */
+export function requisitionTopic(text: string): string | null {
+  if (/SDLT ?5|land transaction return certificate|stamp duty/i.test(text)) return 'It asks for the SDLT certificate (SDLT5): send the certificate, or the UTRN, with the reply.';
+  if (/\bID ?1\b|ID ?2\b|evidence of identity|conveyancer.s certificate|identity/i.test(text)) return "It asks for evidence of identity: an ID1 / ID2 form or the conveyancer's certificate of identity for the party named.";
+  if (/DS ?1|discharge|e-DS1|END\b/i.test(text)) return "It asks for the discharge of a charge: the DS1 from the seller's solicitor (their undertaking) or the lender's e-DS1.";
+  if (/certificate of compliance|restriction/i.test(text)) return 'It asks for the certificate of compliance with a restriction (or the consent it names).';
+  if (/plan|extent|boundar/i.test(text)) return 'It asks about the plan or the extent: check the transfer plan against the title plan.';
+  return null;
+}
+
 function issueIds(s: MatterState, pending: NewEvent[] = []): () => string {
   // Ids already handed out in this batch (by events not yet folded) are taken too.
   const taken = new Set([...Object.keys(s.issues), ...pending.filter((e) => e.type === 'issue_raised').map((e) => (e.payload as { issueId: string }).issueId)]);

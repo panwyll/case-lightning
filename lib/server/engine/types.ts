@@ -829,7 +829,7 @@ export interface WaitState {
 // ───────────────────────────── Payment verification (addendum 2) ─────────────────────────────
 
 /** Who is being paid (or who pays us). The firm's own client account is a payee too: it is what the client is told to pay into. */
-export const PAYEE_KINDS = ['seller_solicitor', 'firm_client_account', 'client', 'lender', 'estate_agent', 'other'] as const;
+export const PAYEE_KINDS = ['seller_solicitor', 'firm_client_account', 'client', 'lender', 'estate_agent', 'hmrc', 'other'] as const;
 export type PayeeKind = (typeof PAYEE_KINDS)[number];
 
 /** How the details reached us. Deliberately NOT a trust signal — every channel is treated the same. */

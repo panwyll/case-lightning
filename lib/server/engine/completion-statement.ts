@@ -51,6 +51,9 @@ export function buildCompletionStatement(input: { state: MatterState; side: 'buy
   const allowed: string[] = [];
   const completionDate = state.exchange.completionDate ?? null;
 
+  // A remortgage or a transfer of equity (completion.md 5.5): the new advance less what it pays off, the surplus to the client or the top-up from them.
+  if (side === 'owner') return ownerStatement(state, register, record.propertyAddress, record.buyerNames, completionDate ?? state.targetCompletionDate ?? null);
+
   const priceFact = factOf(register, /^contract\.price_pennies$/, /^offer\.purchase_price_pennies$/);
   const pricePennies = priceFact ? Number(priceFact.value) : record.purchasePricePennies ?? state.purchasePricePennies ?? null;
   if (pricePennies == null) toConfirm.push('Purchase price: not on the file');
@@ -81,6 +84,10 @@ export function buildCompletionStatement(input: { state: MatterState; side: 'buy
       else toConfirm.push(`Redemption figure for the charge in favour of ${c.chargee}: not yet received`);
     }
     toConfirm.push("Estate agent's commission: from the agent's invoice");
+    // The deposit we hold as stakeholder is released to the seller on completion (completion.md 4.16): it is part of the balance.
+    const held = textFact(register, /^contract\.deposit_holder$/);
+    const dep = factOf(register, /^contract\.deposit_pennies$/);
+    if (dep && held && /stakeholder/i.test(held.value)) lines.push({ label: 'Of which the deposit we hold as stakeholder, released on completion', pennies: Number(dep.value), sign: 0, factId: dep.id });
   }
 
   // SDLT on the declared basis: an estimate the person filing checks, never the figure itself.
@@ -136,6 +143,40 @@ export function buildCompletionStatement(input: { state: MatterState; side: 'buy
     '',
     ...(toConfirm.length ? ['POINTS FOR THE CONVEYANCER TO CONFIRM', ...toConfirm.map((t) => `- ${t}`), ''] : []),
     'Every figure above is taken from a document on the file or computed from one; the sources are listed below. The balance changes once the items to confirm are filled in.',
+  ].join('\n');
+  return { title, lines, balancePennies, toConfirm, text, allowed };
+}
+
+function ownerStatement(state: MatterState, register: RegisterFact[], address: string | null, owners: string[], completionDate: string | null): CompletionStatement {
+  const lines: StatementLine[] = [];
+  const toConfirm: string[] = [];
+  const allowed: string[] = [];
+  const advance = factOf(register, /^offer\.amount_pennies$/);
+  const advancePennies = advance ? Number(advance.value) : (state.mortgage.facts as { amountPennies?: number } | null)?.amountPennies ?? null;
+  if (state.hasLender) {
+    if (advancePennies != null) lines.push({ label: `New mortgage advance${state.mortgage.facts?.lender ? ` (${state.mortgage.facts.lender})` : ''}`, pennies: advancePennies, sign: 1, factId: advance?.id ?? null });
+    else toConfirm.push('New mortgage advance: amount not on the file');
+  }
+  if (state.considerationPennies) lines.push({ label: 'Paid by the incoming owner', pennies: state.considerationPennies, sign: 1, factId: null });
+  if (state.redemption.status !== 'not_required') {
+    if (state.redemption.redemptionPennies != null) { lines.push({ label: `Less redemption of the existing mortgage${state.redemption.lender ? ` (${state.redemption.lender})` : ''}`, pennies: state.redemption.redemptionPennies, sign: -1, factId: null }); allowed.push(pounds(state.redemption.redemptionPennies)); }
+    else toConfirm.push('Redemption figure: not yet received');
+  }
+  for (const c of state.otherCharges ?? []) {
+    if (c.redemptionPennies != null) lines.push({ label: `Less redemption of charge (${c.chargee})`, pennies: c.redemptionPennies, sign: -1, factId: null });
+    else toConfirm.push(`Redemption figure for the charge in favour of ${c.chargee}: not yet received`);
+  }
+  for (const l of ['Our fees', 'Land Registry fee', 'Lender\'s fees deducted from the advance']) lines.push({ label: `Less ${l.toLowerCase()}`, pennies: null, sign: -1, factId: null });
+  const known = lines.filter((l) => l.pennies != null && l.sign !== 0);
+  const balancePennies = known.length ? known.reduce((acc, l) => acc + l.sign * (l.pennies as number), 0) : null;
+  if (balancePennies != null) allowed.push(pounds(Math.abs(balancePennies)));
+  const title = 'STATEMENT OF ACCOUNT (DRAFT — requires conveyancer approval before sending)';
+  const row = (label: string, value: string) => `${label.padEnd(52)}${value.padStart(16)}`;
+  const text = [
+    title, '', `Property: ${address ?? '[CONVEYANCER TO CONFIRM]'}`, `Owner: ${owners.join(' and ') || '[CONVEYANCER TO CONFIRM]'}`, `Completion date: ${completionDate ?? '[CONVEYANCER TO CONFIRM]'}`, '',
+    ...lines.map((l) => row(l.label, l.pennies == null ? '[TO CONFIRM]' : money(l.pennies, l.sign))), '',
+    row(balancePennies != null && balancePennies < 0 ? 'BALANCE REQUIRED FROM YOU (before the items to confirm)' : 'BALANCE DUE TO YOU (before the items to confirm)', balancePennies == null ? '[TO CONFIRM]' : pounds(balancePennies)), '',
+    ...(toConfirm.length ? ['POINTS FOR THE CONVEYANCER TO CONFIRM', ...toConfirm.map((t) => `- ${t}`), ''] : []),
   ].join('\n');
   return { title, lines, balancePennies, toConfirm, text, allowed };
 }
