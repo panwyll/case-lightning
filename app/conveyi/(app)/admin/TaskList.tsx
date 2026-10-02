@@ -272,7 +272,7 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
           <div className="tl-case" role="button" tabIndex={0} aria-expanded={!folded.has(g.matterId)} onClick={() => toggleFold(g.matterId)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFold(g.matterId); } }}>
             <span className={`chev${folded.has(g.matterId) ? '' : ' open'}`}><ChevronRight size={16} /></span>
             <House band={g.band as never} size={18} />
-            <a href={paths.matter(g.matterId)} onClick={(e) => e.stopPropagation()}><b>{g.address}</b></a>
+            <a href={paths.matter(g.matterId)} data-tour="task-case" onClick={(e) => e.stopPropagation()}><b>{g.address}</b></a>
             {g.ref && <span className="ref">{g.ref}</span>}
             <span className="cnt">{g.items.length}</span>
             {g.clients.length > 0 && <span className="who">{g.clients.join(' & ')}</span>}
@@ -286,7 +286,7 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
             const isOpen = open === key;
             const due = dueIn(i, now);
             return (
-              <div key={key} className={`tl-item${isOpen ? ' open' : ''}`}>
+              <div key={key} className={`tl-item${isOpen ? ' open' : ''}`} data-tour="task-row">
                 <div className="tl-task">
                   <div>
                     <div className="what">{i.kind && <span className={`tl-chip${i.kind.startsWith('proposal') ? ' prop' : ''}${i.severity ? ` sev-${i.severity}` : ''}`} title={i.severity ? `${SEVERITY_LABEL[i.severity]} severity` : undefined}>{i.chip ?? chipLabel(i.kind)}</span>}{sentence(i.what)}</div>
@@ -318,7 +318,7 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
                         catch (e: unknown) { setQuickErr({ id: i.ref.id, text: e instanceof Error ? e.message : 'It was unsuccessful.' }); return false; }
                       }}>{ds.label}</BusyButton>; })()
                     : isDecision || isStep
-                    ? <button type="button" className={`tl-btn${isOpen ? ' on' : isStep ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : stepActionLabel(i.ref.id) ?? 'Open') : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : `${isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : stepActionLabel(i.ref.id) ?? 'Open') : 'Review'} `}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
+                    ? <button type="button" data-tour="task-open" className={`tl-btn${isOpen ? ' on' : isStep ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : stepActionLabel(i.ref.id) ?? 'Open') : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : `${isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : stepActionLabel(i.ref.id) ?? 'Open') : 'Review'} `}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>
                       {i.kind === 'issue:file_locked' && i.documentId && (unlockingId === i.id
                         ? <span className="tl-pw"><PasswordInput autoFocus value={pwd} onChange={setPwd} onEnter={() => void unlock(i)} onEscape={() => setUnlockingId(null)} style={{ width: 190 }} /><BusyButton className="tl-btn go" disabled={!pwd} busyLabel="Unlocking…" doneLabel="Unlocked" onClick={() => unlock(i)}>Unlock</BusyButton></span>
@@ -335,22 +335,22 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
                   </span>
                 </div>
                 {isOpen && isDecision && (
-                  <div className="tl-open">
+                  <div data-tour="task-panel" className="tl-open">
                     <DecisionPanel eventId={i.ref.id} inline onResolved={() => { markDone(i.ref.id); setOpen((cur) => (cur === key ? null : cur)); void load(); }} />
                   </div>
                 )}
                 {isOpen && isIssue && (
-                  <div className="tl-open tl-step">
+                  <div data-tour="task-panel" className="tl-open tl-step">
                     <IssueReview api={api} matterId={i.matterId} issueId={i.ref.id} onCancel={() => setOpen((cur) => (cur === key ? null : cur))} onDone={() => { markDone(i.ref.id); setOpen((cur) => (cur === key ? null : cur)); void load(); }} />
                   </div>
                 )}
                 {isOpen && isDeadline && (
-                  <div className="tl-open tl-step">
+                  <div data-tour="task-panel" className="tl-open tl-step">
                     <CaseTodoReview api={api} matterId={i.matterId} />
                   </div>
                 )}
                 {isOpen && isStep && (
-                  <div className="tl-open tl-step">
+                  <div data-tour="task-panel" className="tl-open tl-step">
                     <StepReview api={api} matterId={i.matterId} stepKey={i.ref.id} onDone={() => { markDone(i.ref.id); setOpen((cur) => (cur === key ? null : cur)); void load(); }} />
                   </div>
                 )}

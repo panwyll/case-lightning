@@ -16,6 +16,8 @@ export interface TourStep {
   target?: string;
   title: string;
   body: string;
+  /** The target only appears after `before` runs (another page, a panel opening): the tour waits for it, and moves on if it never comes. */
+  wait?: boolean;
   /**
    * Put the surface into the state this step describes — open the tab, switch the view.
    * Showing someone a tab without opening it teaches them nothing. The caller is
@@ -58,7 +60,7 @@ export default function Tour({
     const list = stepsRef.current;
     for (let n = from; n >= 0 && n < list.length; n += dir) {
       const s = list[n];
-      if (!s.target) return n;
+      if (!s.target || s.wait) return n;
       if (document.querySelector(s.target)) return n;
     }
     return -1;
@@ -85,9 +87,32 @@ export default function Tour({
   // Entering a step opens whatever it describes, then re-measures once the surface has
   // re-rendered — the target may only exist (or may have moved) after `before` runs.
   useEffect(() => {
-    stepsRef.current[i]?.before?.();
-    const t = setTimeout(measure, 60);
-    return () => clearTimeout(t);
+    const s = stepsRef.current[i];
+    s?.before?.();
+    if (!s?.wait || !s.target) {
+      const t = setTimeout(measure, 60);
+      return () => clearTimeout(t);
+    }
+    // Wait for the page or panel to put the target on screen, then bring it into view; give up after a few seconds.
+    let tries = 0;
+    let cleanup = () => {};
+    const timer = setInterval(() => {
+      const el = document.querySelector(s.target!);
+      if (el) {
+        clearInterval(timer);
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        // What it shows may still be loading and growing: follow it for a few seconds.
+        let k = 0;
+        const follow = setInterval(() => { measure(); if (++k > 12) clearInterval(follow); }, 250);
+        cleanup = () => clearInterval(follow);
+      } else if (++tries > 40) {
+        clearInterval(timer);
+        const n = resolve(i + 1, 1);
+        if (n < 0) onCloseRef.current();
+        else setI(n);
+      }
+    }, 150);
+    return () => { clearInterval(timer); cleanup(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [i]);
   useEffect(() => {
@@ -137,7 +162,7 @@ export default function Tour({
   }
 
   // How many steps will actually show, so the counter doesn't lie about skipped ones.
-  const showable = steps.filter((s) => !s.target || document.querySelector(s.target));
+  const showable = steps.filter((s) => !s.target || s.wait || document.querySelector(s.target));
   const pos = showable.indexOf(step) + 1;
 
   return (

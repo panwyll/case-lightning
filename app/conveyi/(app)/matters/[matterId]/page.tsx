@@ -226,7 +226,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
 
           <div className="eg-tabs" style={{ marginTop: 0 }}>
             <button className={`eg-tab${tab === 'overview' ? ' on' : ''}`} onClick={() => setTab('overview')}>Overview</button>
-            <button className={`eg-tab${tab === 'tasks' ? ' on' : ''}`} onClick={() => setTab('tasks')} disabled={!enrolled}>Tasks{pending + openIssues ? ` (${pending + openIssues})` : ''}</button>
+            <button data-tour="case-tasks" className={`eg-tab${tab === 'tasks' ? ' on' : ''}`} onClick={() => setTab('tasks')} disabled={!enrolled}>Tasks{pending + openIssues ? ` (${pending + openIssues})` : ''}</button>
             <button className={`eg-tab${tab === 'documents' ? ' on' : ''}`} onClick={() => setTab('documents')} disabled={!enrolled}>Documents{view?.documentCount ? ` (${view.documentCount})` : ''}</button>
             <button className={`eg-tab${tab === 'timeline' ? ' on' : ''}`} onClick={() => setTab('timeline')} disabled={!enrolled}>Timeline{eng.events.length ? ` (${eng.events.length})` : ''}</button>
           </div>

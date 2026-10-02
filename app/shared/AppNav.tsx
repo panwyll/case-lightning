@@ -188,7 +188,21 @@ function ShowMeAround() {
   const router = useRouter();
   const [on, setOn] = useState(false);
   const [from, setFrom] = useState<string | null>(null);
-  const steps: TourStep[] = TOUR.map((t) => ({ target: `[data-tour="nav-${t.key}"]`, title: t.title, body: t.body, before: () => router.push(t.href) }));
+  const nav: TourStep[] = TOUR.map((t) => ({ target: `[data-tour="nav-${t.key}"]`, title: t.title, body: t.body, before: () => router.push(t.href) }));
+  // After Tasks: one task, opened and worked in place, then its case and what can be done to a case from its header.
+  const click = (sel: string) => () => { (document.querySelector(sel) as HTMLElement | null)?.click(); };
+  const caseOfFirstTask = () => { const a = document.querySelector('[data-tour="task-case"]') as HTMLAnchorElement | null; if (a) router.push(new URL(a.href).pathname); };
+  const inside: TourStep[] = [
+    { target: '[data-tour="task-row"]', wait: true, title: 'A Task', body: 'One line for each thing to do, grouped by case, with when it is due.' },
+    { target: '[data-tour="task-open"]', wait: true, title: 'Do It Here', body: 'Open a task to do it in place: approve, fill in the form or upload, without leaving the list.' },
+    { target: '[data-tour="task-panel"]', wait: true, title: 'The Task, Opened', body: 'The form, the documents it rests on and the case details, all in one place.', before: () => { if (!document.querySelector('[data-tour="task-panel"]')) click('[data-tour="task-open"]')(); } },
+    { target: '[data-tour="task-case"]', wait: true, title: 'Its Case', body: 'The address opens the whole case.' },
+    { target: '[data-tour="case-raise-issue"]', wait: true, title: 'Raise An Issue', body: 'Something wrong? Raise it here. It says what it holds up and goes on the Tasks list until it is resolved.', before: caseOfFirstTask },
+    { target: '[data-tour="case-something-happened"]', wait: true, title: 'Something Happened', body: 'A death, a bankruptcy, a report to the NCA: record it and the case works out what follows.' },
+    { target: '[data-tour="case-take-over"]', wait: true, title: 'Take Over', body: 'Stop CONVEYi acting on this case by itself: you mark each step done by hand.' },
+    { target: '[data-tour="case-tasks"]', wait: true, title: 'Everything On The Case', body: 'Its tasks, issues and steps, in the order the case runs.', before: click('[data-tour="case-tasks"]') },
+  ];
+  const steps: TourStep[] = nav.flatMap((s, n) => (TOUR[n].key === 'mywork' ? [s, ...inside] : [s]));
   return (
     <>
       <button className={`sh-tour${on ? ' on' : ''}`} onClick={() => { setFrom(window.location.pathname + window.location.search); setOn(true); }}>Show Me Around</button>
