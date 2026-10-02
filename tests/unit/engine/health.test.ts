@@ -275,14 +275,16 @@ test('work: a decision is a DO for a person, a hard stop is critical, and a prop
   assert.equal(proposed.mode, 'needs_approval');
 });
 
-test('work: a closed or abandoned matter produces no work at all', async () => {
+test('work: an abandoned matter shows only what it still owes: the notice telling the other side, and money back', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: false });
   await h.svc.run(TENANT, MATTER, { type: 'record_sdlt_facts', actor: USER, mainResidence: true, anyEverOwned: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.run(TENANT, MATTER, { type: 'abandon_matter', actor: USER, reason: 'client_withdrew' });
   const s = await h.svc.getState(TENANT, MATTER);
-  assert.deepEqual(matterWork(s, h.ports.now(), { assignedTo: USER }).items, []);
+  const items = matterWork(s, h.ports.now(), { assignedTo: USER }).items;
+  assert.ok(items.every((x) => x.kind === 'step' || x.ref.type === 'decision'), 'no issues, waits or deadlines on a stopped file');
+  assert.ok(items.every((x) => x.ref.type !== 'decision' || /withdrawn/.test(String(s.decisions[x.ref.id]?.subject ?? '')) || s.decisions[x.ref.id]?.kind === 'proposal'));
 });
 
 test('caseload: the queue row carries the health band, the coarse lifecycle and the day of the case', async () => {
