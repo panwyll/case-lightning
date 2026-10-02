@@ -97,6 +97,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('record_party_event'), event: z.enum(['died', 'capacity_lost', 'bankrupt', 'instructing_for_client', 'confidence', 'refuses_to_sign', 'capacity_doubt', 'cdd_refused', 'complaint', 'withhold_from_lender', 'gift_withdrawn', 'uncontactable', 'moving_firm', 'ceasing_to_act', 'donor_died', 'gift_donor_died', 'company_insolvent', 'sanctions_designated', 'contributions_changed', 'fee_dispute', 'third_party_payment', 'cash_paid_in']), party: z.string().min(1).max(160), hasAttorney: z.boolean().nullish(), note: z.string().max(1000).nullish() }),
   z.object({ type: z.literal('record_chain_link'), linkId: z.string().max(20).nullish(), label: z.string().min(1).max(120), status: z.enum(['ready', 'not_ready', 'unknown', 'removed']), note: z.string().max(500).nullish() }),
   z.object({ type: z.literal('record_isa'), isa: z.enum(['lifetime_isa', 'help_to_buy_isa']), openedOn: z.string().max(10).nullish(), closedOn: z.string().max(10).nullish() }),
+  z.object({ type: z.literal('record_completion_event'), event: z.enum(['payment_misdirected', 'completion_missed', 'keys_not_released', 'seller_unconfirmed', 'redemption_returned', 'undertaking_chased', 'contract_retention']), detail: z.string().min(1).max(1000), amountPennies: z.number().int().nonnegative().nullish(), until: z.string().max(10).nullish() }),
   z.object({ type: z.literal('add_shape'), shape: z.string().min(1).max(60) }),
   z.object({ type: z.literal('sar_made'), note: z.string().max(1000).nullish() }),
   z.object({ type: z.literal('daml_response'), decision: z.enum(['granted', 'refused']), note: z.string().max(1000).nullish() }),
@@ -109,7 +110,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('charge_discharged'), chargeId: z.string().min(1).max(20), reference: z.string().max(120).nullish(), documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('undertaking_given'), to: z.string().min(1).max(200), terms: z.string().min(1).max(1000) }),
   z.object({ type: z.literal('undertaking_discharged'), note: z.string().max(500).nullish() }),
-  z.object({ type: z.literal('completion_information_received'), undertakingToRedeem: z.boolean().nullish(), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('completion_information_received'), undertakingToRedeem: z.boolean().nullish(), documentId: z.string().uuid().nullish(), chargesCovered: z.array(z.string().max(160)).max(10).nullish() }),
   z.object({ type: z.literal('refund_paid'), refundId: z.string().min(1).max(40), reference: z.string().min(1).max(120) }),
   // transaction types (docs/transaction-types.md)
   z.object({ type: z.literal('request_property_forms'), forms: z.array(z.string().max(10)).min(1).max(6).optional() }),
@@ -243,7 +244,7 @@ export const resolveSchema = z.object({
   edited: z.object({ subject: z.string().max(300).nullish(), body: z.string().max(20000).nullish(), messages: z.array(z.object({ id: z.string().max(60), subject: z.string().max(300).nullish(), body: z.string().max(20000).nullish(), asAttachments: z.boolean().optional(), alwaysAttach: z.boolean().optional() })).max(10).nullish() }).nullish(),
   note: z.string().max(4000).nullish(),
   /** Addendum 2: required for option 'verify' on a bank-details decision; the machine validates the method. */
-  verification: z.object({ method: z.string().max(60), reference: z.string().max(200).nullish() }).nullish(),
+  verification: z.object({ method: z.string().max(60), reference: z.string().max(200).nullish(), cop: z.enum(['match', 'close_match', 'no_match', 'unavailable']).nullish() }).nullish(),
   /** Addendum 3 §3: required — see assertEngaged. */
   engagement: engagementSchema.nullish(),
   /** note_actions: which of the note's proposals the conveyancer is applying. Omitted means all of them. */

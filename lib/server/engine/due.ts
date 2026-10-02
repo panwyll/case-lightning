@@ -4,6 +4,7 @@
  * emails, drafts); what is left is here, and on the Tasks tab, each with the form that records it.
  * Things owed by the client or a third party are waits (chased, with a Confirm on the tab), not these.
  */
+import { k16Stale } from './machine';
 import { certificateOfTitleUnmet } from './machine';
 import { stageBlockers } from './machine';
 import { profileOf } from './transactions';
@@ -132,7 +133,7 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
     add({ key: 'certificate_of_title', lane: 'pre_completion_checks', title: 'Send the certificate of title to the lender', dueDate: due });
   }
   const lenderChecks = s.hasLender && (buyer || remo) && !completed && (exchanged || (remo && s.stage === 'pre_completion'));
-  if (lenderChecks && !s.preCompletion.bankruptcySearchAt) add({ key: 'bankruptcy_search', lane: 'pre_completion_checks', title: 'Bankruptcy search (K16) against every borrower' });
+  if (lenderChecks && (!s.preCompletion.bankruptcySearchAt || (!s.deeds.certificateOfTitleAt && k16Stale(s, now)))) add({ key: 'bankruptcy_search', lane: 'pre_completion_checks', title: s.preCompletion.bankruptcySearchAt ? 'A fresh bankruptcy search (K16): the last is too old or misses a borrower' : 'Bankruptcy search (K16) against every borrower' });
   const os1Expired = !!(s.preCompletion.prioritySearchExpiresAt && Date.parse(s.preCompletion.prioritySearchExpiresAt) < now.getTime());
   // Every purchase needs a priority search (a cash buyer's registration is protected the same way); a remortgage, for its lender.
   const os1Due = !completed && ((buyer && exchanged) || (remo && s.hasLender && s.stage === 'pre_completion'));

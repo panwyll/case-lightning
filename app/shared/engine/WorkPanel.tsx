@@ -829,7 +829,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       case 'exchange': return act('exchange', 'contracts_exchanged', 'Contracts Exchanged', {}, { primary: true });
       case 'completion_statement': return act('exchange', 'completion_statement_generated', 'Send To Client', {}, { primary: true });
       case 'certificate_of_title': return act('pre_completion_checks', 'certificate_of_title_sent', 'Record Sent', {}, { primary: true });
-      case 'bankruptcy_search': return act('pre_completion_checks', 'bankruptcy_search_clear', 'Record Clear', { subjects: s.partyNames?.length ? s.partyNames : undefined }, { primary: true });
+      case 'bankruptcy_search': return <>{act('pre_completion_checks', 'bankruptcy_search_clear', 'Record Clear', { subjects: s.partyNames?.length ? s.partyNames : undefined }, { primary: true })}{act('pre_completion_checks', 'bankruptcy_search_entry', 'Record An Entry')}</>;
       case 'priority_search': return act('pre_completion_checks', 'priority_search_made', 'Record Made', {}, { primary: true });
       case 'funds_request': {
         const acc = firmAccounts();

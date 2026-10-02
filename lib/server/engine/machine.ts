@@ -16,6 +16,7 @@
  *     the matter is marked for manual handling;
  *   - every command is either automation (system/ai/external) or a human decision.
  */
+import { COMPLETION_EVENTS, completionEventConsequences, completionEventProblem, type CompletionEvent } from './completion-events';
 import { addWorkingDays, workingDaysBetween } from './working-days';
 import { applyEvent } from './projection';
 import { assertCompletion, CompletionError, type Completion } from './completion';
@@ -149,7 +150,7 @@ type CommandBody =
   | { type: 'title_extracted'; actor: Actor; documentId: string; facts: TitleFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'lease_extracted'; actor: Actor; documentId: string; facts: LeaseFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'open_decision_source'; userId: string; decisionEventId: string; documentId: string }
-  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null; selection?: string[] | null; edited?: { subject?: string | null; body?: string | null; /** An email's task: each message as the person edited it. */ messages?: Array<{ id: string; subject?: string | null; body?: string | null }> | null } | null; /** Escalating: the person it goes to (required). */ escalateTo?: string | null }
+  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null; cop?: 'match' | 'close_match' | 'no_match' | 'unavailable' | null } | null; engagement?: Engagement | null; selection?: string[] | null; edited?: { subject?: string | null; body?: string | null; /** An email's task: each message as the person edited it. */ messages?: Array<{ id: string; subject?: string | null; body?: string | null }> | null } | null; /** Escalating: the person it goes to (required). */ escalateTo?: string | null }
   | { type: 'record_note'; actor: Actor; kind: NoteKind; text: string; noteId?: string | null; documentId?: string | null; durationSeconds?: number | null; from?: NoteSender | null }
   | { type: 'note_extracted'; noteId: string; drafts: NoteActionDraft[]; extractor: string; /** Filed without anyone looking (a reply on a filed conversation): put before a person even when nothing is proposed. */ surface?: boolean; /** Both checks read it as a pure acknowledgement. */ acknowledgement?: boolean; /** The reply drafted to the writer from the case. */ reply?: NoteReply | null; /** Every message the task carries (recipients.ts). */ messages?: NoteMessage[] }
   | { type: 'note_action_refused'; noteId: string; actionId: string; reason: string }
@@ -221,6 +222,7 @@ type CommandBody =
   | { type: 'record_party_event'; actor: Actor; event: PartyEvent; party: string; hasAttorney?: boolean | null; note?: string | null }
   | { type: 'sar_made'; actor: Actor; note?: string | null }
   | { type: 'add_shape'; actor: Actor; shape: string }
+  | { type: 'record_completion_event'; actor: Actor; event: CompletionEvent; detail: string; amountPennies?: number | null; until?: string | null }
   | { type: 'record_isa'; actor: Actor; isa: 'lifetime_isa' | 'help_to_buy_isa'; openedOn?: string | null; closedOn?: string | null }
   | { type: 'record_chain_link'; actor: Actor; linkId?: string | null; label: string; status: 'ready' | 'not_ready' | 'unknown' | 'removed'; note?: string | null }
   | { type: 'completion_payment_sent'; actor: Actor; reference: string; sentAt?: string | null }
@@ -243,7 +245,7 @@ type CommandBody =
   | { type: 'charge_discharged'; actor: Actor; chargeId: string; reference?: string | null; documentId?: string | null }
   | { type: 'undertaking_given'; actor: Actor; to: string; terms: string }
   | { type: 'undertaking_discharged'; actor: Actor; note?: string | null }
-  | { type: 'completion_information_received'; actor: Actor; undertakingToRedeem?: boolean | null; documentId?: string | null }
+  | { type: 'completion_information_received'; actor: Actor; undertakingToRedeem?: boolean | null; documentId?: string | null; chargesCovered?: string[] | null }
   | { type: 'refund_paid'; actor: Actor; refundId: string; reference: string }
   // ── transaction types (docs/transaction-types.md) ──
   | { type: 'request_property_forms'; actor: Actor; forms?: string[] | null }
@@ -267,9 +269,10 @@ type CommandBody =
   | { type: 'record_lender_requirements'; actor: Actor; minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; acceptsLoanDeposit?: boolean | null; acceptsDonorAbroad?: boolean | null; requiresEws1?: boolean | null; note?: string | null }
   | { type: 'name_change_evidenced'; actor: Actor; party?: string | null; from: string; to: string; reason: string; documentId?: string | null }
   | { type: 'client_account_receipt'; actor: Actor; remitter: string; amountPennies?: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; reference?: string | null }
-  | { type: 'buildings_insurance_confirmed'; actor: Actor; insurer?: string | null; fromDate?: string | null; documentId?: string | null }
-  | { type: 'priority_search_made'; actor: Actor; expiresAt: string; documentId?: string | null }
+  | { type: 'buildings_insurance_confirmed'; actor: Actor; insurer?: string | null; fromDate?: string | null; documentId?: string | null; insuredNames?: string[] | null; lenderNoted?: boolean | null }
+  | { type: 'priority_search_made'; actor: Actor; expiresAt: string; documentId?: string | null; titleNumber?: string | null; applicants?: string[] | null; newEntries?: string | null }
   | { type: 'bankruptcy_search_clear'; actor: Actor; subjects?: string[] | null; documentId?: string | null }
+  | { type: 'bankruptcy_search_entry'; actor: Actor; subject: string; entry: string; documentId?: string | null }
   | { type: 'request_lender_consent'; actor: Actor; lender?: string | null }
   | { type: 'lender_consent_received'; actor: Actor; lender?: string | null; conditions?: string | null }
   | { type: 'transfer_deed_executed'; actor: Actor; parties: string[]; witnessed?: boolean }
@@ -324,6 +327,8 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'record_deal_event',
   'add_shape',
   'record_isa',
+  'record_completion_event',
+  'bankruptcy_search_entry',
   'record_chain_link',
   'retention_released',
   'ap1_cancelled',
@@ -519,10 +524,23 @@ export function lenderChecksUnmet(s: MatterState, now: Date): string[] {
 }
 
 /** What must be true before a certificate of title can be given unqualified (and the advance requested against it). */
+/** The K16 does not cover every borrower, or is too old to rely on (it protects for 15 working days). */
+export function k16Stale(s: MatterState, now: Date): boolean {
+  const at = s.preCompletion.bankruptcySearchAt;
+  if (!at) return false;
+  const subjects = s.preCompletion.bankruptcySubjects ?? null;
+  if (subjects && (s.partyNames ?? []).some((n) => !samePerson(n, subjects))) return true;
+  return workingDaysBetween(new Date(at), now) > 15;
+}
+
 export function certificateOfTitleUnmet(s: MatterState, now: Date): string[] {
   const out: string[] = [];
   if (!s.deeds.mortgageDeedAt) out.push('the mortgage deed signed, witnessed and held');
   if (!s.preCompletion.bankruptcySearchAt) out.push('a clear bankruptcy search (K16) against every borrower');
+  else if (k16Stale(s, now)) out.push('a fresh bankruptcy search (K16): the last is over 15 working days old or does not name every borrower');
+  // Nothing the lender must approve, no offer condition and no entry against a borrower may be open (completion.md 1.8, 1.15).
+  const lenderOpen = Object.values(s.issues).filter((i) => (i.kind === 'lender_approval' || i.kind === 'mortgage_condition_outstanding' || i.kind === 'bankruptcy_insolvency') && (i.status === 'open' || i.status === 'negotiating'));
+  if (lenderOpen.length) out.push(`these settled first: ${lenderOpen.map((i) => i.title).join('; ')}`);
   if (!s.preCompletion.prioritySearchAt || (s.preCompletion.prioritySearchExpiresAt && Date.parse(s.preCompletion.prioritySearchExpiresAt) < now.getTime() - 86_400_000)) out.push('a live priority search (OS1)');
   if (!s.preCompletion.insuranceConfirmedAt) out.push('buildings insurance confirmed');
   // On a purchase the lender relies on the buyer's own money being with us: the certificate confirms it.
@@ -1032,19 +1050,45 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       requireType(s, ['freehold_purchase', 'leasehold_purchase', 'remortgage'], 'Buildings insurance');
       if (s.preCompletion.insuranceConfirmedAt) reject('Buildings insurance is already confirmed.');
-      return [{ type: 'buildings_insurance_confirmed', actor: cmd.actor, payload: { insurer: cmd.insurer?.trim() || null, fromDate: cmd.fromDate ?? null, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      const insOut: NewEvent[] = [{ type: 'buildings_insurance_confirmed', actor: cmd.actor, payload: { insurer: cmd.insurer?.trim() || null, fromDate: cmd.fromDate ?? null, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      // The schedule against the case (completion.md 1.11): the buyers insured, the lender's interest noted, cover by completion (Lenders' Handbook 6.13).
+      const insured = (cmd.insuredNames ?? []).map((x) => x.trim()).filter(Boolean);
+      const notInsured = insured.length ? (s.partyNames ?? []).filter((n) => !samePerson(n, insured)) : [];
+      const completesOn = s.exchange.completionDate ?? s.targetCompletionDate;
+      const late = cmd.fromDate && completesOn && cmd.fromDate.slice(0, 10) > completesOn.slice(0, 10) && !isLeasehold(s);
+      const wrong = [notInsured.length ? `not in the name of ${notInsured.join(', ')}` : null, s.hasLender && cmd.lenderNoted === false ? "the lender's interest is not noted" : null, late ? `cover starts ${cmd.fromDate}, after completion` : null].filter(Boolean);
+      if (wrong.length) insOut.push(issue(s, issueIds(s)(), s.hasLender ? 'lender_approval' : 'other', `Buildings insurance on the wrong terms: ${wrong.join('; ')}`, 'Ask the client (or their broker) for the policy to be corrected: every buyer insured, the lender\'s interest noted, cover from completion at the latest (from exchange is better where the buyer bears the risk). Leasehold: the block policy from the management pack, with the lender\'s interest noted.', 'completion'));
+      return insOut;
     }
     case 'priority_search_made': {
       requireEnrolled(s);
       requireType(s, ['freehold_purchase', 'leasehold_purchase', 'remortgage', 'transfer_of_equity'], 'A priority search');
       if (s.completion.confirmedAt) reject('The matter has completed.');
       if (Number.isNaN(Date.parse(cmd.expiresAt))) reject('A valid expiry date is required (the end of the priority period).', 400);
-      return [{ type: 'priority_search_made', actor: cmd.actor, payload: { expiresAt: cmd.expiresAt, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      const out: NewEvent[] = [{ type: 'priority_search_made', actor: cmd.actor, payload: { expiresAt: cmd.expiresAt, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      const next = issueIds(s);
+      // The search must be against the right title, for the right people (completion.md 1.5).
+      const tn = cmd.titleNumber?.trim().toUpperCase().replace(/\s+/g, '');
+      const want = s.title.facts?.titleNumber?.toUpperCase().replace(/\s+/g, '');
+      const applicants = (cmd.applicants ?? []).map((a) => a.trim()).filter(Boolean);
+      const missing = applicants.length ? (s.partyNames ?? []).filter((n) => !applicants.some((a) => samePerson(a, [n]))) : [];
+      if ((tn && want && tn !== want) || missing.length) out.push(issue(s, next(), 'title_defect', `Priority search made wrongly: ${tn && want && tn !== want ? `title ${tn}, not ${want}` : `not in the name of ${missing.join(', ')}`}`, 'A priority search protects only the title and the applicants named on it (and the lender, on a mortgage). Make a fresh OS1 against the right title for every buyer and the lender before completion.', 'completion'));
+      // Something registered since the official copies (completion.md 1.6).
+      if (cmd.newEntries?.trim()) out.push(issue(s, next(), 'title_defect', `The priority search shows a new entry: ${cmd.newEntries.trim().slice(0, 80)}`, `"${cmd.newEntries.trim().slice(0, 400)}". It was not on the official copies. Raise it with the seller's solicitor as a requisition on title (it must be removed or explained at completion), and report it to the lender and the client.`, 'completion'));
+      return out;
+    }
+    case 'bankruptcy_search_entry': {
+      // The K16 shows an entry against a borrower (completion.md 1.8): the certificate cannot be given until it is shown to be a namesake or the lender instructs.
+      requireEnrolled(s);
+      if (!cmd.subject?.trim() || !cmd.entry?.trim()) reject('Who is it against, and what is the entry?', 400);
+      return [{ type: 'bankruptcy_search_entry_found', actor: cmd.actor, payload: { subject: cmd.subject.trim(), entry: cmd.entry.trim() }, sourceDocumentId: cmd.documentId ?? null } as NewEvent,
+        issueWith(s, issueIds(s)(), 'bankruptcy_insolvency', `Bankruptcy search entry against ${cmd.subject.trim()}`, `"${cmd.entry.trim().slice(0, 300)}". Check it is the same person (the full entry: date of birth, addresses, occupation). A namesake: clear it with that evidence. The same person: report to the lender and act only on its written instructions; a bankrupt cannot buy free of the trustee. The certificate of title cannot be given while this is open.`, 'completion', 'critical')];
     }
     case 'bankruptcy_search_clear': {
       requireEnrolled(s);
       requireType(s, ['freehold_purchase', 'leasehold_purchase', 'remortgage', 'transfer_of_equity'], 'A bankruptcy search');
-      if (s.preCompletion.bankruptcySearchAt) reject('The bankruptcy search is already recorded as clear.');
+      // A fresh search is allowed once the last no longer covers everyone (a borrower added) or is over 15 working days old (completion.md 1.9).
+      if (s.preCompletion.bankruptcySearchAt && !k16Stale(s, ctx.now)) reject('The bankruptcy search is already recorded as clear.');
       const subjects = (cmd.subjects ?? []).map((x) => x.trim()).filter(Boolean);
       return [{ type: 'bankruptcy_search_clear', actor: cmd.actor, payload: { subjects: subjects.length ? subjects : [...(s.partyNames ?? [])], documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
     }
@@ -1391,7 +1435,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'completion_statement_generated': {
       requireEnrolled(s);
       requireStage(s, 'exchanged', 'Generating the completion statement');
-      return [{ type: 'completion_statement_generated', actor: cmd.actor, payload: { documentId: cmd.documentId ?? null, balancePennies: cmd.balancePennies ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      const st: NewEvent[] = [{ type: 'completion_statement_generated', actor: cmd.actor, payload: { documentId: cmd.documentId ?? null, balancePennies: cmd.balancePennies ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      // A statement re-issued with a different balance after the client was asked for money (completion.md 2.3): tell them the new figure.
+      const was = moneyOf(s).statementBalancePennies;
+      if (was != null && cmd.balancePennies != null && was !== cmd.balancePennies && profile(s).side === 'buyer') {
+        const diff = cmd.balancePennies - was;
+        st.push(issue(s, issueIds(s)(), diff > 0 ? 'completion_funds_shortfall' : 'other', `Completion statement changed: ${diff > 0 ? `${pounds(diff)} more` : `${pounds(-diff)} less`} from the client`, `The balance was ${pounds(was)}; the new statement says ${pounds(cmd.balancePennies)}. Send the client the new statement and say why it changed${diff > 0 ? ', and ask for the extra money in good time for completion' : ' (any overpayment comes back after completion)'}.`, diff > 0 ? 'completion' : 'none'));
+      }
+      return st;
     }
     case 'funds_requested': {
       requireEnrolled(s);
@@ -1603,6 +1654,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!isUserActor(cmd.actor)) reject('A payment can only be authorised by a person, never by automation.', 403);
       assertPayableDetails(s, cmd.payeeKind, cmd.bankDetailsId);
       if (cmd.purpose === 'completion_monies' && s.payments.some((p) => p.payeeKind === cmd.payeeKind && p.purpose === 'completion_monies')) reject('Completion monies already authorised for this payee.');
+      // Never more than the money held for this client (completion.md 3.4): client account money is not pooled.
+      if (cmd.amountPennies != null) {
+        const inHand = Object.values(moneyOf(s).received).reduce((a, b) => a + (b ?? 0), 0) + (s.deposit.received ? s.deposit.amountPennies ?? 0 : 0);
+        const out = s.payments.reduce((a, p) => a + (p.amountPennies ?? 0), 0);
+        const held = inHand - out;
+        if (Object.keys(moneyOf(s).received).length && cmd.amountPennies > held) reject(`That is more than the money held for this client (${pounds(Math.max(0, held))} after what is already authorised): another client's money cannot be used.`, 412);
+      }
       return [{ type: 'payment_authorised', actor: cmd.actor, payload: { payeeKind: cmd.payeeKind, bankDetailsId: cmd.bankDetailsId, amountPennies: cmd.amountPennies ?? null, purpose: cmd.purpose, approvedBy: cmd.actor } }];
     }
 
@@ -1793,6 +1851,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       }
       if (s.completion.statementGeneratedAt) moved.push(issue(s, next(), 'completion_funds_shortfall', `Completion statement: re-issue for ${cmd.completionDate}`, 'Apportionments, the redemption figure\'s daily interest and any interest on the deposit were worked to the old date. Re-issue the statement and tell the client if the balance changed.', 'completion'));
       if (s.deeds.certificateOfTitleAt) moved.push(issue(s, next(), 'lender_funds_delayed', `Tell the lender: completion moved to ${cmd.completionDate}`, (s.completion.receivedFrom ?? []).includes('lender') ? 'The advance is already with us for the old date. Most lenders want it returned if completion slips beyond their Part 2 period (often one to five working days), or interest is charged: check the lender\'s instructions and return it or get consent to hold it.' : 'The certificate of title named the old date: send the lender the new date so the advance is released for it.', 'completion'));
+      // The priority period no longer covers the new date: a fresh OS1 now, not two days before (completion.md 1.4).
+      if (s.preCompletion.prioritySearchExpiresAt && cmd.completionDate.slice(0, 10) >= s.preCompletion.prioritySearchExpiresAt.slice(0, 10)) moved.push(issue(s, next(), 'title_defect', `Priority search ends ${s.preCompletion.prioritySearchExpiresAt.slice(0, 10)}, before the new completion date`, `Make a fresh OS1 now, so the priority period runs past ${cmd.completionDate} with time to lodge the AP1.`, 'completion'));
       if (s.relatedMatter) moved.push(issue(s, next(), 'chain_dependency', `Linked case: move its completion date to ${cmd.completionDate} too`, 'The client\'s sale and purchase complete on the same day: the other case\'s date must move with this one, with its other side\'s agreement.', 'completion'));
       return moved;
     }
@@ -2720,6 +2780,17 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const found = partyEventConsequences(s, { event: cmd.event, party: cmd.party.trim(), hasAttorney: cmd.hasAttorney ?? null }, profile(s).side);
       return [ev, ...found.map((c) => { const e = issue(s, nextId(), c.kind, c.title, note ? `${c.detail} (${note})` : c.detail, c.gate); return { ...e, payload: { ...(e.payload as object), severity: c.severity } } as NewEvent; })];
     }
+    case 'record_completion_event': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
+      if (!(COMPLETION_EVENTS as readonly string[]).includes(cmd.event)) reject('Unknown event.', 400);
+      if (!cmd.detail?.trim()) reject('Say what happened.', 400);
+      if (cmd.until && !ISO_DAY.test(cmd.until)) reject('The date must be a date (YYYY-MM-DD).', 400);
+      { const wrong = completionEventProblem(s, cmd.event); if (wrong) reject(wrong); }
+      const nextId = issueIds(s);
+      return [{ type: 'completion_event_recorded', actor: cmd.actor, payload: { event: cmd.event, detail: cmd.detail.trim(), amountPennies: cmd.amountPennies ?? null, until: cmd.until ?? null } } as NewEvent,
+        ...completionEventConsequences(s, { event: cmd.event, detail: cmd.detail, amountPennies: cmd.amountPennies, until: cmd.until }, profile(s).side).map((c) => issueWith(s, nextId(), c.kind, c.title, c.detail, c.gate, c.severity, c.resolveBy))];
+    }
     case 'record_isa': {
       // The ISA's own dates (money.md 7.2, 7.5): a Lifetime ISA open under 12 months; a Help to Buy ISA bonus claimed within 12 months of closing.
       requireEnrolled(s);
@@ -2827,7 +2898,16 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'completion_information_received': {
       requireEnrolled(s);
       requireSide(s, ['buyer'], "The seller's completion information");
-      return [{ type: 'completion_information_received', actor: cmd.actor, payload: { undertakingToRedeem: !!cmd.undertakingToRedeem, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      const ta13: NewEvent[] = [{ type: 'completion_information_received', actor: cmd.actor, payload: { undertakingToRedeem: !!cmd.undertakingToRedeem, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      const nxt = issueIds(s);
+      // Every charge on the seller's title is covered (completion.md 1.17): a second charge, a Help to Buy loan or a charging order needs its own undertaking, DS1 or release.
+      const charges = ((s.title.facts as TitleFacts | null)?.charges ?? []).filter((c) => isFinancialCharge(c.text) || NON_LENDER_RE.test(c.text));
+      const covered = (cmd.chargesCovered ?? []).map((x) => x.trim().toLowerCase()).filter(Boolean);
+      const uncovered = covered.length ? charges.filter((c) => !covered.some((w) => c.text.toLowerCase().includes(w))) : charges.length > 1 && cmd.undertakingToRedeem ? charges.slice(1) : [];
+      if (uncovered.length) ta13.push(issue(s, nxt(), 'title_defect', `Not every charge is covered by the seller's undertaking (${uncovered.length})`, `${uncovered.map((c) => `${c.code}: ${c.text.slice(0, 120)}`).join(' | ')}. Each charge needs the seller's solicitor's undertaking to redeem it, a DS1 / e-DS1 handed over at completion, or the chargee's own release. Confirm in writing which they cover before completion.`, 'completion'));
+      // No undertaking can be relied on from someone who is not a solicitor on the Code (completion.md 1.18).
+      if (s.shapes?.includes('unrepresented_counterparty') && charges.length) ta13.push(issue(s, nxt(), 'title_defect', 'The seller is not represented: no undertaking to redeem', 'Nothing can be done on an undertaking. Pay the redemption money direct to the seller\'s lender against its redemption statement, and get the DS1 (or the lender\'s confirmation of the e-DS1) before releasing the balance, or complete in person. Tell our lender how the charges come off.', 'completion'));
+      return ta13;
     }
     case 'mortgage_redeemed': {
       requireEnrolled(s);
@@ -3194,6 +3274,8 @@ function negativeEquityEvents(s: MatterState, after: MatterState): NewEvent[] {
   return open.map((i) => resolvedBy(i.id, 'The figures now clear the charges.'));
 }
 /** On a purchase: the seller's title, as read, carries a charge that must come off. */
+/** A creditor's charge that is not a mortgage (a charging order, HMRC, a council): still a charge to come off. */
+const NON_LENDER_RE = /charging order|hm revenue|hmrc|council|local authority|judgment|homes england|help to buy/i;
 const sellerTitleCharged = (s: MatterState): boolean => ((s.title.facts as TitleFacts | null)?.charges ?? []).some((c) => isFinancialCharge(c.text));
 
 // ── Readings become typed issues (findings.ts) ──
@@ -3322,7 +3404,7 @@ function pendingDecision(s: MatterState, id: string): DecisionState {
 }
 
 /** Events for a human's resolution of a pending decision. */
-function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null, engagement: Engagement | null = null, selection: string[] | null = null, editedIn: { subject?: string | null; body?: string | null; messages?: Array<{ id: string; subject?: string | null; body?: string | null; asAttachments?: boolean; alwaysAttach?: boolean }> | null } | null = null, escalateTo: string | null = null): NewEvent[] {
+function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null; cop?: 'match' | 'close_match' | 'no_match' | 'unavailable' | null } | null = null, engagement: Engagement | null = null, selection: string[] | null = null, editedIn: { subject?: string | null; body?: string | null; messages?: Array<{ id: string; subject?: string | null; body?: string | null; asAttachments?: boolean; alwaysAttach?: boolean }> | null } | null = null, escalateTo: string | null = null): NewEvent[] {
   const out: NewEvent[] = [];
   const subject = d.subject ?? '';
 
@@ -3357,8 +3439,11 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
       if (!(VERIFICATION_METHODS as readonly string[]).includes(method)) reject(`A verification method is required — one of: ${VERIFICATION_METHODS.join(', ')}.`, 400);
       if (method === 'lawyer_checker_match' && !verification?.reference?.trim()) reject('A Lawyer Checker (or equivalent) match needs its check reference.', 400);
       // Another firm's account: the firm itself is checked on the register (a cloned firm answers its own phone; parties.md 9.3).
+      // Confirmation of Payee (completion.md 3.2): anything but a match keeps the stop until a person records why it is safe.
+      const cop = verification?.cop ?? null;
+      if ((cop === 'close_match' || cop === 'no_match' || cop === 'unavailable') && !note?.trim()) reject(`Confirmation of Payee ${cop === 'unavailable' ? 'was not available' : `gave ${cop === 'no_match' ? 'no match' : 'a close match'}`}: record why the account is still right (who you spoke to, on a number you already hold).`, 400);
       if (/solicitor/.test(b.payeeKind) && !verification?.reference?.trim()) reject("Record the firm's SRA number or the Lawyer Checker reference: the firm itself is checked on the register, not only the account.", 400);
-      return [{ type: 'bank_details_verified', actor: userId, payload: { bankDetailsId: b.id, decisionEventId: d.eventId, verificationMethod: method as VerificationMethod, verificationRef: verification?.reference?.trim() || null, note }, sourceDocumentId: d.sourceDocumentId }];
+      return [{ type: 'bank_details_verified', actor: userId, payload: { bankDetailsId: b.id, decisionEventId: d.eventId, verificationMethod: method as VerificationMethod, verificationRef: verification?.reference?.trim() || null, note, copResult: verification?.cop ?? null }, sourceDocumentId: d.sourceDocumentId }];
     }
     if (option === 'reject') {
       return [{ type: 'bank_details_verification_failed', actor: userId, payload: { bankDetailsId: b.id, decisionEventId: d.eventId, reason: note }, sourceDocumentId: d.sourceDocumentId }];

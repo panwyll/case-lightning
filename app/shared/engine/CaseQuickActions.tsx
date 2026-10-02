@@ -74,6 +74,7 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
   const isParty = PARTY_EVENTS.some(([v]) => v === what);
   const isShape = what.startsWith('shape:');
   const isIsa = what.startsWith('isa:');
+  const isCe = what.startsWith('ce:');
   const side = state?.transactionType ? profileOf(state.transactionType).side : null;
   const shapeOptions = side ? CASE_SHAPES.map((id) => SHAPE_SPEC[id]).filter((sh) => sh.sides.includes(side) && !(state?.shapes ?? []).includes(sh.id)) : [];
   // The warning before taking a case over, until the person says not to show it again (this browser only).
@@ -116,6 +117,15 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
               <option value="incentive">Incentive From The Seller</option>
               <option value="deposit_direct">Deposit Paid Directly To The Seller Or Agent</option>
             </optgroup>}
+            {!!state?.exchange?.exchangedAt && <optgroup label="Completion">
+              {!completed && <option value="ce:completion_missed">Completion Did Not Happen Today</option>}
+              {!completed && <option value="ce:seller_unconfirmed">Seller's Solicitor Has Not Confirmed Completion</option>}
+              <option value="ce:payment_misdirected">Money Sent To The Wrong Account</option>
+              {completed && <option value="ce:keys_not_released">Keys Not Released</option>}
+              {completed && <option value="ce:redemption_returned">Lender Returned The Redemption Money</option>}
+              {completed && <option value="ce:undertaking_chased">Buyer's Solicitor Chasing Our Undertaking</option>}
+              <option value="ce:contract_retention">Retention Held Under The Contract</option>
+            </optgroup>}
             {!completed && (state?.shapes ?? []).some((x) => x === 'lifetime_isa' || x === 'help_to_buy_isa') && <optgroup label="ISA">
               {(state?.shapes ?? []).includes('lifetime_isa') && <option value="isa:lifetime_isa">Lifetime ISA Opened On</option>}
               {(state?.shapes ?? []).includes('help_to_buy_isa') && <option value="isa:help_to_buy_isa">Help To Buy ISA Closed On</option>}
@@ -136,6 +146,8 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
           )}
           {isIsa && <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} aria-label="Date" />}
           {(what === 'lockout' || what === 'reservation') && <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} aria-label={what === 'lockout' ? 'Lock-out ends' : 'Exchange deadline'} />}
+          {(what === 'ce:contract_retention' || what === 'ce:payment_misdirected' || what === 'ce:redemption_returned') && <input type="text" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="£ Amount" aria-label="Amount" />}
+          {what === 'ce:contract_retention' && <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} aria-label="Release by" />}
           {(what === 'lockout' || what === 'reservation' || what === 'incentive') && <input type="text" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} placeholder={what === 'reservation' ? '£ Reservation fee' : what === 'incentive' ? '£ Value' : '£ Paid for it'} aria-label="Amount" />}
           {what === 'sar' && <span className="warn"><AlertTriangle size={16} /><span>No money moves and nothing exchanges for seven working days, or until consent. Say nothing to the client about it.</span></span>}
           {!isShape && !isIsa && <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={isParty || isShape || isIsa || what === 'sar' || what.startsWith('daml') ? 'Note' : 'What happened'} aria-label="Note" />}
@@ -145,7 +157,7 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
             <BusyButton disabled={(isIsa && !until) || (isParty && !who.trim()) || (!isParty && !isShape && !isIsa && !['sar', 'daml_granted', 'daml_refused'].includes(what) && !reason.trim())} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
               setErr(null);
               const deal = ['contract_race', 'lockout', 'reservation', 'renegotiated', 'sitting_tenant', 'nominee', 'buy_out', 'incentive', 'deposit_direct'].includes(what);
-              const body = isIsa ? { type: 'record_isa', isa: what.slice(4), ...(what === 'isa:lifetime_isa' ? { openedOn: until } : { closedOn: until }) } : isShape ? { type: 'add_shape', shape: what.slice(6) } : deal ? { type: 'record_deal_event', event: what, detail: reason.trim(), until: until || null, amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null } : ['damaged', 'not_vacant', 'early_access', 'seller_stays'].includes(what) ? { type: 'record_property_event', event: what, detail: reason.trim() } : what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };
+              const body = isCe ? { type: 'record_completion_event', event: what.slice(3), detail: reason.trim(), amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null, until: until || null } : isIsa ? { type: 'record_isa', isa: what.slice(4), ...(what === 'isa:lifetime_isa' ? { openedOn: until } : { closedOn: until }) } : isShape ? { type: 'add_shape', shape: what.slice(6) } : deal ? { type: 'record_deal_event', event: what, detail: reason.trim(), until: until || null, amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null } : ['damaged', 'not_vacant', 'early_access', 'seller_stays'].includes(what) ? { type: 'record_property_event', event: what, detail: reason.trim() } : what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };
               try { await cmd(body); setTimeout(() => setOpen(null), 900); return true; }
               catch (e: unknown) { setErr(e instanceof Error ? e.message : 'It did not save.'); return false; }
             }}>Record</BusyButton>

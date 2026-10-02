@@ -17,7 +17,7 @@ import { profileOf } from './transactions';
 import { openIssues, openWaits } from './types';
 import { duplicateIssue, ISSUE_KIND_SPEC, MORTGAGE_EXPIRY_CRITICAL_DAYS, MORTGAGE_EXPIRY_WARNING_DAYS, type IssueKind, type IssueSeverity } from './issues';
 import { openIssues as openIssuesOf } from './types';
-import { workingDaysBetween, type WorkingCalendar, EW_CALENDAR, addWorkingDays, subtractWorkingDays } from './working-days';
+import { isWorkingDay, workingDaysBetween, type WorkingCalendar, EW_CALENDAR, addWorkingDays, subtractWorkingDays } from './working-days';
 import { computeSdlt, sdltLabel } from './sdlt';
 
 export interface SlaRule {
@@ -137,7 +137,7 @@ function stripUndefined<T extends object>(o: T): Partial<T> {
 
 // ───────────────────────────── deadlines (eventualities) ─────────────────────────────
 
-export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry' | 'certificate_of_title' | 'first_registration' | 'lisa_window' | 'auction_completion' | 'longstop_date' | 'sdlt_refund' | 'nrs_refund' | 'target_exchange';
+export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry' | 'certificate_of_title' | 'first_registration' | 'lisa_window' | 'auction_completion' | 'longstop_date' | 'sdlt_refund' | 'nrs_refund' | 'target_exchange' | 'advance_due' | 'redemption_payment' | 'sdlt_overdue' | 'final_inspection';
 
 export interface DeadlineAction {
   kind: DeadlineKind;
@@ -153,7 +153,7 @@ export interface DeadlineAction {
  * How many working days before a deadline the engine raises it (one escalation per deadline, by subject).
  * `stale_issue` is the other way round: an open issue nobody has touched for this many working days is raised.
  */
-export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2, certificate_of_title: 3, first_registration: 10, lisa_window: 15, auction_completion: 5, longstop_date: 20, sdlt_refund: 60, nrs_refund: 40, target_exchange: 5 };
+export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2, certificate_of_title: 3, first_registration: 10, lisa_window: 15, auction_completion: 5, longstop_date: 20, sdlt_refund: 60, nrs_refund: 40, target_exchange: 5, advance_due: 1, redemption_payment: 0, sdlt_overdue: 0, final_inspection: 0 };
 /** Working days before completion a lender usually needs the certificate of title (UK Finance Handbook practice). */
 export const CERTIFICATE_OF_TITLE_NOTICE = 5;
 
@@ -181,8 +181,11 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
   // (A remortgage has no exchange: its completion date is the one agreed with the lender and the client.)
   const cotCompletion = state.exchange.completionDate ?? (state.transactionType === 'remortgage' ? state.targetCompletionDate : null);
   if (state.hasLender && (state.exchange.exchangedAt || state.transactionType === 'remortgage') && cotCompletion && !state.deeds.certificateOfTitleAt && !state.completion.confirmedAt) {
-    const due = subtractWorkingDays(new Date(cotCompletion), CERTIFICATE_OF_TITLE_NOTICE, cal).toISOString().slice(0, 10);
-    push('certificate_of_title', due, `Send the certificate of title to the lender (through its portal) by ${due}: ${CERTIFICATE_OF_TITLE_NOTICE} working days before completion on ${cotCompletion}, so the mortgage advance arrives in time. Record it under the lender's completion requirements once it has gone.`);
+    // A Friday or the day before a bank holiday (completion.md 3.10): money that slips waits days, so everything goes a day earlier.
+    const cd = new Date(`${cotCompletion.slice(0, 10)}T12:00:00Z`);
+    const beforeBreak = !isWorkingDay(new Date(cd.getTime() + 86_400_000), cal);
+    const due = subtractWorkingDays(new Date(cotCompletion), CERTIFICATE_OF_TITLE_NOTICE + (beforeBreak ? 1 : 0), cal).toISOString().slice(0, 10);
+    push('certificate_of_title', due, `${beforeBreak ? `Completion is on ${cd.getUTCDay() === 5 ? 'a Friday' : 'the day before a bank holiday'}: if the money slips it waits days, so this goes a day early. ` : ''}Send the certificate of title to the lender (through its portal) by ${due}: ${CERTIFICATE_OF_TITLE_NOTICE} working days before completion on ${cotCompletion}, so the mortgage advance arrives in time. Record it under the lender's completion requirements once it has gone.`);
   }
   if (state.completion.confirmedAt && !state.postCompletion.sdltSubmittedAt && !state.sdltNotRequiredAt) {
     const wales = !!state.sdltBasis?.wales;
@@ -192,6 +195,26 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
     const est = price ? computeSdlt(price, basis) : null;
     if (wales) push('sdlt_filing', due, `The Land Transaction Tax return and payment are due to the Welsh Revenue Authority within 30 days of completion (${state.completion.confirmedAt.slice(0, 10)}) — by ${due}.${est ? ` Estimate: £${(est.totalPennies / 100).toLocaleString('en-GB')} (${est.scheme}).` : ''}`);
     else push('sdlt_filing', due, `The SDLT return and payment are due within 14 days of completion (${state.completion.confirmedAt.slice(0, 10)}) — by ${due}. Late filing carries an automatic penalty and interest.${est ? ` Estimate on the ${sdltLabel(basis)} basis: £${(est.totalPennies / 100).toLocaleString('en-GB')} (${est.scheme}); check against HMRC's calculator.` : ''}`);
+  }
+  // The advance must be in the day before completion (completion.md 2.7): not in by then, the lender is chased today.
+  if (state.hasLender && state.exchange.completionDate && !state.completion.confirmedAt && !(state.completion.receivedFrom ?? []).includes('lender') && state.deeds.certificateOfTitleAt) {
+    const dayBefore = subtractWorkingDays(new Date(state.exchange.completionDate), 1, cal).toISOString().slice(0, 10);
+    push('advance_due', dayBefore, `The mortgage advance is not in, and completion is on ${state.exchange.completionDate.slice(0, 10)}. Ring the lender's completions team today (the certificate reference), warn the seller's solicitor and the chain, and agree a later time or date if it will not arrive.`);
+  }
+  // The redemption goes the same day as completion: daily interest runs and our undertaking is at risk (completion.md 4.7).
+  if (state.completion.confirmedAt && state.hasExistingMortgage && (state.transactionType === 'freehold_sale' || state.transactionType === 'leasehold_sale' || state.transactionType === 'remortgage') && state.redemption.status !== 'redeemed' && state.redemption.status !== 'discharged') {
+    push('redemption_payment', state.completion.confirmedAt.slice(0, 10), `Completion was on ${state.completion.confirmedAt.slice(0, 10)} and the lender has not been paid off. Send the redemption today: every day adds interest, and our undertaking to the buyer's solicitor depends on it.`);
+  }
+  // Past the filing date: a penalty is running (completion.md 6.2).
+  if (state.completion.confirmedAt && !state.postCompletion.sdltSubmittedAt && !state.sdltNotRequiredAt && (state.transactionType === 'freehold_purchase' || state.transactionType === 'leasehold_purchase' || state.transactionType === 'transfer_of_equity')) {
+    const days = state.sdltBasis?.wales ? 30 : 14;
+    const late = new Date(new Date(state.completion.confirmedAt).getTime() + (days + 1) * 86_400_000).toISOString().slice(0, 10);
+    push('sdlt_overdue', late, `The ${state.sdltBasis?.wales ? 'LTT' : 'SDLT'} return is late. File it now: a £100 penalty applies at once, £200 after three months, plus interest on the tax. Tell the client; if the delay is ours, tell the firm's insurer.`);
+  }
+  // A new build with a lender: the valuer's final inspection, asked for in time for the advance (completion.md 1.15).
+  if (state.hasLender && state.shapes?.includes('new_build') && state.exchange.completionDate && !state.deeds.certificateOfTitleAt) {
+    const ask = subtractWorkingDays(new Date(state.exchange.completionDate), 10, cal).toISOString().slice(0, 10);
+    push('final_inspection', ask, `Ask the lender for the final inspection now: its valuer must see the finished new build before the advance is released for completion on ${state.exchange.completionDate.slice(0, 10)}.`);
   }
   if (state.preCompletion?.prioritySearchExpiresAt && !state.postCompletion.ap1SubmittedAt) {
     const exp = state.preCompletion.prioritySearchExpiresAt.slice(0, 10);

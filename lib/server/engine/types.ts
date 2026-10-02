@@ -211,6 +211,8 @@ export const EVENT_TYPES = [
   'sdlt_facts_recorded',
   'party_event_recorded',
   'shape_added',
+  'completion_event_recorded',
+  'bankruptcy_search_entry_found',
   'isa_recorded',
   'chain_link_recorded',
   'contributions_recorded',
@@ -1055,7 +1057,7 @@ export interface Payloads {
 
   bank_details_recorded: { bankDetailsId: string; payeeKind: PayeeKind; payeeRef: string | null; details: BankDetails; sourceChannel: SourceChannel; supersedesId: string | null; isChange: boolean };
   bank_details_change_flagged: { bankDetailsId: string; payeeKind: PayeeKind; isChange: boolean; previous: string | null; decision: DecisionSpec };
-  bank_details_verified: { bankDetailsId: string; decisionEventId: string; verificationMethod: VerificationMethod; verificationRef: string | null; note?: string | null };
+  bank_details_verified: { bankDetailsId: string; decisionEventId: string; verificationMethod: VerificationMethod; verificationRef: string | null; note?: string | null; copResult?: 'match' | 'close_match' | 'no_match' | 'unavailable' | null };
   bank_details_verification_failed: { bankDetailsId: string; decisionEventId: string; reason: string | null };
   payment_authorised: { payeeKind: PayeeKind; bankDetailsId: string; amountPennies: number | null; purpose: 'completion_monies' | 'deposit' | 'other'; approvedBy: string };
 
@@ -1173,6 +1175,8 @@ export interface Payloads {
   register_checked: { ok: boolean; note: string | null; lenderTold: boolean };
   seller_discharge_received: { reference: string | null };
   shape_added: { shape: string };
+  completion_event_recorded: { event: string; detail: string; amountPennies: number | null; until: string | null };
+  bankruptcy_search_entry_found: { subject: string; entry: string };
   isa_recorded: { isa: string; openedOn: string | null; closedOn: string | null };
   chain_link_recorded: { linkId: string; label: string; status: 'ready' | 'not_ready' | 'unknown' | 'removed'; note: string | null };
   party_event_recorded: { event: string; party: string; hasAttorney: boolean | null; note: string | null };
@@ -1728,7 +1732,7 @@ export interface MatterState {
   /** Documented name changes: [from, to] pairs the cross-checks treat as one person. */
   nameAliases: Array<{ from: string; to: string; party: string | null }>;
   /** Pre-completion checks the Lenders' Handbook requires on a lender-funded purchase (and good practice on a cash one). */
-  preCompletion: { insuranceConfirmedAt: string | null; insurer: string | null; prioritySearchAt: string | null; prioritySearchExpiresAt: string | null; bankruptcySearchAt: string | null };
+  preCompletion: { bankruptcySubjects?: string[] | null; insuranceConfirmedAt: string | null; insurer: string | null; prioritySearchAt: string | null; prioritySearchExpiresAt: string | null; bankruptcySearchAt: string | null };
   /** The clients by name as enrolled (first = the client on `idCheck`). */
   partyNames: string[];
   /** Adult occupiers named at enrolment who are not buying. */

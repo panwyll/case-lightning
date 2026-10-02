@@ -1399,6 +1399,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'bankruptcy_search_clear': {
       s.preCompletion.bankruptcySearchAt = e.createdAt;
+      s.preCompletion.bankruptcySubjects = (e.payload as { subjects?: string[] }).subjects ?? null;
       break;
     }
     case 'certificate_of_title_sent': {

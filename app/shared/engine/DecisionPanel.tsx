@@ -220,6 +220,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const [note, setNote] = useState('');
   const [method, setMethod] = useState('');
   const [reference, setReference] = useState('');
+  const [cop, setCop] = useState('');
   const [activeCite, setActiveCite] = useState<number | null>(null);
   /** note_actions: which lines the person is applying. null until the decision loads. */
   const [picked, setPicked] = useState<Set<string> | null>(null);
@@ -441,7 +442,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
     try {
       const engagement: Engagement = { scrolledSource: scrolled, dwellMs: dwell };
       const selection = detail?.noteActions && option === 'approve' ? [...(picked ?? [])] : null;
-      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection, edited: option === 'approve' ? (detail?.noteActions?.messages?.length ? { messages: detail.noteActions.messages.filter((m) => (drafts[m.id] && (drafts[m.id].subject.trim() !== m.subject || drafts[m.id].body.trim() !== m.body.trim())) || (fileHow[m.id] && (fileHow[m.id].asAttachments !== !!m.asAttachments || fileHow[m.id].alwaysAttach))).map((m) => ({ id: m.id, subject: drafts[m.id]?.subject.trim() || null, body: drafts[m.id]?.body.trim() || null, ...(fileHow[m.id] ? { asAttachments: fileHow[m.id].asAttachments, alwaysAttach: fileHow[m.id].asAttachments && fileHow[m.id].alwaysAttach } : {}) })) } : editedBody()) : null, escalateTo: option === 'escalate' ? escalateTo || null : null }) });
+      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null, cop: cop || null } : null, engagement, selection, edited: option === 'approve' ? (detail?.noteActions?.messages?.length ? { messages: detail.noteActions.messages.filter((m) => (drafts[m.id] && (drafts[m.id].subject.trim() !== m.subject || drafts[m.id].body.trim() !== m.body.trim())) || (fileHow[m.id] && (fileHow[m.id].asAttachments !== !!m.asAttachments || fileHow[m.id].alwaysAttach))).map((m) => ({ id: m.id, subject: drafts[m.id]?.subject.trim() || null, body: drafts[m.id]?.body.trim() || null, ...(fileHow[m.id] ? { asAttachments: fileHow[m.id].asAttachments, alwaysAttach: fileHow[m.id].asAttachments && fileHow[m.id].alwaysAttach } : {}) })) } : editedBody()) : null, escalateTo: option === 'escalate' ? escalateTo || null : null }) });
       setEditing(false);
       setDone(option);
       // The list moves on at once; the panel's own refresh happens behind it.
@@ -616,6 +617,13 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                   {Object.entries(VERIFICATION_METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
                 <input className="eg-in" style={{ width: 240 }} placeholder="Check reference (SRA number, Lawyer Checker id, who you spoke to)…" value={reference} onChange={(e) => setReference(e.target.value)} />
+                <select className="eg-sel" value={cop} onChange={(e) => setCop(e.target.value)} aria-label="Confirmation of Payee">
+                  <option value="">Confirmation Of Payee</option>
+                  <option value="match">Match</option>
+                  <option value="close_match">Close Match</option>
+                  <option value="no_match">No Match</option>
+                  <option value="unavailable">Not Available</option>
+                </select>
               </div>
             </div>
           )}
