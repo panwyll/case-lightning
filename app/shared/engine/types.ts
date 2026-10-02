@@ -283,6 +283,7 @@ export interface EngineState {
   exchange: { release?: { until: string; givenTo: string; at: string } | null; conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
   sellerForms?: { receivedAt: string | null; forms: string[]; documentId: string | null; facts: unknown };
   relatedMatter?: { matterId: string; relation: 'sale' | 'purchase'; linkedAt: string } | null;
+  chainLinks?: Array<{ id: string; label: string; status: 'ready' | 'not_ready' | 'unknown'; note: string | null; at: string }>;
   manualSteps?: Record<string, { at: string; note: string; skipReason?: string | null }>;
   lenderRequirements?: { minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; note: string | null; recordedAt: string } | null;
   preCompletion?: { insuranceConfirmedAt: string | null; insurer: string | null; prioritySearchAt: string | null; prioritySearchExpiresAt: string | null; bankruptcySearchAt: string | null };

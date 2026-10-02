@@ -262,7 +262,7 @@ test('work: a decision is a DO for a person, a hard stop is critical, and a prop
   // Resolving it takes it off the list — nothing to tidy up by hand.
   const d = firstDecision(s, 'bank_details');
   await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
-  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'verify', 'called back', { method: 'phone_callback_known_number' });
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'verify', 'called back', { method: 'phone_callback_known_number', reference: 'SRA 123456' });
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(matterWork(s, h.ports.now(), { assignedTo: USER, levels: cfg }).items.some((i) => i.what.startsWith('Verify bank details')), false);
 

@@ -1,4 +1,5 @@
 import { addWorkingDays, subtractWorkingDays } from './working-days';
+import { SHAPE_SPEC, type CaseShape } from './shapes';
 import { resolveWithinWorkingDays, type IssueGate, type IssueKind } from './issues';
 import { moneyOf, payersExpected } from './money';
 import { isFinancialCharge } from './charges';
@@ -548,6 +549,20 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     case 'seller_discharge_received':
       closeWait(s, 'seller_discharge', null, e);
       break;
+    case 'chain_link_recorded': {
+      const p = e.payload as Payloads['chain_link_recorded'];
+      const rest = (s.chainLinks ?? []).filter((l) => l.id !== p.linkId);
+      const at = (s.chainLinks ?? []).findIndex((l) => l.id === p.linkId);
+      const next = p.status === 'removed' ? null : { id: p.linkId, label: p.label, status: p.status, note: p.note, at: e.createdAt };
+      s.chainLinks = next ? (at >= 0 ? [...rest.slice(0, at), next, ...rest.slice(at)] : [...rest, next]) : rest;
+      break;
+    }
+    case 'shape_added': {
+      const p = e.payload as Payloads['shape_added'];
+      s.shapes = [...(s.shapes ?? []), p.shape as CaseShape];
+      if (SHAPE_SPEC[p.shape as CaseShape]?.skipExchangeAuthority) s.requireExchangeAuthority = false;
+      break;
+    }
     case 'party_event_recorded': {
       const p = e.payload as Payloads['party_event_recorded'];
       s.partyEvents = [...(s.partyEvents ?? []), { event: p.event, party: p.party, at: e.createdAt, hasAttorney: p.hasAttorney }];

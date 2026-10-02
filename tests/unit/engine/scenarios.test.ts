@@ -24,7 +24,7 @@ function context(h: ReturnType<typeof harness>, flagged: boolean, MATTER = MAIN,
       const d = Object.values(r.state.decisions).find((x) => x.kind === 'bank_details' && x.status === 'pending');
       if (d) {
         await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
-        await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'verify', 'called back', { method: 'phone_callback_known_number' });
+        await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'verify', 'called back', { method: 'phone_callback_known_number', reference: 'SRA 123456' });
       }
       return (r.events[0].payload as { bankDetailsId: string }).bankDetailsId;
     },

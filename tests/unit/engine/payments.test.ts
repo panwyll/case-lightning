@@ -93,7 +93,7 @@ test('§2/§5: a pending change blocks payment events regardless of urgency; pay
   const fd = Object.values(f.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: fd.subject! }), /HARD STOP/);
   await svc.openDecisionSource(TENANT, MATTER, fd.eventId, USER);
-  await svc.resolveDecision(TENANT, MATTER, fd.eventId, USER, 'verify', null, { method: 'in_person' });
+  await svc.resolveDecision(TENANT, MATTER, fd.eventId, USER, 'verify', null, { method: 'in_person', reference: 'SRA 123456' });
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: 'ai', fromRole: 'client', bankDetailsId: fd.subject! }), /by a person/);
   await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: fd.subject! });
   await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'client' });
@@ -103,7 +103,7 @@ test('§2/§5: a pending change blocks payment events regardless of urgency; pay
   const s1 = await svc.recordBankDetails(TENANT, MATTER, { actor: 'external', payeeKind: 'seller_solicitor', details: details('11111111'), sourceChannel: 'letter', sourceDocumentId: h.doc({ content: 'client care letter' }) });
   const sd1 = Object.values(s1.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;
   await svc.openDecisionSource(TENANT, MATTER, sd1.eventId, USER);
-  await svc.resolveDecision(TENANT, MATTER, sd1.eventId, USER, 'verify', null, { method: 'phone_callback_known_number' });
+  await svc.resolveDecision(TENANT, MATTER, sd1.eventId, USER, 'verify', null, { method: 'phone_callback_known_number', reference: 'SRA 123456' });
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: 'system', payeeKind: 'seller_solicitor', bankDetailsId: sd1.subject!, purpose: 'completion_monies' }), /by a person/);
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: fd.subject!, purpose: 'completion_monies' }), /belong to firm client account/);
 
@@ -124,7 +124,7 @@ test('§2/§5: a pending change blocks payment events regardless of urgency; pay
   const s3 = await svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind: 'seller_solicitor', details: details('11111111'), sourceChannel: 'phone' });
   const sd3 = Object.values(s3.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;
   await svc.openDecisionSource(TENANT, MATTER, sd3.eventId, SENIOR);
-  await svc.resolveDecision(TENANT, MATTER, sd3.eventId, SENIOR, 'verify', 'Callback to the number on file since instruction', { method: 'phone_callback_known_number' });
+  await svc.resolveDecision(TENANT, MATTER, sd3.eventId, SENIOR, 'verify', 'Callback to the number on file since instruction', { method: 'phone_callback_known_number', reference: 'SRA 123456' });
   const pay = await svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: sd3.subject!, amountPennies: 34_650_000, purpose: 'completion_monies' });
   assert.equal(pay.events[0].actor, USER);
   await svc.run(TENANT, MATTER, { type: 'completion_payment_sent', actor: USER, reference: 'CHAPS-1' });

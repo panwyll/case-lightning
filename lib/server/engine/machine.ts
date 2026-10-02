@@ -220,11 +220,13 @@ type CommandBody =
   | { type: 'longstop_date_recorded'; actor: Actor; date: string }
   | { type: 'record_party_event'; actor: Actor; event: PartyEvent; party: string; hasAttorney?: boolean | null; note?: string | null }
   | { type: 'sar_made'; actor: Actor; note?: string | null }
+  | { type: 'add_shape'; actor: Actor; shape: string }
+  | { type: 'record_chain_link'; actor: Actor; linkId?: string | null; label: string; status: 'ready' | 'not_ready' | 'unknown' | 'removed'; note?: string | null }
   | { type: 'completion_payment_sent'; actor: Actor; reference: string; sentAt?: string | null }
   | { type: 'final_bill_delivered'; actor: Actor; amountPennies: number; documentId?: string | null }
   | { type: 'formula_c_release_given'; actor: Actor; until: string; givenTo: string }
   | { type: 'formula_c_release_lapsed'; actor: Actor; reason: string }
-  | { type: 'record_deal_event'; actor: Actor; event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant'; detail: string; until?: string | null; amountPennies?: number | null }
+  | { type: 'record_deal_event'; actor: Actor; event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant' | 'nominee' | 'buy_out'; detail: string; until?: string | null; amountPennies?: number | null }
   | { type: 'record_property_event'; actor: Actor; event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays'; detail: string }
   | { type: 'retention_released'; actor: Actor; amountPennies?: number | null }
   | { type: 'record_contributions'; actor: Actor; model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent?: Record<string, number> | null }
@@ -319,6 +321,8 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'formula_c_release_lapsed',
   'record_property_event',
   'record_deal_event',
+  'add_shape',
+  'record_chain_link',
   'retention_released',
   'ap1_cancelled',
   'requisition_extended',
@@ -970,7 +974,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // An attorney who is also a co-owner, or one attorney for both owners, cannot give a valid receipt alone: a second trustee is needed (exchange.md 3.2; TDA 1999 s.7).
       const clientNames = (cmd.partyNames ?? []).map((n) => n.trim().toLowerCase());
       if (attorneys.length && (cmd.partyNames?.length ?? 0) > 1 && (attorneys.some((a) => clientNames.includes(a.toLowerCase())) || attorneys.length === 1)) conditionIssues.push(issue('title_restriction', `Attorney and co-owners: a second trustee may be needed (${attorneys.join(', ')})`, 'Where the attorney is also a co-owner, or one attorney signs for both owners, the purchase money must still be paid to two trustees: appoint a second trustee, or use a power under s.1 TDA 1999 only if its conditions are met. Check before exchange.'));
-      if (attorneys.length) conditionIssues.push(issue('power_of_attorney_issue', `Client acts through an attorney: ${attorneys.join(', ')}`, 'See the power (a registered LPA, or a general power with the deed): who granted it, whether it is in force, and that it covers this transaction. Written confirmation from the client that the attorney acts for them; the attorney identified like the client (LSAG 6.14.9). Tell the lender: most lenders need the power lodged and some will not lend on a power. HM Land Registry needs a certified copy with the AP1 (PG 9).'));
+      if (attorneys.length) conditionIssues.push(issue('power_of_attorney_issue', `Client acts through an attorney: ${attorneys.join(', ')}`, ((cmd.partyNames?.length ?? 0) > 1 && side !== 'buyer' ? 'Co-owners hold as trustees of land: a general power (Powers of Attorney Act 1971 s.10) cannot be used for trust functions. It needs a lasting power (TDA 1999 s.1, the attorney with a beneficial interest), or a Trustee Act 1925 s.25 delegation, and two trustees still receive the money. ' : '') + 'See the power (a registered LPA, or a general power with the deed): who granted it, whether it is in force, and that it covers this transaction. Written confirmation from the client that the attorney acts for them; the attorney identified like the client (LSAG 6.14.9). Tell the lender: most lenders need the power lodged and some will not lend on a power. HM Land Registry needs a certified copy with the AP1 (PG 9).'));
       if (officers.length) conditionIssues.push(issue('company_buyer_checks', `Company client: directors and PSCs identified — ${officers.join(', ')}`, 'Each director and person with significant control named here has an ID / AML check of their own (LSAG 6.14.11, 6.16). Check the PSC register at Companies House against the names given and report any discrepancy (reg. 30A). Board minute or resolution authorising the transaction and naming the signatories.'));
       if (executors.length) conditionIssues.push(issue('probate_issue', `Personal representatives / trustees acting: ${executors.join(', ')}`, 'The grant of probate or letters of administration (or the trust deed) seen and a copy on file; the death certificate. At least two personal representatives verified where there are two or more (LSAG 6.14.16); all of them sign the contract and the transfer. A sale before the grant issues cannot exchange.'));
       if (occupiers.length && side === 'buyer') conditionIssues.push(issue('occupier_consent', `Adult occupiers not buying: ${occupiers.join(', ')}`, 'The lender wants a signed consent / deed of postponement from every occupier aged 17 or over who is not a borrower, with separate advice, in our hands before the certificate of title (Lenders\' Handbook: occupiers). Tell the lender if any occupier claims an interest.'));
@@ -1077,9 +1081,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         ? [issue(s, issueIds(s)(), 'aml_kyc_problem', `Politically exposed person: ${pc?.label ?? s.partyNames?.[0] ?? 'the client'}`, 'The ID check matched a PEP (or a family member or close associate). Confirm the match; if it is them: senior management approval to act, establish the source of wealth and of the funds, and monitor the matter more closely. Record the approval.', s.exchange.exchangedAt ? 'completion' : 'exchange')]
         : [];
       const sanctions = (cmd.facts.flags ?? []).some((f) => f.code === 'SANCTIONS_MATCH') && !sanctionsHold(s)
-        ? [issue(s, issueIds(s)(), 'aml_kyc_problem', `${SANCTIONS_PREFIX}: ${pc?.label ?? s.partyNames?.[0] ?? 'the client'}`, 'The ID check matched a sanctions list. Until it is shown to be a different person (date of birth, address history) or OFSI grants a licence: no money in or out, no exchange, no completion, and no further work that benefits them. Report a true match to OFSI. Never cleared by automation.', s.exchange.exchangedAt ? 'completion' : 'exchange')]
+        ? [issue(s, issueIds(s, pep)(), 'aml_kyc_problem', `${SANCTIONS_PREFIX}: ${pc?.label ?? s.partyNames?.[0] ?? 'the client'}`, 'The ID check matched a sanctions list. Until it is shown to be a different person (date of birth, address history) or OFSI grants a licence: no money in or out, no exchange, no completion, and no further work that benefits them. Report a true match to OFSI. Never cleared by automation.', s.exchange.exchangedAt ? 'completion' : 'exchange')]
         : [];
-      return [...sanctions, ...pep, ...verdictEvents({
+      const minor = (cmd.facts.flags ?? []).some((f) => f.code === 'MINOR_PARTY') && !openOf(s, 'minor_party', '')
+        ? [issue(s, issueIds(s, [...sanctions, ...pep])(), 'minor_party', `${pc?.label ?? s.partyNames?.[0] ?? 'A client'} is under 18`, SHAPE_SPEC.minor_party.issue.detail, s.exchange.exchangedAt ? 'completion' : 'exchange')]
+        : [];
+      return [...sanctions, ...pep, ...minor, ...verdictEvents({
         verdict: evaluateIdCheck(cmd.facts),
         cleared: 'id_check_cleared',
         flagged: 'id_check_flagged',
@@ -1567,6 +1574,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           `New: ${maskAccount(cmd.details)}${cmd.details.firmName ? ` · ${cmd.details.firmName}` : ''}`,
           previous ? `Previously on file: ${maskAccount(previous.details)} (${previous.status})` : 'No details were previously on file for this payee.',
           '',
+          ...(/solicitor/.test(cmd.payeeKind) ? ['Check the firm itself first (cloned firms are common): find it on the SRA register or the Law Society\'s Find a Solicitor, and use the number and office shown there, not the letterhead. Record the SRA number or the Lawyer Checker reference.', ''] : []),
           'This is a mandatory hard-stop. No payment to or for this payee can proceed until the details are verified OUT-OF-BAND — a phone call back to a number you already hold, a Lawyer Checker match, or in person. A reply on the channel the details arrived on is not verification. Urgency ("completion is tomorrow") is the fraud pattern, not a reason to skip this.',
           `Options: ${OPTIONS_FOR.bank_details.map(optionLabel).join(' · ')}.`,
         ].join('\n'),
@@ -1715,6 +1723,18 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.expectBy && (!/^\d{4}-\d{2}-\d{2}$/.test(cmd.expectBy) || Number.isNaN(Date.parse(cmd.expectBy)))) reject('The expected date must be YYYY-MM-DD.', 400);
       const until = cmd.expectBy ?? addWorkingDays(ctx.now, 3).toISOString().slice(0, 10);
       return [{ type: 'wait_progress_reported', actor: cmd.actor, payload: { waitKey: cmd.waitKey, subject: cmd.subject ?? '', claim: cmd.claim.trim().slice(0, 400), until, noteId: cmd.noteId ?? null } }];
+    }
+    case 'record_chain_link': {
+      // A light record of each link further along the chain (exchange.md 8.6): who, and whether they are ready.
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
+      if (!cmd.label?.trim()) reject('Who is it (the buyer of our seller, the seller above)?', 400);
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged: the chain is fixed.');
+      const links = s.chainLinks ?? [];
+      const id = cmd.linkId ?? `L${links.length + 1}`;
+      if (cmd.linkId && !links.some((l) => l.id === cmd.linkId)) reject('Chain link not found.', 404);
+      if (!cmd.linkId && cmd.status === 'removed') reject('Nothing to remove.', 400);
+      return [{ type: 'chain_link_recorded', actor: cmd.actor, payload: { linkId: id, label: cmd.label.trim().slice(0, 120), status: cmd.status, note: cmd.note?.trim() || null } }];
     }
     case 'record_chain_consent': {
       // Whether the other side may hear about our client's own sale or purchase: the client's say-so only.
@@ -2518,7 +2538,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
       if (!cmd.detail?.trim()) reject('Say what happened.', 400);
       if (cmd.until && !ISO_DAY.test(cmd.until)) reject('The date must be a date (YYYY-MM-DD).', 400);
-      if (cmd.event !== 'sitting_tenant' && s.exchange.exchangedAt) reject('Contracts are exchanged: the deal is fixed.');
+      if (!['sitting_tenant', 'nominee'].includes(cmd.event) && s.exchange.exchangedAt) reject('Contracts are exchanged: the deal is fixed.');
+      if (s.completion.confirmedAt) reject('The matter has completed.');
       const side = profile(s).side;
       const d = cmd.detail.trim();
       const out: NewEvent[] = [{ type: 'deal_event_recorded', actor: cmd.actor, payload: { event: cmd.event, detail: d, until: cmd.until ?? null, amountPennies: cmd.amountPennies ?? null } }];
@@ -2539,6 +2560,15 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           raise('contract_term', `Renegotiated before exchange: ${d.slice(0, 70)}`, `${d}. Put it in the contract as an amendment, not a side letter; approve the contract again and take the client's authority again.${s.hasLender ? ' Tell the lender of any retention or allowance.' : ''}`, 'exchange', 'warning');
           out.push(...lapseExchangeAuthority(s, `the terms were renegotiated (${d.slice(0, 60)})`));
           if (s.hasLender && side === 'buyer') out.push(lenderApprovalIssue(s, `renegotiated:${s.lastSeq + 1}`, `Tell the lender: terms renegotiated (${d.slice(0, 60)})`, null, null));
+          break;
+        case 'nominee':
+          // A buyer directing the transfer to someone else or adding a person (parties.md 3.2).
+          raise('client_change', `Transfer to a different or extra person: ${d.slice(0, 70)}`, `${d}. Only if the contract allows the buyer to direct a transfer (SCS 1.5 forbids sub-sales without consent) or the seller agrees in writing. The new person is identified as a client (ID, source of funds); the lender approves them (a new borrower is a new offer); the transfer is drawn to them; SDLT: the effective date and the buyer's basis may change, and a person added who has owned a home brings the higher rates.`, s.exchange.exchangedAt ? 'completion' : 'exchange', 'critical');
+          if (s.hasLender && side === 'buyer') out.push(lenderApprovalIssue(s, `nominee:${s.lastSeq + 1}`, 'Tell the lender: the transfer is to a different or extra person', null, null));
+          break;
+        case 'buy_out':
+          // Separating owners: the sale is replaced by one buying the other out (parties.md 2.11).
+          raise('client_change', 'The sale is replaced by a buy-out between the owners', `${d}. Tell the buyer's solicitor and the agent the sale is withdrawn; abandon this case with the reason, and open a transfer of equity for the owner staying (with the court order, if there is one: the Court Order Transfer shape). The money on account and the searches can move across; the staying owner's lender (or a new one) must agree to them taking the mortgage alone.`, 'exchange', 'critical');
           break;
         case 'sitting_tenant':
           raise('third_party_encumbrance', `Tenant in occupation: ${d.slice(0, 70)}`, side === 'buyer'
@@ -2642,6 +2672,23 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const note = cmd.note?.trim();
       const found = partyEventConsequences(s, { event: cmd.event, party: cmd.party.trim(), hasAttorney: cmd.hasAttorney ?? null }, profile(s).side);
       return [ev, ...found.map((c) => { const e = issue(s, nextId(), c.kind, c.title, note ? `${c.detail} (${note})` : c.detail, c.gate); return { ...e, payload: { ...(e.payload as object), severity: c.severity } } as NewEvent; })];
+    }
+    case 'add_shape': {
+      // A shape found after enrolment (an attorney who benefits, a vulnerable client, a related-party sale): its checklist is raised as at enrolment.
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
+      const sh = cmd.shape as CaseShape;
+      const spec = SHAPE_SPEC[sh];
+      if (!spec) reject('Unknown case shape.', 400);
+      const side = profile(s).side;
+      if (!spec.sides.includes(side)) reject(`${spec.label} does not apply to a ${profile(s).label.toLowerCase()}.`, 400);
+      if (s.shapes?.includes(sh)) reject('Already recorded.');
+      if (s.completion.confirmedAt) reject('The matter has completed.');
+      if (spec.skipExchangeAuthority && s.exchange.exchangedAt) reject('Contracts are already exchanged.');
+      const gate: IssueGate = spec.issue.gate === 'exchange' && s.exchange.exchangedAt ? 'completion' : spec.issue.gate;
+      const out: NewEvent[] = [{ type: 'shape_added', actor: cmd.actor, payload: { shape: sh } }, issue(s, issueIds(s)(), spec.issue.kind, spec.issue.title, spec.issue.detail, gate)];
+      if (spec.charge && side !== 'buyer' && !(s.otherCharges ?? []).some((c) => c.chargee === spec.charge)) out.push({ type: 'charge_found', actor: cmd.actor, payload: { chargeId: `CH-${(s.otherCharges ?? []).length + 1}`, chargee: spec.charge, text: null } });
+      return out;
     }
     case 'sar_made': {
       requireEnrolled(s);
@@ -3240,6 +3287,8 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
       if ((REJECTED_VERIFICATION_METHODS as readonly string[]).includes(method)) reject(`"${method}" is not verification: confirmation on the channel the details arrived on is exactly what a fraudster controls. Use one of: ${VERIFICATION_METHODS.join(', ')}.`, 400);
       if (!(VERIFICATION_METHODS as readonly string[]).includes(method)) reject(`A verification method is required — one of: ${VERIFICATION_METHODS.join(', ')}.`, 400);
       if (method === 'lawyer_checker_match' && !verification?.reference?.trim()) reject('A Lawyer Checker (or equivalent) match needs its check reference.', 400);
+      // Another firm's account: the firm itself is checked on the register (a cloned firm answers its own phone; parties.md 9.3).
+      if (/solicitor/.test(b.payeeKind) && !verification?.reference?.trim()) reject("Record the firm's SRA number or the Lawyer Checker reference: the firm itself is checked on the register, not only the account.", 400);
       return [{ type: 'bank_details_verified', actor: userId, payload: { bankDetailsId: b.id, decisionEventId: d.eventId, verificationMethod: method as VerificationMethod, verificationRef: verification?.reference?.trim() || null, note }, sourceDocumentId: d.sourceDocumentId }];
     }
     if (option === 'reject') {

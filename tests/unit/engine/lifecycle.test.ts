@@ -123,7 +123,7 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: firmId }), /HARD STOP/);
   await svc.openDecisionSource(TENANT, MATTER, firmDecision.eventId, USER);
   await assert.rejects(svc.resolveDecision(TENANT, MATTER, firmDecision.eventId, USER, 'verify', null, { method: 'email_reply' }), /not verification/);
-  await svc.resolveDecision(TENANT, MATTER, firmDecision.eventId, USER, 'verify', 'Matches the firm bank mandate', { method: 'in_person' });
+  await svc.resolveDecision(TENANT, MATTER, firmDecision.eventId, USER, 'verify', 'Matches the firm bank mandate', { method: 'in_person', reference: 'SRA 123456' });
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: 'system', fromRole: 'client', bankDetailsId: firmId }), /by a person/);
   // The advance only against the certificate of title.
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId }), /certificate of title first/);
@@ -149,7 +149,7 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   await assert.rejects(svc.resolveDecision(TENANT, MATTER, sellerDecision.eventId, USER, 'verify', 'they confirmed by email'), /verification method is required/);
   await assert.rejects(svc.resolveDecision(TENANT, MATTER, sellerDecision.eventId, USER, 'approve'), /not an option/);
   assert.equal((await svc.getState(TENANT, MATTER)).bankDetails[sellerDecision.subject!].status, 'unverified');
-  await svc.resolveDecision(TENANT, MATTER, sellerDecision.eventId, USER, 'verify', 'Called Smith & Co on the number on the Law Society register', { method: 'phone_callback_known_number' });
+  await svc.resolveDecision(TENANT, MATTER, sellerDecision.eventId, USER, 'verify', 'Called Smith & Co on the number on the Law Society register', { method: 'phone_callback_known_number', reference: 'SRA 123456' });
   r = await svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: sellerDecision.subject!, amountPennies: 34_650_000, purpose: 'completion_monies' });
   assert.equal(r.state.payments[0].authorisedBy, USER);
   await svc.run(TENANT, MATTER, { type: 'completion_information_received', actor: USER, undertakingToRedeem: true });

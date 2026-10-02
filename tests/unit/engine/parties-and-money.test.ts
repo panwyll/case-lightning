@@ -81,7 +81,7 @@ test('proof of funds counts the Stamp Duty in what the client has to find', () =
   assert.equal(factsFromSubmission('r', sub, null).shortfallPennies ?? 0, 0);
   const withSdlt = factsFromSubmission('r', sub, null, 500_000);
   assert.equal(withSdlt.requiredPennies, 10_500_000);
-  const short = evaluateProofOfFunds(withSdlt).flags.find((f) => f.code === 'POF_SHORTFALL')!;
+  const short = (evaluateProofOfFunds(withSdlt) as { flags: Array<{ code: string; description: string }> }).flags.find((f) => f.code === 'POF_SHORTFALL')!;
   assert.match(short.description, /Stamp Duty/);
 });
 
@@ -101,4 +101,63 @@ test('people events: each raises its issue, and a complaint can still be recorde
   const done = { ...s0, stage: 'post_completion' as const, completion: { ...s0.completion, confirmedAt: '2026-09-01T10:00:00Z' } };
   assert.deepEqual(open(fold(done, { type: 'record_party_event', event: 'complaint', party: 'Asha Patel' })).map((i) => i.kind), ['complaint']);
   assert.throws(() => fold(done, { type: 'record_party_event', event: 'gift_withdrawn', party: 'Asha Patel' }), /has completed/);
+});
+
+test('a shape found mid-case raises its checklist; not twice, not on the wrong side', () => {
+  const s = fold(purchase(), { type: 'add_shape', shape: 'vulnerable_client' });
+  assert.ok(s.shapes?.includes('vulnerable_client'));
+  assert.deepEqual(open(s).map((i) => i.kind), ['vulnerable_client']);
+  assert.throws(() => fold(s, { type: 'add_shape', shape: 'vulnerable_client' }), /Already recorded/);
+  assert.throws(() => fold(purchase(), { type: 'add_shape', shape: 'separating_owners' }), /does not apply/);
+  const exchanged = fold(purchase({ exchange: { ...purchase().exchange, exchangedAt: '2026-09-30T10:00:00Z' } }), { type: 'add_shape', shape: 'related_party' });
+  assert.equal(open(exchanged)[0].gate, 'completion', 'after exchange the checklist holds completion');
+});
+
+test('a minor on the ID document raises the minor issue', async () => {
+  const { reviewIdDocument } = await import('../../../lib/server/engine/id-document');
+  const facts = reviewIdDocument({ provider: 'photo', source: 'document', outcome: 'refer', flags: [], confidence: 0.9, identity: { documentType: 'passport', fullName: 'Asha Patel', dateOfBirth: '2010-05-01', expiryDate: '2030-01-01', issuingCountry: 'GB', photoPresent: true, wholeDocumentVisible: true, signsOfAlteration: [] } } as never, ['Asha Patel'], NOW);
+  assert.ok(facts.flags.some((f) => f.code === 'MINOR_PARTY'));
+  let s = purchase({ stage: 'instruction', idCheck: { ...initialState(TENANT, MATTER).idCheck, status: 'requested' } });
+  s = fold(s, { type: 'id_check_result', documentId: 'd1', facts });
+  assert.ok(open(s).some((i) => i.kind === 'minor_party'));
+});
+
+test('a court order on the register holds exchange', () => {
+  const f = titleFindings({ titleNumber: 'AB1', tenure: 'freehold', restrictions: [{ code: 'B3', text: 'Under an order of the High Court (freezing order) no disposition is to be registered without the consent of the claimant' }], charges: [], covenants: [], confidence: 0.95 }, { side: 'buyer', hasLender: true });
+  const order = f.find((x) => x.code.startsWith('COURT_ORDER'))!;
+  assert.equal(order.severity, 'critical');
+  assert.equal(order.gate, 'exchange');
+});
+
+test('more people events: a donor of a power dies, a gift donor dies, a company is struck off, a sanctions designation is a hard stop', () => {
+  const s0 = purchase();
+  const kinds = (event: string, base = s0) => open(fold(base, { type: 'record_party_event', event, party: 'Asha Patel' })).map((i) => i.kind);
+  assert.deepEqual(kinds('donor_died'), ['probate_issue']);
+  assert.deepEqual(kinds('gift_donor_died'), ['completion_funds_shortfall']);
+  assert.deepEqual(kinds('company_insolvent'), ['bankruptcy_insolvency']);
+  assert.deepEqual(kinds('contributions_changed'), ['co_ownership_advice']);
+  const sanctioned = fold(s0, { type: 'record_party_event', event: 'sanctions_designated', party: 'Asha Patel' });
+  assert.throws(() => decide(sanctioned, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: 'b', purpose: 'deposit' } as never, { now: NOW }), /sanctions/);
+  // A co-owner selling dies: the survivor sells alone or appoints a second trustee.
+  const sale = purchase({ transactionType: 'freehold_sale', hasLender: false });
+  const died = open(fold(sale, { type: 'record_party_event', event: 'died', party: 'Ben Carter' }));
+  assert.match(died[0].detail ?? '', /survivor sells alone/);
+});
+
+test('deal events: a nominee after exchange tells the lender; a buy-out replaces the sale', () => {
+  const ex = purchase({ exchange: { ...purchase().exchange, exchangedAt: '2026-09-30T10:00:00Z' } });
+  const s = fold(ex, { type: 'record_deal_event', event: 'nominee', detail: 'Add Chris Lee to the transfer' });
+  assert.deepEqual(open(s).map((i) => i.kind).sort(), ['client_change', 'lender_approval']);
+  const sale = purchase({ transactionType: 'freehold_sale', hasLender: false });
+  assert.match(open(fold(sale, { type: 'record_deal_event', event: 'buy_out', detail: 'Ben is buying Asha out' }))[0].detail ?? '', /transfer of equity/);
+});
+
+test('chain links: added, updated in place, removed; fixed at exchange', () => {
+  let s = fold(purchase(), { type: 'record_chain_link', label: 'Our seller\'s purchase', status: 'unknown' });
+  s = fold(s, { type: 'record_chain_link', label: 'Top of chain (vacant)', status: 'ready' });
+  s = fold(s, { type: 'record_chain_link', linkId: 'L1', label: 'Our seller\'s purchase', status: 'not_ready' });
+  assert.deepEqual(s.chainLinks?.map((l) => `${l.id}:${l.status}`), ['L1:not_ready', 'L2:ready']);
+  s = fold(s, { type: 'record_chain_link', linkId: 'L2', label: 'x', status: 'removed' });
+  assert.deepEqual(s.chainLinks?.map((l) => l.id), ['L1']);
+  assert.throws(() => fold({ ...s, exchange: { ...s.exchange, exchangedAt: NOW.toISOString() } }, { type: 'record_chain_link', label: 'x', status: 'ready' }), /exchanged/);
 });

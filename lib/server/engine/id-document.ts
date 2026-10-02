@@ -44,6 +44,8 @@ export function reviewIdDocument(facts: IdCheckFacts, clients: string[], now = n
   const who = people.find((c) => nameMatches(i.fullName, c)) ?? null;
   if (!who) flags.push({ code: 'ID_NAME_MISMATCH', severity: 'high', description: people.length ? `${TYPE[i.documentType]} in the name of ${i.fullName}; the client${people.length > 1 ? 's are' : ' is'} ${people.join(' and ')}.` : `${TYPE[i.documentType]} in the name of ${i.fullName}; no client name is on the case to check it against.` });
   if (i.expiryDate && /^\d{4}-\d{2}-\d{2}$/.test(i.expiryDate) && new Date(`${i.expiryDate}T23:59:59Z`) < now) flags.push({ code: 'ID_DOCUMENT_EXPIRED', severity: 'high', description: `Expired on ${day(i.expiryDate)}.` });
+  // Under 18 on the day: a minor cannot hold the legal estate (parties.md 1.2).
+  if (i.dateOfBirth && /^\d{4}-\d{2}-\d{2}$/.test(i.dateOfBirth)) { const b = new Date(`${i.dateOfBirth}T00:00:00Z`); const adult = new Date(Date.UTC(b.getUTCFullYear() + 18, b.getUTCMonth(), b.getUTCDate())); if (adult > now) flags.push({ code: 'MINOR_PARTY', severity: 'high', description: `Born ${day(i.dateOfBirth)}: under 18, and a minor cannot hold the legal estate.` }); }
   if (i.signsOfAlteration.length) flags.push({ code: 'ID_DOCUMENT_ALTERED', severity: 'high', description: `May have been altered: ${i.signsOfAlteration.join('; ')}.` });
   const unclear = [!i.photoPresent ? 'no photo visible' : null, !i.wholeDocumentVisible ? 'not the whole document' : null, i.legibility === 'poor' || i.legibility === 'unreadable' ? 'hard to read' : null].filter(Boolean);
   if (unclear.length) flags.push({ code: 'ID_DOCUMENT_UNCLEAR', severity: 'medium', description: `The photo shows ${unclear.join(', ')}; ask for a clearer one.` });

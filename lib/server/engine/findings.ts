@@ -49,6 +49,10 @@ export function titleFindings(t: TitleFacts, ctx: FindingContext): Finding[] {
     if (/home rights|family law act/i.test(text)) out.push(homeRights(r.code, text, pageOf(r.locator)));
     if (/unilateral notice/i.test(text)) out.push(unilateral(r.code, text, pageOf(r.locator)));
   }
+  // A court order against the property or an owner (parties.md 2.13): a freezing or restraint order, or a pending land action.
+  for (const e of [...t.restrictions, ...t.charges, ...(t.notices ?? [])]) {
+    if (/freezing order|restraint order|proceeds of crime|pending (land )?action|lis pendens|writ or order|order affecting land/i.test(e.text)) out.push({ code: `COURT_ORDER:${e.code}`, kind: 'title_restriction', severity: 'critical', gate: 'exchange', page: pageOf((e as { locator?: unknown }).locator as never), title: `A court order or pending action is registered: ${clip(e.text, 80)}`, detail: `"${clip(e.text)}". Get a copy of the order or the claim and check it permits this ${ctx.side === 'seller' ? 'sale' : 'transaction'}; the party who registered it consents in writing and applies to cancel the entry (or the court varies the order) before exchange. A freezing or restraint order breached is contempt of court.` });
+  }
   for (const c of t.charges) {
     const text = c.text;
     if (/home rights|family law act/i.test(text)) { out.push(homeRights(c.code, text, pageOf(c.locator))); continue; }

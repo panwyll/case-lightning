@@ -19,7 +19,7 @@ async function verifiedDetails(h: Harness, payeeKind: 'lender' | 'client' | 'fir
   const r = await h.svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind, payeeRef: name, details: details(account, name), sourceChannel: 'letter', sourceDocumentId: h.doc({ content: `${name} bank letter` }) });
   const d = Object.values(r.state.decisions).find((x) => x.kind === 'bank_details' && x.status === 'pending')!;
   await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
-  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'verify', 'called back on the number on file', { method: 'phone_callback_known_number' });
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'verify', 'called back on the number on file', { method: 'phone_callback_known_number', reference: 'SRA 123456' });
   return (r.events[0].payload as { bankDetailsId: string }).bankDetailsId;
 }
 

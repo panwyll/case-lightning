@@ -615,7 +615,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                   <option value="">How did you verify?</option>
                   {Object.entries(VERIFICATION_METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
-                <input className="eg-in" style={{ width: 240 }} placeholder="Check reference (who you spoke to, Lawyer Checker id)…" value={reference} onChange={(e) => setReference(e.target.value)} />
+                <input className="eg-in" style={{ width: 240 }} placeholder="Check reference (SRA number, Lawyer Checker id, who you spoke to)…" value={reference} onChange={(e) => setReference(e.target.value)} />
               </div>
             </div>
           )}

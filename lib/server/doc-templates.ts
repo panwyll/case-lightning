@@ -500,6 +500,9 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
       'Your case is being handled by {{assigned_to}}. ' +
         'We aim to complete by {{completion_date}}, with exchange targeted for {{exchange_date}}.',
       '',
+      'Where we act for more than one of you, we act for you jointly. What one of you tells us about this transaction we cannot keep from the other, ' +
+        'and if your instructions differ we may have to stop acting for one or both of you.',
+      '',
       'Please do not hesitate to contact us should you have any questions.',
       '',
       'Yours sincerely,',

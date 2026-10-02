@@ -25,6 +25,7 @@ import { ContributionsForm } from './ContributionsForm';
 import { CompletionSheet } from './CompletionSheet';
 import { ClientDecisionSheet } from './ClientDecisionSheet';
 import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, Mail, User, X, Zap } from '@/app/shared/icons';
+import { CASE_SHAPES, SHAPE_SPEC } from '@/lib/server/engine/shapes';
 
 /**
  * The work panel for one matter: where it is on this transaction type's spine, what
@@ -168,7 +169,9 @@ export const WORK_CSS = `
 .ep-note{font-size:11.5px;color:#64748b}
 .ep-enrol{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:10px}
 .ep-enrol label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#334155}
+.ep-enrol label.ep-shape{flex-direction:row;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#0f172a}
 .ep-enrol input,.ep-enrol select{border:1px solid #cbd5e1;border-radius:8px;padding:6px 8px;font-size:12.5px;font-family:inherit}
+.ep-enrol .ep-shape input[type=checkbox]{width:15px;height:15px;padding:0;margin:0;accent-color:#5A27E0}
 `;
 
 const PILL: Record<string, { bg: string; fg: string }> = {
@@ -519,25 +522,8 @@ const phaseState = (ls: LaneDef[]): LaneDef['state'] => (ls.some((l) => l.state 
 
 type Cmd = (body: Record<string, unknown>) => Promise<boolean | void>;
 
-/** Case shapes a case can be enrolled with (mirrors lib/server/engine/shapes.ts). */
-const SHAPES: Array<{ id: string; label: string; sides: string[]; summary: string }> = [
-  { id: 'company_buyer', label: 'Company Buyer', sides: ['buyer'], summary: 'Companies House, directors and PSCs, authority to buy, the company\'s funds.' },
-  { id: 'buy_to_let', label: 'Buy To Let', sides: ['buyer'], summary: 'Buy-to-let offer conditions, any sitting tenancy, licensing, higher-rate SDLT.' },
-  { id: 'new_build', label: 'New Build', sides: ['buyer'], summary: 'Developer\'s pack, warranty, planning and roads, exchange deadline, completion on notice.' },
-  { id: 'auction', label: 'Auction', sides: ['buyer', 'seller'], summary: 'Legal pack before the auction; the hammer is the exchange; completion to the conditions.' },
-  { id: 'lifetime_isa', label: 'Lifetime ISA', sides: ['buyer'], summary: 'Declarations, eligibility limits, the bonus paid to us by the ISA manager.' },
-  { id: 'help_to_buy_isa', label: 'Help To Buy ISA', sides: ['buyer'], summary: 'Closing statement, the bonus claim, the bonus paid to us before completion.' },
-  { id: 'second_charge', label: 'Second Charge / Equity Loan', sides: ['buyer'], summary: 'Both lenders\' consents, the deed of postponement, the second deed before completion.' },
-  { id: 'shared_ownership', label: 'Shared Ownership', sides: ['buyer'], summary: 'Model lease with the mortgagee protection clause, provider approval, rent and staircasing.' },
-  { id: 'unrepresented_counterparty', label: 'Unrepresented Other Side', sides: ['buyer', 'seller'], summary: 'No undertakings, identity against the title, the lender told.' },
-  { id: 'court_order_transfer', label: 'Transfer Under A Court Order', sides: ['owner'], summary: 'The sealed order, the lender\'s release of the outgoing owner, the SDLT exemption.' },
-  { id: 'right_to_buy', label: 'Right To Buy', sides: ['buyer', 'seller'], summary: 'Discount repayment charge for five years, right of first refusal for ten.' },
-  { id: 'flying_freehold', label: 'Flying Freehold', sides: ['buyer'], summary: 'The lender\'s limit, rights of support and access, an indemnity policy.' },
-  { id: 'overseas_entity', label: 'Overseas Entity', sides: ['buyer', 'seller'], summary: 'Its Overseas Entities ID and beneficial owners verified.' },
-  { id: 'client_abroad', label: 'Client Abroad', sides: ['buyer', 'seller', 'owner'], summary: 'Higher-standard ID, signing abroad, residence for tax.' },
-  { id: 'equity_loan_redemption', label: 'Help To Buy Loan To Repay', sides: ['seller', 'owner'], summary: 'The RICS valuation, the redemption figure and Homes England\'s release.' },
-  { id: 'commonhold', label: 'Commonhold', sides: ['buyer', 'seller'], summary: 'The community statement and the association in place of the lease and the pack.' },
-];
+/** Case shapes a case can be enrolled with. */
+const SHAPES = CASE_SHAPES.map((id) => SHAPE_SPEC[id]);
 
 /** Enrolment: the transaction type decides everything that follows. */
 function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | null }) {
@@ -622,7 +608,11 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
 
 const PAYER: Record<string, string> = { client: 'Client', lender: 'Lender', isa_provider: 'ISA Manager', buyer_solicitor: "Buyer's Solicitor", incoming_owner: 'Incoming Owner' };
 
-export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow', stepKey }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' | 'step' | 'todo' | 'wait'; /** section 'step': the one due step whose action to show (the Tasks list opens it in place); section 'wait': the wait, as `key:subject`. */ stepKey?: string }) {
+type WorkPanelProps = { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' | 'step' | 'todo' | 'wait'; /** section 'step': the one due step whose action to show (the Tasks list opens it in place); section 'wait': the wait, as `key:subject`. */ stepKey?: string };
+/** Remounted when the case is enrolled: the enrol form returns before the panel's own hooks. */
+export function WorkPanel(props: WorkPanelProps) { return <WorkPanelBody key={props.view.state.enrolled ? 'enrolled' : 'enrol'} {...props} />; }
+
+function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow', stepKey }: WorkPanelProps) {
   // Tasks dismissed here: hidden at once, listed under Dismissed (restorable).
   const [goneSteps, setGoneSteps] = useState<Set<string>>(new Set());
   const [disTick, setDisTick] = useState(0);

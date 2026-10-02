@@ -83,7 +83,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
     const r = await svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind: payeeKind as never, payeeRef: payeeKind, details: { sortCode: '200000', accountNumber: String(10_000_000 + Math.floor(Math.random() * 89_999_999)), accountName: payeeKind, firmName: payeeKind }, sourceChannel: 'letter', sourceDocumentId: doc({ content: `${payeeKind} letter` }) });
     const d = Object.values(r.state.decisions).find((x) => x.kind === 'bank_details' && x.status === 'pending')!;
     await svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
-    await svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'verify', 'called back', { method: 'phone_callback_known_number' });
+    await svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'verify', 'called back', { method: 'phone_callback_known_number', reference: 'SRA 123456' });
     return (r.events[0].payload as { bankDetailsId: string }).bankDetailsId;
   };
 
@@ -101,7 +101,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
       // Whoever it is on the list of: an escalation's assignee, else the handler. Escalating names a senior.
       const by = d.assignedTo ?? USER;
       await svc.openDecisionSource(TENANT, MATTER, d.eventId, by);
-      await svc.resolveDecision(TENANT, MATTER, d.eventId, by, option as never, 'done from the Tasks list', d.kind === 'bank_details' && option === 'verify' ? { method: 'phone_callback_known_number' } : null, null, null, null, option === 'escalate' ? (by === SENIOR ? USER : SENIOR) : null);
+      await svc.resolveDecision(TENANT, MATTER, d.eventId, by, option as never, 'done from the Tasks list', d.kind === 'bank_details' && option === 'verify' ? { method: 'phone_callback_known_number', reference: 'SRA 123456' } : null, null, null, null, option === 'escalate' ? (by === SENIOR ? USER : SENIOR) : null);
       return `decision ${d.kind}${d.subject ? ` (${d.subject})` : ''}: ${option}`;
     }
     // 2. A step due from us.

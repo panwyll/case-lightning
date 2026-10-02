@@ -384,6 +384,7 @@ export const MIN_SEVERITY: Record<string, Severity> = {
   CHANCEL_LIABILITY: 'medium',
   PEP_MATCH: 'medium',
   SANCTIONS_MATCH: 'high',
+  MINOR_PARTY: 'high',
   ADDRESS_MISMATCH: 'medium',
   DOCUMENT_FAILED: 'high',
 };

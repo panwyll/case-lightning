@@ -58,6 +58,7 @@ export function counterpartyStatus(s: MatterState, now: Date, to: 'seller_solici
   }
 
   // The client's own chain: only on their say-so.
+  if (s.shareChain && s.chainLinks?.length) lines.push(`Further along the chain: ${s.chainLinks.filter((l) => l.status === 'ready').length} of ${s.chainLinks.length} ready.`);
   if (s.shareChain && s.relatedMatter) lines.push(`Our client also has a linked ${s.relatedMatter.relation}; ${ws.chain === 'blocked' ? 'there is a delay further along the chain, which we are following up' : 'it is progressing'}.`);
 
   // Ready to exchange: nothing on our side outstanding (the client's checks are named only as "our side").

@@ -6,7 +6,7 @@ The core flow (code) is the product. A firm changes it only through **declared v
 
 1. **Core** (code): steps, waits, gates, issues, decisions, triggers — `machine.ts`, `due.ts`, `service.ts`, `issues.ts`, `sla.ts`.
 2. **Firm profile** (data, per tenant): the overrides below, loaded once per run and handed to the engine.
-3. **Case** (data, per matter): transaction type, case shapes (`shapes.ts`), funding, parties — chosen at enrol.
+3. **Case** (data, per matter): transaction type, case shapes (`shapes.ts`), funding, parties — chosen at enrol. A shape found later is added with `add_shape` (Something Happened → This Case Is Also), which raises its checklist as at enrol.
 
 ## Variant points, safest first
 

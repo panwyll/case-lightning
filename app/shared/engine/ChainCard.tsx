@@ -27,6 +27,14 @@ const CSS = `
 .ch-btn:disabled{opacity:.55;cursor:default}
 .ch-sel{width:100%;border:1px solid #cbd5e1;border-radius:7px;padding:6px 8px;font:inherit;font-size:13px;margin:6px 0}
 .ch-err{color:#b91c1c;font-size:12px;margin-top:4px}
+.ch-links{margin-top:8px;display:flex;flex-direction:column;gap:4px}
+.ch-link{display:flex;align-items:center;gap:8px;font-size:13px;color:#0f172a}
+.ch-link span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch-link select{border:1px solid #cbd5e1;border-radius:7px;padding:3px 6px;font:inherit;font-size:12px;font-weight:700}
+.ch-link select.ready{color:#15803d;border-color:#86efac}
+.ch-link select.not_ready{color:#b45309;border-color:#fcd34d}
+.ch-add{display:flex;gap:6px}
+.ch-add input{flex:1;border:1px solid #cbd5e1;border-radius:7px;padding:4px 8px;font:inherit;font-size:13px}
 `;
 
 const date = (iso: string | null | undefined) => (iso ? fmtDay(iso) : null);
@@ -40,6 +48,7 @@ export function ChainCard({ matterId, api, view, busy, cmd }: { matterId: string
   const [unlinking, setUnlinking] = useState(false);
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [adding, setAdding] = useState<string | null>(null);
   const exchanged = !!s.exchange?.exchangedAt;
   if (side !== 'buyer' && side !== 'seller') return null;
   if (!chain && exchanged) return null;
@@ -80,6 +89,7 @@ export function ChainCard({ matterId, api, view, busy, cmd }: { matterId: string
         <b>Chain</b>
         {chain && !exchanged && !unlinking && <button type="button" className="ch-btn" disabled={busy} onClick={() => setUnlinking(true)}>Unlink</button>}
         {!chain && !picking && <button type="button" className="ch-btn go" disabled={busy} onClick={() => void openPicker()}>Link {want}</button>}
+        {!exchanged && adding === null && <button type="button" className="ch-btn" disabled={busy} onClick={() => setAdding('')}>Add Link</button>}
       </div>
       {!chain && picking && (
         <div>
@@ -108,6 +118,28 @@ export function ChainCard({ matterId, api, view, busy, cmd }: { matterId: string
               </>
             )}
           </div>
+        </div>
+      )}
+      {!exchanged && ((s.chainLinks?.length ?? 0) > 0 || adding !== null) && (
+        <div className="ch-links">
+          {(s.chainLinks ?? []).map((l) => (
+            <div key={l.id} className="ch-link">
+              <span title={l.note ?? undefined}>{l.label}</span>
+              <select className={l.status} aria-label={`${l.label}: status`} value={l.status} disabled={busy} onChange={(e) => void cmd({ type: 'record_chain_link', linkId: l.id, label: l.label, status: e.target.value })}>
+                <option value="ready">Ready</option>
+                <option value="not_ready">Not Ready</option>
+                <option value="unknown">Unknown</option>
+                <option value="removed">Remove</option>
+              </select>
+            </div>
+          ))}
+          {adding !== null && (
+            <div className="ch-add">
+              <input autoFocus placeholder="Who (e.g. the buyer of our seller's buyer)" value={adding} onChange={(e) => setAdding(e.target.value)} />
+              <button type="button" className="ch-btn go" disabled={busy || !adding.trim()} onClick={async () => { const ok = await cmd({ type: 'record_chain_link', label: adding.trim(), status: 'unknown' }); if (ok !== false) setAdding(null); }}>Add</button>
+              <button type="button" className="ch-btn" onClick={() => setAdding(null)}>Cancel</button>
+            </div>
+          )}
         </div>
       )}
       {chain && unlinking && (

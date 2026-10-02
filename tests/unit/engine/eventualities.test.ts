@@ -152,11 +152,11 @@ test('deadlines we owe: mortgage offer expiry before exchange and the 14-day SDL
   // Bank details + payment (addendum 2) so completion can be confirmed.
   const firm = await h.svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind: 'firm_client_account', details: { sortCode: '401234', accountNumber: '00112233', accountName: 'Client A/C', firmName: null }, sourceChannel: 'manual' });
   await h.svc.openDecisionSource(TENANT, MATTER, firstDecision(firm.state, 'bank_details').eventId, USER);
-  await h.svc.resolveDecision(TENANT, MATTER, firstDecision(firm.state, 'bank_details').eventId, USER, 'verify', 'mandate', { method: 'in_person' });
+  await h.svc.resolveDecision(TENANT, MATTER, firstDecision(firm.state, 'bank_details').eventId, USER, 'verify', 'mandate', { method: 'in_person', reference: 'SRA 123456' });
   const sol = await h.svc.recordBankDetails(TENANT, MATTER, { actor: 'external', payeeKind: 'seller_solicitor', details: { sortCode: '309876', accountNumber: '55667788', accountName: 'Greenfield Client', firmName: 'Greenfield' }, sourceChannel: 'letter' });
   const sd = firstDecision(sol.state, 'bank_details');
   await h.svc.openDecisionSource(TENANT, MATTER, sd.eventId, USER);
-  await h.svc.resolveDecision(TENANT, MATTER, sd.eventId, USER, 'verify', 'call-back', { method: 'phone_callback_known_number' });
+  await h.svc.resolveDecision(TENANT, MATTER, sd.eventId, USER, 'verify', 'call-back', { method: 'phone_callback_known_number', reference: 'SRA 123456' });
   const st = await h.svc.getState(TENANT, MATTER);
   const firmId = Object.values(st.bankDetails).find((b) => b.payeeKind === 'firm_client_account')!.id;
   const solId = Object.values(st.bankDetails).find((b) => b.payeeKind === 'seller_solicitor')!.id;
@@ -239,11 +239,11 @@ test('post-completion: an HMLR requisition is a decision citing the letter, bloc
   const firm = await h2.svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind: 'firm_client_account', details: { sortCode: '401234', accountNumber: '00112233', accountName: 'Client A/C', firmName: null }, sourceChannel: 'manual' });
   const fd = firstDecision(firm.state, 'bank_details');
   await h2.svc.openDecisionSource(TENANT, MATTER, fd.eventId, USER);
-  await h2.svc.resolveDecision(TENANT, MATTER, fd.eventId, USER, 'verify', 'mandate', { method: 'in_person' });
+  await h2.svc.resolveDecision(TENANT, MATTER, fd.eventId, USER, 'verify', 'mandate', { method: 'in_person', reference: 'SRA 123456' });
   const sol = await h2.svc.recordBankDetails(TENANT, MATTER, { actor: 'external', payeeKind: 'seller_solicitor', details: { sortCode: '309876', accountNumber: '55667788', accountName: 'Greenfield Client', firmName: 'Greenfield' }, sourceChannel: 'letter' });
   const sd = firstDecision(sol.state, 'bank_details');
   await h2.svc.openDecisionSource(TENANT, MATTER, sd.eventId, USER);
-  await h2.svc.resolveDecision(TENANT, MATTER, sd.eventId, USER, 'verify', 'call-back', { method: 'phone_callback_known_number' });
+  await h2.svc.resolveDecision(TENANT, MATTER, sd.eventId, USER, 'verify', 'call-back', { method: 'phone_callback_known_number', reference: 'SRA 123456' });
   const st = await h2.svc.getState(TENANT, MATTER);
   const firmId = Object.values(st.bankDetails).find((b) => b.payeeKind === 'firm_client_account')!.id;
   const solId = Object.values(st.bankDetails).find((b) => b.payeeKind === 'seller_solicitor')!.id;

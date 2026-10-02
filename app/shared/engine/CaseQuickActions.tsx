@@ -5,6 +5,8 @@ import { BusyButton } from './BusyButton';
 import { IssuesPanel } from './IssuesPanel';
 import type { Api, EngineState } from './types';
 import { WORK_CSS } from './WorkPanel';
+import { CASE_SHAPES, SHAPE_SPEC } from '@/lib/server/engine/shapes';
+import { profileOf } from '@/lib/server/engine/transactions';
 
 /**
  * A task's header: raise an issue on its case, record something that happened to a person on it (people.ts),
@@ -34,6 +36,8 @@ const PARTY_EVENTS: Array<[string, string]> = [
   ['instructing_for_client', 'Someone Else Is Giving Instructions'], ['confidence', 'A Joint Client Told Us Something In Confidence'], ['refuses_to_sign', 'A Co-Owner Will Not Sign'],
   ['withhold_from_lender', 'Client Asks Us Not To Tell The Lender'], ['gift_withdrawn', 'A Gift Is Withdrawn'], ['cdd_refused', 'Client Will Not Give ID Or Source Of Funds'],
   ['uncontactable', 'Cannot Reach The Client'], ['complaint', 'Client Complaint'], ['moving_firm', 'Client Moving To Another Firm'], ['ceasing_to_act', 'We Are Ceasing To Act'],
+  ['donor_died', 'The Donor Of A Power Of Attorney Has Died'], ['gift_donor_died', 'Someone Giving Money Has Died'], ['contributions_changed', 'What Each Buyer Puts In Has Changed'],
+  ['company_insolvent', 'A Company Is In Liquidation Or Struck Off'], ['sanctions_designated', 'Someone Is Now On A Sanctions List'],
 ];
 
 export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matterId: string; onChanged?: () => void }) {
@@ -64,6 +68,9 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
   const TIPS = { issue: 'Raise Issue', manual: manual ? 'Resume Automation' : 'Take Over Manually', person: 'Something Happened' };
   const holdPending = state?.amlHold?.status === 'awaiting';
   const isParty = PARTY_EVENTS.some(([v]) => v === what);
+  const isShape = what.startsWith('shape:');
+  const side = state?.transactionType ? profileOf(state.transactionType).side : null;
+  const shapeOptions = side ? CASE_SHAPES.map((id) => SHAPE_SPEC[id]).filter((sh) => sh.sides.includes(side) && !(state?.shapes ?? []).includes(sh.id)) : [];
   // The warning before taking a case over, until the person says not to show it again (this browser only).
   const WARN_KEY = 'conveyi:manual-warning-hidden';
   const [warnHidden, setWarnHidden] = useState(false);
@@ -98,7 +105,10 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
               <option value="reservation">New-Build Reservation</option>
               <option value="renegotiated">Terms Renegotiated</option>
               <option value="sitting_tenant">Tenant In The Property</option>
+              <option value="nominee">Transfer To Someone Else Or An Extra Person</option>
+              <option value="buy_out">Sale Replaced By A Buy-Out</option>
             </optgroup>
+            {shapeOptions.length > 0 && <optgroup label="This Case Is Also">{shapeOptions.map((sh) => <option key={sh.id} value={`shape:${sh.id}`}>{sh.label}</option>)}</optgroup>}
             <optgroup label="Compliance">
               {!holdPending && <option value="sar">Report Made To The NCA (Hold)</option>}
               {holdPending && <option value="daml_granted">NCA Consent Received</option>}
@@ -115,14 +125,14 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
           {(what === 'lockout' || what === 'reservation') && <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} aria-label={what === 'lockout' ? 'Lock-out ends' : 'Exchange deadline'} />}
           {(what === 'lockout' || what === 'reservation') && <input type="text" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} placeholder={what === 'reservation' ? '£ Reservation fee' : '£ Paid for it'} aria-label="Amount" />}
           {what === 'sar' && <span className="warn"><AlertTriangle size={16} /><span>No money moves and nothing exchanges for seven working days, or until consent. Say nothing to the client about it.</span></span>}
-          <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={isParty || what === 'sar' || what.startsWith('daml') ? 'Note' : 'What happened'} aria-label="Note" />
+          <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={isParty || isShape || what === 'sar' || what.startsWith('daml') ? 'Note' : 'What happened'} aria-label="Note" />
           {err && <span className="bad">{err}</span>}
           <span className="f">
             <button type="button" className="ep-btn" style={{ margin: 0 }} onClick={() => setOpen(null)}>Cancel</button>
-            <BusyButton disabled={(isParty && !who.trim()) || (!isParty && !['sar', 'daml_granted', 'daml_refused'].includes(what) && !reason.trim())} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
+            <BusyButton disabled={(isParty && !who.trim()) || (!isParty && !isShape && !['sar', 'daml_granted', 'daml_refused'].includes(what) && !reason.trim())} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
               setErr(null);
-              const deal = ['contract_race', 'lockout', 'reservation', 'renegotiated', 'sitting_tenant'].includes(what);
-              const body = deal ? { type: 'record_deal_event', event: what, detail: reason.trim(), until: until || null, amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null } : ['damaged', 'not_vacant', 'early_access', 'seller_stays'].includes(what) ? { type: 'record_property_event', event: what, detail: reason.trim() } : what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };
+              const deal = ['contract_race', 'lockout', 'reservation', 'renegotiated', 'sitting_tenant', 'nominee', 'buy_out'].includes(what);
+              const body = isShape ? { type: 'add_shape', shape: what.slice(6) } : deal ? { type: 'record_deal_event', event: what, detail: reason.trim(), until: until || null, amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null } : ['damaged', 'not_vacant', 'early_access', 'seller_stays'].includes(what) ? { type: 'record_property_event', event: what, detail: reason.trim() } : what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };
               try { await cmd(body); setTimeout(() => setOpen(null), 900); return true; }
               catch (e: unknown) { setErr(e instanceof Error ? e.message : 'It did not save.'); return false; }
             }}>Record</BusyButton>

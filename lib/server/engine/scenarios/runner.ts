@@ -93,7 +93,7 @@ function contextFor(tenantId: string, userId: string, matterId: string, flagged:
       const d = Object.values(r.state.decisions).find((x) => x.kind === 'bank_details' && x.status === 'pending');
       if (d) {
         await svc.openDecisionSource(tenantId, matterId, d.eventId, userId);
-        await svc.resolveDecision(tenantId, matterId, d.eventId, userId, 'verify', 'Sandbox: verified by call-back on the number on file.', { method: 'phone_callback_known_number' });
+        await svc.resolveDecision(tenantId, matterId, d.eventId, userId, 'verify', 'Sandbox: verified by call-back on the number on file.', { method: 'phone_callback_known_number', reference: 'SRA 123456' });
       }
       return (r.events[0].payload as { bankDetailsId: string }).bankDetailsId;
     },

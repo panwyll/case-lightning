@@ -210,6 +210,8 @@ export const EVENT_TYPES = [
   'longstop_date_recorded',
   'sdlt_facts_recorded',
   'party_event_recorded',
+  'shape_added',
+  'chain_link_recorded',
   'contributions_recorded',
   'completion_payment_sent',
   'final_bill_delivered',
@@ -1156,7 +1158,7 @@ export interface Payloads {
   final_bill_delivered: { amountPennies: number; documentId: string | null };
   formula_c_release_given: { until: string; givenTo: string };
   formula_c_release_lapsed: { reason: string };
-  deal_event_recorded: { event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant'; detail: string; until: string | null; amountPennies: number | null };
+  deal_event_recorded: { event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant' | 'nominee' | 'buy_out'; detail: string; until: string | null; amountPennies: number | null };
   property_event_recorded: { event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays'; detail: string };
   retention_released: { amountPennies: number | null };
   redemption_figure_adjusted: { redemptionPennies: number; days: number; reason: string };
@@ -1165,6 +1167,8 @@ export interface Payloads {
   requisition_extended: { requisitionEventId: string; deadline: string; note: string };
   register_checked: { ok: boolean; note: string | null; lenderTold: boolean };
   seller_discharge_received: { reference: string | null };
+  shape_added: { shape: string };
+  chain_link_recorded: { linkId: string; label: string; status: 'ready' | 'not_ready' | 'unknown' | 'removed'; note: string | null };
   party_event_recorded: { event: string; party: string; hasAttorney: boolean | null; note: string | null };
   sar_made: { noticeEnds: string };
   daml_response_recorded: { decision: 'granted' | 'refused'; moratoriumEnds: string | null };
@@ -1709,6 +1713,8 @@ export interface MatterState {
   fileDelivery?: 'link' | 'attachments';
   /** The client has said we may tell the other side about their own sale or purchase (their chain). */
   shareChain?: boolean;
+  /** Each link further along the chain and whether it is ready (exchange.md 8.6). */
+  chainLinks?: Array<{ id: string; label: string; status: 'ready' | 'not_ready' | 'unknown'; note: string | null; at: string }>;
   /** The lender's own (Part 2) requirements recorded on this matter; null = the defaults. */
   lenderRequirements: { minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; note: string | null; recordedAt: string } | null;
   /** Documented name changes: [from, to] pairs the cross-checks treat as one person. */
