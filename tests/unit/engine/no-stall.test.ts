@@ -170,7 +170,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
       for (const fld of RESOLUTION_FIELDS[resolution]) {
         if (!fld.required) continue;
         if (fld.key === 'documentId') cmd.documentId = doc({ content: 'evidence' });
-        else if (fld.key === 'cost') cmd.costPennies = 10_000;
+        else if (fld.key === 'cost') { cmd.costPennies = 10_000; cmd.paidBy = cmd.paidBy ?? 'seller'; }
         else if (fld.key === 'paidBy') cmd.paidBy = 'seller';
         else details[fld.key] = fld.type === 'date' ? F.completionDate() : fld.type === 'money' ? 100 : fld.type === 'confirm' ? true : 'x';
       }

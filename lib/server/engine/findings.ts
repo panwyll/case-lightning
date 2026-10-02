@@ -165,7 +165,7 @@ export function conditionalLongStop(conditions: Array<{ text: string }>): string
 }
 
 /** The draft contract: the deposit and the special conditions that change the bargain. */
-export function contractFindings(c: Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'> & { completionDate?: string | null }, ctx: FindingContext): Finding[] {
+export function contractFindings(c: Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'> & { completionDate?: string | null; chattelsPricePennies?: number | null; fixturesListPresent?: boolean | null }, ctx: FindingContext): Finding[] {
   const out: Finding[] = [];
   const price = c.pricePennies ?? ctx.pricePennies ?? null;
   const buyer = ctx.side === 'buyer';
@@ -180,6 +180,13 @@ export function contractFindings(c: Pick<ContractFacts, 'pricePennies' | 'deposi
   if (buyer && c.completionDate && ctx.offerExpiry && c.completionDate.slice(0, 10) > ctx.offerExpiry.slice(0, 10)) {
     out.push({ code: 'COMPLETION_AFTER_OFFER', kind: 'mortgage_offer_expiring', severity: 'critical', gate: 'exchange', page: null, title: `The draft completion date (${c.completionDate.slice(0, 10)}) is after the mortgage offer expires (${ctx.offerExpiry.slice(0, 10)})`, detail: 'Ask the lender to extend the offer, or agree an earlier date with the seller, before exchange: the date becomes contractual and the advance will not be released after the offer ends.' });
   }
+  // Chattels (exchange.md 2.6): SDLT is on the land only, so HMRC looks at the split, harder when it takes the price under a threshold.
+  if (buyer && c.chattelsPricePennies && price) {
+    const land = price - c.chattelsPricePennies;
+    const crosses = [12_500_000, 25_000_000, 30_000_000, 50_000_000, 92_500_000].find((t) => price > t && land <= t);
+    out.push({ code: 'CHATTELS_PRICE', kind: 'contract_term', severity: crosses ? 'warning' : 'info', gate: crosses ? 'exchange' : 'none', page: null, title: `Chattels price ${pounds(c.chattelsPricePennies)}${crosses ? `: takes the land price under £${(crosses / 100).toLocaleString('en-GB')}` : ''}`, detail: `Only the land is charged to SDLT, so the chattels must be valued fairly (second-hand value, not cost); HMRC challenges inflated figures${crosses ? ', especially one that takes the price under a rate threshold' : ''}.${ctx.hasLender ? ' Tell the lender: it lends on the land, not the contents.' : ''}` });
+  }
+  if (buyer && c.fixturesListPresent === false) out.push({ code: 'NO_FIXTURES_LIST', kind: 'document_missing', severity: 'warning', gate: 'exchange', page: null, title: 'No fittings and contents form (TA10) with the contract', detail: 'Ask for the TA10 to be attached to the contract before exchange, so what stays and what goes is part of the deal.' });
   if (c.noticeToCompleteDays != null && c.noticeToCompleteDays < 10) {
     out.push({ code: 'NOTICE_TO_COMPLETE_SHORT', kind: 'contract_term', severity: 'warning', gate: 'exchange', page: null, title: `Notice to complete shortened to ${c.noticeToCompleteDays} working days`, detail: 'The standard is 10 working days (SCS 6.8). A shorter notice gives the client less time to put things right after a missed completion: ask for the standard, or advise them in writing.' });
   }

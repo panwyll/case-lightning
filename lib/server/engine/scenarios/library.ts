@@ -553,8 +553,10 @@ SCENARIOS.push({
     // The sale exchanges only once the purchase can; the purchase then exchanges on the same completion date.
     onSale(saleSteps.find((x) => x.id === 'exchange')!),
     ...from(buyerExchange, 'exchange').filter((x) => ['exchange'].includes(x.id)),
-    // The sale completes first: its money funds the purchase.
+    // The purchase gets ready first (statement, checks, deed, certificate, the advance in), so the client is never left without a home;
+    // then the sale completes, its money funding the purchase, which completes the same day.
+    ...upTo(from(buyerExchange, 'statement'), 'transfer_deed'),
     ...from(saleSteps, 'statement').map(onSale),
-    ...from(buyerExchange, 'statement'),
+    ...from(buyerExchange, 'transfer_deed'),
   ],
 });

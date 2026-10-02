@@ -216,6 +216,7 @@ export const EVENT_TYPES = [
   'formula_c_release_given',
   'formula_c_release_lapsed',
   'property_event_recorded',
+  'deal_event_recorded',
   'retention_released',
   'redemption_figure_adjusted',
   'ap1_cancelled',
@@ -1155,6 +1156,7 @@ export interface Payloads {
   final_bill_delivered: { amountPennies: number; documentId: string | null };
   formula_c_release_given: { until: string; givenTo: string };
   formula_c_release_lapsed: { reason: string };
+  deal_event_recorded: { event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant'; detail: string; until: string | null; amountPennies: number | null };
   property_event_recorded: { event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays'; detail: string };
   retention_released: { amountPennies: number | null };
   redemption_figure_adjusted: { redemptionPennies: number; days: number; reason: string };
@@ -1671,6 +1673,8 @@ export interface MatterState {
     interimSentAt?: string | null;
   };
   deposit: { received: boolean; at: string | null; /** What has come in towards it, and what the contract says it is. */ amountPennies?: number | null; contractPennies?: number | null };
+  /** A new-build reservation fee already paid to the developer: credited against the deposit (exchange.md 1.5). */
+  reservationFeePennies?: number | null;
   /** The final bill delivered to the client: fees are taken from client money only after it (SRA Accounts Rules 4.3). */
   finalBill?: { amountPennies: number; deliveredAt: string; documentId: string | null } | null;
   /** Joint clients' authority to exchange, each their own (parties.md 2.7). */

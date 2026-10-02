@@ -40,7 +40,7 @@ import { deferral, outsideDeferral } from './defer';
 const foldOnto = (state: MatterState, events: EngineEvent[]): MatterState => events.reduce((s, e) => applyEvent(s, e), state);
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type NoteMessage, type MessageParty, type MessageAttachment, type ManualChannel, MANUAL_CHANNELS, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type NoteMessage, type MessageParty, type MessageAttachment, type ManualChannel, MANUAL_CHANNELS, type IdCheckFacts, actsUnasked, levelFor, pendingProposal , isLeasehold } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -179,6 +179,7 @@ export class EngineService {
     // A linked sale or purchase exchanges with us: the other file must be able to exchange too, and its chain issue here clears when it can.
     if (cmd.type === 'contracts_exchanged') await this.assertLinkedMatterReady(tenantId, matterId, cmd.actor as Actor, cmd.completionDate);
     if (cmd.type === 'completion_confirmed') await this.assertLinkedSaleCompleted(tenantId, matterId);
+    if (cmd.type === 'completion_confirmed') await this.assertLinkedPurchaseReady(tenantId, matterId);
     // Money is checked against the contract: the deposit it states, and on a sale the price less that deposit from the buyer's solicitor.
     if ((cmd.type === 'deposit_received' && cmd.contractDepositPennies === undefined) || (cmd.type === 'funds_received' && cmd.fromRole === 'buyer_solicitor' && cmd.contractPricePennies === undefined)) {
       const terms = await this.contractTerms(tenantId, matterId);
@@ -763,7 +764,8 @@ export class EngineService {
     // Approved is the check: the report goes to the client as soon as it is signed off.
     if (e.type === 'report_on_title_approved' && s.reportOnTitle.status === 'approved') await safe('report on title send', () => this.sendReportOnTitle(tenantId, matterId, e.actor));
     if (e.type === 'contracts_exchanged') {
-      if (side === 'buyer' && s.hasLender && !s.preCompletion.insuranceConfirmedAt && !asked('buildings_insurance_request')) await askClient('buildings_insurance_request');
+      // Every buyer of a freehold is asked to insure from exchange; with a lender it is also a completion gate (exchange.md 4.9).
+      if (side === 'buyer' && (s.hasLender || !isLeasehold(s)) && !s.preCompletion.insuranceConfirmedAt && !asked('buildings_insurance_request')) await askClient('buildings_insurance_request');
       if (!s.completion.statementGeneratedAt) await safe('completion statement draft', () => this.draftCompletionStatement(tenantId, matterId));
     }
     // Completion money is requested by a person (it names our verified client account: never automation); the Tasks list asks for it.
@@ -873,7 +875,7 @@ export class EngineService {
         await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'deposit_issue', title: `Deposit up the chain: £${((f.depositPennies - saleDeposit) / 100).toLocaleString('en-GB')} more needed`, detail: `The sale's deposit (£${(saleDeposit / 100).toLocaleString('en-GB')}) can go towards this purchase's (£${(f.depositPennies / 100).toLocaleString('en-GB')}) under standard condition 2.2.5, if neither contract excludes it. The client tops up the difference before exchange; ask them for it now.`, gate: 'exchange', severity: 'warning' } as never).catch((err) => this.ports.log('deposit gap not raised', err));
       }
     }
-    await this.run(tenantId, matterId, { type: 'raise_contract_review', documentId: docId, summary, citations, terms: f ? { pricePennies: f.pricePennies, depositPennies: f.depositPennies, depositHolder: f.depositHolder, noticeToCompleteDays: f.noticeToCompleteDays, specialConditions: f.specialConditions, completionDate: f.completionDate } : null });
+    await this.run(tenantId, matterId, { type: 'raise_contract_review', documentId: docId, summary, citations, terms: f ? { pricePennies: f.pricePennies, depositPennies: f.depositPennies, depositHolder: f.depositHolder, noticeToCompleteDays: f.noticeToCompleteDays, specialConditions: f.specialConditions, completionDate: f.completionDate, chattelsPricePennies: f.chattelsPricePennies, fixturesListPresent: f.fixturesListPresent } : null });
   }
 
   /** A document behind the seller's forms (a policy, a permission, a certificate, a guarantee): read, and shown with the title. */
@@ -1267,6 +1269,20 @@ export class EngineService {
   }
 
   /** The purchase waits for the sale that funds it: the sale completes first, the same day. */
+  /** A client's sale completes only when their purchase can complete the same day: otherwise they are left with nowhere to live (exchange.md 8.4). */
+  private async assertLinkedPurchaseReady(tenantId: string, matterId: string): Promise<void> {
+    const state = await this.getState(tenantId, matterId);
+    if (state.relatedMatter?.relation !== 'purchase') return;
+    const purchase = await this.getState(tenantId, state.relatedMatter.matterId).catch(() => null);
+    if (!purchase || purchase.completion.confirmedAt || purchase.abandoned) return;
+    // The sale's proceeds pay for the purchase, so its payment follows the sale; what must already be in is the advance, and the purchase on its last stage.
+    const missing = [
+      purchase.stage !== 'pre_completion' && 'the purchase at its completion stage',
+      purchase.hasLender && !(purchase.completion.receivedFrom ?? []).includes('lender') && "the purchase's mortgage advance",
+    ].filter(Boolean);
+    if (missing.length) throw Object.assign(new Error(`Cannot confirm the sale yet: the client's linked purchase is not ready to complete today (${missing.join(', ')}). Completing the sale alone leaves them without a home.`), { status: 409 });
+  }
+
   private async assertLinkedSaleCompleted(tenantId: string, matterId: string): Promise<void> {
     const state = await this.getState(tenantId, matterId);
     if (state.relatedMatter?.relation !== 'sale') return;

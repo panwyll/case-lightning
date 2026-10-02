@@ -158,7 +158,7 @@ type CommandBody =
   // ── eventualities (docs/engine-eventualities.md) ──
   | { type: 'abandon_matter'; actor: Actor; reason: AbandonReason; detail?: string | null }
   | { type: 'record_contract_filed'; documentId: string; points: number }
-  | { type: 'raise_contract_review'; documentId: string; summary: string; citations?: Citation[]; /** What the contract read says, for the rules (findings.ts). */ terms?: (Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'> & { completionDate?: string | null }) | null }
+  | { type: 'raise_contract_review'; documentId: string; summary: string; citations?: Citation[]; /** What the contract read says, for the rules (findings.ts). */ terms?: (Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'> & { completionDate?: string | null; chattelsPricePennies?: number | null; fixturesListPresent?: boolean | null }) | null }
   | { type: 'set_clients'; actor: Actor; names: string[]; reason?: string | null }
   | { type: 'set_target_dates'; actor: Actor; targetExchangeDate?: string | null; targetCompletionDate?: string | null; reason?: string | null }
   | { type: 'change_completion_date'; actor: Actor; completionDate: string; reason?: string | null }
@@ -224,6 +224,7 @@ type CommandBody =
   | { type: 'final_bill_delivered'; actor: Actor; amountPennies: number; documentId?: string | null }
   | { type: 'formula_c_release_given'; actor: Actor; until: string; givenTo: string }
   | { type: 'formula_c_release_lapsed'; actor: Actor; reason: string }
+  | { type: 'record_deal_event'; actor: Actor; event: 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant'; detail: string; until?: string | null; amountPennies?: number | null }
   | { type: 'record_property_event'; actor: Actor; event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays'; detail: string }
   | { type: 'retention_released'; actor: Actor; amountPennies?: number | null }
   | { type: 'record_contributions'; actor: Actor; model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent?: Record<string, number> | null }
@@ -317,6 +318,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'formula_c_release_given',
   'formula_c_release_lapsed',
   'record_property_event',
+  'record_deal_event',
   'retention_released',
   'ap1_cancelled',
   'requisition_extended',
@@ -965,6 +967,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       let issueN = shapes.length;
       const issue = (kind: IssueKind, title: string, detail: string): NewEvent => ({ type: 'issue_raised', actor: cmd.actor, payload: { issueId: `I${++issueN}`, kind, title, detail, gate: ISSUE_KIND_SPEC[kind].gate, stage: 'instruction', sourceDocumentId: null, origin: null, party: null, severity: ISSUE_KIND_SPEC[kind].severity, causedBy: null } });
       const conditionIssues: NewEvent[] = [];
+      // An attorney who is also a co-owner, or one attorney for both owners, cannot give a valid receipt alone: a second trustee is needed (exchange.md 3.2; TDA 1999 s.7).
+      const clientNames = (cmd.partyNames ?? []).map((n) => n.trim().toLowerCase());
+      if (attorneys.length && (cmd.partyNames?.length ?? 0) > 1 && (attorneys.some((a) => clientNames.includes(a.toLowerCase())) || attorneys.length === 1)) conditionIssues.push(issue('title_restriction', `Attorney and co-owners: a second trustee may be needed (${attorneys.join(', ')})`, 'Where the attorney is also a co-owner, or one attorney signs for both owners, the purchase money must still be paid to two trustees: appoint a second trustee, or use a power under s.1 TDA 1999 only if its conditions are met. Check before exchange.'));
       if (attorneys.length) conditionIssues.push(issue('power_of_attorney_issue', `Client acts through an attorney: ${attorneys.join(', ')}`, 'See the power (a registered LPA, or a general power with the deed): who granted it, whether it is in force, and that it covers this transaction. Written confirmation from the client that the attorney acts for them; the attorney identified like the client (LSAG 6.14.9). Tell the lender: most lenders need the power lodged and some will not lend on a power. HM Land Registry needs a certified copy with the AP1 (PG 9).'));
       if (officers.length) conditionIssues.push(issue('company_buyer_checks', `Company client: directors and PSCs identified — ${officers.join(', ')}`, 'Each director and person with significant control named here has an ID / AML check of their own (LSAG 6.14.11, 6.16). Check the PSC register at Companies House against the names given and report any discrepancy (reg. 30A). Board minute or resolution authorising the transaction and naming the signatories.'));
       if (executors.length) conditionIssues.push(issue('probate_issue', `Personal representatives / trustees acting: ${executors.join(', ')}`, 'The grant of probate or letters of administration (or the trust deed) seen and a copy on file; the death certificate. At least two personal representatives verified where there are two or more (LSAG 6.14.16); all of them sign the contract and the transfer. A sale before the grant issues cannot exchange.'));
@@ -1686,7 +1691,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!isPurchase(s)) reject('A survey is the buyer\'s.');
       if (s.exchange.exchangedAt) reject('Contracts are exchanged; the survey no longer changes anything.');
       if (cmd.plan === 'booked' && cmd.date && !/^\d{4}-\d{2}-\d{2}$/.test(cmd.date)) reject('The date must be YYYY-MM-DD.', 400);
-      return [{ type: 'survey_plan_recorded', actor: cmd.actor, payload: { plan: cmd.plan, date: cmd.plan === 'booked' ? cmd.date ?? null : null, note: cmd.note?.trim() || null } }];
+      const recorded: NewEvent = { type: 'survey_plan_recorded', actor: cmd.actor, payload: { plan: cmd.plan, date: cmd.plan === 'booked' ? cmd.date ?? null : null, note: cmd.note?.trim() || null } };
+      // No survey: the client relies on the lender's valuation, which is not a survey; advise in writing and record it (exchange.md 4.4).
+      if (cmd.plan === 'none' && !Object.values(s.issues).some((i) => i.title.startsWith('No survey'))) return [recorded, issue(s, issueIds(s)(), 'other', 'No survey: advise the client in writing', `The client has chosen not to have a survey. Tell them in writing that ${s.hasLender ? "the lender's valuation is for the lender and is not a survey: " : ''}defects a survey would have found are theirs after exchange. Resolve as accepted as is once the advice has gone.`, 'none')];
+      return [recorded];
     }
     case 'record_client_progress': {
       // "I've posted the signed contract": noted against the wait, which is not chased again until it has had time to arrive. Nothing is cleared.
@@ -1716,7 +1724,16 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       for (const d of [cmd.from, cmd.until]) if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d))) reject('Dates must be YYYY-MM-DD.', 400);
       if (cmd.until < cmd.from) reject('The end of the period is before its start.', 400);
       const id = `AV-${String((s.availability ?? []).length + 1).padStart(3, '0')}`;
-      return [{ type: 'availability_recorded', actor: cmd.actor, payload: { id, party: cmd.party, from: cmd.from, until: cmd.until, note: cmd.note?.trim() || '' } }];
+      const out: NewEvent[] = [{ type: 'availability_recorded', actor: cmd.actor, payload: { id, party: cmd.party, from: cmd.from, until: cmd.until, note: cmd.note?.trim() || '' } }];
+      // The client away when their signature is needed (exchange.md 3.4): sign before they go, sign by power of attorney, or move the date.
+      if (cmd.party === 'client') {
+        const within = (d: string | null | undefined) => !!d && cmd.from <= d.slice(0, 10) && d.slice(0, 10) <= cmd.until;
+        const exchangeDay = s.exchange.exchangedAt ? null : s.targetExchangeDate;
+        const needsContract = !s.readiness.signedContractHeldAt && profile(s).hasExchange && within(exchangeDay);
+        const needsTransfer = !s.deeds.transferDeedAt && (profile(s).side === 'seller' || s.transactionType === 'transfer_of_equity') && within(s.exchange.completionDate ?? s.targetCompletionDate);
+        if (needsContract || needsTransfer) out.push(issue(s, issueIds(s)(), 'document_execution_problem', `The client is away ${cmd.from} to ${cmd.until}, over the ${needsContract ? 'exchange' : 'completion'} date`, `Their ${needsContract ? 'signed contract' : 'signed transfer'} is not in. Have them sign before they go (the document held undated), sign under a power of attorney, or agree a new date with the other side.`, s.exchange.exchangedAt ? 'completion' : 'exchange'));
+      }
+      return out;
     }
     case 'change_completion_date': {
       requireEnrolled(s);
@@ -2073,6 +2090,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const short = pofShortfallIssue(s, cmd.toPennies);
       if (short) out.push(short);
       out.push(...lapseExchangeAuthority(s, `the price changed to £${(cmd.toPennies / 100).toLocaleString('en-GB')}`));
+      // An approved contract names the old price: it is amended and approved again (exchange.md 1.2).
+      if (s.readiness.contractApprovedAt && s.purchasePricePennies !== null) out.push(issue(s, issueIds(s, out)(), 'contract_term', `Contract to be amended to the new price (£${(cmd.toPennies / 100).toLocaleString('en-GB')})`, `The approved contract says £${((s.purchasePricePennies ?? 0) / 100).toLocaleString('en-GB')}. Get the amended contract, approve it again and have it signed again, with the client's written instruction to the new price.`, 'exchange'));
       return out;
     }
     case 'contract_approved': {
@@ -2480,6 +2499,42 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!s.exchange.release) reject('No release was given.');
       if (!cmd.reason?.trim()) reject('Say what happened (not called by the deadline, a link above failed to release).', 400);
       return [{ type: 'formula_c_release_lapsed', actor: cmd.actor, payload: { reason: cmd.reason.trim() } }];
+    }
+    // ── The deal before exchange (exchange.md 1.3-1.6, 2.7) ──
+    case 'record_deal_event': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
+      if (!cmd.detail?.trim()) reject('Say what happened.', 400);
+      if (cmd.until && !ISO_DAY.test(cmd.until)) reject('The date must be a date (YYYY-MM-DD).', 400);
+      if (cmd.event !== 'sitting_tenant' && s.exchange.exchangedAt) reject('Contracts are exchanged: the deal is fixed.');
+      const side = profile(s).side;
+      const d = cmd.detail.trim();
+      const out: NewEvent[] = [{ type: 'deal_event_recorded', actor: cmd.actor, payload: { event: cmd.event, detail: d, until: cmd.until ?? null, amountPennies: cmd.amountPennies ?? null } }];
+      const nextId = issueIds(s);
+      const raise = (kind: IssueKind, title: string, detail: string, gate: IssueGate, severity: IssueSeverity, resolveBy?: string | null) => { const r = issue(s, nextId(), kind, title, detail, gate); out.push({ ...r, payload: { ...(r.payload as object), severity, ...(resolveBy ? { resolveBy } : {}) } } as NewEvent); };
+      switch (cmd.event) {
+        case 'contract_race':
+          if (side === 'seller') raise('transaction_at_risk', 'Contract race: the client wants contracts sent to more than one buyer', `${d}. Only with the client's consent to tell every buyer's solicitor the terms of the race (first to deliver a signed contract and the deposit wins); if they will not consent, we cannot act in the race. Record the consent, then send the same terms to each.`, 'exchange', 'warning');
+          else raise('transaction_at_risk', 'Contract race: the seller is dealing with another buyer', `${d}. The first buyer to deliver a signed contract and the deposit wins. Tell the client in writing that their costs may be wasted, and take their instructions to proceed (and how fast).`, 'exchange', 'critical');
+          break;
+        case 'lockout':
+          raise('chain_dependency', `Lock-out agreement${cmd.until ? ` until ${cmd.until}` : ''}`, `${d}. ${cmd.until ? `Exchange must happen by ${cmd.until} or the seller is free to deal with others.` : 'It has no end date, so it is probably unenforceable: get a definite period agreed.'}${cmd.amountPennies ? ` Consideration paid: ${pounds(cmd.amountPennies)}.` : ''}`, 'none', 'warning', cmd.until ?? null);
+          break;
+        case 'reservation':
+          raise('chain_dependency', `New-build reservation${cmd.until ? `: exchange by ${cmd.until}` : ''}`, `${d}. ${cmd.until ? `The developer's deadline to exchange is ${cmd.until}; miss it and the plot can be released and the fee may be lost.` : 'Get the developer\'s exchange deadline.'} Check the refund terms.${cmd.amountPennies ? ` The fee (${pounds(cmd.amountPennies)}) is credited against the deposit on the completion statement.` : ''}`, 'none', 'warning', cmd.until ?? null);
+          break;
+        case 'renegotiated':
+          raise('contract_term', `Renegotiated before exchange: ${d.slice(0, 70)}`, `${d}. Put it in the contract as an amendment, not a side letter; approve the contract again and take the client's authority again.${s.hasLender ? ' Tell the lender of any retention or allowance.' : ''}`, 'exchange', 'warning');
+          out.push(...lapseExchangeAuthority(s, `the terms were renegotiated (${d.slice(0, 60)})`));
+          if (s.hasLender && side === 'buyer') out.push(lenderApprovalIssue(s, `renegotiated:${s.lastSeq + 1}`, `Tell the lender: terms renegotiated (${d.slice(0, 60)})`, null, null));
+          break;
+        case 'sitting_tenant':
+          raise('third_party_encumbrance', `Tenant in occupation: ${d.slice(0, 70)}`, side === 'buyer'
+            ? `${d}. Sold with vacant possession: the tenant's notice, the tenant gone and the property checked on the day (completion is held until then). Sold subject to the tenancy: the tenancy agreement, the rent, the deposit protection certificate and its transfer, the gas, EPC and electrical certificates, and the lender's consent to let; rent and deposit on the completion statement.`
+            : `${d}. If the sale is with vacant possession, the tenant must be gone by completion: serve the right notice now. If it is subject to the tenancy, send the tenancy, the deposit protection and the certificates with the pack.`, s.exchange.exchangedAt ? 'completion' : 'exchange', 'warning');
+          break;
+      }
+      return out;
     }
     // ── The property between exchange and completion (exchange.md 6.2, 7.6) ──
     case 'record_property_event': {

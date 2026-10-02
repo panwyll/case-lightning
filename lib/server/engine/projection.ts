@@ -504,6 +504,11 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       break;
     case 'property_event_recorded':
       break;
+    case 'deal_event_recorded': {
+      const p = e.payload as Payloads['deal_event_recorded'];
+      if (p.event === 'reservation' && p.amountPennies) s.reservationFeePennies = p.amountPennies;
+      break;
+    }
     case 'retention_released':
       closeWait(s, 'retention_release', null, e);
       break;

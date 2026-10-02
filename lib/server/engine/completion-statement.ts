@@ -60,6 +60,7 @@ export function buildCompletionStatement(input: { state: MatterState; side: 'buy
   if (chattels) lines.push({ label: 'Chattels', pennies: Number(chattels.value), sign: 1, factId: chattels.id });
 
   if (!sale) {
+    if (state.reservationFeePennies) { lines.push({ label: "Less reservation fee paid to the developer", pennies: state.reservationFeePennies, sign: -1, factId: null }); allowed.push(pounds(state.reservationFeePennies)); }
     const deposit = factOf(register, /^contract\.deposit_pennies$/);
     if (deposit) lines.push({ label: 'Less deposit paid on exchange', pennies: Number(deposit.value), sign: -1, factId: deposit.id });
     else if (state.deposit.received) toConfirm.push('Deposit paid on exchange: amount not on the file');

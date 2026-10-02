@@ -19,7 +19,10 @@ async function midFlight() {
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   // The client has told us they are not having a survey: nothing is left at their end.
-  await h.svc.run(TENANT, MATTER, { type: 'record_survey_plan', actor: USER, plan: 'none' });
+  const planned = await h.svc.run(TENANT, MATTER, { type: 'record_survey_plan', actor: USER, plan: 'none' });
+  // …and has been advised in writing what that means.
+  const advice = Object.values(planned.state.issues).find((i) => i.title.startsWith('No survey'));
+  if (advice) await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: advice.id, resolution: 'accepted_as_is', note: 'Advised by email that the valuation is not a survey', details: { advised: true } } as never);
   await h.svc.searchReturned(TENANT, MATTER, 'LLC1', h.doc(searchClear('LLC1')));
   h.advanceDays(Math.ceil(DEFAULT_SLA.search.chaseAfter * 1.4) + 1);
   await h.svc.tick(TENANT, MATTER); // the timer chases the outstanding CON29

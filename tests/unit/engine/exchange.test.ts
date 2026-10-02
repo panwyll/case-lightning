@@ -136,3 +136,37 @@ test('early access, and the seller staying on, are agreements needing a written 
   const stays = Object.values(fold(exchanged, { type: 'record_property_event', event: 'seller_stays', detail: 'Two weeks after completion' }).issues)[0];
   assert.match(stays.detail ?? '', /never a tenancy/);
 });
+
+test('the deal before exchange: a contract race, a lock-out, a reservation (its fee on the statement), a renegotiation lapsing the authority, a tenant', () => {
+  const titles = (s: MatterState) => Object.values(s.issues).map((i) => `${i.kind}:${i.gate}`);
+  assert.deepEqual(titles(fold(ready(), { type: 'record_deal_event', event: 'contract_race', detail: 'Seller sent contracts to two buyers' })), ['transaction_at_risk:exchange']);
+  const lock = Object.values(fold(ready(), { type: 'record_deal_event', event: 'lockout', detail: 'Four-week lock-out', until: '2026-10-29', amountPennies: 50_000 }).issues)[0];
+  assert.equal(lock.resolveBy, '2026-10-29');
+  const res = fold(ready(), { type: 'record_deal_event', event: 'reservation', detail: 'Plot 12', until: '2026-10-28', amountPennies: 200_000 });
+  assert.equal(res.reservationFeePennies, 200_000);
+  const authorised = { ...ready({ requireExchangeAuthority: true }), clientDecisions: { exchange_authority: { decision: 'authorised', at: 'x', by: USER, note: null } } } as MatterState;
+  const reneg = fold(authorised, { type: 'record_deal_event', event: 'renegotiated', detail: 'Seller to leave the shed and pay £2,000 towards the roof' });
+  assert.equal(reneg.clientDecisions.exchange_authority, undefined);
+  assert.match(titles(fold(ready(), { type: 'record_deal_event', event: 'sitting_tenant', detail: 'AST to March' })).join(), /third_party_encumbrance:exchange/);
+});
+
+test('a price cut on an approved contract needs the contract amended; a chattels price taking the price under a threshold is raised; no TA10 is raised', async () => {
+  const approved = ready({ readiness: { ...i0.readiness, contractApprovedAt: 'x', signedContractHeldAt: 'x' } });
+  const cut = fold(approved, { type: 'record_price_change', toPennies: 29_000_000, reason: 'Gazundered after the survey' });
+  assert.ok(Object.values(cut.issues).some((i) => /Contract to be amended to the new price/.test(i.title)));
+  const { contractFindings } = await import('../../../lib/server/engine/findings');
+  const f = contractFindings({ pricePennies: 25_500_000, depositPennies: 2_550_000, depositHolder: null, noticeToCompleteDays: 10, specialConditions: [], chattelsPricePennies: 1_000_000, fixturesListPresent: false }, { side: 'buyer', hasLender: true });
+  assert.deepEqual(f.map((x) => `${x.code}:${x.gate}`), ['CHATTELS_PRICE:exchange', 'NO_FIXTURES_LIST:exchange']);
+});
+
+test('an attorney who is also a co-owner needs a second trustee; no survey is advice to give in writing', () => {
+  const s = fold(i0, { type: 'enrol', hasLender: false, requiredSearches: [], parties: 2, partyNames: ['Ann Lee', 'Bob Lee'], attorneys: ['Ann Lee'] });
+  assert.ok(Object.values(s.issues).some((i) => i.kind === 'title_restriction' && /second trustee/.test(i.title)));
+  const none = fold(ready({ stage: 'pre_contract' }), { type: 'record_survey_plan', plan: 'none', date: null, note: 'Not having one' });
+  assert.ok(Object.values(none.issues).some((i) => i.title.startsWith('No survey')));
+});
+
+test('the client away over the exchange date with the contract unsigned is raised, with the ways round it', () => {
+  const s = fold(ready({ readiness: { ...i0.readiness, contractApprovedAt: 'x', signedContractHeldAt: null }, targetExchangeDate: '2026-10-20' }), { type: 'record_availability', party: 'client', from: '2026-10-15', until: '2026-10-30', note: 'Holiday' });
+  assert.match(Object.values(s.issues)[0].detail ?? '', /power of attorney/);
+});
