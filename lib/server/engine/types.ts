@@ -1155,7 +1155,7 @@ export interface Payloads {
   final_bill_delivered: { amountPennies: number; documentId: string | null };
   formula_c_release_given: { until: string; givenTo: string };
   formula_c_release_lapsed: { reason: string };
-  property_event_recorded: { event: 'damaged' | 'not_vacant'; detail: string };
+  property_event_recorded: { event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays'; detail: string };
   retention_released: { amountPennies: number | null };
   redemption_figure_adjusted: { redemptionPennies: number; days: number; reason: string };
   contributions_recorded: { model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent: Record<string, number> | null; shares: Array<{ party: string; shareBp: number }> };

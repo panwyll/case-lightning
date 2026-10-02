@@ -865,6 +865,14 @@ export class EngineService {
     ].join('\n');
     // The decision cites the contract itself, and each flagged point where the read found it.
     const citations = [{ documentId: docId, label: 'The contract' }, ...points.filter((p) => p.locator).map((p) => ({ documentId: docId, locator: p.locator, label: p.description }))];
+    // The client's own sale funds this deposit (SCS 2.2.5): the gap between the two deposits is theirs to find before exchange (exchange.md 2.5, 8.7).
+    if (s.relatedMatter?.relation === 'sale' && f?.depositPennies != null) {
+      const sale = await this.getState(tenantId, s.relatedMatter.matterId).catch(() => null);
+      const saleDeposit = sale?.deposit.contractPennies ?? null;
+      if (saleDeposit != null && f.depositPennies > saleDeposit && !Object.values(s.issues).some((i) => i.title.startsWith('Deposit up the chain'))) {
+        await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'deposit_issue', title: `Deposit up the chain: £${((f.depositPennies - saleDeposit) / 100).toLocaleString('en-GB')} more needed`, detail: `The sale's deposit (£${(saleDeposit / 100).toLocaleString('en-GB')}) can go towards this purchase's (£${(f.depositPennies / 100).toLocaleString('en-GB')}) under standard condition 2.2.5, if neither contract excludes it. The client tops up the difference before exchange; ask them for it now.`, gate: 'exchange', severity: 'warning' } as never).catch((err) => this.ports.log('deposit gap not raised', err));
+      }
+    }
     await this.run(tenantId, matterId, { type: 'raise_contract_review', documentId: docId, summary, citations, terms: f ? { pricePennies: f.pricePennies, depositPennies: f.depositPennies, depositHolder: f.depositHolder, noticeToCompleteDays: f.noticeToCompleteDays, specialConditions: f.specialConditions, completionDate: f.completionDate } : null });
   }
 

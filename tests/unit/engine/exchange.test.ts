@@ -127,3 +127,12 @@ test('a client who withdraws before exchange: the other side and the agent are t
   const s2 = await h2.svc.getState(TENANT, MATTER);
   assert.equal(Object.values(s2.proposals).filter((p) => p.dedupKey.startsWith('cp:withdrawn:')).length, 0);
 });
+
+test('early access, and the seller staying on, are agreements needing a written licence; both hold completion', () => {
+  const exchanged = ready({ stage: 'pre_completion', exchange: { ...i0.exchange, exchangedAt: '2026-09-20T10:00:00Z', completionDate: '2026-10-16' } });
+  const early = Object.values(fold(exchanged, { type: 'record_property_event', event: 'early_access', detail: 'Buyer wants to measure for curtains' }).issues)[0];
+  assert.equal(early.gate, 'completion');
+  assert.match(early.detail ?? '', /written licence/);
+  const stays = Object.values(fold(exchanged, { type: 'record_property_event', event: 'seller_stays', detail: 'Two weeks after completion' }).issues)[0];
+  assert.match(stays.detail ?? '', /never a tenancy/);
+});

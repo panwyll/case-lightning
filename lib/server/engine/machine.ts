@@ -224,7 +224,7 @@ type CommandBody =
   | { type: 'final_bill_delivered'; actor: Actor; amountPennies: number; documentId?: string | null }
   | { type: 'formula_c_release_given'; actor: Actor; until: string; givenTo: string }
   | { type: 'formula_c_release_lapsed'; actor: Actor; reason: string }
-  | { type: 'record_property_event'; actor: Actor; event: 'damaged' | 'not_vacant'; detail: string }
+  | { type: 'record_property_event'; actor: Actor; event: 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays'; detail: string }
   | { type: 'retention_released'; actor: Actor; amountPennies?: number | null }
   | { type: 'record_contributions'; actor: Actor; model: 'FIXED' | 'RING_FENCE' | 'CONTRIBUTION' | 'FLOATING'; contributions: Array<{ party: string; pennies: number }>; ratioPercent?: Record<string, number> | null }
   | { type: 'ap1_cancelled'; actor: Actor; reason: string }
@@ -2489,6 +2489,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!cmd.detail?.trim()) reject('Say what happened.', 400);
       const buyer = profile(s).side === 'buyer';
       const gate: IssueGate = s.completion.confirmedAt ? 'none' : s.exchange.exchangedAt ? 'completion' : 'exchange';
+      // Agreements outside the contract (exchange.md 6.3-6.5): each needs its own terms, the lender and the insurance.
+      if (cmd.event === 'early_access' || cmd.event === 'seller_stays') {
+        const early = cmd.event === 'early_access';
+        const raised = issue(s, issueIds(s)(), 'third_party_consent', early ? `Early access before completion: ${cmd.detail.trim().slice(0, 70)}` : `The seller stays on after completion: ${cmd.detail.trim().slice(0, 70)}`, `${cmd.detail.trim()}. ${early ? "Only by a written licence: access for a stated purpose (measuring, trades) or occupation, no works that change the property without consent, the buyer's insurance, and an end on completion or rescission. The seller's lender and the buyer's lender may need to agree; occupation before completion can count as completion for SDLT (substantial performance)." : 'Only by a written licence (never a tenancy): the date they leave, a fee or a retention from the proceeds, who insures and pays the bills. The buyer\'s lender must agree to anyone occupying. Never give vacant possession on paper while they stay.'}`, s.completion.confirmedAt ? 'none' : 'completion');
+        return [{ type: 'property_event_recorded', actor: cmd.actor, payload: { event: cmd.event, detail: cmd.detail.trim() } }, raised];
+      }
       const [title, detail] = cmd.event === 'damaged'
         ? [`The property was damaged: ${cmd.detail.trim().slice(0, 80)}`, `${cmd.detail.trim()}. ${s.exchange.exchangedAt ? `Under the standard conditions the seller keeps the risk until completion and must hand over the property in the same state (SCS 7.1); a buyer may rescind if it is unusable for its purpose. ${buyer ? "Tell the lender (its security is affected) and the client's insurer, get the seller's proposal for repair or a price reduction, and take the client's instructions before completing." : "Tell the client's insurer at once; the buyer may claim a reduction or rescind. Get the client's instructions."}` : 'Before exchange: re-inspect or re-value, and renegotiate or withdraw on the client\'s instructions; tell the lender.'}`]
         : [`Vacant possession not given: ${cmd.detail.trim().slice(0, 80)}`, `${cmd.detail.trim()}. ${buyer ? "Do not complete without the client's instructions: the seller must give vacant possession (an occupier still there, or goods left). Hold the money; agree a retention or a delayed completion with the seller's solicitor; tell the lender if an occupier stays." : 'Our client must give vacant possession on completion: occupiers out and the property cleared, or the buyer may refuse to complete and claim compensation.'}`];
