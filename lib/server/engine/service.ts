@@ -26,6 +26,7 @@
  * events from there whatever this code does.
  */
 import { clientMessagesStopped } from './people';
+import { computeSdlt } from './sdlt';
 import { workingDaysBetween } from './working-days';
 import { checkDraft, draftCheckLine, renderChecked, type DraftCheck } from './draft-check';
 import { buildCompletionStatement } from './completion-statement';
@@ -504,7 +505,9 @@ export class EngineService {
   async proofOfFundsSubmitted(tenantId: string, matterId: string, requestId: string, submission: ProofOfFundsSubmission, evidenceNames: Record<string, string> = {}): Promise<RunResult> {
     const state = await this.getState(tenantId, matterId);
     const sub: ProofOfFundsSubmission = { ...submission, round: submission.round ?? state.proofOfFunds.rounds ?? 1 };
-    const facts = factsFromSubmission(requestId, sub, state.purchasePricePennies);
+    // What the client must find includes the Stamp Duty, worked out on the case's basis (money.md 1.2).
+    const sdltEstimate = state.purchasePricePennies && profileOf(state.transactionType).side === 'buyer' ? computeSdlt(state.purchasePricePennies, { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false }).totalPennies : null;
+    const facts = factsFromSubmission(requestId, sub, state.purchasePricePennies, sdltEstimate);
     // Read every attached document: statements transaction by transaction (the regulations want the
     // statements scrutinised, not filed). Answers' evidence counts too. Unreadable ones become a flag.
     const evidence: EvidenceDocument[] = [];

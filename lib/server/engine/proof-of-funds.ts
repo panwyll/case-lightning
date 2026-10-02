@@ -141,7 +141,9 @@ export interface ProofOfFundsFacts {
   coDeclarants?: string[];
   purchasePricePennies: number | null;
   mortgageAdvancePennies: number | null;
-  /** price − mortgage: what the client has to find (null when the price is unknown). */
+  /** The Stamp Duty estimate added to what the client has to find (money.md 1.2). */
+  sdltEstimatePennies?: number | null;
+  /** price − mortgage (+ the SDLT estimate): what the client has to find (null when the price is unknown). */
   requiredPennies: number | null;
   totalDeclaredPennies: number;
   shortfallPennies: number | null;
@@ -153,13 +155,14 @@ export interface ProofOfFundsFacts {
   round: number;
 }
 
-export function factsFromSubmission(requestId: string, sub: ProofOfFundsSubmission, knownPricePennies: number | null): ProofOfFundsFacts {
+export function factsFromSubmission(requestId: string, sub: ProofOfFundsSubmission, knownPricePennies: number | null, sdltEstimatePennies: number | null = null): ProofOfFundsFacts {
   const price = sub.purchasePricePennies ?? knownPricePennies;
   const mortgage = sub.mortgageAdvancePennies ?? sub.sources.filter((s) => s.kind === 'mortgage').reduce((n, s) => n + s.amountPennies, 0) ?? null;
   const nonMortgage = sub.sources.filter((s) => s.kind !== 'mortgage');
   const total = nonMortgage.reduce((n, s) => n + s.amountPennies, 0);
-  const required = price != null ? Math.max(0, price - (mortgage ?? 0)) : null;
+  const required = price != null ? Math.max(0, price - (mortgage ?? 0) + (sdltEstimatePennies ?? 0)) : null;
   return {
+    sdltEstimatePennies,
     requestId,
     declarantName: sub.declarant.fullName,
     coDeclarants: (sub.coDeclarants ?? []).map((n) => n.trim()).filter(Boolean),
@@ -199,7 +202,7 @@ export function evaluateProofOfFunds(f: ProofOfFundsFacts, m: PofMatterContext =
   }
   if (f.sources.length === 0) flags.push({ code: 'POF_NO_SOURCES', severity: 'high', description: 'No source of funds was declared.', locator: { section: 'Sources' } });
   if (f.shortfallPennies != null && f.shortfallPennies > 0) {
-    flags.push({ code: 'POF_SHORTFALL', severity: 'high', description: `Declared funds (${gbp(f.totalDeclaredPennies)}) fall short of the ${gbp(f.requiredPennies ?? 0)} needed after the mortgage advance by ${gbp(f.shortfallPennies)}.`, locator: { section: 'Totals' } });
+    flags.push({ code: 'POF_SHORTFALL', severity: 'high', description: `Declared funds (${gbp(f.totalDeclaredPennies)}) fall short of the ${gbp(f.requiredPennies ?? 0)} needed (the price less the mortgage advance${f.sdltEstimatePennies ? `, plus ${gbp(f.sdltEstimatePennies)} Stamp Duty` : ''}) by ${gbp(f.shortfallPennies)}.`, locator: { section: 'Totals' } });
   }
   if (!f.mortgageAdvancePennies && f.purchasePricePennies != null && f.purchasePricePennies > 0) flags.push({ code: 'POF_CASH_PURCHASE', severity: 'medium', description: `No mortgage: the whole price (${gbp(f.purchasePricePennies)}) comes from the client's own resources. A purchase without a lender carries a higher fraud and laundering risk (LSAG 18.5.2) and there is no lender's underwriting behind the money: every source must be traced in full.`, locator: { section: 'Totals' } });
   if (f.requiredPennies == null) flags.push({ code: 'POF_PRICE_UNKNOWN', severity: 'low', description: 'The purchase price is not on file, so the declared total cannot be checked against what is needed.', locator: { section: 'Totals' } });

@@ -64,7 +64,10 @@ const idCheck = (): ScenarioStep[] => [
     const doc = await c.doc({ docType: 'ID_CHECK', fileName: 'id-check-result.txt', facts: c.flagged ? F.idRefer() : F.idClear(), body: F.body('ID / AML check result', c.flagged ? ['Outcome: REFER', 'Possible PEP match on one applicant'] : ['Outcome: CLEAR', 'Identity verified electronically; no PEP or sanctions match']) });
     await c.svc.idCheckResultReceived(c.tenantId, c.matterId, doc);
   }),
-  step('id_decision', 'The referred ID check is decided by a person', async (c) => { await c.resolve('id_check', 'approve', 'PEP match reviewed: different date of birth; enhanced due diligence recorded.'); }, { flaggedOnly: true, decision: 'id_check' }),
+  step('id_decision', 'The referred ID check is decided by a person', async (c) => { await c.resolve('id_check', 'approve', 'PEP match reviewed: different date of birth; enhanced due diligence recorded.');
+    const s = await c.svc.getState(c.tenantId, c.matterId);
+    for (const i of Object.values(s.issues).filter((x) => x.title.startsWith('Politically exposed') && x.status === 'open')) await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'other', note: 'Not the same person (date of birth differs); the MLRO approved going on.' });
+  }, { flaggedOnly: true, decision: 'id_check' }),
 ];
 
 const searches = (types: F.SearchTypeLike[]): ScenarioStep[] => [

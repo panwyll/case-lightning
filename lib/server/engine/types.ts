@@ -1165,7 +1165,7 @@ export interface Payloads {
   requisition_extended: { requisitionEventId: string; deadline: string; note: string };
   register_checked: { ok: boolean; note: string | null; lenderTold: boolean };
   seller_discharge_received: { reference: string | null };
-  party_event_recorded: { event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; hasAttorney: boolean | null; note: string | null };
+  party_event_recorded: { event: string; party: string; hasAttorney: boolean | null; note: string | null };
   sar_made: { noticeEnds: string };
   daml_response_recorded: { decision: 'granted' | 'refused'; moratoriumEnds: string | null };
   sdlt_facts_recorded: { facts: { wales?: boolean; mainResidence?: boolean; anyEverOwned?: boolean; anyOwnsOther?: boolean; replacing?: boolean; replacingFirst?: boolean; anyNonResident?: boolean; mixedUse?: boolean; debtAssumedPennies?: number | null }; basis: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; wales?: boolean }; reasons: string[]; refundDiary: boolean };
@@ -1686,7 +1686,7 @@ export interface MatterState {
   /** When the file may be destroyed, and the CDD records, stamped on closing. */
   retention?: { destroyAfter: string; cddUntil: string } | null;
   /** People events (theme G): who has died, lost capacity or become bankrupt, and when. */
-  partyEvents?: Array<{ event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; at: string; hasAttorney: boolean | null }>;
+  partyEvents?: Array<{ event: string; party: string; at: string; hasAttorney: boolean | null }>;
   /** A suspicious activity report made with a request for consent (DAML): money and exchange wait; nothing is said to the client about it. */
   amlHold?: { since: string; noticeEnds: string; status: 'awaiting' | 'granted' | 'refused'; moratoriumEnds: string | null } | null;
   /** A new build's long-stop date from the contract: past it either side may rescind. */

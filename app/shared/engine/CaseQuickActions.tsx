@@ -28,10 +28,18 @@ const CSS = `
 .cqa-pop select,.cqa-pop input[type=text]{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:7px 8px;font:inherit;font-size:13px;background:#fff}
 `;
 
+/** People on the case: who it is about, and what happened (people.ts). */
+const PARTY_EVENTS: Array<[string, string]> = [
+  ['died', 'Someone Has Died'], ['capacity_lost', 'Someone Has Lost Capacity'], ['capacity_doubt', 'Doubt About Capacity'], ['bankrupt', 'Someone Is Bankrupt'],
+  ['instructing_for_client', 'Someone Else Is Giving Instructions'], ['confidence', 'A Joint Client Told Us Something In Confidence'], ['refuses_to_sign', 'A Co-Owner Will Not Sign'],
+  ['withhold_from_lender', 'Client Asks Us Not To Tell The Lender'], ['gift_withdrawn', 'A Gift Is Withdrawn'], ['cdd_refused', 'Client Will Not Give ID Or Source Of Funds'],
+  ['uncontactable', 'Cannot Reach The Client'], ['complaint', 'Client Complaint'], ['moving_firm', 'Client Moving To Another Firm'], ['ceasing_to_act', 'We Are Ceasing To Act'],
+];
+
 export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matterId: string; onChanged?: () => void }) {
   const [state, setState] = useState<EngineState | null>(null);
   const [open, setOpen] = useState<'issue' | 'manual' | 'person' | null>(null);
-  const [what, setWhat] = useState<'died' | 'capacity_lost' | 'bankrupt' | 'sar' | 'daml_granted' | 'daml_refused' | 'damaged' | 'not_vacant' | 'early_access' | 'seller_stays' | 'contract_race' | 'lockout' | 'reservation' | 'renegotiated' | 'sitting_tenant'>('died');
+  const [what, setWhat] = useState<string>('died');
   const [who, setWho] = useState('');
   const [lpa, setLpa] = useState(false);
   const [until, setUntil] = useState('');
@@ -55,6 +63,7 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
   const showTip = (which: 'issue' | 'manual' | 'person') => () => setTip({ which });
   const TIPS = { issue: 'Raise Issue', manual: manual ? 'Resume Automation' : 'Take Over Manually', person: 'Something Happened' };
   const holdPending = state?.amlHold?.status === 'awaiting';
+  const isParty = PARTY_EVENTS.some(([v]) => v === what);
   // The warning before taking a case over, until the person says not to show it again (this browser only).
   const WARN_KEY = 'conveyi:manual-warning-hidden';
   const [warnHidden, setWarnHidden] = useState(false);
@@ -75,24 +84,28 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
       {open === 'person' && (
         <span className="cqa-pop" role="dialog" aria-label="Something Happened">
           <b>Something Happened</b>
-          <select value={what} onChange={(e) => setWhat(e.target.value as typeof what)} aria-label="What happened">
-            <option value="died">Someone Has Died</option>
-            <option value="capacity_lost">Someone Has Lost Capacity</option>
-            <option value="bankrupt">Someone Is Bankrupt</option>
-            <option value="damaged">The Property Was Damaged</option>
-            <option value="not_vacant">Vacant Possession Not Given</option>
-            <option value="early_access">Early Access Before Completion</option>
-            <option value="seller_stays">The Seller Stays On After Completion</option>
-            <option value="contract_race">Contract Race</option>
-            <option value="lockout">Lock-Out Agreed</option>
-            <option value="reservation">New-Build Reservation</option>
-            <option value="renegotiated">Terms Renegotiated</option>
-            <option value="sitting_tenant">Tenant In The Property</option>
-            {!holdPending && <option value="sar">Report Made To The NCA (Hold)</option>}
-            {holdPending && <option value="daml_granted">NCA Consent Received</option>}
-            {holdPending && <option value="daml_refused">NCA Consent Refused</option>}
+          <select value={what} onChange={(e) => setWhat(e.target.value)} aria-label="What happened">
+            <optgroup label="People">{PARTY_EVENTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</optgroup>
+            <optgroup label="The Property">
+              <option value="damaged">The Property Was Damaged</option>
+              <option value="not_vacant">Vacant Possession Not Given</option>
+              <option value="early_access">Early Access Before Completion</option>
+              <option value="seller_stays">The Seller Stays On After Completion</option>
+            </optgroup>
+            <optgroup label="The Deal">
+              <option value="contract_race">Contract Race</option>
+              <option value="lockout">Lock-Out Agreed</option>
+              <option value="reservation">New-Build Reservation</option>
+              <option value="renegotiated">Terms Renegotiated</option>
+              <option value="sitting_tenant">Tenant In The Property</option>
+            </optgroup>
+            <optgroup label="Compliance">
+              {!holdPending && <option value="sar">Report Made To The NCA (Hold)</option>}
+              {holdPending && <option value="daml_granted">NCA Consent Received</option>}
+              {holdPending && <option value="daml_refused">NCA Consent Refused</option>}
+            </optgroup>
           </select>
-          {(what === 'died' || what === 'capacity_lost' || what === 'bankrupt') && (
+          {isParty && (
             <>
               <input type="text" list="cqa-people" value={who} onChange={(e) => setWho(e.target.value)} placeholder="Who" aria-label="Who" />
               <datalist id="cqa-people">{(state?.partyNames ?? []).map((n) => <option key={n} value={n} />)}</datalist>
@@ -102,11 +115,11 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
           {(what === 'lockout' || what === 'reservation') && <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} aria-label={what === 'lockout' ? 'Lock-out ends' : 'Exchange deadline'} />}
           {(what === 'lockout' || what === 'reservation') && <input type="text" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} placeholder={what === 'reservation' ? '£ Reservation fee' : '£ Paid for it'} aria-label="Amount" />}
           {what === 'sar' && <span className="warn"><AlertTriangle size={16} /><span>No money moves and nothing exchanges for seven working days, or until consent. Say nothing to the client about it.</span></span>}
-          <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={what === 'died' || what === 'capacity_lost' || what === 'bankrupt' || what === 'sar' || what.startsWith('daml') ? 'Note' : 'What happened'} aria-label="Note" />
+          <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={isParty || what === 'sar' || what.startsWith('daml') ? 'Note' : 'What happened'} aria-label="Note" />
           {err && <span className="bad">{err}</span>}
           <span className="f">
             <button type="button" className="ep-btn" style={{ margin: 0 }} onClick={() => setOpen(null)}>Cancel</button>
-            <BusyButton disabled={((what === 'died' || what === 'capacity_lost' || what === 'bankrupt') && !who.trim()) || (!['died', 'capacity_lost', 'bankrupt', 'sar', 'daml_granted', 'daml_refused'].includes(what) && !reason.trim())} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
+            <BusyButton disabled={(isParty && !who.trim()) || (!isParty && !['sar', 'daml_granted', 'daml_refused'].includes(what) && !reason.trim())} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
               setErr(null);
               const deal = ['contract_race', 'lockout', 'reservation', 'renegotiated', 'sitting_tenant'].includes(what);
               const body = deal ? { type: 'record_deal_event', event: what, detail: reason.trim(), until: until || null, amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null } : ['damaged', 'not_vacant', 'early_access', 'seller_stays'].includes(what) ? { type: 'record_property_event', event: what, detail: reason.trim() } : what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };

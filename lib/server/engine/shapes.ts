@@ -7,7 +7,7 @@
 import type { Side } from './transactions';
 import type { IssueGate, IssueKind } from './issues';
 
-export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa', 'second_charge', 'shared_ownership', 'unrepresented_counterparty', 'court_order_transfer', 'right_to_buy', 'flying_freehold', 'commonhold', 'equity_loan_redemption'] as const;
+export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa', 'second_charge', 'shared_ownership', 'unrepresented_counterparty', 'court_order_transfer', 'right_to_buy', 'flying_freehold', 'commonhold', 'equity_loan_redemption', 'overseas_entity', 'client_abroad'] as const;
 export type CaseShape = (typeof CASE_SHAPES)[number];
 
 export type FundsRole = 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider';
@@ -59,6 +59,16 @@ export const SHAPE_SPEC: Record<CaseShape, ShapeSpec> = {
     summary: 'Part of the price comes from a Lifetime ISA: the investor declaration, the eligibility limits and the bonus paid to us by the ISA manager.',
     issue: { kind: 'isa_bonus', title: 'Lifetime ISA: declarations and the withdrawal from the ISA manager', detail: 'Eligibility: first-time buyer, price at or below £450,000, a residential mortgage, the account open at least 12 months, completion within 90 days of the withdrawal. The client signs the investor declaration; we send the conveyancer declaration to the ISA manager, who pays the money to our client account within 30 days — request it in time for completion and never before exchange without checking the 90-day window. Two Lifetime ISAs (two buyers) need two withdrawals.', gate: 'completion' },
     fundsFrom: 'isa_provider',
+  },
+  overseas_entity: {
+    id: 'overseas_entity', label: 'Overseas Entity', sides: ['buyer', 'seller'],
+    summary: 'A company formed outside the UK buying or selling: its Overseas Entities ID verified, or HM Land Registry will not register.',
+    issue: { kind: 'company_buyer_checks', title: 'Overseas entity: Register of Overseas Entities ID, beneficial owners verified', detail: 'An overseas entity must be registered at Companies House with its beneficial owners verified, and give its overseas entity ID: HM Land Registry will not register a purchase without it, and a restriction stops it selling without it. Get the ID before exchange and check it on the register; identify the beneficial owners as clients (LSAG 6.14.11); the entity\'s authority to buy or sell (a board resolution, who signs).', gate: 'exchange' },
+  },
+  client_abroad: {
+    id: 'client_abroad', label: 'Client Abroad', sides: ['buyer', 'seller', 'owner'],
+    summary: 'A client living outside the UK: identity checked to a higher standard, documents signed abroad, Stamp Duty residence.',
+    issue: { kind: 'aml_kyc_problem', title: 'Client living abroad: higher-standard ID, signing abroad, residence for tax', detail: 'Verify identity remotely to a higher standard (certified documents, an electronic check that covers the country), and apply enhanced due diligence if the country is high-risk (MLR 2017 reg 33). Plan how documents are signed and witnessed abroad (a notary, consular witnessing, an apostille) before exchange. A buyer: the non-resident SDLT surcharge question; a seller: the 60-day CGT report even with no tax to pay.', gate: 'exchange' },
   },
   equity_loan_redemption: {
     id: 'equity_loan_redemption', label: 'Help To Buy Loan To Repay', sides: ['seller', 'owner'],

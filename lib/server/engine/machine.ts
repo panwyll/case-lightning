@@ -32,7 +32,7 @@ import { profileOf, type TransactionProfile } from './transactions';
 import { conditionalLongStop, contractFindings, leaseFindings, searchFindings, titleFindings, type Finding, type FindingContext } from './findings';
 import { computeSdlt } from './sdlt';
 import { sharesAtPurchase, sharesText, unequal } from './co-owners';
-import { amlHoldActive, damlNoticeEnds, damlMoratoriumEnds, partyEventConsequences, sanctionsHold, SANCTIONS_PREFIX } from './people';
+import { amlHoldActive, damlNoticeEnds, damlMoratoriumEnds, partyEventConsequences, sanctionsHold, SANCTIONS_PREFIX, type PartyEvent } from './people';
 import { cgtFlags, chargeableConsideration, deriveSdltBasis, type CgtFacts, type SdltFacts } from './sdlt-facts';
 import { completionDateProblem, staleAtCompletion } from './dates';
 import { allDischarged, anythingCharged, chargesToAdd, isFinancialCharge, negativeEquity, openCharges } from './charges';
@@ -218,7 +218,7 @@ type CommandBody =
   | { type: 'funds_cleared'; actor: Actor; receiptId: string }
   | { type: 'record_other_charge'; actor: Actor; chargee: string; text?: string | null }
   | { type: 'longstop_date_recorded'; actor: Actor; date: string }
-  | { type: 'record_party_event'; actor: Actor; event: 'died' | 'capacity_lost' | 'bankrupt'; party: string; hasAttorney?: boolean | null; note?: string | null }
+  | { type: 'record_party_event'; actor: Actor; event: PartyEvent; party: string; hasAttorney?: boolean | null; note?: string | null }
   | { type: 'sar_made'; actor: Actor; note?: string | null }
   | { type: 'completion_payment_sent'; actor: Actor; reference: string; sentAt?: string | null }
   | { type: 'final_bill_delivered'; actor: Actor; amountPennies: number; documentId?: string | null }
@@ -1001,6 +1001,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           },
         },
         ...shapeIssues,
+        // The same firm acting for the other side (parties.md 1.19): only within an SRA exception, with both clients' informed consent.
+        ...(cmd.counterpartyType === 'internal' ? [{ type: 'issue_raised', actor: cmd.actor, payload: { issueId: `I${shapes.length + 1}C`, kind: 'third_party_consent', title: 'The firm acts for the other side too', detail: 'Buyer and seller have opposing interests: act for both only under an SRA Code 6.2 exception (a substantially common interest, or competing for the same objective), with both clients\' informed written consent, and separate fee earners with an information barrier. Record the decision and the consents before going on.', gate: 'exchange', stage: 'instruction', sourceDocumentId: null, origin: null, party: null, severity: 'critical', causedBy: null } } as NewEvent] : []),
         // A shape that always brings a charge to redeem (a Help to Buy equity loan) puts it on the case's charges.
         ...shapes.filter((sh) => SHAPE_SPEC[sh].charge && side !== 'buyer').map((sh, n): NewEvent => ({ type: 'charge_found', actor: cmd.actor, payload: { chargeId: `CH-${n + 1}`, chargee: SHAPE_SPEC[sh].charge!, text: null } })),
         ...conditionIssues,
@@ -1070,10 +1072,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // A result (or the client's own photo of their ID) may arrive before anything was requested.
       if (status !== 'requested' && status !== 'not_started') reject(`No ID check${pc ? ` for ${pc.label}` : ''} is awaiting a result (status: ${status}).`);
       // A sanctions match is a hard stop of its own, not only a flag on the review (SAMLA 2018; OFSI): nothing moves until a person clears it.
+      // A politically exposed person: enhanced due diligence and a senior person's approval before going on (MLR 2017 reg 35; parties.md 1.13, 7.5).
+      const pep = (cmd.facts.flags ?? []).some((f) => f.code === 'PEP_MATCH') && !openOf(s, 'aml_kyc_problem', 'Politically exposed')
+        ? [issue(s, issueIds(s)(), 'aml_kyc_problem', `Politically exposed person: ${pc?.label ?? s.partyNames?.[0] ?? 'the client'}`, 'The ID check matched a PEP (or a family member or close associate). Confirm the match; if it is them: senior management approval to act, establish the source of wealth and of the funds, and monitor the matter more closely. Record the approval.', s.exchange.exchangedAt ? 'completion' : 'exchange')]
+        : [];
       const sanctions = (cmd.facts.flags ?? []).some((f) => f.code === 'SANCTIONS_MATCH') && !sanctionsHold(s)
         ? [issue(s, issueIds(s)(), 'aml_kyc_problem', `${SANCTIONS_PREFIX}: ${pc?.label ?? s.partyNames?.[0] ?? 'the client'}`, 'The ID check matched a sanctions list. Until it is shown to be a different person (date of birth, address history) or OFSI grants a licence: no money in or out, no exchange, no completion, and no further work that benefits them. Report a true match to OFSI. Never cleared by automation.', s.exchange.exchangedAt ? 'completion' : 'exchange')]
         : [];
-      return [...sanctions, ...verdictEvents({
+      return [...sanctions, ...pep, ...verdictEvents({
         verdict: evaluateIdCheck(cmd.facts),
         cleared: 'id_check_cleared',
         flagged: 'id_check_flagged',
@@ -1409,6 +1415,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       }
       // The client's money must come from where the source-of-funds evidence said it was (LSAG 6.17.2; red flag 18.4 "the source changes at the last minute").
       const remitter = cmd.remitter?.trim();
+      // A company paying for an individual buyer (money.md 2.4): a third-party payment, and a loan or a distribution the lender may need to know about.
+      if (remitter && cmd.fromRole === 'client' && /\b(ltd|limited|plc|llp|holdings|& co|company)\b/i.test(remitter) && !s.shapes?.includes('company_buyer') && !openOf(s, 'aml_kyc_problem', 'A company paid')) {
+        out.push(issue(s, nextId(), 'aml_kyc_problem', `A company paid the client's money: ${remitter}`, `The buyer is an individual but the money came from ${remitter}. Establish what it is (a dividend, a director's loan, a bonus) with the company's evidence (accounts, a board minute, the loan agreement), whether the client controls the company, and whether the lender must be told (a loan behind the deposit). Do not complete until it is understood.`, 'completion'));
+      }
       if (remitter && cmd.fromRole === 'client') {
         const strangers = strangersAmong(s, remitter);
         if (strangers.length && !Object.values(s.issues).some((i) => i.kind === 'aml_kyc_problem' && i.title.startsWith('Completion money from'))) {
@@ -2090,6 +2100,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const short = pofShortfallIssue(s, cmd.toPennies);
       if (short) out.push(short);
       out.push(...lapseExchangeAuthority(s, `the price changed to £${(cmd.toPennies / 100).toLocaleString('en-GB')}`));
+      // A new price over a ceiling loses a relief or a scheme (money.md 6.3, 7.1).
+      for (const c of priceCliffs(s, cmd.toPennies)) out.push(issue(s, issueIds(s, out)(), c.kind, c.title, c.detail, 'exchange'));
       // An approved contract names the old price: it is amended and approved again (exchange.md 1.2).
       if (s.readiness.contractApprovedAt && s.purchasePricePennies !== null) out.push(issue(s, issueIds(s, out)(), 'contract_term', `Contract to be amended to the new price (£${(cmd.toPennies / 100).toLocaleString('en-GB')})`, `The approved contract says £${((s.purchasePricePennies ?? 0) / 100).toLocaleString('en-GB')}. Get the amended contract, approve it again and have it signed again, with the client's written instruction to the new price.`, 'exchange'));
       return out;
@@ -2621,10 +2633,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
       if (!cmd.party?.trim()) reject('Who is it about?', 400);
-      if (s.completion.confirmedAt && cmd.event !== 'died') reject('The matter has completed.');
+      const afterwards = ['died', 'complaint', 'ceasing_to_act'].includes(cmd.event);
+      if (s.completion.confirmedAt && !afterwards) reject('The matter has completed.');
       if ((s.partyEvents ?? []).some((p) => p.event === cmd.event && p.party.trim().toLowerCase() === cmd.party.trim().toLowerCase())) reject('Already recorded.');
       const ev: NewEvent = { type: 'party_event_recorded', actor: cmd.actor, payload: { event: cmd.event, party: cmd.party.trim(), hasAttorney: cmd.hasAttorney ?? null, note: cmd.note?.trim() || null } };
-      if (s.completion.confirmedAt) return [ev];
+      if (s.completion.confirmedAt && cmd.event === 'died') return [ev];
       const nextId = issueIds(s);
       const note = cmd.note?.trim();
       const found = partyEventConsequences(s, { event: cmd.event, party: cmd.party.trim(), hasAttorney: cmd.hasAttorney ?? null }, profile(s).side);
@@ -2995,6 +3008,17 @@ const issue = (s: MatterState, id: string, kind: IssueKind, title: string, detai
 const openOf = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).some((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const openList = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).filter((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const resolvedBy = (id: string, note: string): NewEvent => ({ type: 'issue_resolved', actor: SYSTEM, payload: { issueId: id, resolution: 'funds_in_place', note, costPennies: null, paidBy: null } });
+
+// ── Price ceilings (money.md 6.3, 7.1) ──
+function priceCliffs(s: MatterState, price: number): Array<{ kind: IssueKind; title: string; detail: string }> {
+  const out: Array<{ kind: IssueKind; title: string; detail: string }> = [];
+  const was = s.purchasePricePennies ?? 0;
+  const crosses = (limit: number) => price > limit && was <= limit;
+  if (s.sdltBasis?.firstTimeBuyer && !s.sdltBasis.wales && crosses(50_000_000)) out.push({ kind: 'sdlt_basis', title: "Over £500,000: first-time buyers' relief is lost", detail: 'Above £500,000 there is no relief at all: standard rates on the whole price. Tell the client what the Stamp Duty now is and update the statement.' });
+  if (s.shapes?.includes('lifetime_isa') && price > 45_000_000) out.push({ kind: 'isa_bonus' as IssueKind, title: 'Over £450,000: the Lifetime ISA cannot be used', detail: 'A Lifetime ISA can only buy a first home costing £450,000 or less; withdrawing for this purchase would carry the 25% charge. Tell the client before anything is withdrawn, and plan the money without it.' });
+  if (s.shapes?.includes('help_to_buy_isa') && crosses(25_000_000)) out.push({ kind: 'isa_bonus' as IssueKind, title: 'Help to Buy ISA: check the price cap', detail: 'The bonus is only for homes up to £250,000 (£450,000 in London). Confirm the property qualifies at the new price.' });
+  return out;
+}
 
 // ── Late completion (SCS 6.1.2, 7.2) ──
 /**

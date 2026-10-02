@@ -533,6 +533,8 @@ const SHAPES: Array<{ id: string; label: string; sides: string[]; summary: strin
   { id: 'court_order_transfer', label: 'Transfer Under A Court Order', sides: ['owner'], summary: 'The sealed order, the lender\'s release of the outgoing owner, the SDLT exemption.' },
   { id: 'right_to_buy', label: 'Right To Buy', sides: ['buyer', 'seller'], summary: 'Discount repayment charge for five years, right of first refusal for ten.' },
   { id: 'flying_freehold', label: 'Flying Freehold', sides: ['buyer'], summary: 'The lender\'s limit, rights of support and access, an indemnity policy.' },
+  { id: 'overseas_entity', label: 'Overseas Entity', sides: ['buyer', 'seller'], summary: 'Its Overseas Entities ID and beneficial owners verified.' },
+  { id: 'client_abroad', label: 'Client Abroad', sides: ['buyer', 'seller', 'owner'], summary: 'Higher-standard ID, signing abroad, residence for tax.' },
   { id: 'equity_loan_redemption', label: 'Help To Buy Loan To Repay', sides: ['seller', 'owner'], summary: 'The RICS valuation, the redemption figure and Homes England\'s release.' },
   { id: 'commonhold', label: 'Commonhold', sides: ['buyer', 'seller'], summary: 'The community statement and the association in place of the lease and the pack.' },
 ];
