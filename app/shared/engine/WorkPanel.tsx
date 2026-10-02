@@ -26,6 +26,7 @@ import { CompletionSheet } from './CompletionSheet';
 import { ClientDecisionSheet } from './ClientDecisionSheet';
 import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, Mail, User, X, Zap } from '@/app/shared/icons';
 import { CASE_SHAPES, SHAPE_SPEC } from '@/lib/server/engine/shapes';
+import { noReturnReason } from '@/lib/server/engine/sdlt-facts';
 
 /**
  * The work panel for one matter: where it is on this transaction type's spine, what
@@ -852,7 +853,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       case 'agent_commission': return authorise('estate_agent', 'other', 'Authorise');
       case 'sdlt_payment': return authorise('hmrc', 'other', 'Authorise');
       case 'mortgage_redeemed': return act('redemption', 'mortgage_redeemed', 'Record Redeemed', {}, { primary: true });
-      case 'sdlt': return <>{act('registration', 'sdlt_submitted', 'Record Filed', {}, { primary: true })}{act('registration', 'sdlt_not_required', 'No Return Due')}</>;
+      case 'sdlt': { const why = noReturnReason(s as never); return <>{act('registration', 'sdlt_submitted', 'Record Filed', {}, { primary: !why })}{act('registration', 'sdlt_not_required', 'No Return Due', why ? { reason: why } : {}, { primary: !!why })}</>; }
       case 'ap1': return act('registration', 'ap1_submitted', 'Record Lodged', {}, { primary: true });
       case 'notice_of_assignment': return act('leasehold', 'notice_of_assignment_served', 'Record Served', {}, { primary: true });
       case 'close_file': return closing

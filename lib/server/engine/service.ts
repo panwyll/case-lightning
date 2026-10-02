@@ -1703,6 +1703,19 @@ export class EngineService {
           const other = state.relatedMatter.matterId;
           const was = state.relatedMatter.relation === 'sale' ? 'purchase' : 'sale';
           await this.run(tenantId, other, { type: 'raise_issue', actor: SYSTEM, issueId: `CHAIN-FELL-${matterId.slice(0, 8)}`, kind: 'chain_dependency', title: `The client's linked ${was} has fallen through`, detail: `The ${was} on the linked file was abandoned (${String((e.payload as { reason?: string }).reason ?? '').replace(/_/g, ' ')}). Take the client's instructions: ${was === 'sale' ? 'can they still buy (bridging, other funds), or does this purchase stop too?' : 'do they still want to sell, and when?'} Tell the other side and the lender.`, gate: 'exchange', severity: 'critical' } as never).catch((err) => this.ports.log('linked file could not be told', err));
+          // The purchase relied on the sale for the replacement exception (tax.md A17): without it the higher rates apply.
+          if (was === 'sale') {
+            const purchase = await this.getState(tenantId, other).catch(() => null);
+            const f = purchase?.sdltFacts as { replacing?: boolean; anyOwnsOther?: boolean } | null | undefined;
+            const basis = purchase?.sdltBasis;
+            const price = purchase ? chargeableConsideration(purchase) : null;
+            if (purchase && f?.replacing && f.anyOwnsOther && basis && !basis.additionalProperty && price && !purchase.completion.confirmedAt) {
+              const now = computeSdlt(price, { ...basis, company: false });
+              const higher = computeSdlt(price, { ...basis, additionalProperty: true, firstTimeBuyer: false, company: false });
+              const extra = higher.totalPennies - now.totalPennies;
+              if (extra > 0) await this.run(tenantId, other, { type: 'raise_issue', actor: SYSTEM, issueId: `SDLT-HR-${matterId.slice(0, 8)}`, kind: 'completion_funds_shortfall', title: `The higher rates now apply: ${pounds(extra)} more Stamp Duty`, detail: `The client's sale fell through, so at completion they will still own their old home: the higher rates apply (${pounds(higher.totalPennies)} instead of ${pounds(now.totalPennies)}). Ask the client for the extra before completion, and tell them it is refundable if the old home is sold within three years (amend the return within 12 months of that sale).`, gate: 'completion' } as never).catch((err) => this.ports.log('higher-rates shortfall could not be raised', err));
+            }
+          }
         }
         // The client's sale nets less than their purchase counts on (money.md 9.10): the purchase file is told.
         if (e.type === 'completion_statement_generated' && state.relatedMatter?.relation === 'purchase' && profileOf(state.transactionType).side === 'seller') {

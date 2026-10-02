@@ -506,10 +506,10 @@ test('after sign-off: a price rise beyond the verified funds re-opens the questi
   await h.svc.proofOfFundsSubmitted(TENANT, MATTER, 'pof-1', submission({ purchasePricePennies: 25_000_000, mortgageAdvancePennies: null, sources: [{ kind: 'savings', amountPennies: 25_000_000, description: 'Savings', evidenceDocumentIds: [h.doc(statement({ closingBalancePennies: 25_500_000 }), 'PROOF_OF_FUNDS_EVIDENCE')] }] }));
   await resolve(h, firstDecision(await h.svc.getState(TENANT, MATTER), 'proof_of_funds').eventId, 'approve');
   const down = await h.svc.run(TENANT, MATTER, { type: 'record_price_change', actor: USER, toPennies: 24_500_000, reason: 'Survey' });
-  assert.deepEqual(down.events.map((e) => e.type), ['price_changed']);
+  assert.deepEqual(down.events.filter((e) => !String((e.payload as { title?: string }).title ?? '').startsWith('SDLT basis changed')).map((e) => e.type), ['price_changed']);
   const up = await h.svc.run(TENANT, MATTER, { type: 'record_price_change', actor: USER, toPennies: 26_000_000, reason: 'Sealed bids; client raised the offer' });
-  assert.deepEqual(up.events.map((e) => e.type), ['price_changed', 'issue_raised']);
-  const i = openIssues(up.state)[0];
+  assert.deepEqual(up.events.filter((e) => !String((e.payload as { title?: string }).title ?? '').startsWith('SDLT basis changed')).map((e) => e.type), ['price_changed', 'issue_raised']);
+  const i = openIssues(up.state).find((x) => x.kind === 'source_of_funds')!;
   assert.equal(i.kind, 'source_of_funds');
   assert.match(i.title, /exceeds the verified funds by £10,000/);
   assert.equal(i.gate, 'exchange');

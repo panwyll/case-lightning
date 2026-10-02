@@ -7,7 +7,7 @@ These six catalogues list what can realistically happen at each junction of the 
 | [parties.md](parties.md) | Who the clients are and how that changes: a co-buyer leaving, divorce, death, capacity, attorneys, insolvency, sanctions, conflicts, fraud | 77 | 100% |
 | [money.md](money.md) | Source of funds (business owners, overseas, loans, gifts), mortgage changes, ISAs, completion money, refunds | 87 | 100% |
 | [property.md](property.md) | Title, unregistered land, planning and building regulations, searches, surveys, leasehold, the Building Safety Act, new build, auctions, tenanted property | 91 | 100% |
-| [tax.md](tax.md) | SDLT edge by edge (second homes, commercial holdings, homes abroad, replacing a main residence, companies, non-residents, transfers of equity), Wales LTT, seller CGT | 83 | 34% fully, more in part |
+| [tax.md](tax.md) | SDLT edge by edge (second homes, commercial holdings, homes abroad, replacing a main residence, companies, non-residents, transfers of equity), Wales LTT, seller CGT | 83 | 100% |
 | [exchange.md](exchange.md) | The contract, the deposit, the exchange formulae, authority, chains, notice to complete, failure to complete | 61 | 100% |
 | [completion.md](completion.md) | Undertakings, charges, the day itself, delays, money, registration, discharge, file closure | 99 | 100% |
 

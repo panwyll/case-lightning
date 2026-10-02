@@ -590,7 +590,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'cgt_facts_recorded': {
       const p = e.payload as Payloads['cgt_facts_recorded'];
-      s.cgtFacts = { mainResidenceThroughout: p.mainResidenceThroughout, ukResident: p.ukResident, recordedAt: e.createdAt };
+      s.cgtFacts = { mainResidenceThroughout: p.mainResidenceThroughout, ukResident: p.ukResident, taxRetentionPennies: p.taxRetentionPennies ?? null, recordedAt: e.createdAt };
       break;
     }
     case 'longstop_date_recorded':
@@ -659,6 +659,10 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     // ── Post-completion ──
     case 'sdlt_submitted':
       s.postCompletion.sdltSubmittedAt = e.createdAt;
+      s.sdltFiledPennies = (e.payload as Payloads['sdlt_submitted']).amountPennies ?? s.sdltFiledPennies ?? null;
+      break;
+    case 'sdlt_amended':
+      s.sdltFiledPennies = (e.payload as Payloads['sdlt_amended']).newAmountPennies;
       break;
     case 'ap1_submitted':
       s.postCompletion.ap1SubmittedAt = e.createdAt;

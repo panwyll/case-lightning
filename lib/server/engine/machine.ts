@@ -135,7 +135,7 @@ export interface SummaryOverride {
 export type Command = CommandBody & { completion?: Completion | null };
 
 type CommandBody =
-  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; attorneys?: string[] | null; officers?: string[] | null; executors?: string[] | null; occupiers?: string[] | null; sdlt?: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean } | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean; shapes?: CaseShape[] | null; partyNames?: string[] | null }
+  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; attorneys?: string[] | null; officers?: string[] | null; executors?: string[] | null; occupiers?: string[] | null; sdlt?: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; linkedConsiderationPennies?: number | null } | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean; shapes?: CaseShape[] | null; partyNames?: string[] | null }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
   | { type: 'resume_automation'; actor: Actor; reason: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null; party?: string | null; link?: string | null }
@@ -279,7 +279,8 @@ type CommandBody =
   | { type: 'deed_of_trust_executed'; actor: Actor; parties: string[]; shares?: string | null; documentId?: string | null }
   | { type: 'sdlt_not_required'; actor: Actor; reason: string }
   | { type: 'completion_confirmed'; actor: Actor; completedAt?: string | null }
-  | { type: 'sdlt_submitted'; actor: Actor; reference?: string | null }
+  | { type: 'sdlt_submitted'; actor: Actor; reference?: string | null; amountPennies?: number | null; paidOn?: string | null }
+  | { type: 'sdlt_amended'; actor: Actor; newAmountPennies: number; reason: string }
   | { type: 'ap1_submitted'; actor: Actor; reference?: string | null }
   | { type: 'ap1_confirmed'; actor: Actor; titleNumber?: string | null }
   | { type: 'record_chase'; chase: ChaseSpec }
@@ -327,6 +328,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'record_deal_event',
   'add_shape',
   'record_isa',
+  'sdlt_amended',
   'record_completion_event',
   'bankruptcy_search_entry',
   'record_chain_link',
@@ -1004,7 +1006,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // Only one government bonus can go towards a home (money.md 7.6).
       if (shapes.includes('lifetime_isa') && shapes.includes('help_to_buy_isa')) conditionIssues.push(issue('isa_bonus', 'Both a Lifetime ISA and a Help to Buy ISA: only one bonus can be used', 'A buyer cannot use both bonuses on the same home: the Help to Buy ISA can be transferred into the Lifetime ISA (and its bonus counts towards that ISA), or the client chooses one. Settle it with the client before any withdrawal or claim.'));
       const sdlt = cmd.sdlt ?? null;
-      if (sdlt && (sdlt.firstTimeBuyer || sdlt.additionalProperty || sdlt.nonUkResident) && side === 'buyer') conditionIssues.push(issue('sdlt_basis', `SDLT basis declared: ${[sdlt.firstTimeBuyer && 'first-time buyer relief claimed', sdlt.additionalProperty && 'higher rates (additional property)', sdlt.nonUkResident && 'non-UK resident surcharge'].filter(Boolean).join('; ')}`, 'Check the basis against the facts before the return is filed: every buyer must qualify for first-time buyer relief (never owned anywhere in the world); the higher rates apply if any buyer or their spouse owns another dwelling at completion (a replaced main residence may be excepted); the 2% surcharge applies if any buyer was non-UK resident in the year before completion. A wrong basis is a penalty and, if deliberate, evasion (LSAG 18.5.5).'));
+      if (sdlt && (sdlt.firstTimeBuyer || sdlt.additionalProperty || sdlt.nonUkResident || sdlt.mixedUse || sdlt.linkedConsiderationPennies) && side === 'buyer') conditionIssues.push(issue('sdlt_basis', `SDLT basis declared: ${[sdlt.firstTimeBuyer && 'first-time buyer relief claimed', sdlt.additionalProperty && 'higher rates (additional property)', sdlt.nonUkResident && 'non-UK resident surcharge', sdlt.mixedUse && 'mixed use (non-residential rates: HMRC challenges these)', sdlt.linkedConsiderationPennies && 'linked transactions'].filter(Boolean).join('; ')}`, 'Check the basis against the facts before the return is filed: every buyer must qualify for first-time buyer relief (never owned anywhere in the world); the higher rates apply if any buyer or their spouse owns another dwelling at completion (a replaced main residence may be excepted); the 2% surcharge applies if any buyer was non-UK resident in the year before completion. A wrong basis is a penalty and, if deliberate, evasion (LSAG 18.5.5).'));
       return [
         {
           type: 'matter_created',
@@ -1559,8 +1561,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         if (p.side === 'seller' && anythingCharged(s) && !s.undertaking) reject("Give the buyer's solicitor our undertaking to redeem the charges (the reply to their completion information) before completing.");
         // A remortgage or transfer that releases money: the surplus goes to the client and the file cannot close until it has (completion.md 5.3).
         const surplus = p.side === 'owner' ? moneyOf(s).statementBalancePennies ?? 0 : 0;
+        const cgtHold = p.side === 'seller' ? s.cgtFacts?.taxRetentionPennies ?? 0 : 0;
+        const forTax: NewEvent[] = cgtHold > 0 ? [{ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${moneyOf(s).refunds.length + 1}`, toRole: 'client', to: null, amountPennies: cgtHold, reason: "Held for the client's CGT: pay it to HMRC on their instruction within 60 days, or back to them" } }] : [];
         const toClient: NewEvent[] = surplus > 0 ? [{ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${moneyOf(s).refunds.length + 1}`, toRole: 'client', to: null, amountPennies: surplus, reason: 'The surplus released by the remortgage, per the statement of account' } }] : [];
-        return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }, ...lateCompletion(s, cmd.completedAt ?? null, ctx.now), ...toClient];
+        return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }, ...lateCompletion(s, cmd.completedAt ?? null, ctx.now), ...toClient, ...forTax];
       }
       // A purchase completes on paper first: the transfer deed, and with a lender the mortgage deed and the certificate of title.
       if (!s.deeds.transferDeedAt) reject('The transfer deed (TR1) has not been executed.');
@@ -1615,7 +1619,32 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireSide(s, ['buyer', 'owner'], 'An SDLT return');
       if (s.postCompletion.sdltSubmittedAt) reject('SDLT return already submitted.');
       if (s.sdltNotRequiredAt) reject('SDLT was recorded as not required; record a correction if that was wrong.');
-      return [{ type: 'sdlt_submitted', actor: cmd.actor, payload: { reference: cmd.reference ?? null } }];
+      const filed: NewEvent[] = [{ type: 'sdlt_submitted', actor: cmd.actor, payload: { reference: cmd.reference ?? null, amountPennies: cmd.amountPennies ?? null, paidOn: cmd.paidOn ?? null } }];
+      // The tax filed against the estimate the client was asked for (tax.md H3): a difference is the client's money.
+      const c = chargeableConsideration(s);
+      const est = c ? computeSdlt(c, { ...(s.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: s.shapes?.includes('company_buyer') ?? false }).totalPennies : null;
+      if (cmd.amountPennies != null && est != null && Math.abs(cmd.amountPennies - est) >= 100) {
+        const diff = cmd.amountPennies - est;
+        filed.push(issue(s, issueIds(s)(), diff > 0 ? 'completion_funds_shortfall' : 'other', `SDLT filed at ${pounds(cmd.amountPennies)}, ${pounds(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than the estimate`, diff > 0 ? 'The client was asked for less than the tax: ask them for the difference now (HMRC charges interest from the filing date), and check the return\'s basis.' : 'The client paid more than the tax: the difference goes back to them with the final statement.', 'none'));
+      }
+      return filed;
+    }
+    case 'sdlt_amended': {
+      // A return amended (tax.md H4, H5): within 12 months of filing by amendment; after that, an overpayment relief claim within four years.
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person records this.', 403);
+      const filedAt = s.postCompletion.sdltSubmittedAt;
+      if (!filedAt) reject('No return has been filed.');
+      if (!cmd.reason?.trim()) reject('Say why it was amended.', 400);
+      if (!Number.isInteger(cmd.newAmountPennies) || cmd.newAmountPennies < 0) reject('Give the new figure.', 400);
+      const months = (ctx.now.getTime() - Date.parse(filedAt)) / (30.44 * 86_400_000);
+      if (months > 48) reject('Over four years since filing: an overpayment relief claim is out of time.');
+      const route = months <= 12 ? 'amendment' : 'overpayment relief claim';
+      const before = s.sdltFiledPennies ?? null;
+      const out: NewEvent[] = [{ type: 'sdlt_amended', actor: cmd.actor, payload: { newAmountPennies: cmd.newAmountPennies, previousPennies: before, reason: cmd.reason.trim(), route } }];
+      if (before != null && cmd.newAmountPennies < before) out.push({ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${moneyOf(s).refunds.length + 1}`, toRole: 'client', to: null, amountPennies: before - cmd.newAmountPennies, reason: `SDLT refund from HMRC (${route}): ${cmd.reason.trim().slice(0, 80)}` } });
+      if (before != null && cmd.newAmountPennies > before) out.push(issue(s, issueIds(s)(), 'completion_funds_shortfall', `SDLT amended up by ${pounds(cmd.newAmountPennies - before)}`, 'The extra tax and interest are due to HMRC now: ask the client for the money.', 'none'));
+      return out;
     }
     case 'ap1_submitted': {
       requireEnrolled(s);
@@ -2239,6 +2268,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       for (const c of priceCliffs(s, cmd.toPennies)) out.push(issue(s, issueIds(s, out)(), c.kind, c.title, c.detail, 'exchange'));
       // An approved contract names the old price: it is amended and approved again (exchange.md 1.2).
       if (s.readiness.contractApprovedAt && s.purchasePricePennies !== null) out.push(issue(s, issueIds(s, out)(), 'contract_term', `Contract to be amended to the new price (£${(cmd.toPennies / 100).toLocaleString('en-GB')})`, `The approved contract says £${((s.purchasePricePennies ?? 0) / 100).toLocaleString('en-GB')}. Get the amended contract, approve it again and have it signed again, with the client's written instruction to the new price.`, 'exchange'));
+      // The tax moves with the price (tax.md E8): the client hears the new figure.
+      if (profile(s).side === 'buyer' && s.purchasePricePennies != null && !s.sdltBasis?.wales) {
+        const basis = { ...(s.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: s.shapes?.includes('company_buyer') ?? false };
+        const before = computeSdlt(chargeableConsideration(s) ?? s.purchasePricePennies, basis).totalPennies;
+        const after = computeSdlt(chargeableConsideration({ ...s, purchasePricePennies: cmd.toPennies } as MatterState) ?? cmd.toPennies, basis).totalPennies;
+        if (before !== after) out.push(issue(s, issueIds(s, out)(), 'sdlt_basis', `${TAX_CHANGED}: estimate ${pounds(before)} → ${pounds(after)} at the new price`, 'Tell the client the new Stamp Duty figure with the new price, and update the statement.', 'exchange'));
+      }
       return out;
     }
     case 'contract_approved': {
@@ -2610,7 +2646,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const { type: _t, actor: _a, completion: _c, ...facts } = cmd as SdltFacts & { type: string; actor: string; completion?: unknown };
       if (facts.debtAssumedPennies != null && (!Number.isInteger(facts.debtAssumedPennies) || facts.debtAssumedPennies < 0)) reject('The debt taken on must be a sum in pennies.', 400);
       if (facts.soMarketValue && !facts.soMarketValuePennies) reject('The market value election needs the full market value.', 400);
-      const d = deriveSdltBasis(facts, s);
+      const d = deriveSdltBasis({ ...facts, effectiveDate: s.exchange.completionDate ?? s.targetCompletionDate ?? null }, s);
       const out: NewEvent[] = [{ type: 'sdlt_facts_recorded', actor: cmd.actor, payload: { facts, basis: d.basis, reasons: d.reasons, refundDiary: d.refundDiary } }];
       const nextId = issueIds(s);
       // The tax moved: say so with both figures, so the client's money and the statement follow.
@@ -2626,8 +2662,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'record_cgt_facts': {
       requireEnrolled(s);
       requireSide(s, ['seller'], "The client's CGT answers");
-      const out: NewEvent[] = [{ type: 'cgt_facts_recorded', actor: cmd.actor, payload: { mainResidenceThroughout: !!cmd.mainResidenceThroughout, ukResident: !!cmd.ukResident } }];
-      const flags = cgtFlags({ mainResidenceThroughout: !!cmd.mainResidenceThroughout, ukResident: !!cmd.ukResident });
+      const out: NewEvent[] = [{ type: 'cgt_facts_recorded', actor: cmd.actor, payload: { mainResidenceThroughout: !!cmd.mainResidenceThroughout, ukResident: !!cmd.ukResident, taxRetentionPennies: cmd.taxRetentionPennies ?? null } }];
+      const { type: _ct, actor: _ca, ...cgt } = cmd as CgtFacts & { type: string; actor: string };
+      const flags = cgtFlags({ ...cgt, mainResidenceThroughout: !!cmd.mainResidenceThroughout, ukResident: !!cmd.ukResident });
       if (flags.length && !openOf(s, 'cgt_flag', 'Capital Gains Tax')) out.push(issue(s, issueIds(s)(), 'cgt_flag', 'Capital Gains Tax: tell the client a 60-day report may be due', `${flags.join(' ')} Never advise on the tax or give a figure: tell the client in writing and suggest they speak to their accountant before completion.`, 'none'));
       return out;
     }
@@ -2707,7 +2744,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           break;
         case 'incentive':
           // Cashback, a deposit contribution, paid fees or extras from the seller or developer (money.md 5.15).
-          raise('lender_approval', `Incentive from the seller: ${d.slice(0, 70)}`, `${d}. Tell the lender on the UK Finance disclosure of incentives form (a new build) or in writing: it lends on the price net of incentives, and may reduce the advance. Put it in the contract; show it on the statement.${cmd.amountPennies ? ` Value: £${(cmd.amountPennies / 100).toLocaleString('en-GB')}.` : ''}`, 'exchange', 'warning');
+          raise('lender_approval', `Incentive from the seller: ${d.slice(0, 70)}`, `${d}. Tell the lender on the UK Finance disclosure of incentives form (a new build) or in writing: it lends on the price net of incentives, and may reduce the advance. Put it in the contract; show it on the statement. Stamp Duty stays on the full contract price (a cashback paid by the seller may reduce it; an incentive paid to a third party does not).${cmd.amountPennies ? ` Value: £${(cmd.amountPennies / 100).toLocaleString('en-GB')}.` : ''}`, 'exchange', 'warning');
           break;
         case 'deposit_direct':
           // A deposit (or a reservation fee) paid to the seller or the agent, not through us (money.md 8.6).
@@ -2745,7 +2782,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // Agreements outside the contract (exchange.md 6.3-6.5): each needs its own terms, the lender and the insurance.
       if (cmd.event === 'early_access' || cmd.event === 'seller_stays') {
         const early = cmd.event === 'early_access';
-        const raised = issue(s, issueIds(s)(), 'third_party_consent', early ? `Early access before completion: ${cmd.detail.trim().slice(0, 70)}` : `The seller stays on after completion: ${cmd.detail.trim().slice(0, 70)}`, `${cmd.detail.trim()}. ${early ? "Only by a written licence: access for a stated purpose (measuring, trades) or occupation, no works that change the property without consent, the buyer's insurance, and an end on completion or rescission. The seller's lender and the buyer's lender may need to agree; occupation before completion can count as completion for SDLT (substantial performance)." : 'Only by a written licence (never a tenancy): the date they leave, a fee or a retention from the proceeds, who insures and pays the bills. The buyer\'s lender must agree to anyone occupying. Never give vacant possession on paper while they stay.'}`, s.completion.confirmedAt ? 'none' : 'completion');
+        const raised = issue(s, issueIds(s)(), 'third_party_consent', early ? `Early access before completion: ${cmd.detail.trim().slice(0, 70)}` : `The seller stays on after completion: ${cmd.detail.trim().slice(0, 70)}`, `${cmd.detail.trim()}. ${early ? "Only by a written licence: access for a stated purpose (measuring, trades) or occupation, no works that change the property without consent, the buyer's insurance, and an end on completion or rescission. The seller's lender and the buyer's lender may need to agree; occupation before completion (or most of the price paid) is substantial performance: the SDLT return and tax are then due within 14 days of it, not of completion, and a second return may be needed at completion." : 'Only by a written licence (never a tenancy): the date they leave, a fee or a retention from the proceeds, who insures and pays the bills. The buyer\'s lender must agree to anyone occupying. Never give vacant possession on paper while they stay.'}`, s.completion.confirmedAt ? 'none' : 'completion');
         return [{ type: 'property_event_recorded', actor: cmd.actor, payload: { event: cmd.event, detail: cmd.detail.trim() } }, raised];
       }
       const [title, detail] = cmd.event === 'damaged'
@@ -3083,7 +3120,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // A purchase of £40,000 or more needs a return even when no tax is due (and a relief can only be claimed on one).
       const p = profile(s);
       const consideration = p.side === 'buyer' || s.transactionType === 'transfer_of_equity' ? chargeableConsideration(s) : null;
-      if ((p.side === 'buyer' || s.transactionType === 'transfer_of_equity') && consideration != null && consideration >= 4_000_000) reject('A return is required for a purchase of £40,000 or more, even when no tax is due or a relief brings it to nil (the relief is claimed on the return).');
+      if ((p.side === 'buyer' || s.transactionType === 'transfer_of_equity') && consideration != null && consideration >= 4_000_000 && !s.shapes?.includes('court_order_transfer')) reject('A return is required for a purchase of £40,000 or more, even when no tax is due or a relief brings it to nil (the relief is claimed on the return).');
       return [{ type: 'sdlt_not_required', actor: cmd.actor, payload: { reason: cmd.reason.trim() } }];
     }
 

@@ -97,6 +97,8 @@ export function buildCompletionStatement(input: { state: MatterState; side: 'buy
     lines.push({ label: `${basis.wales ? 'Land Transaction Tax' : 'Stamp Duty Land Tax'} (estimate, ${est.scheme}${state.sdltBasis ? '' : ', no basis declared'})`, pennies: est.totalPennies, sign: 1, factId: priceFact?.id ?? null, note: `${sdltLabel(basis)} basis` });
     allowed.push(pounds(est.totalPennies));
     toConfirm.push(`SDLT: ${pounds(est.totalPennies)} is the estimate on the ${sdltLabel(basis)} basis; confirm against HMRC's calculator before the return.`);
+    // Residence can change between the answers and completion (tax.md C6): asked again before this goes.
+    if (state.sdltFacts) toConfirm.push('Residence and other homes: confirm with every buyer that nothing has changed since they answered the tax questions (the non-resident surcharge and the higher rates follow the facts on the completion day).');
   }
   // Leasehold apportionments: the seller has paid the year's ground rent and service charge; the buyer refunds from completion to the period end.
   const period = parsePeriod(textFact(register, /^pack\.service_charge_period$/)?.value);
@@ -128,6 +130,9 @@ export function buildCompletionStatement(input: { state: MatterState; side: 'buy
     const payer = (i as { paidBy?: string | null }).paidBy;
     if ((sale && payer === 'seller') || (!sale && payer === 'buyer')) { lines.push({ label: `${sale ? 'Less indemnity' : 'Indemnity'} policy premium (${i.title.slice(0, 50)})`, pennies: i.costPennies, sign: sale ? -1 : 1, factId: null }); allowed.push(pounds(i.costPennies)); }
   }
+  // Held back at the client's request for their CGT (tax.md G7): still theirs, paid to HMRC on their instruction.
+  const cgtHold = state.cgtFacts?.taxRetentionPennies;
+  if (sale && cgtHold) { lines.push({ label: 'Less held in our client account for your Capital Gains Tax', pennies: cgtHold, sign: -1, factId: null }); allowed.push(pounds(cgtHold)); }
   // Leasehold arrears are cleared from the sale price on completion (property.md 7.4).
   const arrears = (state.managementPack?.facts as { arrearsPennies?: number | null } | null)?.arrearsPennies;
   if (sale && arrears) { lines.push({ label: 'Less service charge / ground rent arrears, paid to the landlord', pennies: arrears, sign: -1, factId: null }); allowed.push(pounds(arrears)); }

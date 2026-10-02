@@ -266,8 +266,8 @@ test('readiness milestones and a price change on a lender-funded purchase: advis
   await toPreExchange(h);
   await h.svc.run(TENANT, MATTER, { type: 'record_price_change', actor: USER, toPennies: 30_000_000, reason: 'Agreed price' });
   const pc = await h.svc.run(TENANT, MATTER, { type: 'record_price_change', actor: USER, toPennies: 29_500_000, reason: 'Seller agreed £5k off for the boiler' });
-  assert.deepEqual(pc.events.map((e) => e.type), ['price_changed', 'issue_raised']);
-  const li = openIssues(pc.state)[0];
+  assert.deepEqual(pc.events.filter((e) => !String((e.payload as { title?: string }).title ?? '').startsWith('SDLT basis changed')).map((e) => e.type), ['price_changed', 'issue_raised']);
+  const li = openIssues(pc.state).find((i) => i.kind === 'lender_approval')!;
   assert.equal(li.kind, 'lender_approval');
   assert.match(li.title, /£295,000/);
   await h.svc.run(TENANT, MATTER, { type: 'contract_approved', actor: USER });

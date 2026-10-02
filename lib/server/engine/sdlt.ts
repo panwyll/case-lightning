@@ -22,6 +22,21 @@ export interface SdltBasis {
   linkedConsiderationPennies?: number | null;
   /** The property is in Wales: Land Transaction Tax to the Welsh Revenue Authority, not SDLT (ltt below). */
   wales?: boolean;
+  /** Shared ownership paying in stages: first-time buyers' relief is tested on the full market value (tax.md B7). */
+  marketValuePennies?: number | null;
+  /** The grant of a new lease: 1% on the net present value of the rent above £125,000 (tax.md F1). */
+  newLeaseRentPennies?: number | null;
+  newLeaseTermYears?: number | null;
+  /** The effective date, to choose the dated rates (tax.md E11). */
+  effectiveDate?: string | null;
+}
+
+/** The net present value of a lease's rent (FA 2003 Sch 5: 3.5% a year), and the 1% above £125,000 on it. */
+export function leaseRentTax(rentPennies: number, years: number): { npvPennies: number; taxPennies: number } {
+  let npv = 0;
+  for (let i = 1; i <= Math.min(years, 999); i++) npv += rentPennies / Math.pow(1.035, i);
+  const npvPennies = Math.round(npv);
+  return { npvPennies, taxPennies: Math.max(0, Math.round((npvPennies - 12_500_000) * 0.01)) };
 }
 export interface SdltBand { fromPennies: number; toPennies: number | null; rate: number; taxPennies: number }
 export interface SdltEstimate {
@@ -62,6 +77,7 @@ export function computeSdlt(pricePennies: number, basis: SdltBasis): SdltEstimat
   }
   const price = pricePennies / 100;
   const notes: string[] = [];
+  if (basis.effectiveDate && basis.effectiveDate.slice(0, 10) < RATES_FROM) notes.push(`The effective date (${basis.effectiveDate.slice(0, 10)}) is before these rates (from ${RATES_FROM}): the rates in force on that date apply. Check HMRC's calculator for it.`);
   if (basis.mixedUse) {
     const bands: SdltBand[] = [];
     let total = 0;
@@ -89,7 +105,8 @@ export function computeSdlt(pricePennies: number, basis: SdltBasis): SdltEstimat
   }
   if (basis.company && basis.companyRelief) notes.push('Company relief claimed (rental business, development or trading): the higher rates instead of the 17% flat rate. Clawed back if the qualifying use stops within three years.');
   if (basis.firstTimeBuyer && !basis.additionalProperty && !basis.company) {
-    if (price <= FTB_CEILING) { table = FIRST_TIME; scheme = "first-time buyers' relief"; }
+    const tested = basis.marketValuePennies ? basis.marketValuePennies / 100 : price;
+    if (tested <= FTB_CEILING) { table = FIRST_TIME; scheme = "first-time buyers' relief"; if (basis.marketValuePennies) notes.push("Shared ownership in stages: the relief is tested on the market value in the lease (£500,000 or less) and the tax is on this share; later staircasing to 80% or less pays nothing."); }
     else notes.push(`First-time buyers' relief is not available above £${FTB_CEILING.toLocaleString('en-GB')}: standard rates apply to the whole price.`);
   } else if (basis.firstTimeBuyer && basis.additionalProperty) {
     notes.push("First-time buyers' relief cannot be claimed where the higher rates apply.");
@@ -104,6 +121,11 @@ export function computeSdlt(pricePennies: number, basis: SdltBasis): SdltEstimat
     const tax = Math.round(slice * effective * 100);
     bands.push({ fromPennies: from * 100, toPennies: to == null ? null : to * 100, rate: effective, taxPennies: tax });
     total += tax;
+  }
+  if (basis.newLeaseRentPennies && basis.newLeaseTermYears) {
+    const r = leaseRentTax(basis.newLeaseRentPennies, basis.newLeaseTermYears);
+    if (r.taxPennies > 0) { total += r.taxPennies; bands.push({ fromPennies: 12_500_000, toPennies: null, rate: 0.01, taxPennies: r.taxPennies }); }
+    notes.push(`A new lease: SDLT on the premium${r.taxPennies ? `, plus 1% on the rent's net present value above £125,000 (NPV £${(r.npvPennies / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 })})` : ` (the rent's net present value, £${(r.npvPennies / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 })}, is under £125,000)`}.`);
   }
   if (basis.additionalProperty) notes.push('Higher rates (additional dwellings): every band carries 5 percentage points more. Not due if the purchase replaces the buyer\'s only or main residence sold within the last three years; refundable if the previous main residence is sold within three years.');
   if (basis.nonUkResident) notes.push('Non-UK resident surcharge: 2 percentage points on every band, refundable if the buyer is UK resident for 183 days in any continuous 365-day period from one year before to one year after the purchase (claim within two years of the purchase).');

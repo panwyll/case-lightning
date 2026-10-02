@@ -211,6 +211,7 @@ export const EVENT_TYPES = [
   'sdlt_facts_recorded',
   'party_event_recorded',
   'shape_added',
+  'sdlt_amended',
   'additional_title_read',
   'completion_event_recorded',
   'bankruptcy_search_entry_found',
@@ -1030,7 +1031,8 @@ export interface Payloads {
   funds_received: { fromRole: FundsRole; amountPennies?: number | null; /** Credited but not yet cleared (a cheque, a payment held by the bank): it cannot be paid out. */ uncleared?: boolean; receiptId?: string; /** The name on the sending account, as the bank shows it (LSAG 6.17: money must come from where the evidence said). */ remitter?: string | null };
   completion_confirmed: { completedAt?: string | null };
 
-  sdlt_submitted: { reference?: string | null };
+  sdlt_submitted: { reference?: string | null; amountPennies?: number | null; paidOn?: string | null };
+  sdlt_amended: { newAmountPennies: number; previousPennies: number | null; reason: string; route: string };
   ap1_submitted: { reference?: string | null };
   ap1_confirmed: { titleNumber?: string | null };
 
@@ -1188,7 +1190,7 @@ export interface Payloads {
   sar_made: { noticeEnds: string };
   daml_response_recorded: { decision: 'granted' | 'refused'; moratoriumEnds: string | null };
   sdlt_facts_recorded: { facts: { wales?: boolean; mainResidence?: boolean; anyEverOwned?: boolean; anyOwnsOther?: boolean; replacing?: boolean; replacingFirst?: boolean; anyNonResident?: boolean; mixedUse?: boolean; debtAssumedPennies?: number | null }; basis: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; wales?: boolean }; reasons: string[]; refundDiary: boolean };
-  cgt_facts_recorded: { mainResidenceThroughout: boolean; ukResident: boolean };
+  cgt_facts_recorded: { mainResidenceThroughout: boolean; ukResident: boolean; taxRetentionPennies?: number | null };
   client_decision_recorded: { subject: ClientDecisionSubject; decision: string; /** Joint clients: whose decision this is (each must authorise exchange). */ party?: string | null; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; /** further_investigation: the investigations this applies to (issue ids); absent = all open ones. */ scope?: string[] | null };
   /** Severity moved (by a person, or by the timer as a deadline nears). */
   issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };
@@ -1739,6 +1741,8 @@ export interface MatterState {
   fileDelivery?: 'link' | 'attachments';
   /** The client has said we may tell the other side about their own sale or purchase (their chain). */
   shareChain?: boolean;
+  /** The SDLT as filed (and as amended), for comparing and refunds (tax.md H3, H4). */
+  sdltFiledPennies?: number | null;
   /** Titles beyond the main one (a garage, a garden strip): read for their own entries (property.md 1.20). */
   additionalTitles?: TitleFacts[];
   /** Each link further along the chain and whether it is ready (exchange.md 8.6). */
@@ -1758,7 +1762,7 @@ export interface MatterState {
   /** The buyers' answers the basis is worked out from (sdlt-facts.ts), and the reasons it gives. */
   sdltFacts?: { wales?: boolean; mainResidence?: boolean; anyEverOwned?: boolean; anyOwnsOther?: boolean; replacing?: boolean; replacingFirst?: boolean; anyNonResident?: boolean; mixedUse?: boolean; debtAssumedPennies?: number | null; recordedAt?: string; reasons?: string[]; refundDiary?: boolean } | null;
   /** On a sale: the client's two CGT answers (a flag, never advice). */
-  cgtFacts?: { mainResidenceThroughout?: boolean; ukResident?: boolean; recordedAt: string } | null;
+  cgtFacts?: { mainResidenceThroughout?: boolean; ukResident?: boolean; taxRetentionPennies?: number | null; recordedAt: string } | null;
   /** Money that landed on client account outside the completion flow (fees, the deposit, an unexpected credit): who sent it and what for. */
   receipts: Array<{ remitter: string; amountPennies: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; at: string }>;
   completion: {

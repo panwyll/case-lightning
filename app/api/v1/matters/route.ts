@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { outOfJurisdiction } from '@/lib/server/engine/jurisdiction';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
@@ -86,6 +87,9 @@ export async function POST(req: NextRequest) {
       })
       .parse(await req.json());
 
+    // England and Wales only (tax.md H9).
+    const outside = outOfJurisdiction(body.propertyAddress);
+    if (outside) throw Object.assign(new Error(outside), { status: 400 });
     // Our clients are the buyers on a purchase and the sellers on a sale; the other side's clients are the rest.
     const ours = (body.parties ?? []).map((x) => x.name);
     const theirs = body.otherParties ?? [];
