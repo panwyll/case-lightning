@@ -212,12 +212,13 @@ export type IssueStepView =
 /** The issue catalogue as /engine/spec publishes it (kinds, groups, resolutions). */
 export interface IssueCatalogue {
   groups: Array<{ id: string; label: string }>;
-  kinds: Array<{ kind: string; group: string; label: string; severity?: 'info' | 'warning' | 'critical'; arisesFrom: string; gate: 'exchange' | 'completion' | 'none'; stages: string[]; resolutions: string[]; note: string; overlaps?: string; context?: boolean; escalateAfterWorkingDays?: number | null; responsible?: string }>;
+  kinds: Array<{ kind: string; group: string; label: string; severity?: 'info' | 'warning' | 'critical'; arisesFrom?: string; gate: 'exchange' | 'completion' | 'none'; stages?: string[]; resolutions: string[]; note?: string; overlaps?: string; context?: boolean; escalateAfterWorkingDays?: number | null; responsible?: string }>;
   resolutions: Array<{ id: string; label: string; title?: string; fields?: ResolutionField[]; noteRequired?: boolean; effect?: string | null; effects: string[] }>;
   staleAfterWorkingDays: number;
   formless?: string[];
   chips?: Record<string, string>;
   steps?: Record<string, IssueStepView[]>;
+  /** Acting for the seller, where they differ from `steps`. */
   sellerSteps?: IssueCatalogue['steps'];
   /** Steps of issues raised by an event with its own (IssueRow.event). */
   eventSteps?: IssueCatalogue['steps'];

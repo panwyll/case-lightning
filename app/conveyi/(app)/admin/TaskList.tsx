@@ -4,6 +4,7 @@ import { PasswordInput } from '@/app/shared/engine/PasswordInput';
 import { api } from '@/app/shared/engine/api';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { CaseQuickActions } from '@/app/shared/engine/CaseQuickActions';
+import { loadIssueCatalogue } from '@/app/shared/engine/IssuesPanel';
 import { DecisionPanel } from '@/app/shared/engine/DecisionPanel';
 import { CaseTodoReview, IssueReview, StepReview } from '@/app/shared/engine/StepReview';
 import { BusyButton, UploadButton } from '@/app/shared/engine/BusyButton';
@@ -120,6 +121,8 @@ export function TaskTools({ sort, setSort, q, setQ }: { sort: TaskSort; setSort:
 }
 
 export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort; q: string }) {
+  // Issues open in place: have their catalogue ready before the first one is opened.
+  useEffect(() => { const t = setTimeout(() => void loadIssueCatalogue(api), 800); return () => clearTimeout(t); }, []);
   const [data, setData] = useState<{ do: WorkItem[]; waiting: WorkItem[]; escalate: WorkItem[]; viewerRole?: string } | null>(null);
   // An assistant sees every task on their cases; the ones that are a conveyancer's call say so instead of offering Approve.
   const forConveyancer = (i: WorkItem): boolean => data?.viewerRole === 'ASSISTANT' && !i.assistantCan;

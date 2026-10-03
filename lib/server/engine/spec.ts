@@ -424,6 +424,51 @@ const eventCategory = (t: EventType): string => {
 /** What the form needs: a message's brief stays on the server (it drafts there); an action or outcome goes as it is. */
 const stepView = (x: IssueStep) => (x.kind === 'message' ? { id: x.id, kind: x.kind, label: x.label, to: x.to } : x);
 
+/**
+ * The issue catalogue alone (kinds, outcomes, steps): what an issue's form needs, without the rest of the
+ * machine. Built once per process; it is data, the same for every tenant.
+ */
+let catalogue: MachineSpec['issues'] | null = null;
+export function issueCatalogue(): MachineSpec['issues'] {
+  catalogue ??= {
+  groups: ISSUE_GROUPS.map((id) => ({ id, label: ISSUE_GROUP_LABEL[id] })),
+  kinds: ISSUE_KIND_SPECS,
+  resolutions: ISSUE_RESOLUTIONS.map((id) => ({
+    id,
+    label: RESOLUTION_LABEL[id],
+    title: RESOLUTION_TITLE[id],
+    fields: RESOLUTION_FIELDS[id],
+    noteRequired: NOTE_REQUIRED.has(id),
+    effect: RESOLUTION_EFFECT[id] ?? null,
+    effects: [
+      ...(PRICE_RESOLUTIONS.has(id) ? ['records price_changed (new price required, before exchange only)'] : []),
+      ...(LENDER_NOTIFY_RESOLUTIONS.has(id) ? ['lender-funded purchase: raises a lender_approval issue holding exchange'] : []),
+      ...(REOPENS_OFFER.has(id) ? ['lender-funded purchase: records mortgage_offer_withdrawn (the sub-flow reopens)'] : []),
+    ],
+  })),
+  staleAfterWorkingDays: DEADLINE_LEAD.stale_issue,
+  formless: [...FORMLESS_KINDS],
+  chips: ISSUE_CHIP,
+  steps: Object.fromEntries(ISSUE_KIND_SPECS.map((k) => [k.kind, issueSteps(k.kind, 'buyer').map(stepView)])),
+  sellerSteps: Object.fromEntries(ISSUE_KIND_SPECS.map((k) => [k.kind, issueSteps(k.kind, 'seller').map(stepView)])),
+  eventSteps: Object.fromEntries(EVENTS_WITH_STEPS.map((e) => [e, issueSteps('other', 'buyer', e).map(stepView)])),
+};
+  return catalogue;
+}
+
+/**
+ * What an issue's form reads (IssuesPanel): the catalogue without the kinds' long descriptions, and the
+ * seller's steps only where they differ from the buyer's. Built once per process.
+ */
+let forForms: Record<string, unknown> | null = null;
+export function issueCatalogueForForms(): Record<string, unknown> {
+  if (forForms) return forForms;
+  const c = issueCatalogue();
+  const sellerSteps = Object.fromEntries(Object.entries(c.sellerSteps).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(c.steps[k])));
+  forForms = { ...c, kinds: c.kinds.map(({ arisesFrom: _a, note: _n, overlaps: _o, stages: _s, ...k }) => k), sellerSteps };
+  return forForms;
+}
+
 export function machineSpec(): MachineSpec {
   const body: Omit<MachineSpec, 'version'> = {
     generatedFrom: 'lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)',
@@ -448,29 +493,7 @@ export function machineSpec(): MachineSpec {
     invariants: INVARIANTS,
     triggers: TRIGGERS,
     eventualities: EVENTUALITIES,
-    issues: {
-      groups: ISSUE_GROUPS.map((id) => ({ id, label: ISSUE_GROUP_LABEL[id] })),
-      kinds: ISSUE_KIND_SPECS,
-      resolutions: ISSUE_RESOLUTIONS.map((id) => ({
-        id,
-        label: RESOLUTION_LABEL[id],
-        title: RESOLUTION_TITLE[id],
-        fields: RESOLUTION_FIELDS[id],
-        noteRequired: NOTE_REQUIRED.has(id),
-        effect: RESOLUTION_EFFECT[id] ?? null,
-        effects: [
-          ...(PRICE_RESOLUTIONS.has(id) ? ['records price_changed (new price required, before exchange only)'] : []),
-          ...(LENDER_NOTIFY_RESOLUTIONS.has(id) ? ['lender-funded purchase: raises a lender_approval issue holding exchange'] : []),
-          ...(REOPENS_OFFER.has(id) ? ['lender-funded purchase: records mortgage_offer_withdrawn (the sub-flow reopens)'] : []),
-        ],
-      })),
-      staleAfterWorkingDays: DEADLINE_LEAD.stale_issue,
-      formless: [...FORMLESS_KINDS],
-      chips: ISSUE_CHIP,
-      steps: Object.fromEntries(ISSUE_KIND_SPECS.map((k) => [k.kind, issueSteps(k.kind, 'buyer').map(stepView)])),
-      sellerSteps: Object.fromEntries(ISSUE_KIND_SPECS.map((k) => [k.kind, issueSteps(k.kind, 'seller').map(stepView)])),
-      eventSteps: Object.fromEntries(EVENTS_WITH_STEPS.map((e) => [e, issueSteps('other', 'buyer', e).map(stepView)])),
-    },
+    issues: issueCatalogue(),
   };
   const version = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 12);
   return { version, ...body };

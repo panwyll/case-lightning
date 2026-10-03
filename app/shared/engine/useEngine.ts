@@ -9,11 +9,12 @@ import type { Api, EngineEvent, EngineView } from './types';
 /** What the combined case-view request carries besides the engine view and the log. */
 export interface EngineBundle { row: unknown; detail: unknown; graph: unknown }
 
-export function useEngine(matterId: string, api: Api, onChanged?: () => void, opts?: { onBundle?: (b: EngineBundle) => void }) {
+export function useEngine(matterId: string, api: Api, onChanged?: () => void, opts?: { onBundle?: (b: EngineBundle) => void; /** false: skip the event history (a form that never shows it). */ events?: boolean }) {
   // The page's handler may be a new function each render; the load must not restart for that.
   const bundleRef = useRef(opts?.onBundle);
   bundleRef.current = opts?.onBundle;
   const wantsBundle = !!opts?.onBundle;
+  const wantsEvents = opts?.events !== false;
   const [view, setView] = useState<EngineView | null>(null);
   const [events, setEvents] = useState<EngineEvent[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -34,7 +35,7 @@ export function useEngine(matterId: string, api: Api, onChanged?: () => void, op
         setEvents(b.events);
         bundleRef.current?.({ row: b.row, detail: b.detail, graph: b.graph });
       } else {
-        const [v, ev] = await Promise.all([api<EngineView>(`/matters/${matterId}/engine`), api<{ events: EngineEvent[] }>(`/matters/${matterId}/engine/events?limit=2000`)]);
+        const [v, ev] = await Promise.all([api<EngineView>(`/matters/${matterId}/engine`), wantsEvents ? api<{ events: EngineEvent[] }>(`/matters/${matterId}/engine/events?limit=2000`) : Promise.resolve({ events: [] as EngineEvent[] })]);
         if (seq !== loadSeq.current) return;
         setView(v);
         setEvents(ev.events);
@@ -43,7 +44,7 @@ export function useEngine(matterId: string, api: Api, onChanged?: () => void, op
     } catch (e: unknown) {
       if (seq === loadSeq.current) setErr(e instanceof Error ? e.message : 'Could not load the case.');
     }
-  }, [api, matterId, wantsBundle]);
+  }, [api, matterId, wantsBundle, wantsEvents]);
 
   useEffect(() => {
     void load();

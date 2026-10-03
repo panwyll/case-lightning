@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { useEngine } from './useEngine';
 import { WorkPanel, WORK_CSS } from './WorkPanel';
-import { IssuesPanel } from './IssuesPanel';
+import { IssuesPanel, loadIssueCatalogue } from './IssuesPanel';
 import type { Api } from './types';
 
 /**
@@ -27,7 +27,9 @@ export function StepReview({ api, matterId, stepKey, onDone }: { api: Api; matte
 
 /** One issue, dealt with from the Tasks list: its Resolve / Try Again / password / More actions, in place. `onDone` fires once it is closed. */
 export function IssueReview({ api, matterId, issueId, onDone, onCancel }: { api: Api; matterId: string; issueId: string; onDone: () => void; onCancel?: () => void }) {
-  const eng = useEngine(matterId, api);
+  // The case and the catalogue load together; the issue form needs no event history.
+  useEffect(() => { void loadIssueCatalogue(api); }, [api]);
+  const eng = useEngine(matterId, api, undefined, { events: false });
   const st = eng.view?.state.issues?.[issueId]?.status;
   const live = st === 'open' || st === 'negotiating';
   // Resolved: the confirmation stays on screen a moment, then the task leaves the list.

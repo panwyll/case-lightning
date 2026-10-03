@@ -22,6 +22,18 @@ import { fmtDay, pretty, type Api, type CaseDocument, type EngineState, type Iss
  */
 /** A step's icon: what kind of thing it does, not always an envelope. */
 const STEP_ICON: Record<string, typeof Mail> = { mail: Mail, calendar: Calendar, doc: Upload, check: CheckCircle, money: CreditCard, refer: User, shield: Shield, case: Building, people: Users, stop: Ban, pause: Hand, search: Search };
+/**
+ * The issue catalogue, fetched once per page and shared: every issue form on the Tasks list reads the
+ * same copy (it is the same for every case). `loadIssueCatalogue` can be called early to have it ready.
+ */
+let catalogueCache: IssueCatalogue | null = null;
+let cataloguePromise: Promise<IssueCatalogue | null> | null = null;
+export function loadIssueCatalogue(api: Api): Promise<IssueCatalogue | null> {
+  cataloguePromise ??= api<{ issues: IssueCatalogue }>('/engine/spec?part=issues')
+    .then((s) => (catalogueCache = s.issues))
+    .catch(() => { cataloguePromise = null; return null; });
+  return cataloguePromise;
+}
 const gbp = (p: number) => `£${(p / 100).toLocaleString('en-GB')}`;
 const pennies = (v: string) => Math.round(Number(v.replace(/[^0-9.]/g, '')) * 100);
 const clean = (s: string | null | undefined) => (s ?? '').replace(/\n?\[(proposal|retry):[^\]]*\]/g, '').replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim();
@@ -133,7 +145,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   /** Just the Raise Issue dialog, open (a task's header opens it); `onCancel` when it closes. */
   raiseOnly?: boolean;
 }) {
-  const [cat, setCat] = useState<IssueCatalogue | null>(null);
+  const [cat, setCat] = useState<IssueCatalogue | null>(catalogueCache);
   const [menu, setMenu] = useState<string | null>(null);
   const [unfold, setUnfold] = useState<Set<string>>(new Set());
   const [form, setForm] = useState<{ id: string; mode: FormMode } | null>(null);
@@ -170,7 +182,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
     setMenuAt({ right: window.innerWidth - r.right, top: r.bottom + 4, bottom: window.innerHeight - r.top + 4 });
     setMenu(id);
   };
-  useEffect(() => { api<{ issues: IssueCatalogue }>('/engine/spec').then((s) => setCat(s.issues)).catch(() => setCat(null)); }, [api]);
+  useEffect(() => { if (!catalogueCache) void loadIssueCatalogue(api).then((c) => { if (c) setCat(c); }); }, [api]);
   useEffect(() => {
     if (!menu) return;
     const close = (e: MouseEvent) => { const t = e.target as Node; if (menuRef.current && !menuRef.current.contains(t) && !popRef.current?.contains(t)) setMenu(null); };
@@ -409,7 +421,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   const actionReady = (x: Extract<IssueStepView, { kind: 'action' }>) => (x.fields ?? []).every((f) => !f.required || !!(vals[`act:${f.key}`] ?? '').trim());
   /** What to do about it: write to someone (drafted from the case), agree new dates, mark it negotiating, or say it has fallen through. */
   const nextSteps = (i: IssueRow) => {
-    const all = ((i.event && cat?.eventSteps?.[i.event]) || (/_sale$/.test(state.transactionType ?? '') ? cat?.sellerSteps : cat?.steps)?.[i.kind] || []).filter((x) => !(x.kind === 'negotiating' && i.status === 'negotiating'));
+    const all = ((i.event && cat?.eventSteps?.[i.event]) || (/_sale$/.test(state.transactionType ?? '') && cat?.sellerSteps?.[i.kind]) || cat?.steps?.[i.kind] || []).filter((x) => !(x.kind === 'negotiating' && i.status === 'negotiating'));
     if (!all.length) return null;
     const log = (i.history ?? []).slice(1).slice(-4);
     return (
