@@ -9,7 +9,7 @@ import { z } from 'zod';
 import type { SessionUser } from '../types';
 import { ForbiddenError } from '../session';
 import { CLIENT_DECISION_SUBJECTS, NOTE_KINDS, TRANSACTION_TYPES, ISSUE_PAID_BY, ABANDON_REASONS, DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, TRUST_LEVELS, VERIFICATION_METHODS, type Engagement } from './types';
-import { ISSUE_KINDS, ISSUE_RESOLUTIONS, ISSUE_SEVERITIES } from './issues';
+import { ISSUE_KINDS, ISSUE_RESOLUTIONS, ISSUE_SEVERITIES, REFER_TO } from './issues';
 import type { Command } from './machine';
 
 /** Every role may move a matter; decisions are narrower (below). Kept as the one place a write gate would go. */
@@ -159,7 +159,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('set_issue_severity'), issueId: z.string().min(1).max(60), severity: z.enum(ISSUE_SEVERITIES), reason: z.string().min(1).max(500) }),
   z.object({ type: z.literal('client_decision_recorded'), subject: z.enum(CLIENT_DECISION_SUBJECTS), decision: z.string().min(1).max(40), note: z.string().max(2000).nullish(), evidenceDocumentId: z.string().uuid().nullish(), scope: z.array(z.string().max(40)).max(20).nullish(), party: z.string().max(160).nullish() }),
   z.object({ type: z.literal('close_matter'), reason: z.string().max(500).nullish() }),
-  z.object({ type: z.literal('update_issue'), issueId: z.string().min(1).max(60), status: z.enum(['open', 'negotiating']), note: z.string().max(4000).nullish(), gate: z.enum(['exchange', 'completion', 'none']).nullish(), party: z.string().max(120).nullish(), resolveBy: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish() }),
+  z.object({ type: z.literal('update_issue'), issueId: z.string().min(1).max(60), status: z.enum(['open', 'negotiating']), note: z.string().max(4000).nullish(), gate: z.enum(['exchange', 'completion', 'none']).nullish(), party: z.string().max(120).nullish(), resolveBy: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(), referredTo: z.enum(REFER_TO).nullish() }),
   z.object({ type: z.literal('resolve_issue'), issueId: z.string().min(1).max(60), resolution: z.enum(ISSUE_RESOLUTIONS), note: z.string().max(4000).nullish(), newPricePennies: z.number().int().positive().nullish(), costPennies: z.number().int().nonnegative().nullish(), paidBy: z.enum(ISSUE_PAID_BY).nullish(), details: z.record(z.string(), z.union([z.string().max(500), z.number(), z.boolean(), z.null()])).nullish(), documentId: z.string().uuid().nullish() }),
   // proof of funds (service-level: the route issues the form and sends it) and leasehold
   z.object({ type: z.literal('request_proof_of_funds'), noteToClient: z.string().max(1000).nullish() }),

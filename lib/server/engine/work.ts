@@ -409,7 +409,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       documentId: i.kind === 'file_locked' ? (/\[doc:([0-9a-f-]{36})\]/.exec(i.detail ?? '')?.[1] ?? null) : null,
       // The chip says what kind of problem; the line is the problem itself, as it was raised.
       // The kind of work: sort out the problem (the title says which), send it again, unlock the file.
-      chip: i.kind === 'send_failed' ? 'Unsuccessful Send' : i.kind === 'file_locked' ? 'Unlock File' : ours ? 'Resolve Issue' : `Chase ${WHO_FIXES[spec.responsible] ?? 'The Other Side'}`,
+      chip: i.kind === 'send_failed' ? 'Unsuccessful Send' : i.kind === 'file_locked' ? 'Unlock File' : i.referredTo ? `With ${({ mlro: 'The MLRO', partner: 'A Partner', colp: 'The COLP' } as const)[i.referredTo]}` : ours ? 'Resolve Issue' : `Chase ${WHO_FIXES[spec.responsible] ?? 'The Other Side'}`,
       // Older failures were titled "The chase to seller solicitor did not go: <reason>": read as the current wording.
       what: i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim().replace(/^The (.+?) did not go:.*$/, (_m, w: string) => `${w.charAt(0).toUpperCase()}${w.slice(1).replace(/\bseller solicitor\b/, "the seller's solicitor").replace(/\bbuyer solicitor\b/, "the buyer's solicitor")} unsuccessful`),
       // No address for them: the task takes it and sends (not a trip to the case's contacts).

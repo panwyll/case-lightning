@@ -114,9 +114,9 @@ export interface MachineSpec {
     formless: string[];
     chips: Record<string, string>;
     /** What a person does about each kind (issues.ts `issueSteps`), labels and recipients only. */
-    steps: Record<string, Array<Pick<IssueStep, 'id' | 'kind' | 'label'> & { to?: string }>>;
+    steps: Record<string, Array<ReturnType<typeof stepView>>>;
     /** The same, acting for the seller. */
-    sellerSteps: Record<string, Array<Pick<IssueStep, 'id' | 'kind' | 'label'> & { to?: string }>>;
+    sellerSteps: Record<string, Array<ReturnType<typeof stepView>>>;
   };
 }
 
@@ -419,7 +419,8 @@ const eventCategory = (t: EventType): string => {
   return 'lifecycle';
 };
 
-const stepView = (x: IssueStep) => ({ id: x.id, kind: x.kind, label: x.label, ...(x.kind === 'message' ? { to: x.to } : {}) });
+/** What the form needs: a message's brief stays on the server (it drafts there); an action or outcome goes as it is. */
+const stepView = (x: IssueStep) => (x.kind === 'message' ? { id: x.id, kind: x.kind, label: x.label, to: x.to } : x);
 
 export function machineSpec(): MachineSpec {
   const body: Omit<MachineSpec, 'version'> = {

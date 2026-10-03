@@ -7,9 +7,9 @@ import { FilePick } from './FilePick';
 import { LenderPicker } from './LenderPicker';
 import { AddressAndSend, addressFor } from './AddressAndSend';
 import { uploadCaseFile } from './uploadCaseFile';
-import { Mail, Calendar, Check } from '@/app/shared/icons';
+import { Mail, Calendar, Check, Upload, CheckCircle, CreditCard, User, Shield, Building, Users, Ban, Hand, Search } from '@/app/shared/icons';
 import { SEVERITIES, SEVERITY_CSS, SEVERITY_LABEL, type Severity } from './severity';
-import { fmtDay, pretty, type Api, type CaseDocument, type EngineState, type IssueCatalogue, type IssueRow, type ResolutionField } from './types';
+import { fmtDay, pretty, type Api, type CaseDocument, type EngineState, type IssueCatalogue, type IssueRow, type IssueStepView, type ResolutionField } from './types';
 
 /**
  * Issues on a case: what has gone wrong, what it stops, and when it should be sorted by.
@@ -20,6 +20,8 @@ import { fmtDay, pretty, type Api, type CaseDocument, type EngineState, type Iss
  * each an inline form. Context (who is running late) sits apart: it holds nothing and makes
  * no task. The catalogue comes from /engine/spec, so the panel never offers what the machine refuses.
  */
+/** A step's icon: what kind of thing it does, not always an envelope. */
+const STEP_ICON: Record<string, typeof Mail> = { mail: Mail, calendar: Calendar, doc: Upload, check: CheckCircle, money: CreditCard, refer: User, shield: Shield, case: Building, people: Users, stop: Ban, pause: Hand, search: Search };
 const gbp = (p: number) => `£${(p / 100).toLocaleString('en-GB')}`;
 const pennies = (v: string) => Math.round(Number(v.replace(/[^0-9.]/g, '')) * 100);
 const clean = (s: string | null | undefined) => (s ?? '').replace(/\n?\[(proposal|retry):[^\]]*\]/g, '').replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim();
@@ -78,6 +80,11 @@ const CSS = `
 .is-comp{display:grid;gap:8px;background:#fff;border:1px solid #e6e8ee;border-radius:10px;padding:10px 12px}
 .is-comp .to{font-size:12px;color:#475569;font-weight:600}
 .is-comp textarea.ep-input{min-height:170px}
+.is-comp textarea.ep-input.short{min-height:0}
+.is-comp label{display:grid;gap:4px;font-size:11.5px;font-weight:700;color:#475569}
+.is-comp .warn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.45}
+.is-comp .f{display:flex;gap:8px;justify-content:flex-end}
+.ep-btn.primary.is-red{background:#dc2626;border-color:#dc2626;color:#fff}
 .is-comp .wait{font-size:12.5px;color:#64748b;padding:8px 0}
 .is-log{display:grid;gap:3px;font-size:12px;color:#475569}
 .is-log div{display:flex;gap:8px}
@@ -140,15 +147,17 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   const [docs, setDocs] = useState<CaseDocument[] | null>(null);
   const [raising, setRaising] = useState(raiseOnly);
   useEffect(() => { if (raiseOnly && !raising) onCancel?.(); }, [raiseOnly, raising, onCancel]);
-  const [draft, setDraft] = useState({ kind: 'survey_defect', title: '', detail: '', gate: 'default' as 'default' | 'exchange' | 'completion' | 'none', resolveBy: '', severity: 'default' as 'default' | Severity });
+  const [draft, setDraft] = useState({ kind: '', title: '', detail: '', gate: 'default' as 'default' | 'exchange' | 'completion' | 'none', resolveBy: '', severity: 'default' as 'default' | Severity });
   const [sev, setSev] = useState<Severity>('critical');
   const [newValue, setNewValue] = useState('');
   const [showClosed, setShowClosed] = useState(false);
   const [pw, setPw] = useState('');
   const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null);
   // A next step open on the form: a message being drafted and edited, or new dates.
-  const [step, setStep] = useState<{ id: string; kind: 'message' | 'dates'; to?: string; subject: string; body: string; loading: boolean } | null>(null);
+  const [step, setStep] = useState<{ id: string; kind: 'message' | 'dates' | 'action'; to?: string; subject: string; body: string; loading: boolean } | null>(null);
   const [sentSteps, setSentSteps] = useState<Set<string>>(new Set());
+  /** The outcome step last picked (it set the outcome below). */
+  const [pickedOutcome, setPickedOutcome] = useState<string | null>(null);
   useEffect(() => { if (!outcome) return; const t = setTimeout(() => setOutcome(null), 8000); return () => clearTimeout(t); }, [outcome]);
 
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -329,12 +338,22 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   };
 
   const TO_LABEL: Record<string, string> = { client: 'The Client', seller_solicitor: "The Other Side's Solicitor", estate_agent: 'The Estate Agent', lender: 'The Lender Or Broker' };
-  const openStep = async (i: IssueRow, x: { id: string; kind: string; to?: string }) => {
+  const openStep = async (i: IssueRow, x: IssueStepView) => {
     setFormErr(null);
     if (step?.id === x.id) { setStep(null); return; }
+    // Recording what settles it: the outcome below, with what it asks for (the grant, the consent).
+    if (x.kind === 'outcome') { setStep(null); if (form?.mode !== 'resolve' || form.id !== i.id) openForm(i, 'resolve'); setResolution(x.resolution); setVals({}); setPickedOutcome(`${i.id}:${x.id}`); return; }
+    if (x.kind === 'action') {
+      const init: Record<string, string> = {};
+      for (const f of x.fields ?? []) init[`act:${f.key}`] = f.type === 'date' && f.inWorkingDays ? inWorkingDays(f.inWorkingDays) : '';
+      setVals((v) => ({ ...v, ...init }));
+      setStep({ id: x.id, kind: 'action', subject: '', body: '', loading: false });
+      return;
+    }
     if (x.kind === 'negotiating') { setStep(null); openForm(i, 'negotiating'); return; }
     if (x.kind === 'fatal') { setStep(null); openForm(i, 'fatal'); return; }
     if (x.kind === 'dates') { setVals((v) => ({ ...v, stepExchange: state.targetExchangeDate?.slice(0, 10) ?? '', stepCompletion: state.targetCompletionDate?.slice(0, 10) ?? '' })); setStep({ id: x.id, kind: 'dates', subject: '', body: '', loading: false }); return; }
+    if (x.kind !== 'message') return;
     setStep({ id: x.id, kind: 'message', to: x.to, subject: '', body: '', loading: true });
     try {
       const d = await api<{ to: string; subject: string; body: string }>(`/matters/${state.matterId}/issues/${encodeURIComponent(i.id)}/message?step=${encodeURIComponent(x.id)}`);
@@ -366,6 +385,26 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
     onChanged?.();
     return true;
   };
+  /** An action step: its command, with the issue's id and party and what the form asked for. */
+  const runAction = async (i: IssueRow, x: Extract<IssueStepView, { kind: 'action' }>): Promise<boolean> => {
+    const fill = (v: unknown): unknown => (v === '$issue' ? i.id : v === '$party' ? (i.party ?? null) : v === '$partyCheck' ? (i.party && state.partyChecks?.[i.party] ? i.party : null) : v === '$status' ? (i.status === 'negotiating' ? 'negotiating' : 'open') : v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).map(([k, w]) => [k, fill(w)])) : v);
+    const body: Record<string, unknown> = { type: x.command, ...(fill(x.args ?? {}) as Record<string, unknown>) };
+    for (const f of x.fields ?? []) {
+      const v = (vals[`act:${f.key}`] ?? '').trim();
+      if (!v) continue;
+      body[f.key] = f.type === 'money' ? pennies(v) : f.type === 'names' ? v.split(',').map((n) => n.trim()).filter(Boolean) : v;
+    }
+    const ok = await run(body);
+    if (!ok) return false;
+    const still = x.command !== 'abandon_matter';
+    if (still && x.log) await run({ type: 'update_issue', issueId: i.id, status: i.status === 'negotiating' ? 'negotiating' : 'open', note: x.log });
+    if (still && x.resolves) await run({ type: 'resolve_issue', issueId: i.id, resolution: x.resolves, note: x.log ?? x.label });
+    setSentSteps((cur) => new Set(cur).add(`${i.id}:${x.id}`));
+    setTimeout(() => setStep((cur) => (cur?.id === x.id ? null : cur)), 900);
+    onChanged?.();
+    return true;
+  };
+  const actionReady = (x: Extract<IssueStepView, { kind: 'action' }>) => (x.fields ?? []).every((f) => !f.required || !!(vals[`act:${f.key}`] ?? '').trim());
   /** What to do about it: write to someone (drafted from the case), agree new dates, mark it negotiating, or say it has fallen through. */
   const nextSteps = (i: IssueRow) => {
     const all = ((/_sale$/.test(state.transactionType ?? '') ? cat?.sellerSteps : cat?.steps)?.[i.kind] ?? []).filter((x) => !(x.kind === 'negotiating' && i.status === 'negotiating'));
@@ -377,10 +416,32 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
         <div className="is-steps">
           {all.map((x) => {
             const sent = sentSteps.has(`${i.id}:${x.id}`);
-            const Icon = x.kind === 'message' ? (sent ? Check : Mail) : x.kind === 'dates' ? (sent ? Check : Calendar) : null;
-            return <button key={x.id} type="button" className={`ep-btn${x.kind === 'fatal' ? ' bad' : ''}${step?.id === x.id ? ' on' : ''}${sent ? ' sent' : ''}`} disabled={busy} onClick={() => void openStep(i, x)}>{Icon && <Icon size={16} />}{x.label}</button>;
+            const Icon = sent ? Check : x.kind === 'message' ? Mail : x.kind === 'dates' ? Calendar : x.kind === 'outcome' || x.kind === 'action' ? STEP_ICON[x.icon] ?? null : null;
+            const on = step?.id === x.id || (x.kind === 'outcome' && pickedOutcome === `${i.id}:${x.id}` && resolution === x.resolution);
+            return <button key={x.id} type="button" className={`ep-btn${x.kind === 'fatal' || (x.kind === 'action' && x.danger) ? ' bad' : ''}${on ? ' on' : ''}${sent ? ' sent' : ''}`} disabled={busy} onClick={() => void openStep(i, x)}>{Icon && <Icon size={16} />}{x.label}</button>;
           })}
         </div>
+        {step?.kind === 'action' && (() => {
+          const x = all.find((y) => y.id === step.id);
+          if (!x || x.kind !== 'action') return null;
+          return (
+            <div className="is-comp">
+              {(x.fields ?? []).map((f) => {
+                const k = `act:${f.key}`;
+                const set = (v: string) => setVals((cur) => ({ ...cur, [k]: v }));
+                const label = `${f.label}${f.required ? '' : ' (Optional)'}`;
+                return f.type === 'note'
+                  ? <label key={f.key}>{label}<textarea className="ep-input short" rows={2} value={vals[k] ?? ''} onChange={(e) => set(e.target.value)} /></label>
+                  : <label key={f.key}>{label}<input className="ep-input" type={f.type === 'date' ? 'date' : 'text'} inputMode={f.type === 'money' ? 'decimal' : undefined} value={vals[k] ?? ''} onChange={(e) => set(e.target.value)} /></label>;
+              })}
+              {x.confirm && <div className="warn">{x.confirm}</div>}
+              <div className="f">
+                <button type="button" className="ep-btn" style={{ margin: 0 }} onClick={() => setStep(null)}>Cancel</button>
+                <BusyButton className={x.danger ? 'ep-btn primary is-red' : undefined} disabled={busy || !actionReady(x)} busyLabel="Working…" doneLabel="Done" onClick={() => runAction(i, x)}>{x.label}</BusyButton>
+              </div>
+            </div>
+          );
+        })()}
         {step?.kind === 'message' && (
           <div className="is-comp">
             <div className="to">To {TO_LABEL[step.to ?? ''] ?? 'Them'}</div>
@@ -539,7 +600,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
     const ok = await run(body);
     if (ok) {
       onChanged?.();
-      setTimeout(() => { setRaising(false); setNewValue(''); setDraft((d) => ({ kind: special ? 'survey_defect' : d.kind, title: '', detail: '', gate: 'default', resolveBy: '', severity: 'default' })); }, 900);
+      setTimeout(() => { setRaising(false); setNewValue(''); setDraft((d) => ({ kind: special ? '' : d.kind, title: '', detail: '', gate: 'default', resolveBy: '', severity: 'default' })); }, 900);
     }
     return ok;
   };
@@ -553,6 +614,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
             <h2>Raise Issue</h2>
             <label>Kind
               <select className="ep-input" value={draft.kind} onChange={(e) => pickKind(e.target.value)}>
+                <option value="" disabled>Choose…</option>
                 {offerOnFile && <optgroup label="Mortgage"><option value={WITHDRAWN}>Mortgage Offer Withdrawn Or Lapsed</option></optgroup>}
                 {(canPrice || canDate) && <optgroup label="Contract">{canPrice && <option value={PRICE}>Price Changed</option>}{canDate && <option value={DATE}>Completion Date Moved</option>}</optgroup>}
                 {(cat?.groups ?? []).map((g) => (
@@ -586,7 +648,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
             {formErr && <div style={{ fontSize: 12.5, color: '#b91c1c', fontWeight: 600 }}>{formErr}</div>}
             <div className="f">
               <button className="ep-btn" style={{ margin: 0 }} onClick={() => setRaising(false)}>Cancel</button>
-              <BusyButton disabled={busy || !draft.title.trim() || !specialReady} busyLabel="Raising…" doneLabel="Raised" onClick={raise}>{special ? 'Record' : 'Raise Issue'}</BusyButton>
+              <BusyButton disabled={busy || !draft.kind || !draft.title.trim() || !specialReady} busyLabel="Raising…" doneLabel="Raised" onClick={raise}>{special ? 'Record' : 'Raise Issue'}</BusyButton>
             </div>
           </div>
         </div>

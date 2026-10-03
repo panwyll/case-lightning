@@ -575,7 +575,7 @@ export const RESOLUTION_FIELDS: Record<IssueResolution, ResolutionField[]> = {
   chain_ready: [],
   proceeding_confirmed: [f('documentId', 'Their Confirmation', 'document', false)],
   grant_obtained: [f('documentId', 'Grant', 'document')],
-  attorney_verified: [f('documentId', 'Registered LPA', 'document')],
+  attorney_verified: [f('documentId', 'Registered LPA Or Deputy Order', 'document')],
   insolvency_cleared: [f('documentId', 'Evidence', 'document')],
   deposit_agreed: [f('deposit', 'Deposit Agreed', 'money')],
   funds_in_place: [f('documentId', 'Evidence', 'document', false)],
@@ -632,7 +632,21 @@ export type IssueStep =
   | { id: string; kind: 'message'; to: MessageParty; label: string; /** What the message must do (the drafter's brief). */ purpose: string; /** The same, as a sentence, when there is no drafter; `{issue}` is the issue's title. */ sentence: string }
   | { id: 'dates'; kind: 'dates'; label: string }
   | { id: 'negotiating'; kind: 'negotiating'; label: string }
-  | { id: 'fatal'; kind: 'fatal'; label: string };
+  | { id: 'fatal'; kind: 'fatal'; label: string }
+  /** Record what settles it (the grant, the consent, the evidence): the resolve form, opened on that outcome with its fields (a file is uploaded there). */
+  | { id: string; kind: 'outcome'; label: string; icon: StepIcon; resolution: IssueResolution }
+  /**
+   * Do something on the case: one engine command, from a small form in place. `args` values '$issue' and
+   * '$party' are the issue's id and party; `fields` are asked for and added. `log` is noted on the issue
+   * after (a command that is not about the issue); `resolves` closes it with that outcome.
+   */
+  | { id: string; kind: 'action'; label: string; icon: StepIcon; command: string; args?: Record<string, unknown>; fields?: StepField[]; confirm?: string; danger?: boolean; log?: string; resolves?: IssueResolution };
+export type StepIcon = 'doc' | 'check' | 'money' | 'refer' | 'case' | 'people' | 'calendar' | 'shield' | 'stop' | 'pause' | 'search';
+export interface StepField { key: string; label: string; type: 'text' | 'note' | 'date' | 'money' | 'names'; required?: boolean; /** A date field's default, in working days from today. */ inWorkingDays?: number }
+/** Who an issue can be referred to inside the firm. */
+export const REFER_TO = ['mlro', 'partner', 'colp'] as const;
+export type ReferTo = (typeof REFER_TO)[number];
+export const REFER_LABEL: Record<ReferTo, string> = { mlro: 'The MLRO', partner: 'A Partner', colp: 'The COLP' };
 
 const msg = (to: MessageParty, label: string, purpose: string, sentence: string): IssueStep => ({ id: `msg:${to}:${label.toLowerCase().replace(/[^a-z]+/g, '_')}`, kind: 'message', to, label, purpose, sentence });
 const ASK_OTHER_SIDE = msg('seller_solicitor', 'Write To The Other Side', 'Raise the issue with the other side and ask how and when they will resolve it', 'We write regarding {issue}. Please let us know how and when your client will resolve it.');
@@ -643,7 +657,80 @@ const DATES: IssueStep = { id: 'dates', kind: 'dates', label: 'Agree New Dates' 
 const NEGOTIATING: IssueStep = { id: 'negotiating', kind: 'negotiating', label: 'Mark Negotiating' };
 const FATAL: IssueStep = { id: 'fatal', kind: 'fatal', label: 'It Has Fallen Through' };
 
+const outcome = (label: string, resolution: IssueResolution, icon: StepIcon = 'doc'): IssueStep => ({ id: `out:${resolution}`, kind: 'outcome', label, icon, resolution });
+const NOTE = (label = 'Why', required = true): StepField => ({ key: 'note', label, type: 'note', required });
+/** Hand it to someone in the firm: it stays on the Tasks list, chipped as theirs. */
+const refer = (to: ReferTo, label = `Refer To ${REFER_LABEL[to]}`): IssueStep => ({ id: `refer:${to}`, kind: 'action', label, icon: to === 'mlro' ? 'shield' : 'refer', command: 'update_issue', args: { issueId: '$issue', status: '$status', referredTo: to }, fields: [NOTE('What They Need To Decide')] });
+/** A date it must be dealt with by (the complaint's eight weeks, the grant expected). */
+const deadline = (label: string, days: number): IssueStep => ({ id: `deadline:${label.toLowerCase().replace(/[^a-z]+/g, '_')}`, kind: 'action', label, icon: 'calendar', command: 'update_issue', args: { issueId: '$issue', status: '$status' }, fields: [{ key: 'resolveBy', label: 'Date', type: 'date', required: true, inWorkingDays: days }, NOTE('Note', false)] });
+const closeCase = (reason: AbandonReasonLike, label = 'Close The Case'): IssueStep => ({ id: `close:${reason}`, kind: 'action', label, icon: 'stop', command: 'abandon_matter', args: { reason }, fields: [{ key: 'detail', label: 'Why', type: 'note', required: true }], danger: true, confirm: 'The case stops: nothing more is sent or chased, and any money held is accounted for on the Tasks list.' });
+const TAKE_OVER: IssueStep = { id: 'take_over', kind: 'action', label: 'Take Over Manually', icon: 'pause', command: 'mark_manual_handling', fields: [{ key: 'reason', label: 'Why', type: 'note', required: true }], log: 'Taken over by hand' };
+/** An ID check for the person it is about when they have their own check on the case (a co-client, a donor, an attorney); otherwise the clients'. */
+const ID_CHECK: IssueStep = { id: 'id_check', kind: 'action', label: 'Send An ID Check', icon: 'people', command: 'request_id_check', args: { party: '$partyCheck' }, log: 'ID check sent' };
+const POF: IssueStep = { id: 'pof', kind: 'action', label: 'Ask For Proof Of Funds', icon: 'money', command: 'request_proof_of_funds', fields: [{ key: 'noteToClient', label: 'What We Need', type: 'note', required: false }], log: 'Proof of funds asked for' };
+const ENQUIRY: IssueStep = { id: 'enquiry', kind: 'action', label: 'Raise An Enquiry', icon: 'search', command: 'raise_enquiry', args: { origin: { issueId: '$issue' } }, fields: [{ key: 'subject', label: 'The Enquiry', type: 'note', required: true }] };
+const CHANGE_CLIENTS: IssueStep = { id: 'set_clients', kind: 'action', label: 'Change The Clients', icon: 'people', command: 'set_clients', fields: [{ key: 'names', label: 'The Clients Now (Comma Separated)', type: 'names', required: true }, { key: 'reason', label: 'Why', type: 'note', required: false }], log: 'Clients changed' };
+type AbandonReasonLike = 'client_withdrew' | 'conflict' | 'client_died' | 'capacity' | 'aml' | 'fraud_suspected' | 'other';
+const INDEMNITY = outcome('Record An Indemnity Policy', 'indemnity_policy', 'shield');
+
 const STEPS_BY_KIND: Partial<Record<IssueKind, IssueStep[]>> = {
+  probate_issue: [
+    outcome('Upload The Grant', 'grant_obtained'),
+    msg('client', 'Ask The Executors For The Grant', 'Ask the personal representatives (through the client contact) when they expect the grant of probate or letters of administration, and to send a copy as soon as it issues', 'Please let us know when you expect the grant of probate (or letters of administration) to issue, and send us a copy as soon as you have it.'),
+    deadline('Expected Grant Date', 60), TAKE_OVER,
+  ],
+  power_of_attorney_issue: [
+    outcome('Upload The LPA Or Deputy Order', 'attorney_verified'),
+    msg('client', 'Ask For The Authority', 'Ask the attorney or the family for the registered lasting power of attorney, or (with none) whether a Court of Protection deputy application has been made and when the order is expected', 'Please send us the registered lasting power of attorney, or tell us whether an application has been made to the Court of Protection for a deputy and when the order is expected.'),
+    deadline('Order Expected By', 60), refer('partner'), TAKE_OVER,
+  ],
+  bankruptcy_insolvency: [
+    outcome('Upload The Clear Search', 'insolvency_cleared'),
+    msg('seller_solicitor', 'Ask Who Can Sell', "Ask the other side's solicitor whether the trustee in bankruptcy or the liquidator is now the seller, and for their authority", 'Please confirm whether the trustee in bankruptcy or liquidator now acts for the seller, and send their authority to sell.'),
+    refer('partner'), FATAL,
+  ],
+  complaint: [
+    msg('client', 'Acknowledge The Complaint', 'Acknowledge the complaint in writing, say who is handling it, and that we will send a final response within eight weeks; give the Legal Ombudsman route', 'Thank you for telling us. We are looking into your complaint and will send a full response within eight weeks. If you are not satisfied with that response, you can contact the Legal Ombudsman.'),
+    refer('partner', 'Refer To The Complaints Partner'), deadline('Final Response Due', 40),
+    outcome('Record The Final Response', 'evidence_provided'),
+  ],
+  aml_kyc_problem: [refer('mlro'), ID_CHECK, POF, outcome('Upload The Evidence', 'evidence_provided'), closeCase('aml', 'Stop Acting')],
+  source_of_funds: [POF, refer('mlro'), outcome('Upload The Evidence', 'evidence_provided')],
+  cdd_refresh: [msg('client', 'Ask The Client To Confirm Their Details', 'Ask the client to confirm their address and circumstances have not changed, or tell us what has, as part of our yearly money-laundering check', 'As part of our yearly check, please confirm your address and circumstances are unchanged, or tell us what has changed.'), outcome('Record It Refreshed', 'evidence_provided', 'check')],
+  seller_identity_risk: [
+    msg('seller_solicitor', 'Ask How They Verified Their Client', "Ask the seller's solicitor to confirm how they verified their client's identity and ownership, and that they are on the register as the seller's solicitor", "Please confirm how you have verified your client's identity and their ownership of the property."),
+    refer('partner'), outcome('Upload Their Confirmation', 'evidence_provided'), closeCase('fraud_suspected', 'Stop: Suspected Fraud'),
+  ],
+  joint_client_conflict: [
+    msg('client', 'Write To Both Clients', 'Write to both joint clients together: we act for both and cannot take sides; we need their joint instructions before we go further', 'We act for you both and need your joint instructions before we can go further. Please let us know how you both wish to proceed.'),
+    refer('partner'), TAKE_OVER, closeCase('conflict', 'Stop Acting For Both'),
+  ],
+  client_change: [CHANGE_CLIENTS, ID_CHECK, msg('lender', 'Tell The Lender', 'Tell the lender who the borrowers now are and ask for their consent or a new offer', 'The parties to this purchase have changed. Please confirm whether you consent or need to reissue the offer.'), outcome('Record It Settled', 'evidence_provided', 'check')],
+  vulnerable_client: [refer('partner'), msg('client', 'Check How They Want To Be Contacted', 'Ask the client how they would like us to contact them and whether they want someone with them when we explain the documents', 'Please let us know how you would like us to keep in touch, and whether you would like someone with you when we go through the documents.'), TAKE_OVER],
+  minor_party: [outcome('Upload The Trust Or Court Paper', 'evidence_provided'), refer('partner')],
+  trust_client: [outcome('Upload The Trust Deed', 'evidence_provided'), ID_CHECK, refer('partner')],
+  charity_terms: [outcome('Upload The Section 117 Certificate', 'evidence_provided'), refer('partner')],
+  related_party: [refer('partner'), msg('lender', 'Tell The Lender', 'Tell the lender the buyer and seller are related, as the Lenders\' Handbook requires, and ask whether they still lend', 'We report that the buyer and seller are related. Please confirm you are content to proceed.'), outcome('Upload The Lender\'s Answer', 'lender_confirmed')],
+  referral_fee: [msg('client', 'Tell The Client About The Fee', 'Tell the client in writing about the referral fee: who receives it and how much, and that it does not change our advice', 'We have a referral arrangement for your matter: we explain it here so you know who is paid what. It does not affect our advice to you.'), outcome('Record It Disclosed', 'evidence_provided', 'check')],
+  retention_held: [outcome('Record The Release', 'received', 'money'), deadline('Release By', 20)],
+  third_party_consent: [outcome('Upload The Consent', 'consent_obtained'), ASK_OTHER_SIDE, deadline('Consent Expected By', 15)],
+  occupier_consent: [outcome('Upload The Signed Consent', 'consent_obtained'), msg('client', 'Ask The Client', 'Ask the seller (through their solicitor if we act for the buyer) for the occupier to sign the occupier\'s consent form', 'Every adult living at the property must sign a form agreeing to leave on completion. Please arrange for it to be signed.'), FATAL],
+  document_missing: [outcome('Upload It', 'received'), ASK_OTHER_SIDE, UPDATE_CLIENT],
+  document_execution_problem: [outcome('Upload The Re-Signed Document', 'document_reexecuted'), msg('client', 'Ask The Client To Sign Again', 'Tell the client what went wrong with the signing and how to sign again (in front of an independent witness, dated, every page)', 'The document needs to be signed again. Please sign where marked, in front of an independent adult witness who also signs.')],
+  enquiry_unanswered: [ASK_OTHER_SIDE, ENQUIRY, NEGOTIATING],
+  enquiry_unsatisfactory: [ENQUIRY, UPDATE_CLIENT, outcome('Client Accepts It', 'accepted_as_is', 'check')],
+  title_defect: [ENQUIRY, INDEMNITY, UPDATE_CLIENT, NEGOTIATING],
+  missing_easement: [ENQUIRY, INDEMNITY, outcome('Record A Deed Or Declaration', 'deed_or_declaration'), UPDATE_CLIENT],
+  restrictive_covenant: [ENQUIRY, INDEMNITY, outcome('Record Retrospective Consent', 'retrospective_consent'), UPDATE_CLIENT],
+  planning_permission_missing: [ENQUIRY, INDEMNITY, outcome('Upload Retrospective Permission', 'retrospective_consent'), UPDATE_CLIENT],
+  building_regs_missing: [ENQUIRY, INDEMNITY, outcome('Upload The Regularisation Certificate', 'regularisation_certificate'), UPDATE_CLIENT],
+  title_restriction: [ENQUIRY, outcome('Upload The Certificate Or Consent', 'restriction_complied')],
+  survey_defect: [msg('client', 'Ask What The Client Wants To Do', 'Explain the surveyor\'s finding plainly and ask whether the client wants to renegotiate, investigate further, or accept it', 'Your surveyor has reported: {issue}. Please let us know whether you would like to renegotiate, investigate further, or go ahead as things are.'), ENQUIRY, outcome('Record A Price Reduction', 'price_reduced', 'money'), outcome('Client Accepts It', 'accepted_as_is', 'check')],
+  deposit_issue: [msg('client', 'Ask The Client', 'Ask the client how much deposit they can put down and when it will be in our account', 'Please confirm how much you can put down as the deposit and when it will reach our client account.'), outcome('Record The Deposit Agreed', 'deposit_agreed', 'money')],
+  valuation_issue: [msg('lender', 'Ask The Lender', 'Ask the lender or broker whether they will reconsider the valuation and what the client\'s options are', 'Please confirm whether the valuation can be reconsidered and what the options are.'), outcome('Record A Price Reduction', 'price_reduced', 'money'), outcome('Record A New Lender', 'new_lender', 'money')],
+  mortgage_condition_outstanding: [outcome('Record It Satisfied', 'condition_satisfied', 'check'), msg('lender', 'Ask The Lender', 'Ask the lender what they need to treat the condition as satisfied', 'Please let us know what you need to treat this condition as satisfied.')],
+  mortgage_offer_outstanding: [outcome('Upload The Offer', 'received'), msg('lender', 'Chase The Lender', 'Ask the lender or broker when the mortgage offer will issue', 'Please confirm when the mortgage offer will issue.'), UPDATE_CLIENT],
+  lender_approval: [msg('lender', 'Write To The Lender', 'Report the point to the lender under the Lenders\' Handbook and ask for their instructions', 'We report the following under the Lenders\' Handbook: {issue}. Please confirm your instructions.'), outcome('Upload The Lender\'s Answer', 'lender_confirmed')],
   transaction_at_risk: [
     msg('seller_solicitor', 'Ask The Other Side Where Their Client Stands', "Ask the other side's solicitor to confirm in writing whether their client is still proceeding, and if so on what timescale", 'We have been told your client may not be proceeding. Please confirm in writing whether they are still proceeding and, if so, on what timescale.'),
     msg('client', 'Update The Client', 'Tell the client what we have been told, that we are confirming it with the other side\'s solicitor today, and that we will come back to them as soon as we hear; ask them not to incur further costs (such as a survey or mortgage fees) until it is clear', 'We have been told the other side may not be proceeding. We are confirming this with their solicitor today and will come back to you as soon as we hear. Please do not incur any further costs until it is clear.'),
@@ -683,7 +770,7 @@ const STEPS_BY_KIND: Partial<Record<IssueKind, IssueStep[]>> = {
   completion_failure: [
     msg('seller_solicitor', 'Agree A New Completion Time', "Tell the other side's solicitor completion did not happen as agreed and ask to agree a new completion time", 'Completion has not taken place as agreed. Please contact us to agree a new completion time.'),
     msg('client', 'Tell The Client', 'Tell the client completion has been delayed, why, and what we are doing to agree a new time', 'Completion has been delayed; we are agreeing a new time with the other side and will confirm it to you.'),
-    DATES,
+    DATES, refer('colp', 'Report To The COLP'),
   ],
   redemption_statement_expired: [
     msg('lender', 'Ask For A Fresh Statement', 'Ask the lender for a fresh redemption statement to the expected completion date', 'Please send a fresh redemption statement to the expected completion date.'),

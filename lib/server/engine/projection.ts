@@ -1019,9 +1019,10 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       if (p.gate) i.gate = p.gate;
       if (p.party !== undefined) i.party = p.party;
       if (p.resolveBy) i.resolveBy = p.resolveBy;
+      if (p.referredTo) i.referredTo = p.referredTo;
       if (p.note && /^Emailed the client\b/.test(p.note)) i.clientToldAt = e.createdAt;
       i.updatedAt = e.createdAt;
-      i.history.push({ at: e.createdAt, by: e.actor, what: `${p.status}${p.gate ? ` (now holds ${p.gate === 'none' ? 'nothing' : p.gate})` : ''}${p.resolveBy ? ` (resolve by ${p.resolveBy})` : ''}${p.note ? `: ${p.note}` : ''}` });
+      i.history.push({ at: e.createdAt, by: e.actor, what: `${p.status}${p.referredTo ? ` (referred to ${({ mlro: 'the MLRO', partner: 'a partner', colp: 'the COLP' } as const)[p.referredTo]})` : ''}${p.gate ? ` (now holds ${p.gate === 'none' ? 'nothing' : p.gate})` : ''}${p.resolveBy ? ` (resolve by ${p.resolveBy})` : ''}${p.note ? `: ${p.note}` : ''}` });
       break;
     }
     case 'issue_resolved': {

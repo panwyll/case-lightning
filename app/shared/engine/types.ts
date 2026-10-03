@@ -201,6 +201,12 @@ export interface IssueRow {
 }
 export interface ResolutionField { key: string; label: string; type: 'money' | 'date' | 'text' | 'lender' | 'document' | 'confirm' | 'payer' | 'channel'; required: boolean }
 
+/** A next step on an issue (issues.ts IssueStep), as the catalogue publishes it. */
+export type IssueStepView =
+  | { id: string; kind: 'message'; label: string; to: string }
+  | { id: string; kind: 'dates' | 'negotiating' | 'fatal'; label: string }
+  | { id: string; kind: 'outcome'; label: string; icon: string; resolution: string }
+  | { id: string; kind: 'action'; label: string; icon: string; command: string; args?: Record<string, unknown>; fields?: Array<{ key: string; label: string; type: 'text' | 'note' | 'date' | 'money' | 'names'; required?: boolean; inWorkingDays?: number }>; confirm?: string; danger?: boolean; log?: string; resolves?: string };
 /** The issue catalogue as /engine/spec publishes it (kinds, groups, resolutions). */
 export interface IssueCatalogue {
   groups: Array<{ id: string; label: string }>;
@@ -209,7 +215,7 @@ export interface IssueCatalogue {
   staleAfterWorkingDays: number;
   formless?: string[];
   chips?: Record<string, string>;
-  steps?: Record<string, Array<{ id: string; kind: 'message' | 'dates' | 'negotiating' | 'fatal'; label: string; to?: string }>>;
+  steps?: Record<string, IssueStepView[]>;
   sellerSteps?: IssueCatalogue['steps'];
 }
 

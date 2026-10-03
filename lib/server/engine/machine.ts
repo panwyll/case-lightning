@@ -24,7 +24,7 @@ import { assertCompletion, CompletionError, type Completion } from './completion
 import type { DeadlineKind } from './sla';
 import { validateNoteActions, summariseNoteActions, nothingToActSummary, acknowledgementSummary, replyOnlySummary, type NoteActionDraft } from './notes';
 import { investigationGroups, investigationTitle } from './survey-review';
-import { duplicateIssue, ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, RESOLUTION_FIELDS, RESOLUTION_TITLE, FORMLESS_KINDS, type IssueGate, type IssueKind, type IssueResolution } from './issues';
+import { duplicateIssue, ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, RESOLUTION_FIELDS, RESOLUTION_TITLE, FORMLESS_KINDS, type IssueGate, type IssueKind, type IssueResolution, type ReferTo } from './issues';
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 import { SHAPE_SPEC, fundsFromFor, type CaseShape } from './shapes';
 import { buildDecision, leaseFlags, offeredOptions, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
@@ -191,7 +191,7 @@ type CommandBody =
   | { type: 'specialist_report_received'; actor: Actor; documentId: string; facts: SurveyFacts; forIssueId?: string | null; extractor: string }
   | { type: 'client_decision_recorded'; actor: Actor; subject: ClientDecisionSubject; decision: string; party?: string | null; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; scope?: string[] | null }
   | { type: 'close_matter'; actor: Actor; reason?: string | null }
-  | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null; party?: string | null; resolveBy?: string | null }
+  | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null; party?: string | null; resolveBy?: string | null; referredTo?: ReferTo | null }
   | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null; costPennies?: number | null; paidBy?: IssuePaidBy | null; details?: Record<string, string | number | boolean | null> | null; documentId?: string | null }
   // ── proof of funds (docs/proof-of-funds.md) ──
   | { type: 'request_proof_of_funds'; actor: Actor; requestId: string; channel: string; messageId?: string | null; to?: string | null; formUrl?: string | null; sendError?: string | null; followUpOf?: string | null; noteToClient?: string | null; queryIds?: string[] }
@@ -2180,10 +2180,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const party = cmd.party !== undefined && (cmd.party?.trim() || null) !== i.party ? (cmd.party?.trim() || null) : undefined;
       if (cmd.resolveBy && !ISO_DAY.test(cmd.resolveBy)) reject('The resolve-by date must be a date (YYYY-MM-DD).', 400);
       const resolveBy = cmd.resolveBy && cmd.resolveBy !== i.resolveBy ? cmd.resolveBy : null;
-      if (cmd.status === i.status && !gate && party === undefined && !resolveBy && !cmd.note?.trim()) reject('Nothing to update: give a note, a new status, a new gate, a date or the party.', 400);
+      const referredTo = cmd.referredTo && cmd.referredTo !== i.referredTo ? cmd.referredTo : null;
+      if (referredTo && !cmd.note?.trim()) reject('Say what they need to decide.', 400);
+      if (cmd.status === i.status && !gate && party === undefined && !resolveBy && !referredTo && !cmd.note?.trim()) reject('Nothing to update: give a note, a new status, a new gate, a date or the party.', 400);
       if (gate && i.title.startsWith(SANCTIONS_PREFIX) && i.kind === 'aml_kyc_problem') reject('A sanctions match is a hard stop: it is cleared by resolving it with the evidence, never by changing what it holds.', 400);
       if (gate === 'none' && !cmd.note?.trim()) reject('Releasing an issue\'s hold on the matter needs a note saying why (the client accepts the risk, the lender is content…).', 400);
-      return [{ type: 'issue_updated', actor: cmd.actor, payload: { issueId: i.id, status: cmd.status, note: cmd.note?.trim() || null, gate, ...(party !== undefined ? { party } : {}), ...(resolveBy ? { resolveBy } : {}) } }];
+      return [{ type: 'issue_updated', actor: cmd.actor, payload: { issueId: i.id, status: cmd.status, note: cmd.note?.trim() || null, gate, ...(party !== undefined ? { party } : {}), ...(resolveBy ? { resolveBy } : {}), ...(referredTo ? { referredTo } : {}) } }];
     }
     case 'resolve_issue': {
       requireEnrolled(s);
