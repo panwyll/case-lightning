@@ -47,7 +47,7 @@ export const STEP_ACTION_LABEL: Record<string, string> = {
   contract_pack: 'Record Sent', management_pack_sale: 'Record Requested', contract_approved_sale: 'Record Approved', contract_approve: 'Approve Contract', proof_of_funds_request: 'Send The Form', proof_of_funds_followup: 'Send The Form', report_on_title_redraft: 'Draft Again', buyer_enquiries: 'Record Replies Sent',
   exchange: 'Contracts Exchanged', completion_statement: 'Send To Client', certificate_of_title: 'Record Sent', bankruptcy_search: 'Record Clear',
   priority_search: 'Record Made', funds_request: 'Request Funds', advance_request: 'Request The Advance', completion_monies: 'Record Received', consideration: 'Record Received',
-  completion_payment: 'Authorise', redemption_payment: 'Authorise', completion: 'Confirm Completion', balance_to_client: 'Authorise', agent_commission: 'Authorise', sdlt_payment: 'Authorise',
+  completion_payment: 'Authorise', redemption_payment: 'Authorise', completion: 'Confirm Completion', balance_to_client: 'Authorise', death_close: 'Close The Case', agent_commission: 'Authorise', sdlt_payment: 'Authorise',
   refund: 'Record Sent', shortfall_request: 'Ask The Client', funds_cleared: 'Record Cleared',
   deposit_in: 'Record Received', final_bill: 'Record Sent', completion_payment_sent: 'Record Sent', contributions: 'Record Contributions', register_check: 'Record Checked', requisition_extend: 'Record More Time', sdlt_facts: 'Record Answers', cgt_facts: 'Record Answers', longstop_date: 'Record Date', charge_statement: 'Record Figure', charge_redeemed: 'Record Paid Off', undertaking: 'Give Undertaking', completion_information: 'Record Replies', undertaking_discharge: 'Record Sent',
   mortgage_redeemed: 'Record Redeemed', sdlt: 'Record Filed', ap1: 'Record Lodged', notice_of_assignment: 'Record Served', close_file: 'Close File',
@@ -85,6 +85,7 @@ export const WAIT_ACTIONS: Record<string, WaitAction> = {
 /** Steps with nothing to fill in: done straight from the row (no form to open). The command each one sends. */
 export function directStep(key: string): { label: string; busy: string; done: string; body: Record<string, unknown> } | null {
   if (key.startsWith('resend:')) return { label: 'Send It', busy: 'Sending…', done: 'Sent', body: { type: 'retry_action', proposalEventId: key.slice('resend:'.length) } };
+  if (key === 'death_close') return { label: 'Close The Case', busy: 'Closing…', done: 'Closed', body: { type: 'abandon_matter', reason: 'client_died', detail: 'Our client has died' } };
   if (key === 'proof_of_funds_request' || key === 'proof_of_funds_followup') return { label: 'Send The Form', busy: 'Sending…', done: 'Sent', body: { type: 'request_proof_of_funds' } };
   if (key === 'report_on_title_redraft') return { label: 'Draft Again', busy: 'Drafting…', done: 'Drafted', body: { type: 'draft_report_on_title' } };
   if (key.startsWith('funds_cleared:')) return { label: 'Record Cleared', busy: 'Recording…', done: 'Cleared', body: { type: 'funds_cleared', receiptId: key.slice('funds_cleared:'.length) } };

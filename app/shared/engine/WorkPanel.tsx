@@ -850,6 +850,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       case 'redemption_payment': return authorise('lender', 'other', 'Authorise', s.redemption?.redemptionPennies);
       case 'completion': return act('completion', 'completion_confirmed', 'Confirm Completion', {}, { primary: true });
       case 'balance_to_client': return authorise('client', 'other', 'Authorise');
+      case 'death_close': return <BusyButton busyLabel="Closing…" doneLabel="Closed" disabled={busy} onClick={() => cmd({ type: 'abandon_matter', reason: 'client_died', detail: 'Our client has died' })}>Close The Case</BusyButton>;
       case 'agent_commission': return authorise('estate_agent', 'other', 'Authorise');
       case 'sdlt_payment': return authorise('hmrc', 'other', 'Authorise');
       case 'mortgage_redeemed': return act('redemption', 'mortgage_redeemed', 'Record Redeemed', {}, { primary: true });

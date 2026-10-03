@@ -132,6 +132,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
         redemption_payment: async () => run({ type: 'payment_authorised', payeeKind: 'lender', bankDetailsId: await verified('lender'), amountPennies: s.redemption.redemptionPennies ?? 1, purpose: 'other' }),
         completion: () => run({ type: 'completion_confirmed' }),
         sdlt_payment: async () => run({ type: 'payment_authorised', payeeKind: 'hmrc', bankDetailsId: await verified('hmrc'), amountPennies: 500_000, purpose: 'other' }),
+        death_close: () => run({ type: 'abandon_matter', reason: 'client_died', detail: 'Our client has died' }),
         agent_commission: async () => run({ type: 'payment_authorised', payeeKind: 'estate_agent', bankDetailsId: await verified('estate_agent'), amountPennies: 300_000, purpose: 'other' }),
         balance_to_client: async () => run({ type: 'payment_authorised', payeeKind: 'client', bankDetailsId: await verified('client'), amountPennies: 1_000_000, purpose: 'other' }),
         mortgage_redeemed: () => run({ type: 'mortgage_redeemed' }),

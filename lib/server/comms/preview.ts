@@ -33,6 +33,13 @@ export async function previewProposal(tenantId: string, matterId: string, action
     const m = await comms.previewStatusUpdate({ tenantId, matterId, template: again ? 'proof_of_funds_request_again' : 'proof_of_funds_request', context: { formUrl: '[the form link, created when this is sent]', noteToClient: note ?? '' } });
     return { kind: 'form', ...m, note };
   }
+  // A message written out in full (a letter after a death, an issue's message): shown exactly as it will go, to be edited on the task.
+  const ed = detail.edited as { subject?: string; body?: string } | undefined;
+  if (action === 'client_update' && ed?.body) return { kind: 'message', to: 'The client', address: null, channel: 'email', subject: ed.subject ?? '', body: ed.body };
+  if (action === 'chase' && detail.kind === 'party_message') {
+    const to: Record<string, string> = { seller_solicitor: "The other side's solicitor", estate_agent: 'The estate agent', lender: 'The lender', family: "The client's family" };
+    return { kind: 'message', to: to[str('recipientRole') ?? ''] ?? 'The other party', address: null, channel: 'email', subject: str('subject') ?? '', body: str('body') ?? '' };
+  }
   if (action === 'client_update' && str('template')) {
     const m = await comms.previewStatusUpdate({ tenantId, matterId, template: str('template')!, context: { ...((detail.context as Record<string, unknown>) ?? {}), overview: extra.overview ?? '' } });
     return { kind: 'message', ...m };

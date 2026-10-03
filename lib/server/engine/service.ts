@@ -25,6 +25,7 @@
  * puts the connection on the conveyi_automation role: the database refuses human-gated
  * events from there whatever this code does.
  */
+import { deathPlaybook } from './people';
 import { pounds } from './money';
 import { chargeableConsideration } from './sdlt-facts';
 import { clientMessagesStopped } from './people';
@@ -274,11 +275,12 @@ export class EngineService {
    * proposal per key at a time; a rejection keeps the same key quiet for a few days so
    * the timer does not nag.
    */
-  private async proposeUnless(tenantId: string, matterId: string, levels: LevelConfig, action: EngineAction, subject: string | null, dedupKey: string, detail: Record<string, unknown>, summary: string): Promise<boolean> {
+  private async proposeUnless(tenantId: string, matterId: string, levels: LevelConfig, action: EngineAction, subject: string | null, dedupKey: string, detail: Record<string, unknown>, summary: string, always = false): Promise<boolean> {
     const state = await this.getState(tenantId, matterId);
     // Manual handling: whatever would have gone out on its own is proposed instead, for the person who has the case.
     const manual = state.manualHandling.required;
-    if (!manual && actsUnasked(levelFor(levels, action, subject), action)) return false;
+    // `always`: a person approves it whatever the trust level (a death notice is never sent unread).
+    if (!manual && !always && actsUnasked(levelFor(levels, action, subject), action)) return false;
     if (manual) detail = { ...detail, manualMode: true };
     if (pendingProposal(state, action, dedupKey)) return true;
     const quietUntil = this.ports.now().getTime() - REJECTED_QUIET_MS;
@@ -310,9 +312,11 @@ export class EngineService {
       await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: `cp_${d.milestone}:${d.to}`, recipientRole: d.to, channel: sent.channel, messageId: sent.messageId, triggeredByEventId: d.triggeredByEventId } });
     } else if (action === 'chase' && (detail as { kind?: string }).kind === 'party_message') {
       // A message a person approved on an email's task, to a party on the case, as they wrote it.
-      const d = detail as { recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; subject: string; body: string };
+      const d = detail as { recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent' | 'family'; subject: string; body: string };
+      // As the person approved it: their edits, not the draft.
+      const ed = (detail as { edited?: MessageOverride }).edited ?? null;
       if (!this.ports.chaser.sendMessage) throw new Error('Messages to other parties are not configured on this deployment.');
-      await this.ports.chaser.sendMessage({ tenantId, matterId, recipientRole: d.recipientRole, subject: d.subject, body: d.body });
+      await this.ports.chaser.sendMessage({ tenantId, matterId, recipientRole: d.recipientRole, subject: ed?.subject?.trim() || d.subject, body: ed?.body?.trim() || d.body });
     } else if (action === 'chase' && (detail as { kind?: string }).kind === 'request') {
       // A first request to another party (not a chase): the template, to the role, once.
       const d = detail as { recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; template: string; context: Record<string, unknown> };
@@ -1698,8 +1702,24 @@ export class EngineService {
           const content = ['MEMORANDUM OF EXCHANGE', '', `Exchanged: ${(p.exchangedAt ?? e.createdAt).replace('T', ' ').slice(0, 16)}`, `Formula: ${p.formula ? `Law Society Formula ${p.formula}` : 'not recorded'}`, `With: ${p.spokeWith ?? 'not recorded'}`, `Recorded by: ${e.actor}`, `Completion date: ${p.completionDate}`, `Deposit: ${deposit != null ? `£${(deposit / 100).toLocaleString('en-GB', { minimumFractionDigits: 2 })}` : 'not recorded'}${p.depositRoute ? `, ${ROUTE[p.depositRoute] ?? p.depositRoute}` : ''}`].join('\n');
           await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'EXCHANGE_MEMORANDUM', fileName: readableName('Exchange memorandum', this.ports.now()), content }).catch((err) => this.ports.log('exchange memorandum could not be filed', err));
         }
+        // A death (people.ts deathPlaybook): each person who must be told gets a tactful letter, drafted for a person to approve.
+        if (e.type === 'party_event_recorded' && (e.payload as { event?: string }).event === 'died') {
+          const party = (e.payload as { party: string }).party;
+          const property = (await this.caseRecord(tenantId, matterId).catch(() => null))?.propertyAddress ?? 'the property';
+          for (const m of deathPlaybook(state, party, profileOf(state.transactionType).side, property)) {
+            const label = { seller_solicitor: "THE OTHER SIDE'S SOLICITOR", estate_agent: 'THE ESTATE AGENT', lender: 'THE LENDER', client: 'THE CLIENT', family: 'THE FAMILY' }[m.to];
+            const title = m.to === 'family' ? `Send condolences to ${party}'s family` : m.to === 'client' ? `Tell the client that ${party} has died` : `Tell ${m.to === 'seller_solicitor' ? "the other side's solicitor" : m.to === 'estate_agent' ? 'the estate agent' : 'the lender'} that ${party} has died`;
+            const [action, detail] = m.to === 'seller_solicitor' || m.to === 'estate_agent'
+              ? ['counterparty_update' as const, { to: m.to, milestone: 'client_died', letter: true, title, subject: m.subject, body: m.body, triggeredByEventId: e.id }]
+              : m.to === 'client'
+                ? ['client_update' as const, { template: 'email_reply', context: { subject: m.subject }, letter: true, title, triggeredByEventId: e.id, edited: { subject: m.subject, body: m.body } }]
+                : ['chase' as const, { kind: 'party_message', recipientRole: m.to, letter: true, title, subject: m.subject, body: m.body, triggeredByEventId: e.id }];
+            try { await this.proposeUnless(tenantId, matterId, subflows, action, m.to === 'client' ? 'email_reply' : 'died', `died:${party}:${m.key}`, detail, `LETTER TO ${label}\n\n${m.body}`, true); }
+            catch (err) { this.ports.log('a death notice could not be drafted', err); }
+          }
+        }
         // A client who withdraws before exchange: the other side and the agent are told (never on an AML or fraud stop: no tipping off) (exchange.md 1.7).
-        if (e.type === 'matter_abandoned' && !state.exchange.exchangedAt && !['aml', 'fraud_suspected'].includes(String((e.payload as { reason?: string }).reason))) {
+        if (e.type === 'matter_abandoned' && !state.exchange.exchangedAt && !['aml', 'fraud_suspected', 'client_died'].includes(String((e.payload as { reason?: string }).reason))) {
           const property = (await this.caseRecord(tenantId, matterId).catch(() => null))?.propertyAddress ?? 'the property';
           const ours = profileOf(state.transactionType).side === 'seller' ? 'seller' : 'buyer';
           for (const to of ['seller_solicitor', 'estate_agent'] as const) {

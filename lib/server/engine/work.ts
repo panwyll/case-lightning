@@ -20,6 +20,7 @@
  *   actionOwner         — who is expected to do the thing (may be outside the firm).
  *   responsibilityOwner — the fee-earner accountable for it happening. Never null.
  */
+import { noteDecisionGroups } from './note-topics';
 import { isUserActor } from './types';
 import { amlHoldActive } from './people';
 import { acknowledgementTitle, emailChip, noteTaskTitle, nothingToActTitle, replyTitle } from './notes';
@@ -39,6 +40,7 @@ export type ActionOwner = 'conveyancer' | 'client' | 'seller_side' | 'lender' | 
 function addressFor(title: string): { role: string; who: string } | null {
   const t = title.toLowerCase();
   if (/(seller'?s?|buyer'?s?|other side'?s?) solicitor/.test(t)) return { role: 'OTHER_SIDE', who: /buyer/.test(t) ? "the buyer's solicitor" : "the seller's solicitor" };
+  if (/family|personal representative/.test(t)) return { role: 'FAMILY', who: "the client's family" };
   if (/lender/.test(t)) return { role: 'LENDER', who: 'the lender' };
   if (/estate agent|agent/.test(t)) return { role: 'AGENT', who: 'the estate agent' };
   if (/client/.test(t)) return { role: 'CLIENT', who: 'the client' };
@@ -46,6 +48,8 @@ function addressFor(title: string): { role: string; who: string } | null {
 }
 
 export interface WorkItem {
+  /** Emails about this issue still to deal with (newest first): opened from the issue's row, not listed again. */
+  emails?: string[];
   /** A send that failed for want of an address: whose, so the task can take it. */
   needsAddress?: { role: string; who: string } | null;
   id: string;
@@ -188,6 +192,7 @@ const DECISION_CHIP: Record<string, string> = { search: 'Document Sign-Off', enq
 
 /** Who a message is for, as a chip starts ("Client", "Seller's Solicitor") and as a sentence says it ("the client", "the seller's solicitor"). */
 const MSG_PARTY: Record<string, { chip: string; the: string }> = {
+  family: { chip: 'The Family', the: "the client's family" },
   client: { chip: 'Client', the: 'the client' }, seller_solicitor: { chip: "Seller's Solicitor", the: "the seller's solicitor" }, buyer_solicitor: { chip: "Buyer's Solicitor", the: "the buyer's solicitor" },
   lender: { chip: 'Lender', the: 'the lender' }, estate_agent: { chip: 'Agent', the: 'the estate agent' }, search_provider: { chip: 'Search Provider', the: 'the search provider' }, hmlr: { chip: 'HMLR', the: 'HM Land Registry' },
 };
@@ -205,7 +210,7 @@ export const DUE_CHIP: Record<string, string> = {
   funds_cleared: 'Record Receipt', refund: 'Return Money', shortfall_request: 'Request Funds',
   deposit_in: 'Record Receipt', final_bill: 'Send Client Documents', completion_payment_sent: 'Record Outcome', contributions: 'Record Outcome', register_check: 'Record Outcome', requisition_extend: 'Record Outcome', sdlt_facts: 'Record Outcome', cgt_facts: 'Record Outcome', longstop_date: 'Record Outcome', charge_statement: 'Record Receipt', charge_redeemed: 'Record Outcome', undertaking: "Send Buyer's Solicitor Documents", completion_information: 'Record Receipt', undertaking_discharge: "Send Buyer's Solicitor Documents",
   certificate_of_title: 'Send Lender Documents', bankruptcy_search: 'Run Search', priority_search: 'Run Search', funds_request: 'Request Funds', advance_request: 'Request Funds', completion_monies: 'Record Receipt', consideration: 'Record Receipt',
-  completion_payment: 'Authorise Payment', redemption_payment: 'Authorise Payment', completion: 'Confirm Completion', balance_to_client: 'Authorise Payment', agent_commission: 'Authorise Payment', sdlt_payment: 'Authorise Payment', mortgage_redeemed: 'Record Outcome',
+  completion_payment: 'Authorise Payment', redemption_payment: 'Authorise Payment', completion: 'Confirm Completion', balance_to_client: 'Authorise Payment', death_close: 'Close Case', agent_commission: 'Authorise Payment', sdlt_payment: 'Authorise Payment', mortgage_redeemed: 'Record Outcome',
   sdlt: 'File Return', ap1: 'Submit Application', notice_of_assignment: 'Send Landlord Documents', close_file: 'Close File',
 };
 /** "your proof of funds form" → "proof-of-funds form": what an acknowledgement is for, without the letter's own pronoun. */
@@ -217,6 +222,8 @@ export function proposalChip(action: string, det: Record<string, unknown>): stri
   if (action === 'acknowledgement') return `${who} Acknowledgement`;
   if (action === 'search_order') return 'Search Order';
   if (action === 'enquiry_draft') return "Seller's Solicitor Enquiries";
+  // A letter written for an event (a death): a letter, not a routine update or a chase.
+  if (det.letter) return `Letter To ${action === 'counterparty_update' ? (det.to === 'estate_agent' ? 'The Agent' : 'The Other Side') : action === 'client_update' ? 'The Client' : partyOf(det.recipientRole).the.replace(/\b\w/g, (c) => c.toUpperCase()).replace("'S", "'s")}`;
   if (action === 'counterparty_update') return det.to === 'estate_agent' ? 'Agent Update' : 'Other Side Update';
   if (action === 'chase' && det.kind === 'request') return det.template === 'exchanged_agent' || det.template === 'completed_agent' ? 'Agent Update' : `${who} Request`;
   if (action === 'chase') return `${who} Chaser`;
@@ -278,6 +285,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
     switch (pr.action) {
       case 'acknowledgement': { const p = partyOf(det.recipientRole ?? 'client').the; return `Acknowledge receipt of ${p}'s ${ackThing(det.what)}`.replace("solicitor's's", "solicitor's"); }
       case 'chase': {
+        if (det.letter && typeof det.title === 'string') return det.title;
         if (det.kind === 'request') {
           const t = String(det.template ?? '');
           if (t === 'exchanged_agent') return 'Tell the estate agent contracts are exchanged';
@@ -289,7 +297,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
         const subj = typeof det.subject === 'string' && det.subject && !/^[0-9a-f-]{20,}$/i.test(det.subject) ? ` (${SEARCH_NAME[det.subject] ?? det.subject.replace(/_/g, ' ')})` : '';
         return `Chase ${whom(det.recipientRole)} for ${low(WAIT_LABEL[key] ?? 'what they owe')}${subj}`;
       }
-      case 'counterparty_update': return `Tell ${whom(det.to)} ${String(det.title ?? 'where our side stands').replace(/^./, (x) => x.toLowerCase())}`;
+      case 'counterparty_update': if (det.letter && typeof det.title === 'string') return det.title; return `Tell ${whom(det.to)} ${String(det.title ?? 'where our side stands').replace(/^./, (x) => x.toLowerCase())}`;
       case 'search_order': { const n = SEARCH_NAME[cleanSubject ?? String(det.searchType ?? '')] ?? cleanSubject ?? String(det.searchType ?? ''); return `Order the ${n}${/search/i.test(n) ? '' : ' search'}`; }
       case 'enquiry_draft': {
         const k = pr.dedupKey;
@@ -353,7 +361,9 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   // ── DO: decisions a person must resolve ──
   // Only what a person may act on (shadow-mode matters surface nothing).
   const surfaced = surfacedDecisions(s);
-  for (const d of surfaced.filter((x) => x.kind !== 'auto_clear' || !!s.pendingAutoClears[x.eventId])) {
+  // Emails repeating one subject are one task: beside the open issue on it, or the newest email alone.
+  const noteGroups = noteDecisionGroups(s);
+  for (const d of surfaced.filter((x) => (x.kind !== 'auto_clear' || !!s.pendingAutoClears[x.eventId]) && !noteGroups.covered.has(x.eventId))) {
     const age = wd(d.createdAt, now, cal);
     const what = decisionSentence(s, d);
     // A note proposing issues carries the most severe of them: its chip is coloured like the issue it would raise.
@@ -413,6 +423,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       since: i.raisedAt, sinceWorkingDays: wd(i.updatedAt, now, cal), slaWorkingDays: spec.escalateAfterWorkingDays ?? null,
       chaseInWorkingDays: null, chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: i.resolveBy ?? null, chaseDue: false,
       ref: { type: 'issue', id: i.id },
+      ...(noteGroups.byIssue.get(i.id)?.length ? { emails: noteGroups.byIssue.get(i.id) } : {}),
     });
   }
 

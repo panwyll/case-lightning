@@ -7,6 +7,7 @@ import type { Api } from './types';
 export function addressFor(title: string): { role: string; who: string } | null {
   const t = title.toLowerCase();
   if (/(seller'?s?|buyer'?s?|other side'?s?) solicitor/.test(t)) return { role: 'OTHER_SIDE', who: /buyer/.test(t) ? "the buyer's solicitor" : "the seller's solicitor" };
+  if (/family|personal representative/.test(t)) return { role: 'FAMILY', who: "the client's family" };
   if (/lender/.test(t)) return { role: 'LENDER', who: 'the lender' };
   if (/agent/.test(t)) return { role: 'AGENT', who: 'the estate agent' };
   if (/client/.test(t)) return { role: 'CLIENT', who: 'the client' };

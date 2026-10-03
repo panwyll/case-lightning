@@ -327,6 +327,7 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
                     : isDecision || isStep
                     ? <button type="button" data-tour="task-open" className={`tl-btn${isOpen ? ' on' : isStep ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : stepActionLabel(i.ref.id) ?? 'Open') : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : `${isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : stepActionLabel(i.ref.id) ?? 'Open') : 'Review'} `}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>
+                      {isIssue && !!i.emails?.length && <button type="button" className={`tl-btn${open === `${key}:email` ? ' on' : ''}`} onClick={() => setOpen((cur) => (cur === `${key}:email` ? null : `${key}:email`))}>{i.emails.length === 1 ? 'Email' : `Emails (${i.emails.length})`}</button>}
                       {i.kind === 'aml_hold' && <>
                         <BusyButton className="tl-btn go" busyLabel="Recording…" doneLabel="Recorded" onClick={async () => { try { await api(`/matters/${i.matterId}/engine`, { method: 'POST', body: JSON.stringify({ type: 'daml_response', decision: 'granted' }) }); void load(); window.dispatchEvent(new Event('conveyi:counts')); return true; } catch { return false; } }}>Consent Received</BusyButton>
                         <BusyButton className="tl-btn" busyLabel="Recording…" doneLabel="Recorded" onClick={async () => { try { await api(`/matters/${i.matterId}/engine`, { method: 'POST', body: JSON.stringify({ type: 'daml_response', decision: 'refused' }) }); void load(); window.dispatchEvent(new Event('conveyi:counts')); return true; } catch { return false; } }}>Consent Refused</BusyButton>
@@ -353,6 +354,11 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
                 {isOpen && isIssue && (
                   <div data-tour="task-panel" className="tl-open tl-step">
                     <IssueReview api={api} matterId={i.matterId} issueId={i.ref.id} onCancel={() => setOpen((cur) => (cur === key ? null : cur))} onDone={() => { markDone(i.ref.id); setOpen((cur) => (cur === key ? null : cur)); void load(); }} />
+                  </div>
+                )}
+                {open === `${key}:email` && i.emails?.[0] && (
+                  <div className="tl-open">
+                    <DecisionPanel eventId={i.emails[0]} inline onResolved={() => { setOpen((cur) => (cur === `${key}:email` ? null : cur)); void load(); window.dispatchEvent(new Event('conveyi:counts')); }} />
                   </div>
                 )}
                 {isOpen && isDeadline && (

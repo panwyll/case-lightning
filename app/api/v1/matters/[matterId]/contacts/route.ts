@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ matterId: string }> };
 
-const ROLES = ['CLIENT', 'OTHER_SIDE', 'AGENT', 'LENDER', 'OUR_FIRM', 'OTHER', 'UNKNOWN'] as const;
+const ROLES = ['CLIENT', 'OTHER_SIDE', 'AGENT', 'LENDER', 'FAMILY', 'OUR_FIRM', 'OTHER', 'UNKNOWN'] as const;
 
 export async function GET(_req: NextRequest, { params }: Ctx) {
   try {

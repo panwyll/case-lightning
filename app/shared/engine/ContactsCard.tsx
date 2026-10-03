@@ -6,7 +6,7 @@ import type { Api } from './types';
 
 /** Everyone on the case and how to reach them: name, email, role, mobile, WhatsApp opt-in. Every message the case sends goes to these addresses. */
 interface Contact { id: string; email: string; name: string | null; role: string | null; phone: string | null; whatsappOptIn: boolean | null }
-const ROLES: Array<[string, string]> = [['CLIENT', 'Client'], ['OTHER_SIDE', "Other side's solicitor"], ['AGENT', 'Estate agent'], ['LENDER', 'Lender'], ['OUR_FIRM', 'Our firm'], ['OTHER', 'Other'], ['UNKNOWN', 'Not sure']];
+const ROLES: Array<[string, string]> = [['CLIENT', 'Client'], ['OTHER_SIDE', "Other side's solicitor"], ['AGENT', 'Estate agent'], ['LENDER', 'Lender'], ['FAMILY', 'Family'], ['OUR_FIRM', 'Our firm'], ['OTHER', 'Other'], ['UNKNOWN', 'Not sure']];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export const CONTACTS_CSS = `

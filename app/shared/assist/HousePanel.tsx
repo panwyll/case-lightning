@@ -330,6 +330,7 @@ const CONTACT_ROLES: [string, string][] = [
   ['OTHER_SIDE', 'Other side'],
   ['AGENT', 'Estate agent'],
   ['LENDER', 'Lender'],
+  ['FAMILY', 'Family'],
   ['OUR_FIRM', 'Our firm'],
   ['OTHER', 'Other'],
   ['UNKNOWN', '—'],

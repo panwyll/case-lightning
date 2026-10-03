@@ -163,7 +163,7 @@ export interface ThirdPartyChaser {
   sendRequest?(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; template: string; context: Record<string, unknown> }): Promise<{ channel: 'email' | 'mock'; messageId: string | null }>;
   sendEnquiries?(input: { tenantId: string; matterId: string; enquiryId: string; text: string }): Promise<{ channel: 'email' | 'mock'; messageId: string | null } | null>;
   /** A message a person approved, as written, to a party on the case (from an email's task). */
-  sendMessage?(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'estate_agent' | 'lender'; subject: string; body: string }): Promise<{ channel: 'email' | 'mock'; messageId: string | null }>;
+  sendMessage?(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'estate_agent' | 'lender' | 'family'; subject: string; body: string }): Promise<{ channel: 'email' | 'mock'; messageId: string | null }>;
   sendChase(input: {
     tenantId: string;
     matterId: string;

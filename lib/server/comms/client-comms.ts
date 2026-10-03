@@ -41,7 +41,7 @@ export interface MatterContactInfo {
   clientPhone: string | null;
   clientWhatsAppOptIn: boolean;
   /** Third parties by role, for chases. */
-  contacts: Partial<Record<'seller_solicitor' | 'estate_agent' | 'lender', { email: string; name: string | null }>>;
+  contacts: Partial<Record<'seller_solicitor' | 'estate_agent' | 'lender' | 'family', { email: string; name: string | null }>>;
   completionDate: string | null;
   /** Lines under the signature: address, phone, SRA status (empty until the firm sets them). */
   footer?: string;
@@ -414,10 +414,10 @@ export class ProductionChaser implements ThirdPartyChaser {
   }
 
   /** A message a person approved on an email's task, sent as they wrote it to a party on the case (checked by the message guard first). */
-  async sendMessage(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'estate_agent' | 'lender'; subject: string; body: string }) {
+  async sendMessage(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'estate_agent' | 'lender' | 'family'; subject: string; body: string }) {
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const to = info.contacts[input.recipientRole];
-    const label = input.recipientRole === 'seller_solicitor' ? "the other side's solicitor" : input.recipientRole === 'estate_agent' ? 'the estate agent' : 'the lender';
+    const label = input.recipientRole === 'seller_solicitor' ? "the other side's solicitor" : input.recipientRole === 'estate_agent' ? 'the estate agent' : input.recipientRole === 'family' ? "the client's family" : 'the lender';
     if (!to?.email) throw new Error(`There is no email address for ${label} on the case, so this could not be sent. Add them as a contact, then Try Again.`);
     const r = { subject: input.subject.trim(), body: input.body.trim(), missing: [] as string[] };
     { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }

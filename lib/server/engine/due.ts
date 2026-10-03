@@ -4,6 +4,7 @@
  * emails, drafts); what is left is here, and on the Tasks tab, each with the form that records it.
  * Things owed by the client or a third party are waits (chased, with a Confirm on the tab), not these.
  */
+import { deathCase } from './people';
 import { chargeableConsideration } from './sdlt-facts';
 import { computeSdlt } from './sdlt';
 import { k16Stale } from './machine';
@@ -98,6 +99,9 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   // A report a person sent back is written again (their note says what to change); the case cannot move until it goes.
   if (buyer && s.reportOnTitle.status === 'rejected' && !exchanged)
     add({ key: 'report_on_title_redraft', lane: 'report_on_title', title: 'Draft the report on title again' });
+  // Our sole client died before exchange on a purchase: the case closes (the notices are drafted on their own tasks).
+  const died = (s.partyEvents ?? []).find((p) => p.event === 'died' && deathCase(s, p.party, buyer ? 'buyer' : seller ? 'seller' : 'owner') === 'close');
+  if (died && !s.abandoned && !completed) add({ key: 'death_close', lane: 'id_aml', title: `Close the case: ${died.party} has died` });
   // The firm's policy wants proof of funds and the form never went (the start-of-case send was not made or not approved): send it.
   // Something is already in hand when a proposal for it is waiting, or a person held one back (its own task, below, sends it).
   const everProposed = (kind: string) => Object.values(s.proposals).some((q) => ((q.detail as { kind?: string }).kind === kind || (q.detail as { template?: string }).template === kind) && (q.status === 'pending' || (q.status === 'rejected' && !!q.resolvedBy && q.resolvedBy !== 'system')));

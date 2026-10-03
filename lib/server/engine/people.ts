@@ -24,11 +24,11 @@ export function partyEventConsequences(s: MatterState, e: { event: PartyEvent; p
   const ex = exchanged ? 'completion' as const : 'exchange' as const;
   const lender = (why: string) => { if (borrower) out.push({ kind: 'lender_approval', title: `Tell the lender: ${e.party} ${why}`, detail: `The offer was made to ${e.party} as a borrower. Report it to the lender now; most offers end on a borrower's death or bankruptcy, and a borrower who lacks capacity cannot sign the mortgage deed. Do not draw the advance until the lender confirms in writing.`, gate, severity: 'critical' }); };
   if (e.event === 'died') {
-    if (!ours) out.push({ kind: 'probate_issue', title: `${e.party} (the other side) has died`, detail: exchanged ? 'The contract binds their estate: the personal representatives must complete, and cannot sign the transfer until the grant of probate or letters of administration issues. Expect a delay; consider the contractual remedies only with the client\'s instructions.' : 'No contract yet: the sale cannot proceed until the personal representatives have the grant. Ask the other side for the expected timing and tell the client; the dates will move.', gate, severity: 'critical' });
-    else if (sole) out.push({ kind: 'probate_issue', title: `Our client ${e.party} has died`, detail: exchanged ? 'The contract binds the estate: the personal representatives complete (we act for them only on fresh instructions and the grant). Stop every message to the client, tell the other side, and re-plan completion.' : 'The retainer ended with the client\'s death. Stop every message to them; tell the other side; hold money on account for the estate and return it to the personal representatives on sight of the grant. Abandon the case (reason: client died) unless the estate instructs us to continue.', gate, severity: 'critical' });
-    else if (side === 'seller') out.push({ kind: 'client_change', title: `${e.party} (a co-owner selling) has died`, detail: `Joint tenants (no Form A restriction, no severance): the survivor sells alone and gives a good receipt with the death certificate; the contract${exchanged ? ' binds the estate, and the transfer is' : ' and transfer are'} redrawn with the survivor as seller. Tenants in common (a Form A restriction): the survivor appoints a second trustee to receive the money with them, or the personal representatives join in after the grant (LPA 1925 s.27). Unregistered: the survivor's statutory declaration (Law of Property (Joint Tenants) Act 1964).`, gate, severity: 'critical' });
-    else out.push({ kind: 'client_change', title: `${e.party} has died`, detail: exchanged ? `The contract binds ${e.party}'s estate with the surviving client. Take the survivor's instructions; their personal representatives join in or the seller agrees a variation; the survivor\'s funding and the SDLT are re-checked.` : `Ask the surviving client whether they still wish to proceed alone. If so, record the clients again (Change Clients): the contract parties, the funding, the lender and the SDLT basis are all redone.`, gate, severity: 'critical' });
-    lender('has died');
+    // What follows is done, not described: the notices are drafted for approval (deathPlaybook) and the case closes or waits for the estate.
+    const how = deathCase(s, e.party, side);
+    if (how === 'other_side') out.push({ kind: 'probate_issue', title: `${e.party} (the other side) has died: waiting for their personal representatives`, detail: exchanged ? 'The contract binds their estate; the personal representatives complete once they have the grant. Ask the other side for the expected timing and agree a new date.' : 'Nothing can be signed on their side until the grant. Ask the other side for the expected timing; the client decides whether to wait.', gate, severity: 'critical' });
+    else if (how === 'await_grant') out.push({ kind: 'probate_issue', title: `Waiting for the grant: ${e.party}'s personal representatives take over`, detail: 'Nothing goes to the client now. When the grant is issued: see it, identify the personal representatives (ID and AML), record them as the clients, and agree the dates with the other side.', gate, severity: 'critical' });
+    else if (how === 'survivor') out.push({ kind: 'client_change', title: `${e.party} has died: does ${(s.partyNames ?? []).filter((n) => n.trim().toLowerCase() !== e.party.trim().toLowerCase()).join(' and ')} go ahead?`, detail: side === 'seller' ? `Joint tenants (no Form A restriction, no severance): the survivor sells alone with the death certificate; the contract${exchanged ? ' binds the estate and the transfer is' : ' and transfer are'} redrawn with the survivor as seller. Tenants in common (a Form A restriction): the survivor appoints a second trustee to receive the money, or the personal representatives join after the grant (LPA 1925 s.27). Unregistered: the survivor's statutory declaration (Law of Property (Joint Tenants) Act 1964). Then record the clients now on the case.` : exchanged ? 'The contract binds the estate with the surviving client: take their instructions, then record the clients now on the case.' : 'Take the surviving client\'s instructions when they are ready. Going ahead: record the clients now on the case (the funding, the lender and the SDLT are redone). Not: close the case.', gate, severity: 'critical' });
   } else if (e.event === 'capacity_lost') {
     if (e.hasAttorney) out.push({ kind: 'power_of_attorney_issue', title: `${e.party} has lost capacity: instructions from the attorney`, detail: 'See the registered lasting power of attorney and check it covers property; identify the attorney as a client; they sign in the donor\'s name. A trustee co-owner needs the attorney to have a beneficial interest too (TDA 1999 s.1), or a replacement trustee.', gate, severity: 'critical' });
     else out.push({ kind: 'power_of_attorney_issue', title: `${e.party} has lost capacity and there is no power of attorney`, detail: `No one can give instructions or sign for ${e.party} until the Court of Protection appoints a deputy (usually months).${ours && !sole && side === 'seller' ? ' As a co-owner they are also a trustee of the land: a replacement trustee is appointed (TDA 1999 s.20 direction, or the Court of Protection under s.36(9) Trustee Act 1925) before the sale can complete.' : ''} ${exchanged ? 'The contract binds: tell the other side at once and plan for a delayed completion.' : 'Do not exchange; tell the other side and re-plan the dates, or abandon if the delay is unacceptable.'}`, gate, severity: 'critical' });
@@ -102,3 +102,55 @@ export function amlHoldActive(s: MatterState, now: Date): boolean {
 export const SANCTIONS_PREFIX = 'Sanctions match';
 /** An uncleared sanctions match: a hard stop on money, exchange and completion that no gate change releases. */
 export const sanctionsHold = (s: MatterState): boolean => Object.values(s.issues).some((i) => i.kind === 'aml_kyc_problem' && i.title.startsWith(SANCTIONS_PREFIX) && (i.status === 'open' || i.status === 'negotiating'));
+
+// ── What happens next, not only what it means (a death: the people told, tactfully; the case closed or handed on) ──
+
+export type PlaybookParty = 'seller_solicitor' | 'estate_agent' | 'lender' | 'client' | 'family';
+export interface PlaybookMessage { key: string; to: PlaybookParty; subject: string; body: string }
+
+/** Whose death it is and what follows, from the case (deathPlaybook and due.ts read the same). */
+export function deathCase(s: MatterState, party: string, side: 'buyer' | 'seller' | 'owner'): 'close' | 'await_grant' | 'survivor' | 'other_side' {
+  const names = (s.partyNames ?? []).map((n) => n.trim().toLowerCase());
+  const ours = names.includes(party.trim().toLowerCase());
+  if (!ours) return 'other_side';
+  if (names.length > 1) return 'survivor';
+  return side === 'buyer' && !s.exchange.exchangedAt ? 'close' : 'await_grant';
+}
+
+/**
+ * The letters a death calls for, worded with care (each is a draft a person approves before it goes). A sole client buying
+ * before exchange: the purchase ends, the other side, the agent and the lender are told, and a letter of condolence goes
+ * to the family with what happens to the money we hold. Otherwise the transaction carries on through the personal
+ * representatives (or the surviving client), and everyone is told what that means for the timetable.
+ */
+export function deathPlaybook(s: MatterState, party: string, side: 'buyer' | 'seller' | 'owner', property: string): PlaybookMessage[] {
+  const how = deathCase(s, party, side);
+  const exchanged = !!s.exchange.exchangedAt;
+  const deal = side === 'seller' ? 'sale' : side === 'owner' ? 'transaction' : 'purchase';
+  const out: PlaybookMessage[] = [];
+  const subject = `${property}: ${how === 'other_side' ? `the death of ${party}` : `our client, ${party}`}`;
+  if (how === 'other_side') {
+    out.push({ key: 'client', to: 'client', subject: `${property}: sad news from the other side`, body: `We are sorry to tell you that ${party} has died. ${exchanged ? `The contract still stands: their personal representatives take over, but they cannot sign until the grant of probate (or letters of administration) is issued, so completion will be later than planned. We will agree a new date with the other side and keep you informed.` : `Nothing can be signed on their side until their personal representatives have the grant of probate (or letters of administration), which usually takes some months. We will ask the other side's solicitor for their expected timing and let you know, so you can decide how you would like to proceed.`}` });
+    return out;
+  }
+  if (how === 'close') {
+    out.push({ key: 'seller_solicitor', to: 'seller_solicitor', subject, body: `We are very sorry to let you know that our client, ${party}, has died. The purchase of ${property} will not now go ahead, and we are closing our file. Please pass this on to your client with our apologies for the disappointment this will cause.` });
+    out.push({ key: 'estate_agent', to: 'estate_agent', subject, body: `We are very sorry to let you know that our client, ${party}, has died, and the purchase of ${property} will not now go ahead. We have told the seller's solicitor.` });
+    if (s.hasLender) out.push({ key: 'lender', to: 'lender', subject, body: `We write to tell you that your applicant, ${party}, has died. The purchase of ${property} will not proceed and the mortgage offer will not be needed; please close your file. We hold none of your funds.` });
+    out.push({ key: 'family', to: 'family', subject: `${party}`, body: `We were so sorry to hear of ${party}'s death, and we send our sincere condolences to you and the family.\n\nThere is nothing you need to do about the purchase of ${property}: we have told the seller's side that it will not go ahead, and we are closing our file. ${s.deposit.received || Object.keys(s.money?.received ?? {}).length ? `We hold money on account for ${party}. It now belongs to their estate, and we will return it to their personal representatives once we have seen the grant of probate (or letters of administration); there is no hurry.` : 'We hold no money for them.'}\n\nIf it would help to talk anything through, please call us at any time.` });
+    return out;
+  }
+  if (how === 'survivor') {
+    const left = (s.partyNames ?? []).filter((n) => n.trim().toLowerCase() !== party.trim().toLowerCase());
+    out.push({ key: 'seller_solicitor', to: 'seller_solicitor', subject, body: `We are very sorry to tell you that our client, ${party}, has died. ${exchanged ? `The contract binds their estate with ${left.join(' and ')}; we will be in touch about completion, which may need to move.` : `We are taking ${left.join(' and ')}'s instructions on whether to go ahead and will be in touch shortly; please bear with us.`}` });
+    if (s.hasLender && side !== 'seller') out.push({ key: 'lender', to: 'lender', subject, body: `We write to tell you that one of your borrowers, ${party}, has died. ${left.join(' and ')} wishes to consider going ahead; please let us know whether the offer can stand in their name alone, or what you need. We will not draw down funds until we hear from you.` });
+    out.push({ key: 'family', to: 'family', subject: `${party}`, body: `We were so sorry to hear of ${party}'s death, and we send our sincere condolences.\n\nThere is no rush on anything to do with ${property}. When you feel ready, we will talk through with ${left.join(' and ')} whether to carry on with the ${deal}, and what that would involve.` });
+    return out;
+  }
+  // A sole client, but the transaction goes on: a sale (the estate sells), or a purchase already exchanged (the estate is bound).
+  out.push({ key: 'seller_solicitor', to: 'seller_solicitor', subject, body: `We are very sorry to tell you that our client, ${party}, has died. ${exchanged ? `The contract binds their estate, and their personal representatives will complete once they have the grant of probate (or letters of administration).` : `The ${deal} can go ahead once their personal representatives have the grant of probate (or letters of administration).`} We will let you know the expected timing as soon as we can; please pass this on to your client.` });
+  out.push({ key: 'estate_agent', to: 'estate_agent', subject, body: `We are very sorry to tell you that our client, ${party}, has died. The ${deal} of ${property} will be delayed while the estate is dealt with; we will keep you informed.` });
+  if (s.hasLender && side !== 'seller') out.push({ key: 'lender', to: 'lender', subject, body: `We write to tell you that your borrower, ${party}, has died after exchange of contracts on ${property}. Please let us know what you need from us; we will not draw down funds without your written instructions.` });
+  out.push({ key: 'family', to: 'family', subject: `${party}`, body: `We were so sorry to hear of ${party}'s death, and we send our sincere condolences.\n\nThe ${deal} of ${property} ${exchanged ? 'was already agreed and will go ahead' : 'can still go ahead'} through ${party}'s personal representatives (the executors named in the will, or the next of kin if there is no will). Nothing needs to be done straight away. When you are ready, please let us know who the personal representatives are and send us the grant of probate (or letters of administration) once it is issued; we will take it from there.` });
+  return out;
+}

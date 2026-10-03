@@ -47,6 +47,7 @@ export async function contactInfo(tenantId: string, matterId: string): Promise<M
   const other = cp?.email ? { email: cp.email, name: cp.name } : contacts.find((c) => c.role === 'OTHER_SIDE') ?? null;
   const agent = contacts.find((c) => c.role === 'AGENT') ?? null;
   const lender = contacts.find((c) => c.role === 'LENDER') ?? null;
+  const family = contacts.find((c) => c.role === 'FAMILY') ?? null;
   // Joint clients are all written to, and all greeted: "Anna and Ben".
   const clients = contacts.filter((c) => c.role === 'CLIENT' && c.email);
   const clientEmails = [...new Set(clients.map((c) => c.email.trim().toLowerCase()))];
@@ -77,6 +78,7 @@ export async function contactInfo(tenantId: string, matterId: string): Promise<M
       ...(other ? { seller_solicitor: { email: other.email, name: other.name } } : {}),
       ...(agent ? { estate_agent: { email: agent.email, name: agent.name } } : {}),
       ...(lender ? { lender: { email: lender.email, name: lender.name } } : {}),
+      ...(family ? { family: { email: family.email, name: family.name } } : {}),
     },
     completionDate: m.completion_target_date,
   };

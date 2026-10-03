@@ -16,6 +16,7 @@
  *     the matter is marked for manual handling;
  *   - every command is either automation (system/ai/external) or a human decision.
  */
+import { noteTopics } from './note-topics';
 import { COMPLETION_EVENTS, completionEventConsequences, completionEventProblem, type CompletionEvent } from './completion-events';
 import { addWorkingDays, workingDaysBetween } from './working-days';
 import { applyEvent } from './projection';
@@ -810,8 +811,8 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
     let ev: NewEvent | null = null;
     if (s.abandoned) break;
     const side = profile(s).side;
-    // A first request (the contract pack, a redemption statement…) rides the chase level but is not a chase: it is never 'stale'.
-    const staleChase = Object.values(s.proposals).find((p) => p.status === 'pending' && p.action === 'chase' && (p.detail as { kind?: string }).kind !== 'request' && !s.waits.some((w) => w.closedAt === null && `${w.key}:${w.subject}` === p.dedupKey));
+    // A first request (the contract pack, a redemption statement…) or a letter to a party rides the chase level but is not a chase: it is never 'stale'.
+    const staleChase = Object.values(s.proposals).find((p) => p.status === 'pending' && p.action === 'chase' && (p.detail as { kind?: string }).kind !== 'request' && (p.detail as { kind?: string }).kind !== 'party_message' && !s.waits.some((w) => w.closedAt === null && `${w.key}:${w.subject}` === p.dedupKey));
     // Two pending proposals that would send the same thing (the same acknowledgement to the same party, the
     // same enquiry): the newer is taken back, so a person never sees, or approves, a duplicate.
     const pending = Object.values(s.proposals).filter((p) => p.status === 'pending').sort((a, b) => a.proposedAt.localeCompare(b.proposedAt));
@@ -3607,7 +3608,10 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
     const skipped = n.actions.filter((a) => !applied.includes(a.id)).map((a) => a.id);
     // An email that proposed nothing (Read And Reply, or an acknowledgement): Approve is "dealt with" and applies nothing.
     if (option === 'approve' && !applied.length && !messages.length && n.actions.some((a) => a.command)) reject('Nothing was selected to apply. Reject the note\'s reading instead, with a reason.', 400);
-    return [{ type: 'note_actions_applied', actor: userId, payload: { noteId: n.id, decisionEventId: d.eventId, applied, skipped, option, note, ...(messages.length ? { messages } : {}) }, sourceDocumentId: d.sourceDocumentId }];
+    // Other emails waiting on the same subject (the same issue proposed) are settled with this one: one subject, one task.
+    const topics = new Set(noteTopics(n));
+    const same: NewEvent[] = topics.size ? Object.values(s.decisions).filter((x) => x.kind === 'note_actions' && x.status === 'pending' && x.eventId !== d.eventId && noteTopics(s.notes[x.subject ?? '']).some((t) => topics.has(t))).map((x): NewEvent => ({ type: 'note_actions_applied', actor: userId, payload: { noteId: x.subject ?? '', decisionEventId: x.eventId, applied: [], skipped: (s.notes[x.subject ?? '']?.actions ?? []).map((a) => a.id), option: 'reject', note: 'The same point as a later email, dealt with there.' }, sourceDocumentId: x.sourceDocumentId })) : [];
+    return [...same, { type: 'note_actions_applied', actor: userId, payload: { noteId: n.id, decisionEventId: d.eventId, applied, skipped, option, note, ...(messages.length ? { messages } : {}) }, sourceDocumentId: d.sourceDocumentId }];
   }
 
   // "Escalate to senior": the original decision is marked escalated and a NEW decision

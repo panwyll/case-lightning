@@ -21,16 +21,15 @@ const fold = (s: MatterState, cmd: Record<string, unknown>, now = NOW): MatterSt
 const purchase = (over: Partial<MatterState> = {}): MatterState => ({ ...initialState(TENANT, MATTER), enrolled: true, transactionType: 'freehold_purchase', stage: 'pre_exchange', hasLender: true, partyNames: ['Asha Patel'], ...over });
 const open = (s: MatterState) => Object.values(s.issues).filter((i) => i.status === 'open').map((i) => `${i.kind}:${i.gate}:${i.severity}`);
 
-test('our sole client dies before exchange: the retainer ends, the lender is told, and nothing more is sent to them', () => {
+test('our sole client dies before exchange: the case is to close (a step, not a note), and nothing more is sent to them', () => {
   const s = fold(purchase(), { type: 'record_party_event', event: 'died', party: 'Asha Patel', note: 'Her son called' });
-  assert.deepEqual(open(s), ['probate_issue:exchange:critical', 'lender_approval:exchange:critical']);
-  assert.match(Object.values(s.issues)[0].detail ?? '', /retainer ended/);
+  assert.deepEqual(open(s), [], 'the work is the Close The Case step and the drafted letters, not an issue');
   assert.ok(clientMessagesStopped(s));
 });
 
 test('one of two buyers dies after exchange: the survivor is asked, completion is held, and messages still go to the survivor', () => {
   const s = fold(purchase({ partyNames: ['Asha Patel', 'Ben Carter'], stage: 'pre_completion', exchange: { ...initialState(TENANT, MATTER).exchange, exchangedAt: '2026-09-20T10:00:00Z', completionDate: '2026-10-20' } }), { type: 'record_party_event', event: 'died', party: 'Ben Carter' });
-  assert.deepEqual(open(s), ['client_change:completion:critical', 'lender_approval:completion:critical']);
+  assert.deepEqual(open(s), ['client_change:completion:critical'], 'the lender is written to (a drafted letter), not left as a note');
   assert.equal(clientMessagesStopped(s), null);
 });
 
