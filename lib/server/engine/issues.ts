@@ -783,6 +783,8 @@ const STEPS_BY_KIND: Partial<Record<IssueKind, IssueStep[]>> = {
     msg('client', 'Ask The Client For The Balance', 'Tell the client the amount still needed to complete and ask them to send it in cleared funds', 'We need the balance of funds to complete. Please send it in cleared funds.'),
   ],
 };
+/** Kinds whose own steps are the buyer's (an enquiry of the other side): acting for the seller, they are put to our client. */
+const ENQUIRED_OF_SELLER: ReadonlySet<IssueKind> = new Set<IssueKind>(['title_defect', 'missing_easement', 'restrictive_covenant', 'planning_permission_missing', 'building_regs_missing', 'title_restriction', 'enquiry_unanswered', 'enquiry_unsatisfactory', 'survey_defect', 'document_missing', 'third_party_consent', 'occupier_consent']);
 const CLIENT_ONLY: ReadonlySet<IssueGroup> = new Set(['funds_aml']);
 const NO_STEPS: ReadonlySet<IssueKind> = new Set(['file_locked', 'unknown_correspondent', 'send_failed', 'document_revised']);
 
@@ -793,6 +795,8 @@ const NO_STEPS: ReadonlySet<IssueKind> = new Set(['file_locked', 'unknown_corres
  */
 export function issueSteps(kind: IssueKind, side: 'buyer' | 'seller' = 'buyer'): IssueStep[] {
   const own = STEPS_BY_KIND[kind];
+  // Acting for the seller we answer enquiries, we do not raise them: put it to our client, tell the other side, and keep what settles it.
+  if (own && side === 'seller' && ENQUIRED_OF_SELLER.has(kind)) return [ASK_CLIENT, TELL_OTHER_SIDE, ...own.filter((x) => x.kind === 'outcome'), NEGOTIATING];
   if (own) return own;
   if (NO_STEPS.has(kind)) return [];
   const spec = ISSUE_KIND_SPEC[kind];
