@@ -12,12 +12,17 @@ function transactionTypeOf(track: string | null): TransactionType {
   return track === 'SALE' ? 'freehold_sale' : track === 'REMORTGAGE' ? 'remortgage' : 'freehold_purchase';
 }
 
+/** Our clients on the matter record: the sellers on a sale, otherwise the buyers (the owners on a remortgage). */
+export function clientNamesOf(track: string | null, buyers: string[] | null, sellers: string[] | null): string[] {
+  return [...new Set(((track === 'SALE' ? sellers : buyers) ?? []).map((n) => n.trim()).filter(Boolean))];
+}
+
 /** Enrol one matter if it is open and not yet on the engine. Returns true when it enrolled it. */
 /** `funding`: what the New Case form said; otherwise a lender on the matter means a mortgage (a purchase) or one to pay off (a sale or remortgage). */
 export async function enrolIfUntracked(tenantId: string, matterId: string, actor: string = SYSTEM, funding: { hasLender?: boolean; hasExistingMortgage?: boolean } = {}): Promise<boolean> {
   const m = await runAsSystem(() =>
-    queryOne<{ status: string | null; track: string | null; lender: string | null; exchange_target_date: string | null; completion_target_date: string | null; enrolled: string | null }>(
-      `select m.status, m.track, m.lender, m.exchange_target_date::text, m.completion_target_date::text, s.state->>'enrolled' as enrolled
+    queryOne<{ status: string | null; track: string | null; lender: string | null; exchange_target_date: string | null; completion_target_date: string | null; enrolled: string | null; buyer_names: string[] | null; seller_names: string[] | null }>(
+      `select m.status, m.track, m.lender, m.buyer_names, m.seller_names, m.exchange_target_date::text, m.completion_target_date::text, s.state->>'enrolled' as enrolled
          from matter m left join matter_engine_state s on s.matter_id = m.id
         where m.id = $1 and m.tenant_id = $2`,
       [matterId, tenantId]
@@ -37,6 +42,9 @@ export async function enrolIfUntracked(tenantId: string, matterId: string, actor
     targetCompletionDate: m.completion_target_date,
     counterpartyType,
     shadowMode: false,
+    // Our clients by name: the rules that ask "is this our client?" read them.
+    partyNames: clientNamesOf(m.track, m.buyer_names, m.seller_names),
+    parties: Math.max(1, clientNamesOf(m.track, m.buyer_names, m.seller_names).length),
   }));
   return true;
 }

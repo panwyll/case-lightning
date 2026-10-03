@@ -180,7 +180,18 @@ export class EngineService {
   // ───────────── core ─────────────
 
   /** Run one command atomically, then its effects. */
+  /** A case enrolled without its clients' names takes them from the matter record, once (the rules need to know who our client is). */
+  async ensureClientNames(tenantId: string, matterId: string): Promise<void> {
+    const state = await this.getState(tenantId, matterId).catch(() => null);
+    if (!state?.enrolled || (state.partyNames ?? []).length || state.closedAt || state.abandoned) return;
+    const rec = await this.caseRecord(tenantId, matterId).catch(() => null);
+    const names = (profileOf(state.transactionType).side === 'seller' ? rec?.sellerNames : rec?.buyerNames) ?? [];
+    if (!names.filter((n) => n.trim()).length) return;
+    await this.run(tenantId, matterId, { type: 'record_client_names', actor: SYSTEM, names }).catch((err) => this.ports.log('client names could not be recorded', err));
+  }
+
   async run(tenantId: string, matterId: string, cmd: Command): Promise<RunResult> {
+    if (cmd.type !== 'enrol' && cmd.type !== 'record_client_names') await this.ensureClientNames(tenantId, matterId);
     const subflows = await this.levels(tenantId);
     // A linked sale or purchase exchanges with us: the other file must be able to exchange too, and its chain issue here clears when it can.
     if (cmd.type === 'contracts_exchanged') await this.assertLinkedMatterReady(tenantId, matterId, cmd.actor as Actor, cmd.completionDate);

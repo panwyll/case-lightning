@@ -563,6 +563,12 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       s.additionalTitles = [...(s.additionalTitles ?? []), (e.payload as Payloads['additional_title_read']).facts];
       break;
     }
+    case 'client_names_recorded': {
+      const p = e.payload as Payloads['client_names_recorded'];
+      s.partyNames = p.names;
+      s.parties = Math.max(s.parties ?? 1, p.names.length);
+      break;
+    }
     case 'shape_added': {
       const p = e.payload as Payloads['shape_added'];
       s.shapes = [...(s.shapes ?? []), p.shape as CaseShape];

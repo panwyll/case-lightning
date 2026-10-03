@@ -31,6 +31,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);
     const svc = engine();
+    await svc.ensureClientNames(user.tenantId, matterId);
     return ok(await engineView(svc, user.tenantId, matterId, await svc.getState(user.tenantId, matterId)));
   } catch (error) {
     return fail(error);

@@ -8,6 +8,7 @@
  *
  * The conveyancer here never opens the case: every action it takes is one the Tasks list offers.
  */
+import { matterWork } from '../../../lib/server/engine/work';
 import { test } from 'node:test';
 import { position } from '../../../lib/server/engine/money';
 import assert from 'node:assert/strict';
@@ -52,7 +53,8 @@ function movers(s: MatterState, now: Date) {
   return {
     decisions: surfacedDecisions(s).filter((d) => d.status === 'pending'),
     due: dueSteps(s, now),
-    issues: openIssues(s).filter((i) => !ISSUE_KIND_SPEC[i.kind]?.context),
+    // Only what the Tasks list shows: an issue nobody can see is a stall, not a task.
+    issues: (() => { const shown = new Set(matterWork(s, now).items.map((x) => x.ref?.type === 'issue' ? x.ref.id : null)); return openIssues(s).filter((i) => !ISSUE_KIND_SPEC[i.kind]?.context && shown.has(i.id)); })(),
     waits: openWaits(s),
   };
 }

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PasswordInput } from '@/app/shared/engine/PasswordInput';
 import { api } from '@/app/shared/engine/api';
 import { House } from '@/app/shared/engine/CaseloadMap';
+import { CaseQuickActions } from '@/app/shared/engine/CaseQuickActions';
 import { DecisionPanel } from '@/app/shared/engine/DecisionPanel';
 import { CaseTodoReview, IssueReview, StepReview } from '@/app/shared/engine/StepReview';
 import { BusyButton, UploadButton } from '@/app/shared/engine/BusyButton';
@@ -41,7 +42,10 @@ const CSS = `
 .tl-q svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#94a3b8}
 .tl-q input{width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:8px;padding:6px 10px 6px 32px;font-size:12.5px;font-family:inherit}
 .tl-q input:focus{outline:2px solid #c4b5fd;border-color:#8b5cf6}
-.tl-groups{background:#fff;border:1px solid #e2dcf5;border-radius:12px;overflow:hidden;margin-bottom:12px}
+.tl-groups{background:#fff;border:1px solid #e2dcf5;border-radius:12px;margin-bottom:12px}
+.tl-group:first-child .tl-case{border-radius:12px 12px 0 0}
+.tl-case .qa{flex:none;position:relative;margin-left:8px}
+.tl-case .cnt + .qa{margin-left:auto}
 .tl-group + .tl-group{border-top:1px solid #e2dcf5}
 .tl-case{display:flex;align-items:center;gap:10px;padding:7px 14px;background:#f3f0fb;color:inherit;cursor:pointer;user-select:none}
 .tl-case:hover{background:#ece7fa}
@@ -278,6 +282,7 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
             {g.ref && <span className="ref">{g.ref}</span>}
             <span className="cnt">{g.items.length}</span>
             {g.clients.length > 0 && <span className="who">{g.clients.join(' & ')}</span>}
+            <span className="qa" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}><CaseQuickActions api={api} matterId={g.matterId} lazy onChanged={() => void load()} /></span>
           </div>
           {!folded.has(g.matterId) && g.items.map((i) => {
             const isDecision = i.ref?.type === 'decision';

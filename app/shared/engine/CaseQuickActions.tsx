@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Hand, Users } from '@/app/shared/icons';
+import { AlertTriangle, Check, Hand, Users } from '@/app/shared/icons';
 import { BusyButton } from './BusyButton';
 import { IssuesPanel } from './IssuesPanel';
 import type { Api, EngineState } from './types';
@@ -21,6 +21,9 @@ const CSS = `
 .cqa-tip{position:absolute;top:40px;z-index:60;background:#0f172a;color:#fff;font-size:12px;font-weight:600;line-height:1.3;padding:6px 9px;border-radius:7px;white-space:nowrap;pointer-events:none;box-shadow:0 8px 24px rgba(15,23,42,.25)}
 .cqa-pop{position:absolute;top:36px;right:0;z-index:50;width:320px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.14);padding:12px;display:grid;gap:8px;text-align:left}
 .cqa-pop b{font-size:13px;color:#0f172a}
+.cqa-added{display:flex;gap:6px;align-items:flex-start;font-size:12.5px;color:#15803d;font-weight:600}
+.cqa-added svg{flex:none;margin-top:1px}
+.cqa-task{display:block;color:#0f172a;font-weight:500;margin-top:2px}
 .cqa-pop textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:inherit;font-size:13px;resize:vertical}
 .cqa-pop .f{display:flex;gap:6px;justify-content:flex-end}
 .cqa-pop .warn{display:flex;gap:8px;align-items:flex-start;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.45}
@@ -35,19 +38,20 @@ const AFTER_COMPLETION = new Set(['died', 'complaint', 'ceasing_to_act', 'fee_di
 
 /** People on the case: who it is about, and what happened (people.ts). */
 const PARTY_EVENTS: Array<[string, string]> = [
-  ['died', 'Someone Has Died'], ['capacity_lost', 'Someone Has Lost Capacity'], ['capacity_doubt', 'Doubt About Capacity'], ['bankrupt', 'Someone Is Bankrupt'],
-  ['instructing_for_client', 'Someone Else Is Giving Instructions'], ['confidence', 'A Joint Client Told Us Something In Confidence'], ['refuses_to_sign', 'A Co-Owner Will Not Sign'],
-  ['withhold_from_lender', 'Client Asks Us Not To Tell The Lender'], ['gift_withdrawn', 'A Gift Is Withdrawn'], ['cdd_refused', 'Client Will Not Give ID Or Source Of Funds'],
-  ['uncontactable', 'Cannot Reach The Client'], ['complaint', 'Client Complaint'], ['moving_firm', 'Client Moving To Another Firm'], ['ceasing_to_act', 'We Are Ceasing To Act'],
-  ['donor_died', 'The Donor Of A Power Of Attorney Has Died'], ['gift_donor_died', 'Someone Giving Money Has Died'], ['contributions_changed', 'What Each Buyer Puts In Has Changed'],
-  ['company_insolvent', 'A Company Is In Liquidation Or Struck Off'], ['sanctions_designated', 'Someone Is Now On A Sanctions List'],
-  ['fee_dispute', 'Client Disputes The Bill'], ['third_party_payment', 'Client Asks Us To Pay Someone Else'], ['cash_paid_in', 'Client Paid Cash In'],
+  ['uncontactable', 'Cannot Reach The Client'], ['instructing_for_client', 'Someone Else Is Giving Instructions'], ['complaint', 'Client Complaint'], ['fee_dispute', 'Client Disputes The Bill'],
+  ['gift_withdrawn', 'A Gift Is Withdrawn'], ['contributions_changed', 'What Each Buyer Puts In Has Changed'], ['refuses_to_sign', 'A Co-Owner Will Not Sign'], ['confidence', 'A Joint Client Told Us Something In Confidence'],
+  ['withhold_from_lender', 'Client Asks Us Not To Tell The Lender'], ['third_party_payment', 'Client Asks Us To Pay Someone Else'], ['moving_firm', 'Client Moving To Another Firm'], ['ceasing_to_act', 'We Are Ceasing To Act'],
+  ['cdd_refused', 'Client Will Not Give ID Or Source Of Funds'], ['cash_paid_in', 'Client Paid Cash In'], ['capacity_doubt', 'Doubt About Capacity'], ['capacity_lost', 'Someone Has Lost Capacity'],
+  ['bankrupt', 'Someone Is Bankrupt'], ['company_insolvent', 'A Company Is In Liquidation Or Struck Off'], ['sanctions_designated', 'Someone Is Now On A Sanctions List'],
+  ['died', 'Someone Has Died'], ['donor_died', 'The Donor Of A Power Of Attorney Has Died'], ['gift_donor_died', 'Someone Giving Money Has Died'],
 ];
 
-export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matterId: string; onChanged?: () => void }) {
+export function CaseQuickActions({ api, matterId, onChanged, lazy = false }: { api: Api; matterId: string; onChanged?: () => void; /** Load the case only when a menu opens (the Tasks list has many cases). */ lazy?: boolean }) {
   const [state, setState] = useState<EngineState | null>(null);
   const [open, setOpen] = useState<'issue' | 'manual' | 'person' | null>(null);
-  const [what, setWhat] = useState<string>('died');
+  const [what, setWhat] = useState<string>('');
+  /** What the last record put on the Tasks list. */
+  const [added, setAdded] = useState<string[] | null>(null);
   const [who, setWho] = useState('');
   const [lpa, setLpa] = useState(false);
   const [until, setUntil] = useState('');
@@ -56,14 +60,21 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
   const [err, setErr] = useState<string | null>(null);
   const box = useRef<HTMLSpanElement | null>(null);
   const load = async () => { const v = await api<{ state: EngineState }>(`/matters/${matterId}/engine`).catch(() => null); if (v) setState(v.state); return v?.state ?? null; };
-  useEffect(() => { void load(); }, [matterId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!lazy) void load(); }, [matterId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (lazy && open && !state) void load(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Loaded after the menu opened (the Tasks list): fill in the client as the person it is about.
+  useEffect(() => { if (open === 'person' && !who && state?.partyNames?.[0]) setWho(state.partyNames[0]); }, [state, open]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (open !== 'manual' && open !== 'person') return;
     const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(null); };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
-  const cmd = async (body: Record<string, unknown>) => { await api(`/matters/${matterId}/engine`, { method: 'POST', body: JSON.stringify(body) }); await load(); onChanged?.(); return true; };
+  const cmd = async (body: Record<string, unknown>) => {
+    const r = await api<{ events?: Array<{ type: string; payload?: { title?: string } }> }>(`/matters/${matterId}/engine`, { method: 'POST', body: JSON.stringify(body) });
+    setAdded((r?.events ?? []).filter((e) => e.type === 'issue_raised' && e.payload?.title).map((e) => e.payload!.title!));
+    await load(); onChanged?.(); window.dispatchEvent(new Event('conveyi:counts')); return true;
+  };
   const manual = !!state?.manualHandling?.required;
   // The button's name, shown on hover or focus.
   const [tip, setTip] = useState<{ which: 'issue' | 'manual' | 'person' } | null>(null);
@@ -93,12 +104,13 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
       <style>{WORK_CSS + CSS}</style>
       {!done && <button type="button" data-tour="case-raise-issue" className="cqa-b" aria-label="Raise Issue" {...hover('issue')} onClick={() => { setTip(null); setErr(null); setOpen(open === 'issue' ? null : 'issue'); }}><AlertTriangle size={16} /></button>}
       {!done && <button type="button" data-tour="case-take-over" className={`cqa-b${manual ? ' on' : ''}`} aria-label={manual ? 'Resume Automation' : 'Take Over Manually'} {...hover('manual')} onClick={() => { setTip(null); setErr(null); setReason(''); try { setWarnHidden(localStorage.getItem(WARN_KEY) === '1'); } catch { /* storage blocked */ } setOpen(open === 'manual' ? null : 'manual'); }}><Hand size={16} /></button>}
-      {!state?.abandoned && !state?.closedAt && <button type="button" data-tour="case-something-happened" className="cqa-b" aria-label="Something Happened" {...hover('person')} onClick={() => { setTip(null); setErr(null); setReason(''); setWho(state?.partyNames?.[0] ?? ''); setWhat(holdPending ? 'daml_granted' : completed ? 'complaint' : 'died'); setOpen(open === 'person' ? null : 'person'); }}><Users size={16} /></button>}
+      {!state?.abandoned && !state?.closedAt && <button type="button" data-tour="case-something-happened" className="cqa-b" aria-label="Something Happened" {...hover('person')} onClick={() => { setTip(null); setErr(null); setReason(''); setWho(state?.partyNames?.[0] ?? ''); setWhat(holdPending ? 'daml_granted' : ''); setAdded(null); setOpen(open === 'person' ? null : 'person'); }}><Users size={16} /></button>}
       {tip && !open && <span className="cqa-tip" role="tooltip" style={tip.which === 'issue' ? { right: 76 } : tip.which === 'manual' ? { right: 38 } : { right: 0 }}>{TIPS[tip.which]}</span>}
       {open === 'person' && (
         <span className="cqa-pop" role="dialog" aria-label="Something Happened">
           <b>Something Happened</b>
-          <select value={what} onChange={(e) => setWhat(e.target.value)} aria-label="What happened">
+          <select value={what} onChange={(e) => { setWhat(e.target.value); setAdded(null); }} aria-label="What happened">
+            <option value="" disabled>Choose What Happened</option>
             <optgroup label="People">{PARTY_EVENTS.filter(([v]) => !completed || AFTER_COMPLETION.has(v)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</optgroup>
             {!completed && <optgroup label="The Property">
               <option value="damaged">The Property Was Damaged</option>
@@ -158,13 +170,14 @@ export function CaseQuickActions({ api, matterId, onChanged }: { api: Api; matte
           {what === 'sar' && <span className="warn"><AlertTriangle size={16} /><span>No money moves and nothing exchanges for seven working days, or until consent. Say nothing to the client about it.</span></span>}
           {!isShape && !isIsa && <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={isParty || isShape || isIsa || what === 'sar' || what.startsWith('daml') ? 'Note' : 'What happened'} aria-label="Note" />}
           {err && <span className="bad">{err}</span>}
+          {added && <span className="cqa-added"><Check size={16} /><span>{added.length ? <>Added To Tasks:{added.map((a) => <span key={a} className="cqa-task">{a}</span>)}</> : 'Recorded on the case.'}</span></span>}
           <span className="f">
-            <button type="button" className="ep-btn" style={{ margin: 0 }} onClick={() => setOpen(null)}>Cancel</button>
-            <BusyButton disabled={(isIsa && !until) || (isParty && !who.trim()) || (!isParty && !isShape && !isIsa && !['sar', 'daml_granted', 'daml_refused'].includes(what) && !reason.trim())} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
+            <button type="button" className="ep-btn" style={{ margin: 0 }} onClick={() => setOpen(null)}>{added ? 'Close' : 'Cancel'}</button>
+            <BusyButton disabled={!what || (isIsa && !until) || (isParty && !who.trim()) || (!isParty && !isShape && !isIsa && !['sar', 'daml_granted', 'daml_refused'].includes(what) && !reason.trim())} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
               setErr(null);
               const deal = ['contract_race', 'lockout', 'reservation', 'renegotiated', 'sitting_tenant', 'nominee', 'buy_out', 'incentive', 'deposit_direct'].includes(what);
               const body = what === 'sdlt_amend' ? { type: 'sdlt_amended', newAmountPennies: Math.round(Number(fee.replace(/[£,\s]/g, '') || 0) * 100), reason: reason.trim() } : isCe ? { type: 'record_completion_event', event: what.slice(3), detail: reason.trim(), amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null, until: until || null } : isIsa ? { type: 'record_isa', isa: what.slice(4), ...(what === 'isa:lifetime_isa' ? { openedOn: until } : { closedOn: until }) } : isShape ? { type: 'add_shape', shape: what.slice(6) } : deal ? { type: 'record_deal_event', event: what, detail: reason.trim(), until: until || null, amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null } : ['damaged', 'not_vacant', 'early_access', 'seller_stays', 'boundary_mismatch', 'adverse_possession', 'deeds_lost', 'land_charge_entry', 'searches_declined'].includes(what) ? { type: 'record_property_event', event: what, detail: reason.trim() } : what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };
-              try { await cmd(body); setTimeout(() => setOpen(null), 900); return true; }
+              try { await cmd(body); setReason(''); return true; }
               catch (e: unknown) { setErr(e instanceof Error ? e.message : 'It did not save.'); return false; }
             }}>Record</BusyButton>
           </span>

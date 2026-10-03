@@ -222,6 +222,7 @@ type CommandBody =
   | { type: 'record_party_event'; actor: Actor; event: PartyEvent; party: string; hasAttorney?: boolean | null; note?: string | null }
   | { type: 'sar_made'; actor: Actor; note?: string | null }
   | { type: 'add_shape'; actor: Actor; shape: string }
+  | { type: 'record_client_names'; actor: Actor; names: string[] }
   | { type: 'record_completion_event'; actor: Actor; event: CompletionEvent; detail: string; amountPennies?: number | null; until?: string | null }
   | { type: 'record_isa'; actor: Actor; isa: 'lifetime_isa' | 'help_to_buy_isa'; openedOn?: string | null; closedOn?: string | null }
   | { type: 'record_chain_link'; actor: Actor; linkId?: string | null; label: string; status: 'ready' | 'not_ready' | 'unknown' | 'removed'; note?: string | null }
@@ -328,6 +329,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'record_deal_event',
   'add_shape',
   'record_isa',
+  'record_client_names',
   'sdlt_amended',
   'record_completion_event',
   'bankruptcy_search_entry',
@@ -2904,6 +2906,16 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         out.push(issueWith(s, issueIds(s)(), 'isa_bonus', `Claim the Help to Buy ISA bonus by ${by}`, `The ISA closed on ${cmd.closedOn}: the bonus claim must be made within 12 months of closing, and by 1 December 2030 at the latest. Claim it in time for completion.`, 'completion', 'warning', by));
       }
       return out;
+    }
+    case 'record_client_names': {
+      // A case enrolled without its clients' names (they are on the matter record): the rules that ask "is this our client?" need them.
+      requireEnrolled(s);
+      const names = [...new Set((cmd.names ?? []).map((n) => n.trim()).filter(Boolean))];
+      if (!names.length) reject('No names given.', 400);
+      if ((s.partyNames ?? []).length) reject('The clients are already named: change them with Change Clients.');
+      const side = profile(s).side;
+      const role: IdPartyCheck['role'] = side === 'seller' ? 'seller' : side === 'owner' ? 'owner' : 'buyer';
+      return [{ type: 'client_names_recorded', actor: cmd.actor, payload: { names } } as NewEvent, ...names.slice(1).filter((n) => !s.partyChecks[partyId(role, n)]).map((name): NewEvent => ({ type: 'id_party_added', actor: cmd.actor, payload: { party: partyId(role, name), label: name, role } }))];
     }
     case 'add_shape': {
       // A shape found after enrolment (an attorney who benefits, a vulnerable client, a related-party sale): its checklist is raised as at enrolment.

@@ -193,6 +193,9 @@ const partyOf = (role: unknown) => MSG_PARTY[String(role ?? 'client')] ?? { chip
 /** Client messages that ask them to do something (a Client Request); the rest of a client's messages are updates. */
 const CLIENT_REQUESTS = new Set(['id_check_request', 'proof_of_funds_request', 'proof_of_funds_followup', 'deposit_request', 'property_forms_request', 'exchange_authority_request', 'balance_request', 'ownership_basis_request', 'buildings_insurance_request', 'request_survey_report', 'mortgage_change_query']);
 /** A due step's chip: whose it is, and what kind of thing. */
+/** Who sorts an issue out when it is not us: the chip says who we are chasing. */
+const WHO_FIXES: Record<string, string> = { seller_side: 'The Seller\'s Side', client: 'The Client', lender: 'The Lender', third_party: 'The Third Party' };
+
 /** A due step's chip is the kind of work (the title says what exactly); files going out are "Send <who> Documents". */
 export const DUE_CHIP: Record<string, string> = {
   official_copies: 'Upload Documents', proof_of_funds_request: 'Client Request', proof_of_funds_followup: 'Client Request', report_on_title_redraft: 'Draft Document', contract_pack: "Send Buyer's Solicitor Documents", management_pack_sale: 'Managing Agent Request',
@@ -377,14 +380,12 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
 
   // ── DO: issues whose next step is ours, and anyone's once it is past its resolve-by date ──
   const acting = profileOf(s.transactionType).side;
-  const today = now.toISOString().slice(0, 10);
   for (const i of openIssues(s)) {
     const spec = ISSUE_KIND_SPEC[i.kind];
     if (spec.context) continue; // context: on the file and in status answers, not a task
     // The catalogue speaks from the buyer's side: on a sale, what the seller's side owes is ours to do.
+    // Every open issue is a task: one that waits on someone else is ours to chase, never off the list (a hidden issue holding a gate is a silent stall).
     const ours = spec.responsible === 'conveyancer' || spec.responsible === 'mlro' || (spec.responsible === 'seller_side' && acting === 'seller');
-    const late = !!i.resolveBy && i.resolveBy < today;
-    if (!ours && !late) continue;
     if (i.enquiryIds.some((q) => s.enquiries[q] && s.enquiries[q].status !== 'cleared' && s.enquiries[q].status !== 'reviewed')) continue; // tracked by a live enquiry → it is a WAITING, not a DO
     out.push({
       ...base,
@@ -395,7 +396,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       documentId: i.kind === 'file_locked' ? (/\[doc:([0-9a-f-]{36})\]/.exec(i.detail ?? '')?.[1] ?? null) : null,
       // The chip says what kind of problem; the line is the problem itself, as it was raised.
       // The kind of work: sort out the problem (the title says which), send it again, unlock the file.
-      chip: i.kind === 'send_failed' ? 'Unsuccessful Send' : i.kind === 'file_locked' ? 'Unlock File' : 'Resolve Issue',
+      chip: i.kind === 'send_failed' ? 'Unsuccessful Send' : i.kind === 'file_locked' ? 'Unlock File' : ours ? 'Resolve Issue' : `Chase ${WHO_FIXES[spec.responsible] ?? 'The Other Side'}`,
       // Older failures were titled "The chase to seller solicitor did not go: <reason>": read as the current wording.
       what: i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim().replace(/^The (.+?) did not go:.*$/, (_m, w: string) => `${w.charAt(0).toUpperCase()}${w.slice(1).replace(/\bseller solicitor\b/, "the seller's solicitor").replace(/\bbuyer solicitor\b/, "the buyer's solicitor")} unsuccessful`),
       // No address for them: the task takes it and sends (not a trip to the case's contacts).

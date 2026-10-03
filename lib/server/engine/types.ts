@@ -211,6 +211,7 @@ export const EVENT_TYPES = [
   'sdlt_facts_recorded',
   'party_event_recorded',
   'shape_added',
+  'client_names_recorded',
   'sdlt_amended',
   'additional_title_read',
   'completion_event_recorded',
@@ -1181,6 +1182,7 @@ export interface Payloads {
   register_checked: { ok: boolean; note: string | null; lenderTold: boolean };
   seller_discharge_received: { reference: string | null };
   shape_added: { shape: string };
+  client_names_recorded: { names: string[] };
   additional_title_read: { facts: TitleFacts };
   completion_event_recorded: { event: string; detail: string; amountPennies: number | null; until: string | null };
   bankruptcy_search_entry_found: { subject: string; entry: string };
