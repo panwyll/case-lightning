@@ -16,7 +16,7 @@ import { USER_COMMANDS, type Command } from './machine';
 import { DECISION_EVENT_TYPES, DECISION_KINDS, EVENT_TYPES, STAGES, SUB_FLOWS, TRANSACTION_TYPES, type DecisionKind, type DecisionOption, type EventType, type Stage, type SubFlow, type TransactionType, type WaitKey } from './types';
 import { TRANSACTION_PROFILES, type TransactionProfile } from './transactions';
 import { TRIGGERS, type TriggerSpec } from './triggers';
-import { ISSUE_GROUPS, ISSUE_GROUP_LABEL, ISSUE_KIND_SPECS, ISSUE_RESOLUTIONS, RESOLUTION_LABEL, RESOLUTION_TITLE, RESOLUTION_FIELDS, RESOLUTION_EFFECT, NOTE_REQUIRED, FORMLESS_KINDS, ISSUE_CHIP, issueSteps, type IssueStep, type ResolutionField, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, type IssueKindSpec, type IssueGroup, type IssueResolution } from './issues';
+import { ISSUE_GROUPS, ISSUE_GROUP_LABEL, ISSUE_KIND_SPECS, ISSUE_RESOLUTIONS, RESOLUTION_LABEL, RESOLUTION_TITLE, RESOLUTION_FIELDS, RESOLUTION_EFFECT, NOTE_REQUIRED, FORMLESS_KINDS, ISSUE_CHIP, issueSteps, EVENTS_WITH_STEPS, type IssueStep, type ResolutionField, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, type IssueKindSpec, type IssueGroup, type IssueResolution } from './issues';
 import { MIN_CLASSIFICATION_CONFIDENCE } from './ingest';
 
 export type CommandType = Command['type'];
@@ -117,6 +117,8 @@ export interface MachineSpec {
     steps: Record<string, Array<ReturnType<typeof stepView>>>;
     /** The same, acting for the seller. */
     sellerSteps: Record<string, Array<ReturnType<typeof stepView>>>;
+    /** Steps of issues raised by an event with its own (issue.event). */
+    eventSteps: Record<string, Array<ReturnType<typeof stepView>>>;
   };
 }
 
@@ -467,6 +469,7 @@ export function machineSpec(): MachineSpec {
       chips: ISSUE_CHIP,
       steps: Object.fromEntries(ISSUE_KIND_SPECS.map((k) => [k.kind, issueSteps(k.kind, 'buyer').map(stepView)])),
       sellerSteps: Object.fromEntries(ISSUE_KIND_SPECS.map((k) => [k.kind, issueSteps(k.kind, 'seller').map(stepView)])),
+      eventSteps: Object.fromEntries(EVENTS_WITH_STEPS.map((e) => [e, issueSteps('other', 'buyer', e).map(stepView)])),
     },
   };
   const version = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 12);

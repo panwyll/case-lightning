@@ -1111,7 +1111,7 @@ export interface Payloads {
   auto_clear_confirmed: { decisionEventId: string; subFlow: SubFlow; subject: string; option: DecisionOption; note?: string | null };
   // ── issues (docs/engine-issues.md) ──
   /** A person (or, for lender_approval, the machine) recorded that something is wrong and the matter has to wait for it. */
-  issue_raised: { issueId: string; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; stage: Stage; sourceDocumentId: string | null; origin?: { issueId: string; resolution: IssueResolution } | null; party?: string | null; /** Severity at raise (defaults to the kind's). */ severity?: IssueSeverity | null; /** The issue whose investigation discovered this one (DISCOVERED_BY / chains of ordinary issues). */ causedBy?: string | null; resolveBy?: string | null; /** findings.ts code */ finding?: string | null };
+  issue_raised: { /** The recorded event that raised it (a completion event): its own next steps (issues.ts STEPS_BY_EVENT). */ event?: string | null; issueId: string; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; stage: Stage; sourceDocumentId: string | null; origin?: { issueId: string; resolution: IssueResolution } | null; party?: string | null; /** Severity at raise (defaults to the kind's). */ severity?: IssueSeverity | null; /** The issue whose investigation discovered this one (DISCOVERED_BY / chains of ordinary issues). */ causedBy?: string | null; resolveBy?: string | null; /** findings.ts code */ finding?: string | null };
   /** Progress on an open issue: negotiating, a note, a gate change (e.g. accepted to carry to completion), the party it concerns. */
   issue_updated: { issueId: string; status: 'open' | 'negotiating'; note: string | null; gate?: IssueGate | null; party?: string | null; resolveBy?: string | null; /** Handed to someone in the firm (issues.ts REFER_TO). */ referredTo?: 'mlro' | 'partner' | 'colp' | null };
   /** Resolved with one of the kind's realistic outcomes and, where money changed hands, what it cost and who paid. Side-effects (price change, lender approval) are separate events that follow it. */
@@ -1611,6 +1611,8 @@ export interface IssueState {
   finding?: string | null;
   /** Who it concerns when a matter has more than one buyer / party (free text; null = the matter as a whole). */
   party: string | null;
+  /** The recorded event that raised it, when that event has its own next steps (issues.ts STEPS_BY_EVENT). */
+  event?: string | null;
   /** Handed to someone in the firm to decide (the MLRO, a partner, the COLP): theirs on the Tasks list. */
   referredTo?: 'mlro' | 'partner' | 'colp' | null;
   /** What the fix cost and who paid, once resolved (an indemnity premium, a retention, a reduction). */

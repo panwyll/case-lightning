@@ -997,6 +997,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
         resolvedAt: null,
         resolvedBy: null,
         origin: p.origin ?? null,
+        ...(p.event ? { event: p.event } : {}),
         finding: p.finding ?? null,
         party: p.party ?? null,
         costPennies: null,

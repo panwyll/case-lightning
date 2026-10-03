@@ -640,7 +640,7 @@ export type IssueStep =
    * '$party' are the issue's id and party; `fields` are asked for and added. `log` is noted on the issue
    * after (a command that is not about the issue); `resolves` closes it with that outcome.
    */
-  | { id: string; kind: 'action'; label: string; icon: StepIcon; command: string; args?: Record<string, unknown>; fields?: StepField[]; confirm?: string; danger?: boolean; log?: string; resolves?: IssueResolution };
+  | { id: string; kind: 'action'; label: string; icon: StepIcon; command: string; args?: Record<string, unknown>; fields?: StepField[]; confirm?: string; danger?: boolean; log?: string; resolves?: IssueResolution; /** Put before the note (what was done: "Recall requested from our bank"). */ prefix?: string };
 export type StepIcon = 'doc' | 'check' | 'money' | 'refer' | 'case' | 'people' | 'calendar' | 'shield' | 'stop' | 'pause' | 'search';
 export interface StepField { key: string; label: string; type: 'text' | 'note' | 'date' | 'money' | 'names'; required?: boolean; /** A date field's default, in working days from today. */ inWorkingDays?: number }
 /** Who an issue can be referred to inside the firm. */
@@ -672,6 +672,8 @@ const POF: IssueStep = { id: 'pof', kind: 'action', label: 'Ask For Proof Of Fun
 const ENQUIRY: IssueStep = { id: 'enquiry', kind: 'action', label: 'Raise An Enquiry', icon: 'search', command: 'raise_enquiry', args: { origin: { issueId: '$issue' } }, fields: [{ key: 'subject', label: 'The Enquiry', type: 'note', required: true }] };
 const CHANGE_CLIENTS: IssueStep = { id: 'set_clients', kind: 'action', label: 'Change The Clients', icon: 'people', command: 'set_clients', fields: [{ key: 'names', label: 'The Clients Now (Comma Separated)', type: 'names', required: true }, { key: 'reason', label: 'Why', type: 'note', required: false }], log: 'Clients changed' };
 type AbandonReasonLike = 'client_withdrew' | 'conflict' | 'client_died' | 'capacity' | 'aml' | 'fraud_suspected' | 'other';
+/** Something done off the system (a call, a report to the police), recorded on the issue with its reference. */
+const done = (label: string, field: string, icon: StepIcon = 'check'): IssueStep => ({ id: `done:${label.toLowerCase().replace(/[^a-z]+/g, '_')}`, kind: 'action', label, icon, command: 'update_issue', args: { issueId: '$issue', status: '$status' }, fields: [{ key: 'note', label: field, type: 'text', required: true }], prefix: label });
 const INDEMNITY = outcome('Record An Indemnity Policy', 'indemnity_policy', 'shield');
 const REDUCE = outcome('Record A Price Reduction', 'price_reduced', 'money');
 const ACCEPTS = (label = 'Client Accepts It'): IssueStep => outcome(label, 'accepted_as_is', 'check', true);
@@ -887,6 +889,55 @@ const STEPS_BY_KIND: Partial<Record<IssueKind, IssueStep[]>> = {
     outcome('Record The Money In', 'funds_in_place', 'money'), deadline('Funds Needed By', 3), refer('partner'),
   ],
 };
+/**
+ * Steps for an issue raised by a recorded event that needs its own (a payment to the wrong account is not
+ * handled like a missed completion, though both are completion failures). Keyed by the event (issue.event).
+ */
+const STEPS_BY_EVENT: Record<string, IssueStep[]> = {
+  payment_misdirected: [
+    done('Recall Requested From Our Bank', 'Who You Spoke To And The Reference', 'money'),
+    done('Receiving Bank Asked To Freeze It', 'Bank And Reference', 'shield'),
+    done('Reported To Action Fraud', 'Crime Reference Number', 'shield'),
+    refer('colp', 'Report To The COLP'),
+    done('Insurer Notified', 'Insurer And Reference', 'shield'),
+    msg('client', 'Tell The Client', 'Tell the client calmly that completion money was sent to the wrong account, that we are recovering it, that the firm makes good any loss so their money is protected, and that we will confirm a new completion time', 'There has been a problem with the payment for your completion. We are dealing with it now, and the firm will make good any loss. We will confirm the new completion time as soon as we can.'),
+    msg('seller_solicitor', 'Tell The Other Side', "Tell the other side's solicitor completion is delayed by a payment problem and agree a new completion time; do not give details of the fraud", 'Completion is delayed by a problem with the payment. Please contact us to agree a new completion time.'),
+    outcome('Money Recovered Or Replaced', 'funds_in_place', 'money'), DATES,
+  ],
+  completion_missed: [
+    msg('seller_solicitor', 'Agree A New Completion Time', "Tell the other side's solicitor completion did not happen today and agree a new time; reserve the position on compensation for late completion", 'Completion did not take place today. Please contact us to agree a new completion time; our client reserves its position on late completion.'),
+    msg('client', 'Tell The Client', 'Tell the client today that completion did not happen, why, what it means for their move, and when we expect to complete', 'Completion did not happen today. We are agreeing a new time with the other side and will confirm it to you as soon as we have it.'),
+    msg('estate_agent', 'Tell The Agent', 'Tell the estate agent completion did not happen today and not to release the keys', 'Completion has not taken place today. Please do not release the keys until we confirm completion.'),
+    { id: 'move_date', kind: 'action', label: 'Move The Completion Date', icon: 'calendar', command: 'change_completion_date', fields: [{ key: 'completionDate', label: 'New Completion Date', type: 'date', required: true, inWorkingDays: 1 }, { key: 'reason', label: 'Why', type: 'note', required: false }], log: 'Completion date moved' },
+    refer('partner', 'Refer To A Partner (Notice To Complete)'), outcome('Completed Late', 'completed_late', 'check'),
+  ],
+  keys_not_released: [
+    msg('estate_agent', 'Ask The Agent To Release The Keys', 'Tell the agent completion took place (with the time) and ask them to release the keys to our client now', 'Completion took place today. Please release the keys to our client now.'),
+    msg('seller_solicitor', 'Demand The Keys', "Tell the seller's solicitor completion took place and the seller must give vacant possession now; ask them to confirm when the keys will be released", 'Completion has taken place. Your client must give vacant possession now: please confirm when the keys will be released.'),
+    msg('client', 'Tell The Client', 'Tell the client completion has happened, the property is theirs, and we are getting the keys released; ask them to tell us if someone is still living there', 'Completion has taken place and the property is yours. We are getting the keys released now; please tell us at once if anyone is still in the property.'),
+    done('Keys Released', 'When And By Whom'), refer('partner', 'Refer To A Partner (Possession Claim)'),
+  ],
+  seller_unconfirmed: [
+    done('Phoned Their Office', 'Who You Spoke To And When', 'people'),
+    msg('seller_solicitor', 'Ask Them To Confirm Completion', "Ask the seller's solicitor to confirm completion now, giving the CHAPS reference and the time the money left", 'Our completion money was sent today (CHAPS reference given). Please confirm completion now.'),
+    msg('estate_agent', 'Tell The Agent To Hold The Keys', 'Tell the agent completion is not yet confirmed and to hold the keys until we confirm', 'Completion is not yet confirmed. Please hold the keys until we confirm.'),
+    // Confirming completion settles this issue (machine: completion_confirmed); its own checks still apply.
+    { id: 'confirm_completion', kind: 'action', label: 'They Have Confirmed Completion', icon: 'check', command: 'completion_confirmed' },
+    refer('partner'),
+  ],
+  redemption_returned: [
+    msg('lender', 'Confirm The Redemption Details', "Ask the lender to confirm the account details and reference for the redemption, and today's figure with the daily interest", "The redemption money was returned. Please confirm the account details, the reference and today's figure with the daily interest."),
+    done('Details Verified By Phone', 'Number Rung (From The Lender\'s Website) And Who Confirmed', 'shield'),
+    done('Sent Again', 'CHAPS Reference', 'money'),
+    EVIDENCE("Upload The Lender's Confirmation"),
+  ],
+  undertaking_chased: [
+    msg('lender', 'Chase The DS1', 'Ask the lender for the DS1 or confirmation the e-DS1 has gone to HM Land Registry, as the mortgage was redeemed on completion', 'The mortgage was redeemed on completion. Please send the DS1, or confirm the e-DS1 has gone to HM Land Registry.'),
+    msg('seller_solicitor', "Tell The Buyer's Solicitor When", "Tell the buyer's solicitor when the discharge will come and that our undertaking stands", 'We are chasing the lender for the discharge and will send it as soon as it arrives; our undertaking stands.'),
+    EVIDENCE('Upload The DS1'), deadline('DS1 Expected By', 10),
+  ],
+};
+
 /** Kinds whose own steps are the buyer's (an enquiry of the other side): acting for the seller, they are put to our client. */
 const ENQUIRED_OF_SELLER: ReadonlySet<IssueKind> = new Set<IssueKind>(['new_build_pack', 'shared_ownership_terms', 'right_to_buy_terms', 'flying_freehold', 'commonhold_terms', 'building_safety', 'boundary_discrepancy', 'missing_consent', 'lease_defect', 'short_lease', 'service_charge_issue', 'ground_rent_issue', 'search_adverse_entry', 'environmental_risk', 'third_party_encumbrance', 'disclosure_concern', 'contract_term', 'title_defect', 'missing_easement', 'restrictive_covenant', 'planning_permission_missing', 'building_regs_missing', 'title_restriction', 'enquiry_unanswered', 'enquiry_unsatisfactory', 'survey_defect', 'document_missing', 'third_party_consent', 'occupier_consent']);
 const CLIENT_ONLY: ReadonlySet<IssueGroup> = new Set(['funds_aml']);
@@ -897,7 +948,8 @@ const NO_STEPS: ReadonlySet<IssueKind> = new Set(['file_locked', 'unknown_corres
  * is the other side's to answer; acting for the seller, it is our client's (we ask them, and tell the
  * other side we are on it).
  */
-export function issueSteps(kind: IssueKind, side: 'buyer' | 'seller' = 'buyer'): IssueStep[] {
+export function issueSteps(kind: IssueKind, side: 'buyer' | 'seller' = 'buyer', event?: string | null): IssueStep[] {
+  if (event && STEPS_BY_EVENT[event]) return STEPS_BY_EVENT[event];
   const own = STEPS_BY_KIND[kind];
   // Acting for the seller we answer enquiries, we do not raise them: put it to our client, tell the other side, and keep what settles it.
   if (own && side === 'seller' && ENQUIRED_OF_SELLER.has(kind)) {
@@ -913,6 +965,9 @@ export function issueSteps(kind: IssueKind, side: 'buyer' | 'seller' = 'buyer'):
   if (spec.gate === 'none') return [UPDATE_CLIENT];
   return side === 'seller' ? [ASK_CLIENT, TELL_OTHER_SIDE, NEGOTIATING] : [ASK_OTHER_SIDE, UPDATE_CLIENT, NEGOTIATING];
 }
+
+/** Every event with steps of its own. */
+export const EVENTS_WITH_STEPS = Object.keys(STEPS_BY_EVENT);
 
 /** Kinds a case has at most one of open at a time: a second report of the same thing is the same issue. */
 const ONE_PER_CASE: ReadonlySet<IssueKind> = new Set<IssueKind>(['transaction_at_risk', 'mortgage_at_risk', 'mortgage_offer_expiring', 'mortgage_offer_expired', 'mortgage_offer_expiry_unknown', 'completion_failure', 'chain_dependency', 'seller_delay', 'buyer_delay', 'lender_funds_delayed', 'completion_funds_shortfall', 'redemption_statement_expired', 'survey_report_outstanding']);

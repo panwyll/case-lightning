@@ -173,6 +173,8 @@ export interface IssueRow {
   /** A further investigation: what the client said to do about it. */
   route?: 'evidence' | 'pursue' | 'waive' | null;
   id: string;
+  /** The recorded event that raised it, when it has its own steps (catalogue eventSteps). */
+  event?: string | null;
   kind: string;
   title: string;
   detail: string | null;
@@ -206,7 +208,7 @@ export type IssueStepView =
   | { id: string; kind: 'message'; label: string; to: string }
   | { id: string; kind: 'dates' | 'negotiating' | 'fatal'; label: string }
   | { id: string; kind: 'outcome'; label: string; icon: string; resolution: string }
-  | { id: string; kind: 'action'; label: string; icon: string; command: string; args?: Record<string, unknown>; fields?: Array<{ key: string; label: string; type: 'text' | 'note' | 'date' | 'money' | 'names'; required?: boolean; inWorkingDays?: number }>; confirm?: string; danger?: boolean; log?: string; resolves?: string };
+  | { id: string; kind: 'action'; label: string; icon: string; command: string; prefix?: string; args?: Record<string, unknown>; fields?: Array<{ key: string; label: string; type: 'text' | 'note' | 'date' | 'money' | 'names'; required?: boolean; inWorkingDays?: number }>; confirm?: string; danger?: boolean; log?: string; resolves?: string };
 /** The issue catalogue as /engine/spec publishes it (kinds, groups, resolutions). */
 export interface IssueCatalogue {
   groups: Array<{ id: string; label: string }>;
@@ -217,6 +219,8 @@ export interface IssueCatalogue {
   chips?: Record<string, string>;
   steps?: Record<string, IssueStepView[]>;
   sellerSteps?: IssueCatalogue['steps'];
+  /** Steps of issues raised by an event with its own (IssueRow.event). */
+  eventSteps?: IssueCatalogue['steps'];
 }
 
 export type TransactionType = 'freehold_purchase' | 'leasehold_purchase' | 'freehold_sale' | 'leasehold_sale' | 'remortgage' | 'transfer_of_equity';

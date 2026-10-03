@@ -1545,7 +1545,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // Paying out money that has not cleared is paying with other clients' money (SRA Accounts Rules 5.3).
       const notCleared = moneyOf(s).uncleared;
       if (notCleared.length) reject(`Money has not cleared: ${notCleared.map((u) => `${u.amountPennies != null ? pounds(u.amountPennies) : 'a payment'} from ${ROLE_LABEL[u.fromRole]}`).join(', ')}. Confirm it has cleared first.`);
-      const holdingCompletion = issuesGating(s, 'completion');
+      // "The seller's solicitor has not confirmed completion" is settled by their confirming it: this command.
+      const unconfirmed = issuesGating(s, 'completion').filter((i) => i.event === 'seller_unconfirmed');
+      const settled: NewEvent[] = unconfirmed.map((i) => ({ type: 'issue_resolved', actor: cmd.actor, payload: { issueId: i.id, resolution: 'other', note: "The seller's solicitor confirmed completion.", costPennies: null, paidBy: null } }));
+      const holdingCompletion = issuesGating(s, 'completion').filter((i) => i.event !== 'seller_unconfirmed');
       if (holdingCompletion.length) reject(`Cannot confirm completion while an issue holds it: ${holdingCompletion.map((i) => `${ISSUE_KIND_SPEC[i.kind].label} — ${i.title}`).join('; ')}.`);
       if (profile(s).side !== 'buyer') {
         const p = profile(s);
@@ -1573,7 +1576,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         const cgtHold = p.side === 'seller' ? s.cgtFacts?.taxRetentionPennies ?? 0 : 0;
         const forTax: NewEvent[] = cgtHold > 0 ? [{ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${moneyOf(s).refunds.length + 1}`, toRole: 'client', to: null, amountPennies: cgtHold, reason: "Held for the client's CGT: pay it to HMRC on their instruction within 60 days, or back to them" } }] : [];
         const toClient: NewEvent[] = surplus > 0 ? [{ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${moneyOf(s).refunds.length + 1}`, toRole: 'client', to: null, amountPennies: surplus, reason: 'The surplus released by the remortgage, per the statement of account' } }] : [];
-        return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }, ...lateCompletion(s, cmd.completedAt ?? null, ctx.now), ...toClient, ...forTax];
+        return [...settled, { type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }, ...lateCompletion(s, cmd.completedAt ?? null, ctx.now), ...toClient, ...forTax];
       }
       // A purchase completes on paper first: the transfer deed, and with a lender the mortgage deed and the certificate of title.
       if (!s.deeds.transferDeedAt) reject('The transfer deed (TR1) has not been executed.');
@@ -1604,7 +1607,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // The seller's charges come off only on their solicitor's undertaking (TA13): never complete without it.
       if (!s.completionInformation) reject("The seller's solicitor's replies to completion information (TA13) are not on file.");
       if (sellerTitleCharged(s) && !s.completionInformation.undertakingToRedeem) reject("The seller's title is charged and their solicitor has not undertaken to redeem it (TA13).");
-      const completed: NewEvent[] = [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }, ...lateCompletion(s, cmd.completedAt ?? null, ctx.now)];
+      const completed: NewEvent[] = [...settled, { type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }, ...lateCompletion(s, cmd.completedAt ?? null, ctx.now)];
       // Leasehold: what the landlord requires on assignment (deed of covenant, certificate of compliance for a restriction) is owed after completion and before the AP1 can go in clean.
       const consents = s.managementPack.facts?.consentsRequired?.trim();
       // Each thing the landlord or management company requires is its own task (completion.md 6.19).
@@ -2894,7 +2897,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       { const wrong = completionEventProblem(s, cmd.event); if (wrong) reject(wrong); }
       const nextId = issueIds(s);
       return [{ type: 'completion_event_recorded', actor: cmd.actor, payload: { event: cmd.event, detail: cmd.detail.trim(), amountPennies: cmd.amountPennies ?? null, until: cmd.until ?? null } } as NewEvent,
-        ...completionEventConsequences(s, { event: cmd.event, detail: cmd.detail, amountPennies: cmd.amountPennies, until: cmd.until }, profile(s).side).map((c) => issueWith(s, nextId(), c.kind, c.title, c.detail, c.gate, c.severity, c.resolveBy))];
+        ...completionEventConsequences(s, { event: cmd.event, detail: cmd.detail, amountPennies: cmd.amountPennies, until: cmd.until }, profile(s).side).map((c) => issueWith(s, nextId(), c.kind, c.title, c.detail, c.gate, c.severity, c.resolveBy, c.kind === 'chain_dependency' ? null : cmd.event))];
     }
     case 'record_isa': {
       // The ISA's own dates (money.md 7.2, 7.5): a Lifetime ISA open under 12 months; a Help to Buy ISA bonus claimed within 12 months of closing.
@@ -3337,7 +3340,7 @@ function issueIds(s: MatterState, pending: NewEvent[] = []): () => string {
 const issue = (s: MatterState, id: string, kind: IssueKind, title: string, detail: string, gate: IssueGate): NewEvent => ({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: id, kind, title, detail, gate, stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: ISSUE_KIND_SPEC[kind].severity, causedBy: null } });
 const openOf = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).some((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 /** An issue with its own severity and resolve-by date. */
-const issueWith = (s: MatterState, id: string, kind: IssueKind, title: string, detail: string, gate: IssueGate, severity: IssueSeverity, resolveBy?: string | null): NewEvent => { const r = issue(s, id, kind, title, detail, gate); return { ...r, payload: { ...(r.payload as object), severity, ...(resolveBy ? { resolveBy } : {}) } } as NewEvent; };
+const issueWith = (s: MatterState, id: string, kind: IssueKind, title: string, detail: string, gate: IssueGate, severity: IssueSeverity, resolveBy?: string | null, event?: string | null): NewEvent => { const r = issue(s, id, kind, title, detail, gate); return { ...r, payload: { ...(r.payload as object), severity, ...(resolveBy ? { resolveBy } : {}), ...(event ? { event } : {}) } } as NewEvent; };
 const openList = (s: MatterState, kind: IssueKind, prefix: string) => Object.values(s.issues).filter((i) => i.kind === kind && i.title.startsWith(prefix) && (i.status === 'open' || i.status === 'negotiating'));
 const resolvedBy = (id: string, note: string): NewEvent => ({ type: 'issue_resolved', actor: SYSTEM, payload: { issueId: id, resolution: 'funds_in_place', note, costPennies: null, paidBy: null } });
 

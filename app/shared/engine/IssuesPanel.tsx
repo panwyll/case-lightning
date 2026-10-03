@@ -395,6 +395,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
       if (!v) continue;
       body[f.key] = f.type === 'money' ? pennies(v) : f.type === 'names' ? v.split(',').map((n) => n.trim()).filter(Boolean) : v;
     }
+    if (x.prefix) body.note = `${x.prefix}${body.note ? `: ${body.note as string}` : ''}`;
     const ok = await run(body);
     if (!ok) return false;
     const still = x.command !== 'abandon_matter';
@@ -408,7 +409,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   const actionReady = (x: Extract<IssueStepView, { kind: 'action' }>) => (x.fields ?? []).every((f) => !f.required || !!(vals[`act:${f.key}`] ?? '').trim());
   /** What to do about it: write to someone (drafted from the case), agree new dates, mark it negotiating, or say it has fallen through. */
   const nextSteps = (i: IssueRow) => {
-    const all = ((/_sale$/.test(state.transactionType ?? '') ? cat?.sellerSteps : cat?.steps)?.[i.kind] ?? []).filter((x) => !(x.kind === 'negotiating' && i.status === 'negotiating'));
+    const all = ((i.event && cat?.eventSteps?.[i.event]) || (/_sale$/.test(state.transactionType ?? '') ? cat?.sellerSteps : cat?.steps)?.[i.kind] || []).filter((x) => !(x.kind === 'negotiating' && i.status === 'negotiating'));
     if (!all.length) return null;
     const log = (i.history ?? []).slice(1).slice(-4);
     return (

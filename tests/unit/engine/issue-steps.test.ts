@@ -141,3 +141,50 @@ test('no issue kind only writes to people: each offers something that settles it
   }
   assert.deepEqual(bad, []);
 });
+
+test('a completion event raises an issue with its own steps, and every one works on that issue', async () => {
+  const { COMPLETION_EVENTS } = await import('../../../lib/server/engine/completion-events');
+  const ex = { ...base.exchange, exchangedAt: '2026-09-25T10:00:00Z', completionDate: '2026-10-03' };
+  const done = { ...base.completion, confirmedAt: '2026-10-02T10:00:00Z' };
+  const where: MatterState[] = [
+    { ...CASE, stage: 'pre_completion', exchange: ex },
+    { ...CASE, transactionType: 'freehold_sale', hasLender: false, hasExistingMortgage: true, stage: 'pre_completion', exchange: ex },
+    { ...CASE, stage: 'post_completion', exchange: ex, completion: done },
+    { ...CASE, transactionType: 'freehold_sale', hasLender: false, hasExistingMortgage: true, stage: 'post_completion', exchange: ex, completion: done },
+  ];
+  const bad: string[] = [];
+  for (const event of COMPLETION_EVENTS) {
+    if (event === 'contract_retention') continue; // a retention is its own kind, with its own steps
+    let raised: { s: MatterState; id: string } | null = null;
+    for (const c of where) {
+      try {
+        const s = fold(c, { type: 'record_completion_event', event, detail: 'Recorded in a test', amountPennies: 100_000 });
+        const id = Object.keys(s.issues).find((k) => s.issues[k].event === event);
+        if (id) { raised = { s, id }; break; }
+      } catch { /* not on this case */ }
+    }
+    if (!raised) { bad.push(`${event}: raised no issue with its own steps`); continue; }
+    const issue = raised.s.issues[raised.id];
+    const steps = issueSteps(issue.kind, 'buyer', issue.event);
+    if (!steps.some((x) => x.kind === 'action' || x.kind === 'outcome')) bad.push(`${event}: only messages`);
+    for (const x of steps) {
+      if (x.kind === 'outcome' && !ISSUE_KIND_SPEC[issue.kind].resolutions.includes(x.resolution)) bad.push(`${event}: ${x.label} → ${x.resolution} is not an outcome of ${issue.kind}`);
+      if (x.kind !== 'action') continue;
+      const fill = (v: unknown): unknown => (v === '$issue' ? raised!.id : v === '$party' ? null : v === '$partyCheck' ? null : v === '$status' ? 'open' : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, w]) => [k, fill(w)])) : v);
+      const body: Record<string, unknown> = { type: x.command, ...(fill(x.args ?? {}) as Record<string, unknown>) };
+      for (const f of x.fields ?? []) body[f.key] = f.type === 'money' ? 150_000 : f.type === 'names' ? ['Asha Patel'] : f.type === 'date' ? '2026-10-09' : SAMPLE[f.type];
+      if (x.prefix) body.note = `${x.prefix}: ${body.note as string}`;
+      const parsed = userCommandSchema.safeParse(body);
+      if (!parsed.success) { bad.push(`${event}: ${x.label}: schema: ${parsed.error.issues[0]?.message}`); continue; }
+      try {
+        let s = fold(raised.s, parsed.data as Record<string, unknown>);
+        if (x.resolves && s.issues[raised.id].status !== 'resolved') s = fold(s, { type: 'resolve_issue', issueId: raised.id, resolution: x.resolves, note: x.log ?? x.label });
+      } catch (e) {
+        // Confirming completion has its own checks (deeds, money, searches) a bare test case does not meet; the issue itself must not be what stops it.
+        if (x.command === 'completion_confirmed' && !/issue holds it/.test((e as Error).message)) continue;
+        bad.push(`${event}: ${x.label}: ${(e as Error).message}`);
+      }
+    }
+  }
+  assert.deepEqual(bad, []);
+});

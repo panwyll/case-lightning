@@ -1095,7 +1095,7 @@ export class EngineService {
     const issue = state.issues[issueId];
     if (!issue) throw Object.assign(new Error('Issue not found.'), { status: 404 });
     const side = profileOf(state.transactionType).side;
-    const step = issueSteps(issue.kind, side === 'seller' ? 'seller' : 'buyer').find((x) => x.id === stepId);
+    const step = issueSteps(issue.kind, side === 'seller' ? 'seller' : 'buyer', issue.event).find((x) => x.id === stepId);
     if (!step || step.kind !== 'message') throw Object.assign(new Error('That step does not write to anyone.'), { status: 400 });
     const now = this.ports.now();
     const rec = await this.caseRecord(tenantId, matterId).catch(() => null);
