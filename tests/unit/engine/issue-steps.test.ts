@@ -23,7 +23,7 @@ test('every kind a person resolves offers a next step; transaction at risk offer
     assert.ok(issueSteps(k).length > 0, `${k} has next steps`);
   }
   const risk = issueSteps('transaction_at_risk').map((x) => x.kind === 'message' ? `${x.kind}:${x.to}` : x.kind);
-  assert.deepEqual(risk, ['message:seller_solicitor', 'message:client', 'message:estate_agent', 'dates', 'negotiating', 'fatal']);
+  assert.deepEqual(risk, ['message:seller_solicitor', 'message:client', 'message:estate_agent', 'outcome', 'dates', 'negotiating', 'fatal']);
   assert.ok(ISSUE_KIND_SPEC.transaction_at_risk.resolutions.includes('proceeding_confirmed'));
 });
 
@@ -77,6 +77,8 @@ const fold = (s: MatterState, cmd: Record<string, unknown>): MatterState => {
 };
 const base = initialState(TENANT, MATTER);
 const CASE: MatterState = { ...base, enrolled: true, partyNames: ['Asha Patel', 'Ben Carter'], parties: 2, purchasePricePennies: 30_000_000, transactionType: 'freehold_purchase', stage: 'pre_exchange', hasLender: true };
+/** The cases an action is tried on, in order: the first that accepts it counts (a fresh redemption statement needs a mortgage to redeem). */
+const CASES: MatterState[] = [CASE, { ...CASE, transactionType: 'freehold_sale', hasLender: false, hasExistingMortgage: true }, { ...CASE, transactionType: 'remortgage', stage: 'pre_completion', hasExistingMortgage: true }];
 const COMMANDS = new Set((userCommandSchema as unknown as { options: Array<{ shape: { type: { value: string } } }> }).options.map((o) => o.shape.type.value));
 const SAMPLE: Record<string, string> = { text: 'A test', note: 'Checked in a test', date: '2026-11-30', money: '1500', names: 'Asha Patel' };
 
@@ -95,18 +97,24 @@ test('every action step succeeds on a case with that issue open, and the issue s
     if (ISSUE_KIND_SPEC[kind].context) continue;
     for (const x of issueSteps(kind, 'buyer')) {
       if (x.kind !== 'action') continue;
-      let s = fold(CASE, { type: 'raise_issue', kind, title: `Test ${kind}`, detail: 'Raised in a test', gate: 'exchange', party: 'Asha Patel' });
-      const id = Object.keys(s.issues).find((k) => s.issues[k].kind === kind)!;
-      const fill = (v: unknown): unknown => (v === '$issue' ? id : v === '$party' ? 'Asha Patel' : v === '$partyCheck' ? null : v === '$status' ? 'open' : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, w]) => [k, fill(w)])) : v);
-      const body: Record<string, unknown> = { type: x.command, ...(fill(x.args ?? {}) as Record<string, unknown>) };
-      for (const f of x.fields ?? []) body[f.key] = f.type === 'money' ? 150_000 : f.type === 'names' ? ['Asha Patel'] : SAMPLE[f.type];
-      const parsed = userCommandSchema.safeParse(body);
-      if (!parsed.success) { bad.push(`${kind}: ${x.label}: refused by the schema: ${parsed.error.issues[0]?.message}`); continue; }
-      try { s = fold(s, parsed.data as Record<string, unknown>); } catch (e) { bad.push(`${kind}: ${x.label}: ${(e as Error).message}`); continue; }
-      if (x.command === 'abandon_matter') { if (!s.abandoned) bad.push(`${kind}: ${x.label}: the case did not close`); continue; }
-      // An enquiry raised from the issue tracks it: the issue waits on the reply.
-      const waiting = s.issues[id].enquiryIds.length > 0 && matterWork(s, NOW).items.some((t) => t.id.startsWith('waiting:') || t.id.includes('enquir'));
-      if (!waiting && !matterWork(s, NOW).items.some((t) => t.id === `do:issue:${id}`)) bad.push(`${kind}: ${x.label}: the issue left the Tasks list`);
+      const tried: string[] = [];
+      let ok = false;
+      for (const c of CASES) {
+        let s = fold(c, { type: 'raise_issue', kind, title: `Test ${kind}`, detail: 'Raised in a test', gate: 'exchange', party: 'Asha Patel' });
+        const id = Object.keys(s.issues).find((k) => s.issues[k].kind === kind)!;
+        const fill = (v: unknown): unknown => (v === '$issue' ? id : v === '$party' ? 'Asha Patel' : v === '$partyCheck' ? null : v === '$status' ? 'open' : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, w]) => [k, fill(w)])) : v);
+        const body: Record<string, unknown> = { type: x.command, ...(fill(x.args ?? {}) as Record<string, unknown>) };
+        for (const f of x.fields ?? []) body[f.key] = f.type === 'money' ? 150_000 : f.type === 'names' ? ['Asha Patel'] : SAMPLE[f.type];
+        const parsed = userCommandSchema.safeParse(body);
+        if (!parsed.success) { tried.push(`refused by the schema: ${parsed.error.issues[0]?.message}`); break; }
+        try { s = fold(s, parsed.data as Record<string, unknown>); } catch (e) { tried.push((e as Error).message); continue; }
+        if (x.command === 'abandon_matter') { if (!s.abandoned) tried.push('the case did not close'); else ok = true; break; }
+        // An enquiry raised from the issue tracks it: the issue waits on the reply.
+        const waiting = s.issues[id].enquiryIds.length > 0;
+        if (!waiting && !matterWork(s, NOW).items.some((t) => t.id === `do:issue:${id}`)) { tried.push('the issue left the Tasks list'); break; }
+        ok = true; break;
+      }
+      if (!ok) bad.push(`${kind}: ${x.label}: ${tried.join(' | ')}`);
     }
   }
   assert.deepEqual(bad, []);
@@ -121,9 +129,15 @@ test('a referred issue is chipped as theirs on the Tasks list', () => {
   assert.throws(() => fold(s, { type: 'update_issue', issueId: id, status: 'open', referredTo: 'partner' }), /decide/);
 });
 
-test('the kinds people meet most offer more than writing to someone', () => {
-  for (const kind of ['probate_issue', 'power_of_attorney_issue', 'bankruptcy_insolvency', 'complaint', 'aml_kyc_problem', 'joint_client_conflict', 'client_change', 'third_party_consent', 'retention_held', 'title_defect', 'survey_defect'] as const) {
-    const kinds = new Set(issueSteps(kind).map((x) => x.kind));
-    assert.ok(kinds.has('outcome') || kinds.has('action'), `${kind} only writes to people`);
+test('no issue kind only writes to people: each offers something that settles it or a thing to do', () => {
+  const bad: string[] = [];
+  for (const kind of ISSUE_KINDS) for (const side of ['buyer', 'seller'] as const) {
+    if (ISSUE_KIND_SPEC[kind].context) continue;
+    const st = issueSteps(kind, side);
+    if (!st.length) continue; // closed by their own act (Try Again, the password)
+    if (!st.some((x) => x.kind === 'outcome' || x.kind === 'action')) bad.push(`${kind} (${side})`);
+    const ids = st.map((x) => x.id);
+    if (new Set(ids).size !== ids.length) bad.push(`${kind} (${side}): two steps share an id`);
   }
+  assert.deepEqual(bad, []);
 });

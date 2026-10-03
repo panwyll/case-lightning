@@ -657,7 +657,8 @@ const DATES: IssueStep = { id: 'dates', kind: 'dates', label: 'Agree New Dates' 
 const NEGOTIATING: IssueStep = { id: 'negotiating', kind: 'negotiating', label: 'Mark Negotiating' };
 const FATAL: IssueStep = { id: 'fatal', kind: 'fatal', label: 'It Has Fallen Through' };
 
-const outcome = (label: string, resolution: IssueResolution, icon: StepIcon = 'doc'): IssueStep => ({ id: `out:${resolution}`, kind: 'outcome', label, icon, resolution });
+/** One outcome can be offered under different names (Client Accepts It, Client Advised In Writing): the name keeps their ids apart. */
+const outcome = (label: string, resolution: IssueResolution, icon: StepIcon = 'doc', named = false): IssueStep => ({ id: named ? `out:${resolution}:${label.toLowerCase().replace(/[^a-z]+/g, '_')}` : `out:${resolution}`, kind: 'outcome', label, icon, resolution });
 const NOTE = (label = 'Why', required = true): StepField => ({ key: 'note', label, type: 'note', required });
 /** Hand it to someone in the firm: it stays on the Tasks list, chipped as theirs. */
 const refer = (to: ReferTo, label = `Refer To ${REFER_LABEL[to]}`): IssueStep => ({ id: `refer:${to}`, kind: 'action', label, icon: to === 'mlro' ? 'shield' : 'refer', command: 'update_issue', args: { issueId: '$issue', status: '$status', referredTo: to }, fields: [NOTE('What They Need To Decide')] });
@@ -672,8 +673,108 @@ const ENQUIRY: IssueStep = { id: 'enquiry', kind: 'action', label: 'Raise An Enq
 const CHANGE_CLIENTS: IssueStep = { id: 'set_clients', kind: 'action', label: 'Change The Clients', icon: 'people', command: 'set_clients', fields: [{ key: 'names', label: 'The Clients Now (Comma Separated)', type: 'names', required: true }, { key: 'reason', label: 'Why', type: 'note', required: false }], log: 'Clients changed' };
 type AbandonReasonLike = 'client_withdrew' | 'conflict' | 'client_died' | 'capacity' | 'aml' | 'fraud_suspected' | 'other';
 const INDEMNITY = outcome('Record An Indemnity Policy', 'indemnity_policy', 'shield');
+const REDUCE = outcome('Record A Price Reduction', 'price_reduced', 'money');
+const ACCEPTS = (label = 'Client Accepts It'): IssueStep => outcome(label, 'accepted_as_is', 'check', true);
+const EVIDENCE = (label: string): IssueStep => outcome(label, 'evidence_provided', 'doc', true);
+const LENDER_OK = outcome("Upload The Lender's Answer", 'lender_confirmed');
+const TELL_LENDER = msg('lender', 'Report To The Lender', "Report the point to the lender under the Lenders' Handbook (or their own instructions) and ask whether they are content to lend on it", "We report the following under the Lenders' Handbook: {issue}. Please confirm you are content to proceed.");
+const SPECIALIST = outcome('Upload The Specialist Report', 'specialist_report_clear');
 
 const STEPS_BY_KIND: Partial<Record<IssueKind, IssueStep[]>> = {
+  company_buyer_checks: [
+    msg('client', 'Ask For The Company Documents', 'Ask the company for its certificate of incorporation, articles, register of persons with significant control, the board minute approving the purchase and who will sign; and whether the lender wants personal guarantees', 'Please send the certificate of incorporation, articles, the register of people with significant control and the board minute approving this purchase, and tell us who will sign for the company.'),
+    EVIDENCE('Upload The Company Documents'), ID_CHECK, refer('mlro'),
+  ],
+  buy_to_let_conditions: [
+    msg('lender', "Confirm The Lender's Letting Terms", 'Ask the lender to confirm its letting conditions (tenancy type, minimum term, who may be tenants) and that a buy-to-let or consent-to-let is in place', 'Please confirm your letting conditions for this property and that the loan permits it to be let.'),
+    msg('client', 'Advise On The Letting Terms', 'Tell the client the lender\'s letting conditions plainly and what they must do (the tenancy they may grant, licensing, the deposit scheme, the gas and electrical certificates)', 'Your lender allows the property to be let on these conditions: {issue}. Please make sure any tenancy fits them.'),
+    EVIDENCE('Upload The Consent Or Tenancy'), ACCEPTS('Client Advised In Writing'),
+  ],
+  new_build_pack: [
+    ENQUIRY, EVIDENCE('Upload The Warranty And Pack'),
+    msg('lender', 'Send The Incentives Form', "Send the lender the developer's Disclosure of Incentives form (UK Finance) and the warranty details", "Please find the developer's Disclosure of Incentives form and the new home warranty details for this purchase."),
+    deadline('Exchange Deadline', 20), ACCEPTS('Client Advised In Writing'),
+  ],
+  auction_conditions: [
+    msg('client', 'Report On The Legal Pack', 'Report on the auction legal pack before the sale: the buyer is bound on the fall of the hammer, completion is usually 20 working days later, the special conditions, the buyer\'s premium and costs, and that the mortgage and funds must be ready', 'Before the auction: you are bound when the hammer falls, completion is usually 20 working days later, and the special conditions and buyer\'s fees apply. Your funds and any mortgage must be ready.'),
+    POF, EVIDENCE('Upload The Signed Memorandum'), deadline('Completion Due', 20),
+  ],
+  isa_bonus: [
+    msg('client', 'Tell The Client How The Bonus Is Claimed', 'Tell the client how the ISA bonus reaches completion: for a Lifetime ISA we ask the ISA manager for the funds in good time (they can take 15 working days); for a Help to Buy ISA we send the closing statement and the bonus is claimed after completion', 'Your ISA bonus: we will ask your ISA manager for the funds in good time before completion. Please make sure the account details we hold are right.'),
+    EVIDENCE('Upload The Bonus Confirmation'), deadline('Claim By', 10),
+  ],
+  second_charge_consent: [
+    msg('lender', 'Ask The Second Lender', "Ask the second-charge lender for its consent (or a redemption figure) and the terms on which it gives it", 'Please confirm whether you consent to this transaction, or send a redemption figure to the completion date.'),
+    LENDER_OK, deadline('Consent Expected By', 10),
+  ],
+  shared_ownership_terms: [
+    ENQUIRY, EVIDENCE("Upload The Provider's Consent"),
+    msg('client', 'Explain The Shared Ownership Lease', 'Explain the shared ownership lease plainly: the share bought, the rent on the rest, staircasing, the provider\'s right to find a buyer first, repairs, and the service charge', 'We explain the shared ownership lease here: the share you own, the rent on the rest, buying more shares later, and selling.'),
+    ACCEPTS('Client Advised In Writing'),
+  ],
+  unrepresented_counterparty: [
+    msg('seller_solicitor', 'Write To The Unrepresented Party', 'Write to the unrepresented party: we act only for our client and cannot advise them; recommend they take independent legal advice; set out what we need from them and how the money and the deed will be handled', 'We act only for our client and cannot advise you. We recommend you take independent legal advice. To proceed we will need the following from you.'),
+    EVIDENCE('Upload Their Identity Evidence'), refer('partner'), TAKE_OVER,
+  ],
+  court_order_transfer: [
+    EVIDENCE('Upload The Sealed Court Order'), CHANGE_CLIENTS, TELL_LENDER, LENDER_OK,
+  ],
+  right_to_buy_terms: [
+    ENQUIRY, EVIDENCE("Upload The Landlord's Notice Or Consent"),
+    msg('client', 'Explain The Discount Repayment', 'Explain the right to buy terms: the discount repayable if the property is sold within five years (on a sliding scale), the landlord\'s right of first refusal for ten years, and any service charge estimates', 'If you sell within five years some of the discount must be repaid, and for ten years the landlord must be offered the property first.'),
+    ACCEPTS('Client Advised In Writing'),
+  ],
+  flying_freehold: [ENQUIRY, INDEMNITY, outcome('Record A Deed Of Easements', 'deed_or_declaration'), TELL_LENDER, LENDER_OK, ACCEPTS('Client Advised In Writing')],
+  commonhold_terms: [ENQUIRY, EVIDENCE('Upload The Community Statement'), TELL_LENDER, LENDER_OK, ACCEPTS('Client Advised In Writing')],
+  sdlt_basis: [
+    msg('client', 'Ask The Client The Tax Questions', 'Ask the client the questions the tax basis turns on (other property owned worldwide, a home being replaced, residence, how the property is used), plainly', 'To work out the tax correctly, please tell us about any other property you or your spouse own anywhere, whether this replaces your main home, and whether you have lived in the UK for the last year.'),
+    refer('partner', 'Refer To A Partner Or Tax Adviser'), EVIDENCE('Record The Basis Agreed'), ACCEPTS('Client Advised In Writing'),
+  ],
+  building_safety: [ENQUIRY, EVIDENCE('Upload The EWS1 Or Landlord Certificate'), TELL_LENDER, LENDER_OK, ACCEPTS('Client Advised In Writing')],
+  boundary_discrepancy: [ENQUIRY, outcome('Record A Boundary Agreement', 'deed_or_declaration'), INDEMNITY, REDUCE, ACCEPTS('Client Advised In Writing')],
+  missing_consent: [ENQUIRY, outcome('Upload The Consent', 'consent_obtained'), outcome('Record Retrospective Consent', 'retrospective_consent'), INDEMNITY, ACCEPTS('Client Advised In Writing')],
+  lease_defect: [ENQUIRY, outcome('Record A Deed Of Variation', 'deed_of_variation'), INDEMNITY, TELL_LENDER, LENDER_OK],
+  short_lease: [
+    msg('client', 'Advise On The Short Lease', 'Advise the client plainly on the short lease: its effect on value and on mortgaging and selling later; that they can extend after two years\' ownership, or the seller can serve the statutory notice now and assign its benefit; the likely premium', 'The lease has {issue}. This affects the value and future mortgages. It can be extended: either the seller serves the notice now and passes it to you, or you can after two years.'),
+    ENQUIRY, outcome('Record The Lease Extended', 'lease_extended'), TELL_LENDER, REDUCE, ACCEPTS('Client Advised In Writing'),
+  ],
+  service_charge_issue: [ENQUIRY, outcome('Record A Retention', 'retention_agreed', 'money'), REDUCE, ACCEPTS('Client Advised In Writing')],
+  ground_rent_issue: [ENQUIRY, outcome('Record A Deed Of Variation', 'deed_of_variation'), INDEMNITY, TELL_LENDER, LENDER_OK],
+  freeholder_info_outstanding: [
+    msg('seller_solicitor', 'Chase The Management Pack', "Ask the other side's solicitor when the landlord's or managing agent's pack (LPE1) will arrive, and who they have asked", "Please let us know when the management pack (LPE1) will be with us and whom you have asked for it."),
+    outcome('Upload The Management Pack', 'received'), deadline('Pack Expected By', 10),
+  ],
+  search_adverse_entry: [ENQUIRY, SPECIALIST, INDEMNITY, TELL_LENDER, REDUCE, ACCEPTS('Client Advised In Writing')],
+  search_delayed: [outcome('Upload The Search', 'received'), outcome('Record A No-Search Indemnity', 'indemnity_policy', 'shield'), deadline('Search Expected By', 10), UPDATE_CLIENT, DATES],
+  search_out_of_date: [outcome('Upload The Updated Search', 'received'), INDEMNITY, TELL_LENDER, LENDER_OK],
+  environmental_risk: [ENQUIRY, SPECIALIST, TELL_LENDER, REDUCE, ACCEPTS('Client Advised In Writing')],
+  third_party_encumbrance: [ENQUIRY, INDEMNITY, outcome('Record It Cleared Before Exchange', 'works_before_exchange', 'check'), TELL_LENDER, ACCEPTS('Client Advised In Writing')],
+  disclosure_concern: [ENQUIRY, EVIDENCE('Upload Their Answer'), REDUCE, refer('partner'), ACCEPTS('Client Advised In Writing')],
+  survey_further_investigation: [
+    msg('client', 'Ask The Client To Instruct The Specialist', 'Ask the client to instruct the specialist the surveyor recommends before exchange, and explain that if they exchange first they take the risk', 'Your surveyor recommends a specialist look at this before you commit. Please arrange it; if you exchange first, you take the risk of what they would have found.'),
+    SPECIALIST, outcome('Record A Retention', 'retention_agreed', 'money'), REDUCE, ACCEPTS('Client Accepts The Risk'),
+  ],
+  survey_report_outstanding: [
+    msg('client', 'Ask For The Survey', 'Ask the client for a copy of their survey, or whether they have decided not to have one', 'Please send us a copy of your survey when you have it, or let us know if you have decided not to have one.'),
+    outcome('Upload The Survey', 'received'), ACCEPTS('Going Ahead Without One'),
+  ],
+  contract_term: [
+    msg('seller_solicitor', 'Propose The Amendment', "Propose the amendment to the draft contract to the other side's solicitor and ask them to agree it", 'We propose the following amendment to the draft contract: {issue}. Please confirm it is agreed.'),
+    outcome('Record The Agreed Wording', 'deed_of_variation'), TELL_LENDER, ACCEPTS('Client Advised In Writing'),
+  ],
+  cgt_flag: [
+    msg('client', 'Advise On Capital Gains Tax', 'Tell the client the sale may give rise to capital gains tax, that a UK property return and payment are due within 60 days of completion, and that they should take advice from an accountant now', 'This sale may give rise to capital gains tax. A return and payment are due within 60 days of completion. Please speak to your accountant now.'),
+    ACCEPTS('Client Advised In Writing'),
+  ],
+  co_ownership_advice: [
+    msg('client', 'Advise On Joint Ownership', 'Explain joint tenants and tenants in common plainly, what happens on a death or a split, and that unequal contributions are best recorded in a declaration of trust', 'You can own the property as joint tenants (it passes to the survivor) or tenants in common (each share passes under a will). If you put in unequal amounts, we recommend a declaration of trust.'),
+    EVIDENCE('Upload The Declaration Of Trust'), ACCEPTS('Client Advised In Writing'),
+  ],
+  document_mismatch: [
+    msg('client', 'Ask The Client Which Is Right', 'Tell the client which documents disagree and on what, and ask which is right', 'Two of the documents disagree: {issue}. Please confirm which is right.'),
+    ENQUIRY, EVIDENCE('Upload The Corrected Document'),
+  ],
+  other: [ASK_OTHER_SIDE, UPDATE_CLIENT, refer('partner'), TAKE_OVER, NEGOTIATING],
   probate_issue: [
     outcome('Upload The Grant', 'grant_obtained'),
     msg('client', 'Ask The Executors For The Grant', 'Ask the personal representatives (through the client contact) when they expect the grant of probate or letters of administration, and to send a copy as soon as it issues', 'Please let us know when you expect the grant of probate (or letters of administration) to issue, and send us a copy as soon as you have it.'),
@@ -735,24 +836,25 @@ const STEPS_BY_KIND: Partial<Record<IssueKind, IssueStep[]>> = {
     msg('seller_solicitor', 'Ask The Other Side Where Their Client Stands', "Ask the other side's solicitor to confirm in writing whether their client is still proceeding, and if so on what timescale", 'We have been told your client may not be proceeding. Please confirm in writing whether they are still proceeding and, if so, on what timescale.'),
     msg('client', 'Update The Client', 'Tell the client what we have been told, that we are confirming it with the other side\'s solicitor today, and that we will come back to them as soon as we hear; ask them not to incur further costs (such as a survey or mortgage fees) until it is clear', 'We have been told the other side may not be proceeding. We are confirming this with their solicitor today and will come back to you as soon as we hear. Please do not incur any further costs until it is clear.'),
     msg('estate_agent', 'Tell The Agent', 'Tell the estate agent what we have been told and ask what they know of the other party\'s position', 'We have been told the other party may not be proceeding. Please let us know what you know of their position.'),
-    DATES, NEGOTIATING, FATAL,
+    outcome('They Are Proceeding', 'proceeding_confirmed', 'check'), DATES, NEGOTIATING, FATAL,
   ],
   mortgage_at_risk: [
     msg('lender', 'Ask The Lender Or Broker', 'Ask the lender or broker whether the mortgage offer stands, and if not what is needed to reinstate it', 'Please confirm whether the mortgage offer on this purchase still stands and, if not, what is needed.'),
     msg('client', 'Ask The Client What Has Changed', 'Ask the client what has changed with their mortgage and whether they have another lender or broker in mind', 'We understand there may be a problem with your mortgage. Please let us know what has changed and whether you are looking at another lender.'),
-    DATES, FATAL,
+    outcome('The Offer Stands', 'lender_confirmed', 'check'), outcome('Record A New Lender', 'new_lender', 'money'), DATES, FATAL,
   ],
   mortgage_offer_expiring: [
     msg('lender', 'Ask The Lender For An Extension', 'Ask the lender or broker to extend the mortgage offer beyond the expected completion date', 'The mortgage offer expires before the expected completion date. Please extend it.'),
     msg('client', 'Tell The Client', 'Tell the client the offer expires before the expected completion date and that we have asked the lender to extend it', 'Your mortgage offer expires before the expected completion date; we have asked the lender to extend it.'),
-    DATES,
+    outcome('Record The New Expiry', 'offer_extended', 'calendar'), outcome('Record A New Lender', 'new_lender', 'money'), DATES,
   ],
   mortgage_offer_expired: [
     msg('lender', 'Ask The Lender For An Extension', 'Ask the lender or broker to extend or reissue the expired mortgage offer', 'The mortgage offer has expired. Please extend or reissue it.'),
     msg('client', 'Tell The Client', 'Tell the client the mortgage offer has expired, that we cannot complete on it, and that we have asked the lender to extend or reissue it', 'Your mortgage offer has expired and we cannot complete on it; we have asked the lender to extend or reissue it.'),
-    DATES, FATAL,
+    outcome('Upload The Reissued Offer', 'received'), outcome('Record A New Lender', 'new_lender', 'money'), DATES, FATAL,
   ],
   mortgage_offer_expiry_unknown: [
+    outcome('Record The Expiry', 'expiry_recorded', 'calendar'),
     msg('lender', 'Ask The Lender For The Expiry', 'Ask the lender or broker for the date the mortgage offer expires', 'Please confirm the date the mortgage offer expires.'),
   ],
   seller_delay: [
@@ -765,7 +867,7 @@ const STEPS_BY_KIND: Partial<Record<IssueKind, IssueStep[]>> = {
   ],
   chain_dependency: [
     msg('seller_solicitor', 'Ask Where The Chain Stands', "Ask the other side's solicitor where the rest of the chain stands and when it will be ready to exchange", 'Please let us know where the rest of the chain stands and when it will be ready to exchange.'),
-    UPDATE_CLIENT, DATES, FATAL,
+    outcome('The Chain Is Ready', 'chain_ready', 'check'), UPDATE_CLIENT, DATES, FATAL,
   ],
   completion_failure: [
     msg('seller_solicitor', 'Agree A New Completion Time', "Tell the other side's solicitor completion did not happen as agreed and ask to agree a new completion time", 'Completion has not taken place as agreed. Please contact us to agree a new completion time.'),
@@ -773,18 +875,20 @@ const STEPS_BY_KIND: Partial<Record<IssueKind, IssueStep[]>> = {
     DATES, refer('colp', 'Report To The COLP'),
   ],
   redemption_statement_expired: [
-    msg('lender', 'Ask For A Fresh Statement', 'Ask the lender for a fresh redemption statement to the expected completion date', 'Please send a fresh redemption statement to the expected completion date.'),
+    { id: 'redemption', kind: 'action', label: 'Request A Fresh Statement', icon: 'doc', command: 'request_redemption_statement', log: 'Fresh redemption statement requested' },
+    outcome('Upload The Statement', 'received'),
   ],
   lender_funds_delayed: [
     msg('lender', 'Chase The Lender', 'Ask the lender when the mortgage advance will be released', 'Please confirm when the mortgage advance will be released.'),
-    UPDATE_CLIENT,
+    outcome('Record The Advance Received', 'received', 'money'), UPDATE_CLIENT, outcome('Completed Late', 'completed_late', 'check'),
   ],
   completion_funds_shortfall: [
     msg('client', 'Ask The Client For The Balance', 'Tell the client the amount still needed to complete and ask them to send it in cleared funds', 'We need the balance of funds to complete. Please send it in cleared funds.'),
+    outcome('Record The Money In', 'funds_in_place', 'money'), deadline('Funds Needed By', 3), refer('partner'),
   ],
 };
 /** Kinds whose own steps are the buyer's (an enquiry of the other side): acting for the seller, they are put to our client. */
-const ENQUIRED_OF_SELLER: ReadonlySet<IssueKind> = new Set<IssueKind>(['title_defect', 'missing_easement', 'restrictive_covenant', 'planning_permission_missing', 'building_regs_missing', 'title_restriction', 'enquiry_unanswered', 'enquiry_unsatisfactory', 'survey_defect', 'document_missing', 'third_party_consent', 'occupier_consent']);
+const ENQUIRED_OF_SELLER: ReadonlySet<IssueKind> = new Set<IssueKind>(['new_build_pack', 'shared_ownership_terms', 'right_to_buy_terms', 'flying_freehold', 'commonhold_terms', 'building_safety', 'boundary_discrepancy', 'missing_consent', 'lease_defect', 'short_lease', 'service_charge_issue', 'ground_rent_issue', 'search_adverse_entry', 'environmental_risk', 'third_party_encumbrance', 'disclosure_concern', 'contract_term', 'title_defect', 'missing_easement', 'restrictive_covenant', 'planning_permission_missing', 'building_regs_missing', 'title_restriction', 'enquiry_unanswered', 'enquiry_unsatisfactory', 'survey_defect', 'document_missing', 'third_party_consent', 'occupier_consent']);
 const CLIENT_ONLY: ReadonlySet<IssueGroup> = new Set(['funds_aml']);
 const NO_STEPS: ReadonlySet<IssueKind> = new Set(['file_locked', 'unknown_correspondent', 'send_failed', 'document_revised']);
 
@@ -796,7 +900,11 @@ const NO_STEPS: ReadonlySet<IssueKind> = new Set(['file_locked', 'unknown_corres
 export function issueSteps(kind: IssueKind, side: 'buyer' | 'seller' = 'buyer'): IssueStep[] {
   const own = STEPS_BY_KIND[kind];
   // Acting for the seller we answer enquiries, we do not raise them: put it to our client, tell the other side, and keep what settles it.
-  if (own && side === 'seller' && ENQUIRED_OF_SELLER.has(kind)) return [ASK_CLIENT, TELL_OTHER_SIDE, ...own.filter((x) => x.kind === 'outcome'), NEGOTIATING];
+  if (own && side === 'seller' && ENQUIRED_OF_SELLER.has(kind)) {
+    const settles = own.filter((x) => x.kind === 'outcome');
+    // Nothing to record but the answer itself: the answer is ours to give, by a date.
+    return [ASK_CLIENT, TELL_OTHER_SIDE, ...(settles.length ? settles : [deadline('Answer Due', 5)]), NEGOTIATING];
+  }
   if (own) return own;
   if (NO_STEPS.has(kind)) return [];
   const spec = ISSUE_KIND_SPEC[kind];
