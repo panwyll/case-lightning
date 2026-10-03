@@ -72,7 +72,8 @@ export function CaseQuickActions({ api, matterId, onChanged, lazy = false }: { a
   }, [open]);
   const cmd = async (body: Record<string, unknown>) => {
     const r = await api<{ events?: Array<{ type: string; payload?: { title?: string } }> }>(`/matters/${matterId}/engine`, { method: 'POST', body: JSON.stringify(body) });
-    setAdded((r?.events ?? []).filter((e) => e.type === 'issue_raised' && e.payload?.title).map((e) => e.payload!.title!));
+    const raised = (r?.events ?? []).filter((e) => e.type === 'issue_raised' && e.payload?.title).map((e) => e.payload!.title!);
+    setAdded(body.type === 'sar_made' ? ['On hold for the NCA: nothing exchanges and no money moves until it answers'] : raised);
     await load(); onChanged?.(); window.dispatchEvent(new Event('conveyi:counts')); return true;
   };
   const manual = !!state?.manualHandling?.required;

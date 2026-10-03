@@ -20,6 +20,7 @@
  *   actionOwner         — who is expected to do the thing (may be outside the firm).
  *   responsibilityOwner — the fee-earner accountable for it happening. Never null.
  */
+import { amlHoldActive } from './people';
 import { acknowledgementTitle, emailChip, noteTaskTitle, nothingToActTitle, replyTitle } from './notes';
 import { profileOf } from './transactions';
 import { DEFAULT_SLA, dueActions, type SlaConfig } from './sla';
@@ -521,6 +522,27 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       since: null, sinceWorkingDays: null, slaWorkingDays: null, chaseInWorkingDays: null,
       chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: null, chaseDue: false,
       ref: { type: 'client', id: a.ref.id },
+    });
+  }
+
+  // ── DO: a case held for the NCA's answer to a report (people.ts): on the list with its two answers. Never said to the client. ──
+  if (amlHoldActive(s, now) && s.amlHold) {
+    const until = (s.amlHold.status === 'refused' ? s.amlHold.moratoriumEnds : s.amlHold.noticeEnds)?.slice(0, 10) ?? null;
+    const untilText = until ? new Date(`${until}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'the notice period ends';
+    out.push({
+      ...base,
+      id: 'do:aml_hold',
+      bucket: 'do',
+      kind: s.amlHold.status === 'awaiting' ? 'aml_hold' : 'aml_hold:refused',
+      chip: 'On Hold',
+      what: s.amlHold.status === 'refused' ? `NCA refused consent: nothing exchanges and no money moves until ${untilText} (say nothing to the client)` : `NCA consent requested: nothing exchanges and no money moves until it answers, or ${untilText} (say nothing to the client)`,
+      unblocks: 'Exchange and any payment',
+      actionOwner: 'mlro',
+      urgency: 'critical',
+      workstream: null,
+      since: s.amlHold.since, sinceWorkingDays: wd(s.amlHold.since, now, cal), slaWorkingDays: null, chaseInWorkingDays: null,
+      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: until, chaseDue: false,
+      ref: { type: 'case', id: 'aml_hold' },
     });
   }
 

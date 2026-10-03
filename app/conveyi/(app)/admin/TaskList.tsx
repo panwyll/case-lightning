@@ -327,6 +327,10 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
                     : isDecision || isStep
                     ? <button type="button" data-tour="task-open" className={`tl-btn${isOpen ? ' on' : isStep ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : stepActionLabel(i.ref.id) ?? 'Open') : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : `${isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : stepActionLabel(i.ref.id) ?? 'Open') : 'Review'} `}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>
+                      {i.kind === 'aml_hold' && <>
+                        <BusyButton className="tl-btn go" busyLabel="Recording…" doneLabel="Recorded" onClick={async () => { try { await api(`/matters/${i.matterId}/engine`, { method: 'POST', body: JSON.stringify({ type: 'daml_response', decision: 'granted' }) }); void load(); window.dispatchEvent(new Event('conveyi:counts')); return true; } catch { return false; } }}>Consent Received</BusyButton>
+                        <BusyButton className="tl-btn" busyLabel="Recording…" doneLabel="Recorded" onClick={async () => { try { await api(`/matters/${i.matterId}/engine`, { method: 'POST', body: JSON.stringify({ type: 'daml_response', decision: 'refused' }) }); void load(); window.dispatchEvent(new Event('conveyi:counts')); return true; } catch { return false; } }}>Consent Refused</BusyButton>
+                      </>}
                       {i.kind === 'issue:file_locked' && i.documentId && (unlockingId === i.id
                         ? <span className="tl-pw"><PasswordInput autoFocus value={pwd} onChange={setPwd} onEnter={() => void unlock(i)} onEscape={() => setUnlockingId(null)} style={{ width: 190 }} /><BusyButton className="tl-btn go" disabled={!pwd} busyLabel="Unlocking…" doneLabel="Unlocked" onClick={() => unlock(i)}>Unlock</BusyButton></span>
                         : <button type="button" className="tl-btn go" onClick={() => { setUnlockingId(i.id); setPwd(''); }}>Enter Password</button>)}
@@ -335,10 +339,10 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
                         : i.kind === 'issue:send_failed:retry' && <BusyButton className="tl-btn go" busyLabel="Sending…" doneLabel="Sent" onClick={() => retry(i.matterId, i.ref.id)}>Try Again</BusyButton>}
                       {(isIssue && (i.kind === 'issue' || i.kind?.startsWith('issue:send_failed'))) || isDeadline
                         ? <button type="button" className={`tl-btn${isOpen ? ' on' : isIssue && i.kind === 'issue' ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : i.kind?.startsWith('issue:send_failed') ? 'Sent Another Way' : isIssue ? 'Resolve' : 'Review'} onClick={() => { setOpen(isOpen ? null : key); if (isOpen) void load(); }}>{isOpen ? null : i.kind?.startsWith('issue:send_failed') ? 'Sent Another Way ' : isIssue ? 'Resolve ' : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
-                        : isIssue ? null
+                        : isIssue || i.kind?.startsWith('aml_hold') ? null
                         : <a className="tl-btn" href={paths.matter(i.matterId)}>Open Case <ChevronRight size={14} /></a>}
                     </>}
-                  <button type="button" className="tl-x" title="Delete the task (restore it from Deleted)" onClick={() => void dismiss(i)}>Delete</button>
+                  {!i.kind?.startsWith('aml_hold') && <button type="button" className="tl-x" title="Delete the task (restore it from Deleted)" onClick={() => void dismiss(i)}>Delete</button>}
                   </span>
                 </div>
                 {isOpen && isDecision && (
