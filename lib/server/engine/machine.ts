@@ -903,6 +903,9 @@ const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', 
 
 // ───────────────────────────── decide ─────────────────────────────
 
+/** Commands a person records from Something Happened or Raise Issue. */
+const PERSON_RECORDED = new Set(['record_party_event', 'record_deal_event', 'record_property_event', 'record_completion_event', 'add_shape', 'record_isa', 'sdlt_amended', 'raise_issue']);
+
 export function decide(state: MatterState, cmd: Command, ctx: DecideContext): Decision {
   // A milestone recorded by hand must carry what its contract asks for (completion.ts).
   // `completion` is set (even empty) by the HTTP route — the path a person's click takes —
@@ -915,7 +918,10 @@ export function decide(state: MatterState, cmd: Command, ctx: DecideContext): De
       throw err;
     }
   }
-  const raw = decideCore(state, cmd, ctx);
+  const core = decideCore(state, cmd, ctx);
+  // What a person records (Something Happened, Raise Issue) raises issues in their name: theirs to drive on the Tasks list.
+  const actor = (cmd as { actor?: Actor }).actor;
+  const raw = actor && isUserActor(actor) && PERSON_RECORDED.has(cmd.type) ? core.map((e) => (e.type === 'issue_raised' ? { ...e, actor } : e)) : core;
   // The evidence rides on the event: the document as its source, the rest in the payload.
   const events = cmd.completion && raw.length
     ? [{ ...raw[0], sourceDocumentId: raw[0].sourceDocumentId ?? cmd.completion.documentId ?? null, payload: { ...(raw[0].payload as object), completion: cmd.completion } } as unknown as NewEvent, ...raw.slice(1)]

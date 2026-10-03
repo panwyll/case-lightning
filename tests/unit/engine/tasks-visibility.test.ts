@@ -25,7 +25,7 @@ test('a death recorded on a purchase puts both its issues on the Tasks list at o
   s = fold(s, { type: 'record_party_event', event: 'died', party: 'Asha Patel', note: 'Her son rang' });
   const tasks = matterWork(s, NOW).items.filter((i) => i.ref?.type === 'issue').map((i) => `${i.chip}: ${i.what}`);
   assert.ok(tasks.some((t) => /Our client Asha Patel has died/.test(t)), tasks.join(' | '));
-  assert.ok(tasks.some((t) => /^Chase The Lender: Tell the lender/.test(t)), tasks.join(' | '));
+  assert.ok(tasks.some((t) => /^Resolve Issue: Tell the lender/.test(t)), `recorded by a person: ours to drive: ${tasks.join(' | ')}`);
 });
 
 test('client names come from the matter record, once', () => {

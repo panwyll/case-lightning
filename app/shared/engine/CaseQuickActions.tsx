@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, Hand, Users } from '@/app/shared/icons';
+import { AlertTriangle, Check, ChevronLeft, Hand, Users } from '@/app/shared/icons';
 import { BusyButton } from './BusyButton';
 import { IssuesPanel } from './IssuesPanel';
 import type { Api, EngineState } from './types';
@@ -21,6 +21,11 @@ const CSS = `
 .cqa-tip{position:absolute;top:40px;z-index:60;background:#0f172a;color:#fff;font-size:12px;font-weight:600;line-height:1.3;padding:6px 9px;border-radius:7px;white-space:nowrap;pointer-events:none;box-shadow:0 8px 24px rgba(15,23,42,.25)}
 .cqa-pop{position:absolute;top:36px;right:0;z-index:50;width:320px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.14);padding:12px;display:grid;gap:8px;text-align:left}
 .cqa-pop b{font-size:13px;color:#0f172a}
+.cqa-groups{display:flex;flex-wrap:wrap;gap:6px}
+.cqa-g{border:1px solid #d9d0f7;background:#f7f5fd;color:#4c1d95;border-radius:99px;padding:5px 11px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.cqa-g:hover{background:#ece7fa}
+.cqa-pick{display:grid;gap:6px}
+.cqa-back{display:inline-flex;align-items:center;gap:2px;border:0;background:none;padding:0;color:#5A27E0;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;justify-self:start}
 .cqa-added{display:flex;gap:6px;align-items:flex-start;font-size:12.5px;color:#15803d;font-weight:600}
 .cqa-added svg{flex:none;margin-top:1px}
 .cqa-task{display:block;color:#0f172a;font-weight:500;margin-top:2px}
@@ -89,7 +94,51 @@ export function CaseQuickActions({ api, matterId, onChanged, lazy = false }: { a
   const isCe = what.startsWith('ce:');
   const side = state?.transactionType ? profileOf(state.transactionType).side : null;
   const shapeOptions = side ? CASE_SHAPES.map((id) => SHAPE_SPEC[id]).filter((sh) => sh.sides.includes(side) && !(state?.shapes ?? []).includes(sh.id)) : [];
-  // The warning before taking a case over, until the person says not to show it again (this browser only).
+
+  const completed = !!state?.completion?.confirmedAt;
+  // Something Happened, in groups, each showing only what can happen on this case now (a 90-item list helps nobody).
+  const [group, setGroup] = useState<string | null>(null);
+  const exchanged = !!state?.exchange?.exchangedAt;
+  const joint = (state?.partyNames?.length ?? 0) > 1 || (state?.parties ?? 1) > 1;
+  const buying = side === 'buyer';
+  const opt = (v: string, l: string, when = true): Array<[string, string]> => (when ? [[v, l]] : []);
+  const groups: Array<{ id: string; label: string; options: Array<[string, string]> }> = [
+    { id: 'client', label: 'Client', options: [
+      ...opt('uncontactable', 'Cannot Reach The Client', !completed), ...opt('instructing_for_client', 'Someone Else Is Giving Instructions', !completed),
+      ...opt('complaint', 'Client Complaint'), ...opt('fee_dispute', 'Client Disputes The Bill'), ...opt('third_party_payment', 'Client Asks Us To Pay Someone Else'),
+      ...opt('gift_withdrawn', 'A Gift Is Withdrawn', buying && !completed), ...opt('contributions_changed', 'What Each Buyer Puts In Has Changed', buying && joint && !completed),
+      ...opt('confidence', 'A Joint Client Told Us Something In Confidence', joint && !completed), ...opt('refuses_to_sign', 'A Co-Owner Will Not Sign', joint && !completed),
+      ...opt('withhold_from_lender', 'Client Asks Us Not To Tell The Lender', !!state?.hasLender && !completed),
+      ...opt('moving_firm', 'Client Moving To Another Firm', !completed), ...opt('ceasing_to_act', 'We Are Ceasing To Act'),
+    ] },
+    { id: 'death', label: 'Death Or Capacity', options: [
+      ...opt('capacity_doubt', 'Doubt About Capacity', !completed), ...opt('capacity_lost', 'Someone Has Lost Capacity', !completed),
+      ...opt('bankrupt', 'Someone Is Bankrupt', !completed), ...opt('company_insolvent', 'A Company Is In Liquidation Or Struck Off', !completed),
+      ...opt('died', 'Someone Has Died'), ...opt('donor_died', 'The Donor Of A Power Of Attorney Has Died', !completed), ...opt('gift_donor_died', 'Someone Giving Money Has Died', buying && !completed),
+    ] },
+    { id: 'aml', label: 'Money Laundering', options: [
+      ...opt('cdd_refused', 'Client Will Not Give ID Or Source Of Funds', !completed), ...opt('cash_paid_in', 'Client Paid Cash In', !completed), ...opt('sanctions_designated', 'Someone Is Now On A Sanctions List', !completed),
+      ...opt('sar', 'Report Made To The NCA (Hold)', !holdPending), ...opt('daml_granted', 'NCA Consent Received', holdPending), ...opt('daml_refused', 'NCA Consent Refused', holdPending),
+    ] },
+    { id: 'property', label: 'The Property', options: completed ? [] : [
+      ...opt('damaged', 'The Property Was Damaged'), ...opt('not_vacant', 'Vacant Possession Not Given', exchanged), ...opt('early_access', 'Early Access Before Completion'), ...opt('seller_stays', 'The Seller Stays On After Completion'),
+      ...opt('boundary_mismatch', 'The Boundary Differs From The Plan'), ...opt('adverse_possession', 'Part Of It Is Held Without Title', !exchanged), ...opt('deeds_lost', 'The Deeds Are Lost', !exchanged),
+      ...opt('land_charge_entry', 'The Land Charges Search Shows An Entry', !exchanged), ...opt('searches_declined', 'The Client Does Not Want Searches', buying && !exchanged),
+    ] },
+    { id: 'deal', label: 'The Deal', options: completed ? [] : exchanged ? [...opt('sitting_tenant', 'Tenant In The Property'), ...opt('nominee', 'Transfer To Someone Else Or An Extra Person', buying)] : [
+      ...opt('contract_race', 'Contract Race'), ...opt('lockout', 'Lock-Out Agreed'), ...opt('reservation', 'New-Build Reservation', buying), ...opt('renegotiated', 'Terms Renegotiated'),
+      ...opt('sitting_tenant', 'Tenant In The Property'), ...opt('nominee', 'Transfer To Someone Else Or An Extra Person', buying), ...opt('buy_out', 'Sale Replaced By A Buy-Out', side === 'seller'),
+      ...opt('incentive', 'Incentive From The Seller', buying), ...opt('deposit_direct', 'Deposit Paid Directly To The Seller Or Agent'),
+    ] },
+    { id: 'completion', label: 'Completion', options: !exchanged ? [] : [
+      ...opt('ce:completion_missed', 'Completion Did Not Happen Today', !completed), ...opt('ce:seller_unconfirmed', "Seller's Solicitor Has Not Confirmed Completion", !completed && buying),
+      ...opt('ce:payment_misdirected', 'Money Sent To The Wrong Account'), ...opt('ce:keys_not_released', 'Keys Not Released', completed && buying),
+      ...opt('ce:redemption_returned', 'Lender Returned The Redemption Money', completed), ...opt('ce:undertaking_chased', "Buyer's Solicitor Chasing Our Undertaking", completed && side === 'seller'),
+      ...opt('sdlt_amend', 'The SDLT Return Was Amended', completed && buying), ...opt('ce:contract_retention', 'Retention Held Under The Contract'),
+    ] },
+    { id: 'isa', label: 'ISA', options: completed ? [] : [...opt('isa:lifetime_isa', 'Lifetime ISA Opened On', (state?.shapes ?? []).includes('lifetime_isa')), ...opt('isa:help_to_buy_isa', 'Help To Buy ISA Closed On', (state?.shapes ?? []).includes('help_to_buy_isa'))] },
+    { id: 'shape', label: 'This Case Is Also', options: completed ? [] : shapeOptions.map((sh): [string, string] => [`shape:${sh.id}`, sh.label]) },
+  ].filter((g) => g.options.length > 0);  // The warning before taking a case over, until the person says not to show it again (this browser only).
   const WARN_KEY = 'conveyi:manual-warning-hidden';
   const [warnHidden, setWarnHidden] = useState(false);
   useEffect(() => { try { setWarnHidden(localStorage.getItem(WARN_KEY) === '1'); } catch { /* storage blocked */ } }, []);
@@ -97,7 +146,6 @@ export function CaseQuickActions({ api, matterId, onChanged, lazy = false }: { a
   const [dontShow, setDontShow] = useState(false);
   const hideWarning = (on: boolean) => { setDontShow(on); try { if (on) localStorage.setItem(WARN_KEY, '1'); else localStorage.removeItem(WARN_KEY); } catch { /* storage blocked */ } };
   const hover = (which: 'issue' | 'manual' | 'person') => ({ onMouseEnter: showTip(which), onFocus: showTip(which), onMouseLeave: () => setTip(null), onBlur: () => setTip(null) });
-  const completed = !!state?.completion?.confirmedAt;
   const done = completed || !!state?.abandoned;
 
   return (
@@ -105,57 +153,22 @@ export function CaseQuickActions({ api, matterId, onChanged, lazy = false }: { a
       <style>{WORK_CSS + CSS}</style>
       {!done && <button type="button" data-tour="case-raise-issue" className="cqa-b" aria-label="Raise Issue" {...hover('issue')} onClick={() => { setTip(null); setErr(null); setOpen(open === 'issue' ? null : 'issue'); }}><AlertTriangle size={16} /></button>}
       {!done && <button type="button" data-tour="case-take-over" className={`cqa-b${manual ? ' on' : ''}`} aria-label={manual ? 'Resume Automation' : 'Take Over Manually'} {...hover('manual')} onClick={() => { setTip(null); setErr(null); setReason(''); try { setWarnHidden(localStorage.getItem(WARN_KEY) === '1'); } catch { /* storage blocked */ } setOpen(open === 'manual' ? null : 'manual'); }}><Hand size={16} /></button>}
-      {!state?.abandoned && !state?.closedAt && <button type="button" data-tour="case-something-happened" className="cqa-b" aria-label="Something Happened" {...hover('person')} onClick={() => { setTip(null); setErr(null); setReason(''); setWho(state?.partyNames?.[0] ?? ''); setWhat(holdPending ? 'daml_granted' : ''); setAdded(null); setOpen(open === 'person' ? null : 'person'); }}><Users size={16} /></button>}
+      {!state?.abandoned && !state?.closedAt && <button type="button" data-tour="case-something-happened" className="cqa-b" aria-label="Something Happened" {...hover('person')} onClick={() => { setTip(null); setErr(null); setReason(''); setWho(state?.partyNames?.[0] ?? ''); setWhat(''); setGroup(holdPending ? 'aml' : null); setAdded(null); setOpen(open === 'person' ? null : 'person'); }}><Users size={16} /></button>}
       {tip && !open && <span className="cqa-tip" role="tooltip" style={tip.which === 'issue' ? { right: 76 } : tip.which === 'manual' ? { right: 38 } : { right: 0 }}>{TIPS[tip.which]}</span>}
       {open === 'person' && (
         <span className="cqa-pop" role="dialog" aria-label="Something Happened">
           <b>Something Happened</b>
-          <select value={what} onChange={(e) => { setWhat(e.target.value); setAdded(null); }} aria-label="What happened">
-            <option value="" disabled>Choose What Happened</option>
-            <optgroup label="People">{PARTY_EVENTS.filter(([v]) => !completed || AFTER_COMPLETION.has(v)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</optgroup>
-            {!completed && <optgroup label="The Property">
-              <option value="damaged">The Property Was Damaged</option>
-              <option value="not_vacant">Vacant Possession Not Given</option>
-              <option value="early_access">Early Access Before Completion</option>
-              <option value="seller_stays">The Seller Stays On After Completion</option>
-              <option value="boundary_mismatch">The Boundary On The Ground Differs From The Plan</option>
-              <option value="adverse_possession">Part Of It Is Held Without Title</option>
-              <option value="deeds_lost">The Deeds Are Lost</option>
-              <option value="land_charge_entry">The Land Charges Search Shows An Entry</option>
-              <option value="searches_declined">The Client Does Not Want Searches</option>
-            </optgroup>}
-            {!completed && <optgroup label="The Deal">
-              <option value="contract_race">Contract Race</option>
-              <option value="lockout">Lock-Out Agreed</option>
-              <option value="reservation">New-Build Reservation</option>
-              <option value="renegotiated">Terms Renegotiated</option>
-              <option value="sitting_tenant">Tenant In The Property</option>
-              <option value="nominee">Transfer To Someone Else Or An Extra Person</option>
-              <option value="buy_out">Sale Replaced By A Buy-Out</option>
-              <option value="incentive">Incentive From The Seller</option>
-              <option value="deposit_direct">Deposit Paid Directly To The Seller Or Agent</option>
-            </optgroup>}
-            {!!state?.exchange?.exchangedAt && <optgroup label="Completion">
-              {!completed && <option value="ce:completion_missed">Completion Did Not Happen Today</option>}
-              {!completed && <option value="ce:seller_unconfirmed">Seller's Solicitor Has Not Confirmed Completion</option>}
-              <option value="ce:payment_misdirected">Money Sent To The Wrong Account</option>
-              {completed && <option value="ce:keys_not_released">Keys Not Released</option>}
-              {completed && <option value="ce:redemption_returned">Lender Returned The Redemption Money</option>}
-              {completed && <option value="ce:undertaking_chased">Buyer's Solicitor Chasing Our Undertaking</option>}
-              {completed && <option value="sdlt_amend">The SDLT Return Was Amended</option>}
-              <option value="ce:contract_retention">Retention Held Under The Contract</option>
-            </optgroup>}
-            {!completed && (state?.shapes ?? []).some((x) => x === 'lifetime_isa' || x === 'help_to_buy_isa') && <optgroup label="ISA">
-              {(state?.shapes ?? []).includes('lifetime_isa') && <option value="isa:lifetime_isa">Lifetime ISA Opened On</option>}
-              {(state?.shapes ?? []).includes('help_to_buy_isa') && <option value="isa:help_to_buy_isa">Help To Buy ISA Closed On</option>}
-            </optgroup>}
-            {!completed && shapeOptions.length > 0 && <optgroup label="This Case Is Also">{shapeOptions.map((sh) => <option key={sh.id} value={`shape:${sh.id}`}>{sh.label}</option>)}</optgroup>}
-            <optgroup label="Compliance">
-              {!holdPending && <option value="sar">Report Made To The NCA (Hold)</option>}
-              {holdPending && <option value="daml_granted">NCA Consent Received</option>}
-              {holdPending && <option value="daml_refused">NCA Consent Refused</option>}
-            </optgroup>
-          </select>
+          {!group ? (
+            <span className="cqa-groups">{groups.map((g) => <button key={g.id} type="button" className="cqa-g" onClick={() => { setGroup(g.id); setWhat(g.options.length === 1 ? g.options[0][0] : ''); setAdded(null); }}>{g.label}</button>)}</span>
+          ) : (
+            <span className="cqa-pick">
+              <button type="button" className="cqa-back" aria-label="Back to the groups" onClick={() => { setGroup(null); setWhat(''); setAdded(null); }}><ChevronLeft size={16} />{groups.find((g) => g.id === group)?.label}</button>
+              <select value={what} onChange={(e) => { setWhat(e.target.value); setAdded(null); }} aria-label="What happened">
+                <option value="" disabled>Choose…</option>
+                {(groups.find((g) => g.id === group)?.options ?? []).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </span>
+          )}
           {isParty && (
             <>
               <input type="text" list="cqa-people" value={who} onChange={(e) => setWho(e.target.value)} placeholder="Who" aria-label="Who" />
@@ -169,18 +182,18 @@ export function CaseQuickActions({ api, matterId, onChanged, lazy = false }: { a
           {what === 'ce:contract_retention' && <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} aria-label="Release by" />}
           {(what === 'lockout' || what === 'reservation' || what === 'incentive') && <input type="text" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} placeholder={what === 'reservation' ? '£ Reservation fee' : what === 'incentive' ? '£ Value' : '£ Paid for it'} aria-label="Amount" />}
           {what === 'sar' && <span className="warn"><AlertTriangle size={16} /><span>No money moves and nothing exchanges for seven working days, or until consent. Say nothing to the client about it.</span></span>}
-          {!isShape && !isIsa && <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={isParty || isShape || isIsa || what === 'sar' || what.startsWith('daml') ? 'Note' : 'What happened'} aria-label="Note" />}
+          {!!what && !isShape && !isIsa && <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={isParty || isShape || isIsa || what === 'sar' || what.startsWith('daml') ? 'Note' : 'What happened'} aria-label="Note" />}
           {err && <span className="bad">{err}</span>}
           {added && <span className="cqa-added"><Check size={16} /><span>{added.length ? <>Added To Tasks:{added.map((a) => <span key={a} className="cqa-task">{a}</span>)}</> : 'Recorded on the case.'}</span></span>}
           <span className="f">
             <button type="button" className="ep-btn" style={{ margin: 0 }} onClick={() => setOpen(null)}>{added ? 'Close' : 'Cancel'}</button>
-            <BusyButton disabled={!what || (isIsa && !until) || (isParty && !who.trim()) || (!isParty && !isShape && !isIsa && !['sar', 'daml_granted', 'daml_refused'].includes(what) && !reason.trim())} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
+            {!!what && <BusyButton disabled={!what || (isIsa && !until) || (isParty && !who.trim()) || (!isParty && !isShape && !isIsa && !['sar', 'daml_granted', 'daml_refused'].includes(what) && !reason.trim())} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => {
               setErr(null);
               const deal = ['contract_race', 'lockout', 'reservation', 'renegotiated', 'sitting_tenant', 'nominee', 'buy_out', 'incentive', 'deposit_direct'].includes(what);
               const body = what === 'sdlt_amend' ? { type: 'sdlt_amended', newAmountPennies: Math.round(Number(fee.replace(/[£,\s]/g, '') || 0) * 100), reason: reason.trim() } : isCe ? { type: 'record_completion_event', event: what.slice(3), detail: reason.trim(), amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null, until: until || null } : isIsa ? { type: 'record_isa', isa: what.slice(4), ...(what === 'isa:lifetime_isa' ? { openedOn: until } : { closedOn: until }) } : isShape ? { type: 'add_shape', shape: what.slice(6) } : deal ? { type: 'record_deal_event', event: what, detail: reason.trim(), until: until || null, amountPennies: fee.trim() ? Math.round(Number(fee.replace(/[£,\s]/g, '')) * 100) : null } : ['damaged', 'not_vacant', 'early_access', 'seller_stays', 'boundary_mismatch', 'adverse_possession', 'deeds_lost', 'land_charge_entry', 'searches_declined'].includes(what) ? { type: 'record_property_event', event: what, detail: reason.trim() } : what === 'sar' ? { type: 'sar_made', note: reason.trim() || null } : what === 'daml_granted' || what === 'daml_refused' ? { type: 'daml_response', decision: what === 'daml_granted' ? 'granted' : 'refused', note: reason.trim() || null } : { type: 'record_party_event', event: what, party: who.trim(), hasAttorney: what === 'capacity_lost' ? lpa : null, note: reason.trim() || null };
               try { await cmd(body); setReason(''); return true; }
               catch (e: unknown) { setErr(e instanceof Error ? e.message : 'It did not save.'); return false; }
-            }}>Record</BusyButton>
+            }}>Record</BusyButton>}
           </span>
         </span>
       )}

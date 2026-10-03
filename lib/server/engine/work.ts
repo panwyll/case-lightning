@@ -20,6 +20,7 @@
  *   actionOwner         — who is expected to do the thing (may be outside the firm).
  *   responsibilityOwner — the fee-earner accountable for it happening. Never null.
  */
+import { isUserActor } from './types';
 import { amlHoldActive } from './people';
 import { acknowledgementTitle, emailChip, noteTaskTitle, nothingToActTitle, replyTitle } from './notes';
 import { profileOf } from './transactions';
@@ -386,7 +387,8 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
     if (spec.context) continue; // context: on the file and in status answers, not a task
     // The catalogue speaks from the buyer's side: on a sale, what the seller's side owes is ours to do.
     // Every open issue is a task: one that waits on someone else is ours to chase, never off the list (a hidden issue holding a gate is a silent stall).
-    const ours = spec.responsible === 'conveyancer' || spec.responsible === 'mlro' || (spec.responsible === 'seller_side' && acting === 'seller');
+    // What a person recorded (Something Happened, Raise Issue) is theirs to drive, whatever the kind's usual owner.
+    const ours = spec.responsible === 'conveyancer' || spec.responsible === 'mlro' || (spec.responsible === 'seller_side' && acting === 'seller') || isUserActor(i.raisedBy);
     if (i.enquiryIds.some((q) => s.enquiries[q] && s.enquiries[q].status !== 'cleared' && s.enquiries[q].status !== 'reviewed')) continue; // tracked by a live enquiry → it is a WAITING, not a DO
     out.push({
       ...base,
