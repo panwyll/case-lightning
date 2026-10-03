@@ -60,7 +60,7 @@ const CSS = `
 .is-menu hr{border:0;border-top:1px solid #f1f5f9;margin:3px 0}
 .is-form{grid-column:1 / -1;display:grid;gap:10px;background:#f8fafc;border:1px solid #e6e8ee;border-radius:10px;padding:12px;margin-top:6px}
 .is-form .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
-.is-form label{display:grid;gap:4px;font-size:11.5px;font-weight:700;color:#475569}
+.is-form label,.is-form .is-field{display:grid;gap:4px;font-size:11.5px;font-weight:700;color:#475569}
 .is-form label > select{justify-self:start}
 .is-form label.chk{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#0f172a}
 .is-form .ep-input{width:100%;box-sizing:border-box;margin:0}
@@ -326,12 +326,13 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
       case 'payer': return <label key={f.key}>{label}<select className="ep-input" value={v} onChange={(e) => set(e.target.value)}><option value="">Choose…</option>{PAYERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>;
       case 'confirm': return <label key={f.key} className="chk" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={v === 'yes'} onChange={(e) => set(e.target.checked ? 'yes' : '')} />{f.label}</label>;
       case 'document': return (
-        <label key={f.key} style={{ gridColumn: '1 / -1' }} onClick={(e) => e.preventDefault()}>{label}
+        // A div, not a label: a label would pass the drop zone's click on to its own controls (or swallow the file input's).
+        <div key={f.key} className="is-field" style={{ gridColumn: '1 / -1' }}>{label}
           <FilePick docs={docs} value={v} onChange={set} since={form ? (state.issues as Record<string, IssueRow>)[form.id]?.raisedAt ?? null : null} upload={async (file) => {
             const r = await uploadCaseFile<{ documentId: string }>(api, state.matterId, file, { role: 'evidence' });
             return { id: r.documentId, fileName: file.name, docType: null, webUrl: null, createdAt: new Date().toISOString() };
           }} />
-        </label>
+        </div>
       );
       default: return <label key={f.key}>{label}<input className="ep-input" value={v} onChange={(e) => set(e.target.value)} /></label>;
     }
