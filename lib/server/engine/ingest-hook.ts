@@ -4,10 +4,11 @@
  * adapters.ts so importing it from files.ts doesn't drag the whole engine wiring into
  * every call site's module graph until it is actually used.
  */
-import { engine, productionPorts } from './adapters';
+import { documentBytesLoader, engine, productionPorts } from './adapters';
 import { ingestDocument, type IngestReport } from './ingest';
 import { emitMatterEvent } from '../events';
 import { runAsAutomation } from '../db';
+import { indexIfUnindexed } from './file-index';
 
 export async function ingestFiledDocument(tenantId: string, matterId: string, documentId: string, known?: import('./ports').DocumentClassification | null): Promise<IngestReport | null> {
   const ports = productionPorts();
@@ -15,6 +16,8 @@ export async function ingestFiledDocument(tenantId: string, matterId: string, do
   if (!doc) return null;
   // Ingestion is automation: it may extract, flag and clear, never write a human-gated event.
   const report = await runAsAutomation(() => ingestDocument(engine(), ports, tenantId, matterId, doc, known));
+  // Read or not, every document on the case is searchable: one the engine did not read is indexed as it stands.
+  await indexIfUnindexed(doc, () => documentBytesLoader().load(doc)).catch(() => {});
   // An email's own words are read as a note by the caller (files.ts), which puts them before a person; a
   // "received but not filed" notice for them would only repeat it.
   if (report.action.kind === 'skip' && report.classification && report.classification.role !== 'other' && doc.docType !== 'EMAIL') {

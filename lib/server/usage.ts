@@ -37,6 +37,9 @@ export type UsageFeature =
   | 'SURVEY_ADVICE'
   | 'ENQUIRY_WRITE'
   | 'EMBED'
+  // Ask The File: the relevance pass over the found passages, and the written answer
+  | 'FILE_SEARCH'
+  | 'FILE_ASK'
   // The engine counted the case: its ID / AML check came back resolved (billing-reaction.ts)
   | 'ID_AML_RESOLVED'
   | 'COMPLETION_BACKSTOP';

@@ -112,12 +112,13 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   };
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
-  const [answer, setAnswer] = useState<{ q: string; facts: Array<{ id: string; documentId: string; fileName: string | null; key: string; value: string; page: number | null; quote: string | null; verified: boolean }>; passages: Array<{ documentId: string; fileName: string | null; page: number; text: string }> } | null>(null);
+  // Ask The File (file-ask.ts): the answer sentence by sentence, each citing its sources; a sentence the check could not support says so.
+  const [answer, setAnswer] = useState<{ q: string; answer?: Array<{ text: string; sources: string[]; supported: boolean; why: string | null }> | null; notOnFile?: boolean; sources?: Array<{ id: string; kind: 'fact' | 'passage'; documentId: string; fileName: string | null; page: number | null; label: string; text: string }> } | null>(null);
   const ask = async () => {
     const q = question.trim();
     if (!q) return;
     setAsking(true);
-    try { const r = await api<NonNullable<typeof answer>>(`/matters/${matterId}/engine/documents/ask?q=${encodeURIComponent(q)}`); setAnswer({ ...r, q }); } catch { setAnswer({ q, facts: [], passages: [] }); } finally { setAsking(false); }
+    try { const r = await api<NonNullable<typeof answer>>(`/matters/${matterId}/engine/documents/ask?q=${encodeURIComponent(q)}`); setAnswer({ ...r, q }); } catch { setAnswer({ q, answer: null, notOnFile: true, sources: [] }); } finally { setAsking(false); }
   };
   const loadTable = async (id: string) => {
     setOpenReview(id);
@@ -274,24 +275,32 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
               <input className="ep-input" style={{ flex: 1 }} placeholder="Where does the lease say who repairs the roof?" value={question} onChange={(e) => setQuestion(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void ask(); }} />
               <button className="ep-btn primary" style={{ margin: 0 }} disabled={asking || !question.trim()} onClick={() => void ask()}>Ask</button>
             </div>
-            {answer && (
-              <div style={{ marginTop: 8, fontSize: 12.5 }}>
-                {answer.facts.length === 0 && answer.passages.length === 0 && <div className="ep-note">Nothing on the file answers “{answer.q}”.</div>}
-                {answer.facts.map((f) => (
-                  <div key={f.id} className="ep-row" style={{ alignItems: 'flex-start' }}>
-                    <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0', minWidth: 44, textAlign: 'center' }}>Fact</span>
-                    <b style={{ minWidth: 160 }}>{f.key.replace(/^[a-z_]+\./, '').replace(/[._]/g, ' ')}</b>
-                    <span style={{ flex: 1 }}>{f.value}{f.quote ? <i style={{ color: '#64748b' }}> — “{f.quote.slice(0, 140)}{f.quote.length > 140 ? '…' : ''}”</i> : null}</span>
-                    <a href={`/api/v1/documents/${f.documentId}/raw#page=${f.page ?? 1}`} target="_blank" rel="noopener noreferrer" style={{ whiteSpace: 'nowrap' }}>{f.fileName ?? 'Document'}{f.page ? ` p.${f.page}` : ''}</a>
+            {asking && <div className="ep-note" style={{ marginTop: 8 }}>Reading the file…</div>}
+            {answer && !asking && (
+              <div style={{ marginTop: 10, fontSize: 13, display: 'grid', gap: 8 }}>
+                {(answer.notOnFile || !(answer.sources ?? []).length) && <div className="ep-note">The file does not say: nothing on it answers “{answer.q}”.</div>}
+                {answer.answer && answer.answer.length > 0 && (
+                  <div style={{ lineHeight: 1.55, color: '#0f172a' }}>
+                    {answer.answer.map((s, i) => (
+                      <span key={i} style={s.supported ? undefined : { background: '#fef2f2', color: '#991b1b' }} title={s.why ?? undefined}>
+                        {s.text}
+                        {s.sources.map((id) => <sup key={id} style={{ color: '#5A27E0', fontWeight: 700, marginLeft: 2 }}>[{id}]</sup>)}
+                        {!s.supported && <b style={{ fontSize: 11, marginLeft: 4 }}>(Not Supported: {s.why})</b>}{' '}
+                      </span>
+                    ))}
                   </div>
-                ))}
-                {answer.passages.map((p, i) => (
-                  <div key={i} className="ep-row" style={{ alignItems: 'flex-start' }}>
-                    <span className="ep-pill" style={{ background: '#f1f5f9', color: '#334155', minWidth: 44, textAlign: 'center' }}>Page</span>
-                    <span style={{ flex: 1, color: '#334155' }}>{p.text}</span>
-                    <a href={`/api/v1/documents/${p.documentId}/raw#page=${p.page}`} target="_blank" rel="noopener noreferrer" style={{ whiteSpace: 'nowrap' }}>{p.fileName ?? 'Document'} p.{p.page}</a>
+                )}
+                {(answer.sources ?? []).length > 0 && (
+                  <div>
+                    {(answer.sources ?? []).map((src) => (
+                      <div key={src.id} className="ep-row" style={{ alignItems: 'flex-start' }}>
+                        <span className="ep-pill" style={{ background: src.kind === 'fact' ? '#f3efff' : '#f1f5f9', color: src.kind === 'fact' ? '#5A27E0' : '#334155', minWidth: 34, textAlign: 'center' }}>{src.id}</span>
+                        <span style={{ flex: 1, color: '#334155', fontSize: 12.5 }}>{src.text.length > 260 ? `${src.text.slice(0, 260)}…` : src.text}</span>
+                        <a href={`/api/v1/documents/${src.documentId}/raw#page=${src.page ?? 1}`} target="_blank" rel="noopener noreferrer" style={{ whiteSpace: 'nowrap', fontSize: 12.5 }}>{src.label}</a>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             )}
           </div>

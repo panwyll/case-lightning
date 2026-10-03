@@ -850,7 +850,8 @@ export class ClaudeExtractor implements DocumentExtractor {
     // A Level 3 report runs to fifty pages: room for a long answer, and medium effort so it reads in a minute, not five.
     const { out, model, promptHash } = await this.run(doc, 'survey', SurveyExtractionSchema, PROMPTS.survey, 'Extract the recommendations from this report.', 'DOC_EXTRACT', { maxTokens: 48_000, effort: 'medium' });
     const facts: SurveyFacts = { surveyType: out.surveyType, surveyor: out.surveyor, summary: out.summary, recommendations: out.recommendations.map((r) => ({ code: r.code, text: r.text, furtherInvestigation: r.furtherInvestigation, specialist: r.specialist, severity: r.severity, rating: (r.rating === 1 || r.rating === 2 || r.rating === 3 ? r.rating : null) as 1 | 2 | 3 | null, locator: r.page ? { page: r.page } : undefined })), legalIssues: out.legalIssues.map((l) => ({ category: l.category, text: l.text, locator: l.page ? { page: l.page } : undefined })), risks: out.risks, marketValuePennies: out.marketValuePennies, reinstatementCostPennies: out.reinstatementCostPennies, confidence: out.scanQuality === 'unreadable' ? 0 : out.scanQuality === 'poor' ? Math.min(out.confidence, 0.6) : out.confidence };
-    await this.persist(doc, 'survey', facts, facts.confidence, { model, promptHash, contentHash });
+    // No page ledger is asked of a survey (it would crowd a long answer): its pages are recorded as unattested, its facts and pages still registered and indexed.
+    await this.persist(doc, 'survey', facts, facts.confidence, { model, promptHash, contentHash }, null);
     return facts;
   }
 
@@ -870,7 +871,7 @@ export class ClaudeExtractor implements DocumentExtractor {
     if (!out.isBankStatement) {
       const kind: EvidenceKind = out.documentKind === 'bank_statement' ? 'other' : out.documentKind;
       const payslip: PayslipFacts | null = kind === 'payslip' && out.payslip ? { ...out.payslip, confidence: out.confidence } : null;
-      await this.persist(doc, 'statement', { notStatement: true, kind, payslip }, out.confidence, { model, promptHash, contentHash });
+      await this.persist(doc, 'statement', { notStatement: true, kind, payslip }, out.confidence, { model, promptHash, contentHash }, null);
       return { kind, statement: null, payslip };
     }
     const facts: StatementFacts = {
@@ -885,7 +886,7 @@ export class ClaudeExtractor implements DocumentExtractor {
       salaryCredits: out.salaryCredits,
       confidence: out.scanQuality === 'poor' ? Math.min(out.confidence, 0.6) : out.confidence,
     };
-    await this.persist(doc, 'statement', facts, facts.confidence, { model, promptHash, contentHash });
+    await this.persist(doc, 'statement', facts, facts.confidence, { model, promptHash, contentHash }, null);
     return { kind: 'bank_statement', statement: facts, payslip: null };
   }
 

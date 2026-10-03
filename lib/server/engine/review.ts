@@ -12,7 +12,7 @@
  * Pure functions here; pdf.js is loaded lazily by `pdfPageTexts` so nothing else pays for it.
  */
 import { z } from 'zod/v4';
-import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, TitleFacts, LeaseFacts, ManagementPackFacts } from './types';
+import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, TitleFacts, LeaseFacts, ManagementPackFacts, PropertyFormsFacts, SupportingDocFacts, TitlePlanFacts, SurveyFacts } from './types';
 
 export type PageVerdict = 'facts' | 'nothing' | 'unreadable' | 'unattested';
 
@@ -50,7 +50,8 @@ export async function pdfPageTexts(bytes: Buffer): Promise<PageTexts> {
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
-    pages.push(content.items.map((it) => ('str' in it ? it.str : '')).join(' '));
+    // Lines kept as lines (pdf.js marks the end of each): a table row, a clause heading and a list stay apart in the index.
+    pages.push(content.items.map((it) => ('str' in it ? it.str + (it.hasEOL ? '\n' : ' ') : '')).join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' '));
   }
   await (doc as unknown as { cleanup?: () => Promise<void> }).cleanup?.().catch(() => {});
   return { pages, textLayer: pages.some((p) => p.replace(/\s+/g, '').length > 20) };
@@ -112,6 +113,16 @@ export function buildLedger(ledger: PageLedger | null | undefined, texts: PageTe
   return rows;
 }
 
+const snake = (k: string) => k.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+/** Which TA6 / TA7 section each answer sits in (PropertyFormsFacts.pages is kept per section). */
+const FORM_SECTION: Record<string, 'boundaries' | 'disputes' | 'notices' | 'alterations' | 'guarantees' | 'insurance' | 'environment' | 'rights' | 'occupiers' | 'services' | 'leasehold'> = {
+  disputes: 'disputes', notices: 'notices', alterations: 'alterations', alterationsConsented: 'alterations', alterationsDocumentsEnclosed: 'alterations', alterationsYear: 'alterations', listedOrConservation: 'alterations',
+  windowsReplacedSince2002: 'alterations', windowsCertificate: 'alterations', solarPanelsLeased: 'alterations', solarPanelsOwned: 'alterations',
+  guaranteesOutstandingClaims: 'guarantees', insuranceClaims: 'insurance', insuranceRefused: 'insurance',
+  flooded: 'environment', floodDetail: 'environment', japaneseKnotweed: 'environment', knotweedDetail: 'environment', knotweedCategory: 'environment', radonTestAboveAction: 'environment', epcRating: 'environment',
+  occupiers: 'occupiers', sharedAccessOrServices: 'rights', rightsOfWayOverProperty: 'rights', boundariesUnclear: 'boundaries',
+  septicTank: 'services', electricalWorkSince2005: 'services', electricalCertificate: 'services', gasApplianceNoRecord: 'services', privateWater: 'services', leaseholdArrearsOrDispute: 'leasehold',
+};
 const flagRows = (prefix: string, flags: Flag[] | undefined): Array<Omit<FactRow, 'verified' | 'note'>> =>
   (flags ?? []).map((f) => ({ key: `${prefix}:${f.code}`, value: f.description, page: f.locator?.page ?? null, quote: f.locator?.quote ?? null, confidence: null }));
 
@@ -227,13 +238,69 @@ export function flattenFacts(role: string, facts: unknown, raw?: unknown): Array
     plain('reply.enquiry', f.enquiryId);
     plain('reply.status', f.status);
     out.push(...flagRows('reply.issue', f.issues));
+  } else if (role === 'property_forms') {
+    const f = facts as PropertyFormsFacts;
+    list('forms.form', f.forms);
+    // Each answer on the page of its section, so a TA6 answer is checked and cited like a contract term.
+    const page = (k: string): number | null => (f.pages ?? {})[FORM_SECTION[k] ?? ('' as never)] ?? null;
+    for (const [k, v] of Object.entries(f.answers ?? {})) {
+      if (v === null || v === undefined || v === '') continue;
+      const value = typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v).trim();
+      if (value) out.push({ key: `forms.${snake(k)}`, value, page: page(k), quote: null, confidence: null });
+    }
+    (f.notKnown ?? []).forEach((n, i) => out.push({ key: `forms.not_known.${i + 1}`, value: n.question, page: n.page ?? null, quote: null, confidence: null }));
+    out.push(...flagRows('forms.disclosure', f.disclosures));
+  } else if (role === 'supporting_document') {
+    const f = facts as SupportingDocFacts;
+    plain('support.kind', f.kind);
+    plain('support.title', f.title);
+    plain('support.covers', f.covers);
+    plain('support.issued_by', f.issuedBy);
+    plain('support.reference', f.reference);
+    plain('support.date', f.date);
+    plain('support.expires', f.expires);
+    plain('support.limit_pennies', f.limitPennies);
+    plain('support.benefit_passes', f.benefitPasses == null ? null : f.benefitPasses ? 'yes' : 'no');
+    plain('support.property', f.property);
+    list('support.note', f.notes);
+  } else if (role === 'title_plan') {
+    const f = facts as TitlePlanFacts;
+    plain('plan.title_number', f.titleNumber === 'UNKNOWN' ? null : f.titleNumber);
+    plain('plan.edged_red', f.edgedRed);
+    f.otherMarkings.forEach((m, i) => plain(`plan.marking.${i + 1}`, `${m.marking}: ${m.marks}`));
+    plain('plan.reference', f.reference);
+    list('plan.note', f.notes);
+  } else if (role === 'survey') {
+    const f = facts as SurveyFacts;
+    plain('survey.type', f.surveyType);
+    plain('survey.surveyor', f.surveyor);
+    plain('survey.market_value_pennies', f.marketValuePennies);
+    plain('survey.reinstatement_cost_pennies', f.reinstatementCostPennies);
+    for (const rec of f.recommendations) out.push({ key: `survey.recommendation.${rec.code}`, value: rec.text, page: rec.locator?.page ?? null, quote: null, confidence: null });
+    (f.legalIssues ?? []).forEach((l, i) => out.push({ key: `survey.legal.${l.category}.${i + 1}`, value: l.text, page: l.locator?.page ?? null, quote: null, confidence: null }));
+    list('survey.risk', f.risks);
+  } else if (role === 'statement') {
+    // Who, which account and which period: enough to cite and cross-check; the transactions stay with proof of funds.
+    const f = facts as { notStatement?: boolean; accountHolder?: string | null; bankName?: string | null; accountLast4?: string | null; periodFrom?: string | null; periodTo?: string | null; openingBalancePennies?: number | null; closingBalancePennies?: number | null; kind?: string };
+    if (f.notStatement) plain('statement.document_kind', f.kind);
+    else {
+      plain('statement.account_holder', f.accountHolder);
+      plain('statement.bank', f.bankName);
+      plain('statement.account_last4', f.accountLast4);
+      plain('statement.period_from', f.periodFrom);
+      plain('statement.period_to', f.periodTo);
+      plain('statement.opening_balance_pennies', f.openingBalancePennies);
+      plain('statement.closing_balance_pennies', f.closingBalancePennies);
+    }
   }
   return out;
 }
 
 export function buildReview(input: { role: string; facts: unknown; ledger: PageLedger | null | undefined; texts: PageTexts; pageCountHint?: number | null; raw?: unknown }): DocumentReview {
   const pages = buildLedger(input.ledger, input.texts, input.pageCountHint);
-  const facts: FactRow[] = flattenFacts(input.role, input.facts, input.raw).map((f) => {
+  // The extractor's confidence in its reading, on every fact it took from it (a field without its own).
+  const docConfidence = typeof (input.facts as { confidence?: unknown } | null)?.confidence === 'number' ? (input.facts as { confidence: number }).confidence : null;
+  const facts: FactRow[] = flattenFacts(input.role, input.facts, input.raw).map((row) => ({ ...row, confidence: row.confidence ?? docConfidence })).map((f) => {
     if (!f.quote) return { ...f, verified: false, note: f.page == null ? 'stated without a quote' : 'no quote' };
     const v = verifyQuote(f.quote, f.page, input.texts);
     return { ...f, verified: v.verified, note: v.note };

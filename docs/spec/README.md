@@ -11,6 +11,7 @@ Short, testable rules. A change — core or a client's variant — is done when 
 | [decisions.md](decisions.md) | Reviews, alternatives, escalation |
 | [ui.md](ui.md) | Where things are shown and how buttons behave |
 | [variants.md](variants.md) | The core flow vs a firm's own rules and flows |
+| [documents.md](documents.md) | Reading documents, the fact register, search and Ask The File |
 
 ## The five non-negotiables
 

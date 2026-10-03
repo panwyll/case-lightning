@@ -8,7 +8,8 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { queryOne } from '../db';
 import { writeAudit } from '../audit';
-import { engine, productionPorts } from './adapters';
+import { documentBytesLoader, engine, PgDocumentRepository, productionPorts } from './adapters';
+import { indexIfUnindexed } from './file-index';
 import { ingestDocument, runAction, type IngestAction } from './ingest';
 import { stageBlockers } from './machine';
 import { pendingDecisions, SEARCH_TYPES } from './types';
@@ -49,7 +50,15 @@ export async function createUploadDocument(user: SessionUser, matterId: string, 
 }
 
 /** Route a filed upload into the engine; the answer the upload screens show. */
+/** File an upload into the engine, then make sure every page of it is searchable (read or not). */
 export async function routeUpload(user: SessionUser, matterId: string, documentId: string, body: UploadRouting) {
+  const result = await routeUploadToEngine(user, matterId, documentId, body);
+  const doc = await new PgDocumentRepository().get(user.tenantId, documentId).catch(() => null);
+  if (doc) await indexIfUnindexed(doc, () => documentBytesLoader().load(doc)).catch(() => {});
+  return result;
+}
+
+async function routeUploadToEngine(user: SessionUser, matterId: string, documentId: string, body: UploadRouting) {
   const svc = engine();
   const ports = productionPorts();
   let action: IngestAction;

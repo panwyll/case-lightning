@@ -313,7 +313,7 @@ export async function retrieveMatterContext(args: {
 }): Promise<Array<{ chunk_text: string; metadata: Record<string, unknown>; source_kind: string }>> {
   if (!embeddingsConfigured()) return [];
   const startedAt = Date.now();
-  const emb = await embed(args.queryText);
+  const emb = await embed(args.queryText, 'query');
   if (!emb) return [];
   await recordEmbedUsage({
     ctx: { tenantId: args.tenantId, matterId: args.matterId, feature: 'EMBED' },
@@ -325,9 +325,12 @@ export async function retrieveMatterContext(args: {
   });
   return query(
     `select chunk_text, metadata, source_kind
-     from kb_chunk
+     from kb_chunk k
      where tenant_id = $1
        and (matter_id = $2 ${args.includePlaybook ? 'or matter_id is null' : ''})
+       and embedding is not null
+       -- A replaced version of a document is not the file any more.
+       and (source_kind not in ('DOCUMENT', 'DOCUMENT_PAGE') or not exists (select 1 from document d where d.id = k.source_id and d.superseded_at is not null))
      order by embedding <=> $3::vector
      limit $4`,
     [args.tenantId, args.matterId, embeddingLiteral(emb.vector), args.limit ?? 12]
