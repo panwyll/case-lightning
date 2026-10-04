@@ -442,7 +442,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
         bucket: 'waiting',
         kind: 'linked_case',
         chip: `Linked ${rel === 'sale' ? 'Sale' : 'Purchase'}`,
-        what: `Exchanges together with our client's ${rel}`,
+        what: `Exchange together with our client's ${rel}`,
         unblocks: 'Exchange',
         actionOwner: 'linked_case',
         urgency: 'normal',

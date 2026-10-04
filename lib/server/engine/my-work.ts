@@ -8,6 +8,7 @@ import { engine } from './adapters';
 import { visibleMatterIds } from '../access';
 import { matterWork, type WorkItem } from './work';
 import { profileOf } from './transactions';
+import { whyNot } from './graph';
 import type { SessionUser } from '../types';
 import { after } from 'next/server';
 import { query } from '../db';
@@ -50,9 +51,11 @@ export async function workItems(user: SessionUser, opts: { all?: boolean; who?: 
     const other = byId.get(i.ref.id);
     if (!other) continue;
     const where = other.meta.propertyAddress ?? other.meta.matterRef ?? 'the linked case';
-    const ready = other.state.stage === 'pre_exchange' && other.state.exchange.conditionsMet;
-    const at = profileOf(other.state.transactionType).stageLabels[other.state.stage] ?? other.state.stage.replace(/_/g, ' ');
-    i.what = `${i.what} (${where}): ${ready ? 'it is ready to exchange' : `it is at ${at.toLowerCase()}`}`;
+    // What the other file still needs before the two can exchange, in its own words ("Report on title sent: not yet").
+    const left = other.state.exchange.exchangedAt ? [] : whyNot(other.state, 'exchange');
+    const rel = /sale/i.test(i.chip ?? '') ? 'sale' : 'purchase';
+    // Its own tasks are on this list: the count says how far off it is, not the rules' wording.
+    i.what = `Exchange together with our client's ${rel} of ${where.replace(/^The client's (current|new) home,\s*/i, '')}: ${other.state.exchange.exchangedAt ? 'that has exchanged' : left.length === 0 ? `the ${rel} is ready to exchange` : `the ${rel} has ${left.length === 1 ? 'one thing' : `${left.length} things`} to clear before it can exchange`}`;
   }
   // Tasks that come and go with the clock (a deadline, a chase falling due) are caught here.
   // At most every five minutes per firm (the badge reads this list too), after the response.
