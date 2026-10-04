@@ -948,7 +948,7 @@ export class EngineService {
         await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'deposit_issue', title: `Deposit up the chain: £${((f.depositPennies - saleDeposit) / 100).toLocaleString('en-GB')} more needed`, detail: `The sale's deposit (£${(saleDeposit / 100).toLocaleString('en-GB')}) can go towards this purchase's (£${(f.depositPennies / 100).toLocaleString('en-GB')}) under standard condition 2.2.5, if neither contract excludes it. The client tops up the difference before exchange; ask them for it now.`, gate: 'exchange', severity: 'warning' } as never).catch((err) => this.ports.log('deposit gap not raised', err));
       }
     }
-    await this.run(tenantId, matterId, { type: 'raise_contract_review', documentId: docId, summary, citations, terms: f ? { pricePennies: f.pricePennies, depositPennies: f.depositPennies, depositHolder: f.depositHolder, noticeToCompleteDays: f.noticeToCompleteDays, specialConditions: f.specialConditions, completionDate: f.completionDate, chattelsPricePennies: f.chattelsPricePennies, fixturesListPresent: f.fixturesListPresent } : null });
+    await this.run(tenantId, matterId, { type: 'raise_contract_review', documentId: docId, summary, citations, terms: f ? { ...f } : null });
   }
 
   /** A document behind the seller's forms (a policy, a permission, a certificate, a guarantee): read, and shown with the title. */

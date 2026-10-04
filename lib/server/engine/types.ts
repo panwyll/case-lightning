@@ -1112,7 +1112,7 @@ export interface Payloads {
   matter_abandoned: { reason: AbandonReason; detail?: string | null; stage: Stage };
   /** Target exchange / completion dates re-planned (offers expire, chains move). */
   contract_filed: { documentId: string; points: number };
-  contract_review_raised: { documentId: string; decision: DecisionSpec; /** The deposit the contract states, when read. */ depositPennies?: number | null };
+  contract_review_raised: { documentId: string; decision: DecisionSpec; /** The deposit the contract states, when read. */ depositPennies?: number | null; /** What the contract read says, for the review (missing on reviews raised before it was kept). */ terms?: Partial<ContractFacts> | null };
   contract_reviewed: { decisionEventId: string; option: DecisionOption; note: string | null };
   clients_updated: { partyNames: string[]; previous: string[]; role: IdPartyCheck['role']; reason?: string | null };
   target_dates_changed: { targetExchangeDate: string | null; targetCompletionDate: string | null; reason?: string | null; previous: { targetExchangeDate: string | null; targetCompletionDate: string | null } };

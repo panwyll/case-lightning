@@ -21,7 +21,7 @@ import { ISSUE_KIND_SPEC, RESOLUTION_FIELDS } from '../../../lib/server/engine/i
 import { SHAPE_SPEC } from '../../../lib/server/engine/shapes';
 import { profileOf } from '../../../lib/server/engine/transactions';
 import { taskContext } from '../../../lib/server/engine/context';
-import { openIssues, openWaits, pendingDecisions, surfacedDecisions, type MatterState, type TransactionType } from '../../../lib/server/engine/types';
+import { openIssues, openWaits, pendingDecisions, surfacedDecisions, type EngineEvent, type MatterState, type TransactionType } from '../../../lib/server/engine/types';
 import * as F from '../../../lib/server/engine/scenarios/fixtures';
 import { TENANT, MATTER, USER, SENIOR } from './helpers';
 import { contractClear } from './helpers';
@@ -68,7 +68,7 @@ function movers(s: MatterState, now: Date) {
 /** Every due step the drives meet, and a case it came up on (each must have its action on the Tasks list). */
 const DUE_KEYS = new Map<string, string>();
 const SNAKE = /\b[a-z]+(?:_[a-z0-9]+)+\b/;
-function lintTasks(s: MatterState, now: Date, c: Case): string[] {
+function lintTasks(s: MatterState, now: Date, c: Case, events: EngineEvent[] = []): string[] {
   const out: string[] = [];
   const prof = profileOf(c.tt);
   const items = matterWork(s, now, { matterRef: 'TEST-001', propertyAddress: '1 Test Street, Testtown TE1 1ST' }).items;
@@ -98,9 +98,14 @@ function lintTasks(s: MatterState, now: Date, c: Case): string[] {
     if (/: [^:]+: [A-Z][^:]+: /.test(i.what)) out.push(`"${i.what}" nests one title in another (${i.id})`);
   }
   if (process.env.TITLE_OUT) (require('node:fs') as typeof import('node:fs')).appendFileSync(process.env.TITLE_OUT, items.map((i) => `${c.tt}\t${i.bucket}\t${i.chip ?? ''}\t${i.what}\n`).join(''));
+  if (process.env.CONTEXT_OUT) for (const d of pendingDecisions(s).filter((x) => x.kind !== 'proposal')) {
+    const ctx = taskContext({ state: s, matter: { matterRef: 'TEST-001', propertyAddress: '1 Test Street, Testtown TE1 1ST' }, events, target: { kind: 'decision', decision: d } });
+    const w = items.find((i) => i.ref?.id === d.eventId);
+    (require('node:fs') as typeof import('node:fs')).appendFileSync(process.env.CONTEXT_OUT, JSON.stringify({ tt: c.tt, kind: d.kind, title: w?.what, chip: w?.chip, headline: ctx.headline, task: ctx.task.map((t) => `${t.k}: ${t.v}${t.warn ? ' (!)' : ''}`), checklist: ctx.checklist.map((k) => `[${k.status}] ${k.text}${k.evidence.length ? ' :: ' + k.evidence.map((e) => e.text).join(' / ') : ''}`), files: ctx.files.map((f) => `${f.title}: ${f.summary}`) }) + '\n');
+  }
   // An opened proposal's brief: what it does, in words, with nothing of the machinery showing.
   for (const d of pendingDecisions(s).filter((x) => x.kind === 'proposal')) {
-    const ctx = taskContext({ state: s, matter: { matterRef: 'TEST-001', propertyAddress: '1 Test Street, Testtown TE1 1ST' }, events: [], target: { kind: 'decision', decision: d } });
+    const ctx = taskContext({ state: s, matter: { matterRef: 'TEST-001', propertyAddress: '1 Test Street, Testtown TE1 1ST' }, events, target: { kind: 'decision', decision: d } });
     if (process.env.BRIEF_OUT) { const w = items.find((i) => i.ref?.id === d.eventId); (require('node:fs') as typeof import('node:fs')).appendFileSync(process.env.BRIEF_OUT, `${c.id}\t${w?.chip ?? ''}\t${w?.what ?? ''}\t${ctx.headline}\t${ctx.task.filter((t) => t.k !== 'Proposed').map((t) => `${t.k}: ${t.v}`).join(' | ')}\n`); }
     for (const x of [ctx.headline, ...ctx.task.map((t) => `${t.k}: ${t.v}`)]) {
       if (/undefined|\bnull\b|NaN|\[object|\{\{|\}\}/.test(x)) out.push(`brief "${x}" has a leftover`);
@@ -299,7 +304,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
     const s = await state();
     if (s.closedAt) return { closed: true, log, lint: [...lint] };
     const now = ports.now();
-    for (const l of lintTasks(s, now, c)) lint.add(`${s.stage}: ${l}`);
+    for (const l of lintTasks(s, now, c, await store.listEvents(TENANT, MATTER))) lint.add(`${s.stage}: ${l}`);
     for (const d of dueSteps(s, now)) DUE_KEYS.set(d.key, c.id);
     let did: string | null;
     try { did = await act(s, now); }

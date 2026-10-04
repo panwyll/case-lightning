@@ -15,7 +15,7 @@ import { whyNot, gate, type GateId } from './graph';
 import { ISSUE_KIND_SPEC } from './issues';
 import { leaseFlags } from './rules';
 import { proposalBrief, enquiryRef, enquiryName } from './proposal-words';
-import { openIssues, openWaits, pendingDecisions, type DecisionState, type EngineEvent, type Flag, type EnquiryReplyFacts, type IdCheckFacts, type LeaseFacts, type MatterState, type Payloads, type SearchType } from './types';
+import { openIssues, openWaits, pendingDecisions, type DecisionState, type EngineEvent, type Flag, type ContractFacts, type EnquiryReplyFacts, type IdCheckFacts, type LeaseFacts, type MatterState, type Payloads, type SearchType } from './types';
 
 export interface TaskContext {
   headline: string;
@@ -181,7 +181,37 @@ const KIND_PREFIX: Record<string, string> = { id_check: 'id_check', mortgage: 'm
 
 const flagWords = (flags: Array<{ code: string }>) => flags.map((f) => f.code.replace(/_/g, ' ').toLowerCase()).join(', ');
 
+/**
+ * The brief for a task. An escalation of a review opens as that review (its facts, checks and files), with who
+ * escalated it, when and why at the top: the person deciding sees what the handler saw, not the machinery's summary.
+ */
 export function taskContext(input: { state: MatterState; matter: MatterFacts; events: EngineEvent[]; target: ContextTarget; now?: Date; review?: SourceReview | null; statementFacts?: Array<{ documentId: string; fileName: string | null; facts: StatementFactsLite }> | null; crosschecks?: Array<{ check: string; label: string; status: string; message: string }> | null }): TaskContext {
+  const { state: s, events, target } = input;
+  if (target.kind === 'decision' && target.decision.kind === 'escalation') {
+    const origin = target.decision.origin;
+    const od = origin ? s.decisions[origin.decisionEventId] : null;
+    const iso = (t: string) => t.replace(/\b(\d{4}-\d{2}-\d{2})(?:T[\d:.]+Z?)?\b/g, (x) => day(x.slice(0, 10)) ?? x);
+    if (od) {
+      const orig = taskContextOf({ ...input, target: { kind: 'decision', decision: od } });
+      // Every escalation in the chain, oldest first: "Escalated on 3 Oct: the indemnity wording", "Escalated again on 4 Oct: …".
+      const chain = events.filter((e) => e.type === 'escalation_raised' && (e.payload as { origin?: { decisionEventId?: string } | null }).origin?.decisionEventId === od.eventId);
+      const notes = chain.map((e, i) => { const r = String((e.payload as { reason?: string }).reason ?? ''); const note = /^escalated (by handler|again)$/i.test(r) ? '' : r; return `${i ? 'Escalated again' : 'Escalated'} on ${day(e.createdAt)}${note ? `: “${note.replace(/\.$/, '')}”` : ' with no note'}`; });
+      const what = (DECISION_WORDS[od.kind] ?? od.kind.replace(/_/g, ' '));
+      return {
+        ...orig,
+        headline: `${notes.length ? notes[notes.length - 1] : 'Escalated'}. Decide on ${what} in their place. ${orig.headline}`,
+        task: [...(notes.length > 1 ? notes.slice(0, -1).map((n) => ({ k: 'Before', v: n })) : []), ...orig.task],
+      };
+    }
+    // A timer's escalation (a wait gone quiet, a deadline near): what it is about, in words.
+    const ctx = taskContextOf(input);
+    return { ...ctx, headline: iso(target.decision.summary.split('\n')[0]), task: ctx.task.map((t) => ({ ...t, v: iso(t.v) })).filter((t) => t.k !== 'Why'), checklist: [], checks: [] };
+  }
+  return taskContextOf(input);
+}
+const DECISION_WORDS: Record<string, string> = { id_check: 'the ID / AML result', search: 'the search result', enquiry: 'the reply to our enquiry', mortgage: 'the mortgage offer', title: 'the title', report_on_title: 'the report on title', contract: 'the contract', requisition: "HM Land Registry's requisition", proof_of_funds: 'the source of funds', management_pack: 'the management pack', auto_clear: "the rules' clear", bank_details: 'the bank details', note_actions: 'what to record from the note' };
+
+function taskContextOf(input: { state: MatterState; matter: MatterFacts; events: EngineEvent[]; target: ContextTarget; now?: Date; review?: SourceReview | null; statementFacts?: Array<{ documentId: string; fileName: string | null; facts: StatementFactsLite }> | null; crosschecks?: Array<{ check: string; label: string; status: string; message: string }> | null }): TaskContext {
   const { state: s, matter: m, events, target } = input;
   const now = input.now ?? new Date();
   const p = profileOf(s.transactionType);
@@ -287,9 +317,10 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       addT('Lender', f?.lender ?? m.lender ?? null);
       addT('Advance', gbp(f?.amountPennies));
       if (f?.expiryDate) {
-        const te = s.targetExchangeDate ?? m.exchangeTargetDate;
+        const te = p.hasExchange ? s.targetExchangeDate ?? m.exchangeTargetDate : s.targetCompletionDate ?? m.completionTargetDate;
+        const milestone = p.hasExchange ? 'target exchange' : 'target completion';
         const dte = te ? Math.ceil((new Date(f.expiryDate).getTime() - new Date(te).getTime()) / 86_400_000) : null;
-        addT('Expires', `${withClock(f.expiryDate, now)}${dte != null ? dte < 0 ? ` · ${-dte} days BEFORE target exchange` : ` · ${dte} days after target exchange` : ''}`, dte != null && dte < 28);
+        addT('Expires', `${withClock(f.expiryDate, now)}${dte != null ? dte < 0 ? ` · ${-dte} days BEFORE ${milestone}` : ` · ${dte} days after ${milestone}` : ''}`, dte != null && dte < 28);
       }
       addT('Conditions flagged', flagLines(flags) || (f?.conditions ?? []).filter((c) => !c.standard).map((c) => c.text).join(' · ') || null, flags.some((x) => x.severity === 'high'));
       addT('Standard conditions cleared', f ? String(f.conditions.filter((c) => c.standard).length) : null);
@@ -305,7 +336,8 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     } else if (d.kind === 'title') {
       const f = s.title.facts;
       const flags = raised?.type === 'title_flagged' ? (rp as Payloads['title_flagged']).flags : [];
-      headline = f ? `Title ${f.titleNumber} (${f.tenure}): ${n(f.restrictions.length, 'restriction')}, ${n(f.charges.length, 'charge')}, ${n(f.covenants.length, 'covenant')}.` : 'The official copies need reading by hand.';
+      const entries = [f?.restrictions.length ? n(f.restrictions.length, 'restriction') : null, f?.charges.length ? n(f.charges.length, 'charge') : null, f?.covenants.length ? n(f.covenants.length, 'covenant') : null].filter(Boolean) as string[];
+      headline = f ? `Title ${f.titleNumber} (${f.tenure}): ${entries.length ? entries.join(', ') : 'no restrictions, charges or covenants'}.` : 'The official copies need reading by hand.';
       addT('Title', f ? `${f.titleNumber} · ${f.tenure}${p.tenure !== 'any' && f.tenure !== 'unknown' && f.tenure !== p.tenure ? ` (instruction says ${p.tenure})` : ''}` : null, !!f && p.tenure !== 'any' && f.tenure !== 'unknown' && f.tenure !== p.tenure);
       addT('Restrictions', f?.restrictions.length ? f.restrictions.map((r) => r.text).join(' · ') : null);
       addT('Charges', f?.charges.length ? f.charges.map((r) => r.text).join(' · ') : null);
@@ -323,9 +355,10 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
         addT('Clients', (p.side === 'seller' ? m.sellerNames : m.buyerNames)?.filter(Boolean).join(' & ') || null);
         checks = ['It is an identity document', "The name is the client's", 'In date', 'Readable, with the photo and the whole document visible', 'Seen against the original, or an electronic check run'];
       } else {
-      headline = `ID and AML check: ${f?.outcome ?? 'referred'}${f?.flags?.length ? ` — ${flagWords(f.flags)}` : ''}${f?.provider ? ` (${f.provider})` : ''}.`;
+      const idWho = d.subject && s.partyChecks[d.subject] ? s.partyChecks[d.subject].label : (p.side === 'seller' ? m.sellerNames : m.buyerNames)?.filter(Boolean).join(' & ') || 'the client';
+      headline = `The ID / AML check on ${idWho} ${f?.outcome === 'clear' ? 'came back clear' : f?.outcome === 'fail' ? 'failed' : 'was referred: the provider could not verify them on its own'}${f?.flags?.length ? `. ${f.flags.map((x) => (x.description || x.code.replace(/_/g, ' ')).replace(/\.$/, '')).join('; ')}` : ''}.`;
       addT('Provider', f?.provider ?? null);
-      addT('Outcome', f?.outcome ?? null, f?.outcome === 'fail');
+      addT('Outcome', f?.outcome ? ({ clear: 'Clear', refer: 'Referred', fail: 'Failed' } as Record<string, string>)[f.outcome] : null, f?.outcome === 'fail');
       addT('Points', flagLines(f?.flags), (f?.flags ?? []).some((x) => x.severity === 'high'));
       addT('Clients', (p.side === 'seller' ? m.sellerNames : m.buyerNames)?.filter(Boolean).join(' & ') || null);
       checks = KIND_CHECKS.id_check;
@@ -346,7 +379,8 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     } else if (d.kind === 'bank_details') {
       const b = s.bankDetails[subjectKey ?? ''] ?? Object.values(s.bankDetails).find((x) => x.decisionEventId === d.eventId) ?? null;
       const prev = b?.supersedesId ? s.bankDetails[b.supersedesId] : null;
-      headline = b ? `${prev ? 'Change of' : 'New'} bank details for ${pretty(b.payeeKind)}${b.payeeRef ? ` (${b.payeeRef})` : ''}, arrived by ${pretty(b.sourceChannel)}.` : d.summary.split('\n')[0].slice(0, 200);
+      const payee = ({ lender: 'the lender', seller_solicitor: "the seller's solicitor", buyer_solicitor: "the buyer's solicitor", client: 'the client', estate_agent: 'the estate agent', hmrc: 'HMRC', firm_client_account: 'our client account' } as Record<string, string>)[b?.payeeKind ?? ''] ?? pretty(b?.payeeKind ?? 'the payee').toLowerCase();
+      headline = b ? `${prev ? 'Changed' : 'New'} bank details for ${payee}${b.payeeRef ? ` (${b.payeeRef})` : ''}, sent by ${pretty(b.sourceChannel).toLowerCase()}. Confirm them by phone on a number you find yourself before any money goes.` : d.summary.split('\n')[0].slice(0, 200);
       addT('Payee', b ? `${pretty(b.payeeKind)}${b.payeeRef ? ` · ${b.payeeRef}` : ''}` : null);
       addT('New details', b ? mask(b.details) : null);
       addT('Previously on file', prev ? `${mask(prev.details)} · ${prev.verifiedAt ? `verified ${day(prev.verifiedAt)}` : prev.status === 'superseded' ? 'never verified' : prev.status}` : b ? 'nothing for this payee' : null, !!prev);
@@ -361,7 +395,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
         ...(s.hasLender && s.mortgage.status !== 'cleared' && s.mortgage.status !== 'reviewed' ? ['mortgage offer'] : []),
         ...(s.requireProofOfFunds && !s.proofOfFunds.approvedAt ? ['proof of funds'] : []),
       ];
-      headline = `Draft report on title from ${n(basedOn.length, 'source document')}${pendingBits.length ? `; ${n(pendingBits.length, 'thing')} still open that it cannot yet cover` : ''}.`;
+      headline = `Draft report on title${basedOn.length ? `, written from ${n(basedOn.length, 'document')} on the file` : ''}. ${pendingBits.length ? `${n(pendingBits.length, 'thing')} still to come, so it reports ${pendingBits.length === 1 ? 'it' : 'them'} as outstanding.` : 'Everything it reports on is in.'} Read it as the client will before it goes.`;
       addT('Drafted', raised ? day(raised.createdAt) : null);
       addT('Based on', basedOn.length ? `${basedOn.length} documents (title, searches, replies filed to date)` : null);
       addT('Still open, not in the report', pendingBits.length ? pendingBits.join(', ') : null, pendingBits.length > 0);
@@ -384,6 +418,20 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
         : `${clearedWhat(ac?.subFlow, ac?.subject ?? d.subject ?? '')} passed the rules. Confirm it, or send it back.`;
       addT('Found', plainReasons(ac?.reasons).join('; ') || null);
       checks = KIND_CHECKS.auto_clear;
+    } else if (d.kind === 'contract' && contractTermsOf(events, d)) {
+      const cr = contractReview(s, contractTermsOf(events, d)!, m, d.sourceDocumentId ?? null);
+      headline = cr.headline;
+      for (const [k, v, warn] of cr.rows) addT(k, v, warn);
+      checks = [];
+    } else if (d.kind === 'management_pack' && s.managementPack.facts) {
+      const f = s.managementPack.facts;
+      const bits = [f.serviceChargePenniesPa != null ? `service charge ${gbp(f.serviceChargePenniesPa)} a year` : null, f.groundRentPenniesPa != null ? `ground rent ${gbp(f.groundRentPenniesPa)}` : null, f.reserveFundPennies != null ? `reserve fund ${gbp(f.reserveFundPennies)}` : null, f.arrearsPennies ? `arrears ${gbp(f.arrearsPennies)}` : null].filter(Boolean);
+      const asks = [f.majorWorksPlanned || f.majorWorks ? `major works: ${f.majorWorks ?? 'planned'}` : null, f.section20Notice ? 'a section 20 consultation is under way' : null, f.consentsRequired ? `on sale the landlord requires: ${f.consentsRequired.replace(/^./, (c) => c.toLowerCase())}` : null, f.disputes ? `disputes: ${f.disputes}` : null].filter(Boolean);
+      headline = `Management pack${f.managingAgent ? ` from ${f.managingAgent}` : ''}: ${bits.join(', ') || 'the figures could not be read'}.${asks.length ? ` ${String(asks.join('; ')).replace(/^./, (c) => c.toUpperCase())}.` : ''}`;
+      addT('Requested', day(s.managementPack.requestedAt));
+      addT('Landlord', f.landlord ?? null);
+      addT('Service charge', f.serviceChargePenniesPa != null ? `${gbp(f.serviceChargePenniesPa)} a year${f.serviceChargePeriod ? ` (${f.serviceChargePeriod})` : ''}${f.serviceChargeProportion ? ` · share ${f.serviceChargeProportion}` : ''}` : null);
+      checks = KIND_CHECKS.management_pack;
     } else if (d.kind === 'escalation') {
       const es = raised?.type === 'escalation_raised' ? (rp as Record<string, unknown>) : {};
       headline = `Escalated: ${pretty(String(es.waitKey ?? es.kind ?? d.subject ?? ''))}${es.subject ? ` ${es.subject}` : ''}.`;
@@ -457,7 +505,9 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
   const built = target.kind === 'decision' ? buildChecklist(s, target.decision, checks, raised, { crosschecks: input.crosschecks ?? [], review: input.review ?? null, statementFacts: input.statementFacts ?? [], matter: m, now }) : { checklist: checks.map((text) => ({ text, status: 'open' as const, evidence: [] })), narrative: [], files: [], passed: [], submitted: null };
   if (target.kind === 'decision' && target.decision.kind === 'proof_of_funds' && s.proofOfFunds.facts) {
     const f = s.proofOfFunds.facts;
-    headline = f.sources.map((src) => `${gbp(src.amountPennies)} ${src.kind === 'gift' && src.gift ? `gift from ${src.gift.donorName}${src.gift.donorRelationship ? ` (${src.gift.donorRelationship})` : ''}` : pretty(src.kind).toLowerCase()}`).join(', ');
+    const srcs = f.sources.map((src) => `${gbp(src.amountPennies)} ${src.kind === 'gift' && src.gift ? `gift from ${src.gift.donorName}${src.gift.donorRelationship ? ` (${src.gift.donorRelationship})` : ''}` : pretty(src.kind).toLowerCase()}`);
+    const list = srcs.length <= 1 ? srcs.join('') : `${srcs.slice(0, -1).join(', ')} and ${srcs[srcs.length - 1]}`;
+    headline = `${f.declarantName ?? 'The client'} declares ${list || 'no sources'}${f.requiredPennies != null ? ` against ${gbp(f.requiredPennies)} needed` : ''}${f.shortfallPennies ? `: ${gbp(f.shortfallPennies)} short` : f.requiredPennies != null ? ', which covers it' : ''}.`;
   }
   return { headline, task, facts, checks, checklist: built.checklist, narrative: built.narrative, files: built.files ?? [], passed: built.passed ?? [], submitted: built.submitted ?? null, history, related: related.slice(0, 6), unblocks };
 }
@@ -510,12 +560,17 @@ function sourceFile(s: MatterState, d: DecisionState, raised: EngineEvent | null
   const docId = d.sourceDocumentId ?? null;
   if (!docId) return [];
   const rp = (raised?.payload ?? {}) as Record<string, unknown>;
-  const label = d.citations.find((c) => c.documentId === docId && !/^[A-Z0-9_]+ — /.test(c.label))?.label ?? null;
-  const KIND_TITLE: Record<string, string> = { enquiry: 'Reply', mortgage: 'Mortgage offer', title: 'Official copies', id_check: 'ID / AML result', management_pack: 'Management pack', bank_details: 'Bank details', proposal: 'Proposal', auto_clear: 'Document', escalation: 'Escalation', requisition: 'Requisition' };
+  const label = d.citations.find((c) => c.documentId === docId && !/^[A-Z0-9_:]+ — /.test(c.label))?.label?.replace(/ — full document$/, '') ?? null;
+  const KIND_TITLE: Record<string, string> = { enquiry: 'Reply', mortgage: 'Mortgage offer', title: 'Official copies', contract: 'Draft contract', id_check: 'ID / AML result', management_pack: 'Management pack', bank_details: 'Bank details', proposal: 'Proposal', auto_clear: 'Document', escalation: 'Escalation', requisition: 'Requisition' };
   const title = label ?? KIND_TITLE[d.kind] ?? pretty(d.kind);
   const flagLines = (flags: Flag[] | undefined): Ev[] => (flags ?? []).map((fl) => ({ text: seeTail(fl.description), documentId: docId, page: fl.locator?.page ?? null, quote: fl.locator?.quote ?? fl.locator?.section ?? null, warn: fl.severity === 'high' || fl.severity === 'medium' }));
   const rv = x.review;
   const read = rv?.pages ? `${rv.read} of ${n(rv.pages, 'page')} read` : null;
+  if (d.kind === 'contract' && rp.terms) {
+    const t = rp.terms as Partial<ContractFacts>;
+    const g = (p: number | null | undefined) => (p != null ? `£${(p / 100).toLocaleString('en-GB')}` : null);
+    return [{ documentId: docId, title: 'Draft contract', summary: [t.pricePennies != null ? `price ${g(t.pricePennies)}` : null, t.depositPennies != null ? `deposit ${g(t.depositPennies)}` : null, t.specialConditions?.length ? n(t.specialConditions.length, 'special condition') : 'standard conditions only', read].filter(Boolean).join(', '), lines: [], warn: !!t.flags?.length }];
+  }
   if (d.kind === 'search') {
     const st = d.subject?.replace(/^search:/, '') ?? (rp.searchType as string | undefined) ?? '';
     const sr = s.searches[st] ?? null;
@@ -539,7 +594,7 @@ function sourceFile(s: MatterState, d: DecisionState, raised: EngineEvent | null
   if (d.kind === 'title') {
     const f = s.title.facts;
     const entries = (label: string, arr: { code: string; text: string; locator?: { page?: number; quote?: string } }[]): Ev[] => arr.map((e) => ({ text: `${label}: ${e.text}`, documentId: docId, page: e.locator?.page ?? null, quote: e.locator?.quote ?? e.text.slice(0, 80), warn: true }));
-    const cards: TaskContext['files'] = [{ documentId: docId, title, summary: [f ? `Official copy of ${f.titleNumber}, ${f.tenure}${f.unregistered ? ', UNREGISTERED' : ''}` : 'Official copy', f ? `${n(f.restrictions.length, 'restriction')}, ${n(f.charges.length, 'charge')}, ${n(f.covenants.length, 'covenant')}` : null, read].filter(Boolean).join(', '), lines: f ? [...entries('Restriction', f.restrictions), ...entries('Charge', f.charges), ...entries('Covenant', f.covenants)] : [], warn: !!f && (f.restrictions.length + f.charges.length + f.covenants.length) > 0 }];
+    const cards: TaskContext['files'] = [{ documentId: docId, title, summary: [f ? `Official copy of ${f.titleNumber}, ${f.tenure}${f.unregistered ? ', UNREGISTERED' : ''}` : 'Official copy', f ? ([f.restrictions.length ? n(f.restrictions.length, 'restriction') : null, f.charges.length ? n(f.charges.length, 'charge') : null, f.covenants.length ? n(f.covenants.length, 'covenant') : null].filter(Boolean).join(', ') || 'no restrictions, charges or covenants') : null, read].filter(Boolean).join(', '), lines: f ? [...entries('Restriction', f.restrictions), ...entries('Charge', f.charges), ...entries('Covenant', f.covenants)] : [], warn: !!f && (f.restrictions.length + f.charges.length + f.covenants.length) > 0 }];
     const l = f?.lease;
     const lfl = l ? leaseFlags(l, s.lenderRequirements?.minUnexpiredYears ?? null) : [];
     if (l && s.title.leaseDocumentId) cards.push({ documentId: s.title.leaseDocumentId, title: 'Lease', summary: [l.unexpiredYears != null ? `${n(l.unexpiredYears, 'year')} unexpired` : null, l.groundRentPenniesPa != null ? `ground rent ${gbp(l.groundRentPenniesPa)} a year` : null, l.groundRentReview ?? null, lfl.length ? n(lfl.length, 'point') : null].filter(Boolean).join(', '), lines: flagLines(lfl), warn: lfl.length > 0 });
@@ -551,7 +606,7 @@ function sourceFile(s: MatterState, d: DecisionState, raised: EngineEvent | null
   }
   if (d.kind === 'id_check') {
     const f = rp.facts as IdCheckFacts | undefined;
-    return [{ documentId: docId, title, summary: [`${f?.provider ?? 'ID / AML'} result: ${f?.outcome ?? 'referred'}`, f?.flags?.length ? n(f.flags.length, 'flag') : null].filter(Boolean).join(', '), lines: flagLines(f?.flags), warn: f?.outcome !== 'clear' }];
+    return [{ documentId: docId, title, summary: [`${f?.provider ?? 'ID / AML'} result: ${f?.outcome === 'clear' ? 'clear' : f?.outcome === 'fail' ? 'failed' : 'referred'}`, f?.flags?.length ? n(f.flags.length, 'flag') : null].filter(Boolean).join(', '), lines: flagLines(f?.flags), warn: f?.outcome !== 'clear' }];
   }
   if (d.kind === 'management_pack') {
     const f = s.managementPack.facts;
@@ -574,6 +629,7 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
   const mismatch = (check: string) => x.crosschecks.find((c) => c.check === check && c.status === 'mismatch');
 
   if (d.kind === 'proof_of_funds' && s.proofOfFunds.facts) return pofChecklist(s, docId, x);
+  if (d.kind === 'contract' && raised?.type === 'contract_review_raised' && (rp.terms as Partial<ContractFacts> | null | undefined)) return contractReview(s, rp.terms as Partial<ContractFacts>, x.matter, docId).checklist;
 
   if (d.kind === 'search') {
     const st = d.subject?.replace(/^search:/, '') ?? (rp.searchType as string | undefined) ?? '';
@@ -601,7 +657,8 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
     const f = ((rp.facts as typeof s.mortgage.facts | undefined) ?? s.mortgage.facts) ?? null;
     const special = f?.conditions.filter((c) => !c.standard) ?? [];
     const standard = f?.conditions.filter((c) => c.standard).length ?? 0;
-    const target = s.targetExchangeDate ?? x.matter.exchangeTargetDate ?? null;
+    const hasEx = profileOf(s.transactionType).hasExchange;
+    const target = hasEx ? s.targetExchangeDate ?? x.matter.exchangeTargetDate ?? null : s.targetCompletionDate ?? x.matter.completionTargetDate ?? null;
     const daysLeft = f?.expiryDate ? Math.round((Date.parse(f.expiryDate) - x.now.getTime()) / 86_400_000) : null;
     const tight = f?.expiryDate && target ? Date.parse(f.expiryDate) < Date.parse(target) + 14 * 86_400_000 : false;
     const names = mismatch('buyer_names');
@@ -611,13 +668,13 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
         ...(standard ? [{ text: `${n(standard, 'standard condition')} the rules cleared (insurance, occupancy, the usual)` }] : []),
       ]),
       item('The offer is valid to completion', daysLeft != null && daysLeft < 0 ? 'flag' : tight ? 'flag' : daysLeft == null ? 'open' : 'ok', [
-        { text: f?.expiryDate ? `Expires ${day(f.expiryDate)}${daysLeft != null ? ` (${daysLeft < 0 ? `${-daysLeft} days ago` : `in ${daysLeft} days`})` : ''}${target ? ` · target exchange ${day(target)}` : ' · no target exchange date set'}` : 'No expiry date read from the offer', warn: !!tight || (daysLeft != null && daysLeft < 0), documentId: docId },
+        { text: f?.expiryDate ? `Expires ${day(f.expiryDate)}${daysLeft != null ? ` (${daysLeft < 0 ? `${-daysLeft} days ago` : `in ${daysLeft} days`})` : ''}${target ? ` · target ${hasEx ? 'exchange' : 'completion'} ${day(target)}` : ` · no target ${hasEx ? 'exchange' : 'completion'} date set`}` : 'No expiry date read from the offer', warn: !!tight || (daysLeft != null && daysLeft < 0), documentId: docId },
       ]),
       item('Advance, lender and names match the instruction', names ? 'flag' : 'ok', [
         { text: `${f?.lender ?? 'Lender not read from the offer'}${f?.amountPennies ? ` · advance ${gbp(f.amountPennies)}` : ''}${s.purchasePricePennies && f?.amountPennies ? ` · ${pct(f.amountPennies, s.purchasePricePennies)} of the price` : ''}`, documentId: docId },
         ...(names ? [{ text: names.message, warn: true }] : []),
       ]),
-      item('Valuation against the price; any down-valuation', 'open'),
+      item(hasEx ? 'Valuation against the price; any down-valuation' : 'Valuation and loan to value: does the advance pay off the old mortgage', 'open'),
     ];
   }
   if (d.kind === 'title' && leaseSourced(s, d)) {
@@ -709,8 +766,8 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
     const party = d.subject && s.partyChecks[d.subject] ? s.partyChecks[d.subject].label : x.matter.buyerNames?.[0] ?? x.matter.sellerNames?.[0] ?? 'the client';
     const names = mismatch('buyer_names') ?? mismatch('seller_names');
     return [
-      item(`The check on ${party} came back ${f?.outcome ?? 'referred'}`, f?.outcome === 'clear' ? 'ok' : 'flag', [
-        { text: `${f?.provider ?? 'provider'} · ${f?.outcome ?? 'referred'}`, documentId: docId },
+      item(`The check on ${party} ${f?.outcome === 'clear' ? 'came back clear' : f?.outcome === 'fail' ? 'failed' : 'was referred'}`, f?.outcome === 'clear' ? 'ok' : 'flag', [
+        { text: `${f?.provider && !/^sandbox|^mock/i.test(f.provider) ? `${f.provider}: ` : ''}${f?.outcome === 'clear' ? 'verified' : f?.outcome === 'fail' ? 'not verified' : 'not verified electronically; needs documents or a manual check'}`, documentId: docId },
         ...(f?.flags ?? []).map((fl) => flagEv(fl)),
       ]),
       item('Names on the ID match the instruction, the contract and the title exactly', names ? 'flag' : x.crosschecks.some((c) => /names/.test(c.check) && c.status === 'match') ? 'ok' : 'open', names ? [{ text: names.message, warn: true }] : []),
@@ -964,3 +1021,57 @@ function leaseRows(l: LeaseFacts, flags: Flag[]): Array<[string, string | null, 
     ['Landlord', [l.landlord, l.managementCompany ? `managed by ${l.managementCompany}` : null].filter(Boolean).join(' · ') || null, false],
   ];
 }
+
+/** The draft contract as a conveyancer checks it: each term against the instruction, the title and the client. */
+function contractReview(s: MatterState, t: Partial<ContractFacts>, m: MatterFacts, docId: string | null): { headline: string; rows: Array<[string, string | null, boolean]>; checklist: ChecklistItem[] } {
+  const p = profileOf(s.transactionType);
+  const gbp0 = (x: number) => `£${(x / 100).toLocaleString('en-GB', { maximumFractionDigits: 2 })}`;
+  const norm = (n: string) => n.toLowerCase().replace(/\b(mr|mrs|ms|miss|dr)\.?\s+/g, '').replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim();
+  const sameNames = (a: string[] = [], b: string[] = []) => a.length > 0 && b.length > 0 && a.length === b.length && a.every((x) => b.some((y) => norm(y) === norm(x)));
+  const price = t.pricePennies ?? null;
+  const agreed = s.purchasePricePennies ?? (m.purchasePrice != null ? Math.round(Number(String(m.purchasePrice).replace(/[^0-9.]/g, '')) * 100) : null);
+  const priceOff = price != null && agreed != null && agreed > 0 && price !== agreed;
+  const dep = t.depositPennies ?? null;
+  const depPct = dep != null && price ? Math.round((dep / price) * 1000) / 10 : null;
+  const proprietors = s.title.facts?.proprietors ?? [];
+  const ourClients = (p.side === 'seller' ? m.sellerNames : m.buyerNames)?.filter(Boolean) as string[] | undefined;
+  const sellersVsTitle = proprietors.length && t.sellers?.length ? sameNames(t.sellers, proprietors) : null;
+  const buyersVsInstr = m.buyerNames?.length && t.buyers?.length ? sameNames(t.buyers, m.buyerNames.filter(Boolean) as string[]) : null;
+  const titleNo = s.title.facts?.titleNumber && s.title.facts.titleNumber !== 'UNKNOWN' ? s.title.facts.titleNumber : null;
+  const titleOff = !!t.titleNumber && !!titleNo && t.titleNumber !== titleNo;
+  const specials = t.specialConditions ?? [];
+  const flags = t.flags ?? [];
+  const ev = (text: string, warn = false, loc?: { page?: number; quote?: string } | null): Ev => ({ text, documentId: docId, page: loc?.page ?? null, quote: loc?.quote ?? null, warn });
+  const headline = `Draft contract${price != null ? ` at ${gbp0(price)}` : ''}${dep != null ? `, deposit ${gbp0(dep)}${depPct != null ? ` (${depPct}%)` : ''}${t.depositHolder ? ` held as ${t.depositHolder}` : ''}` : ''}${specials.length ? `, ${specials.length} special condition${specials.length === 1 ? '' : 's'}` : ''}.${priceOff ? ` The price is not the ${gbp0(agreed!)} agreed.` : ''}${sellersVsTitle === false ? ' The sellers are not the registered owners.' : ''}${titleOff ? ` The title number is not the one on the official copies.` : ''}`;
+  const rows: Array<[string, string | null, boolean]> = [
+    ['Price', price != null ? `${gbp0(price)}${agreed != null && agreed > 0 ? (priceOff ? ` (agreed ${gbp0(agreed)})` : ' (as agreed)') : ''}` : 'Not read', priceOff || price == null],
+    ['Deposit', dep != null ? `${gbp0(dep)}${depPct != null ? ` · ${depPct}%` : ''}${t.depositHolder ? ` · held as ${t.depositHolder}` : ''}` : 'Not read', dep == null],
+    ['Completion date', t.completionDate ? day(t.completionDate) : 'Left blank, to agree at exchange', false],
+    ['Sellers', t.sellers?.length ? `${t.sellers.join(' & ')}${proprietors.length ? (sellersVsTitle ? ' (the registered owners)' : ` (register: ${proprietors.join(' & ')})`) : ''}` : null, sellersVsTitle === false],
+    ['Buyers', t.buyers?.length ? `${t.buyers.join(' & ')}${buyersVsInstr === false ? ` (instruction: ${(m.buyerNames ?? []).join(' & ')})` : ''}` : null, buyersVsInstr === false],
+    ['Title', t.titleNumber ? `${t.titleNumber}${titleOff ? ` (official copies: ${titleNo})` : ''}` : null, titleOff],
+    ['Conditions', t.incorporatedConditions ?? null, false],
+    ['Notice to complete', t.noticeToCompleteDays != null ? `${t.noticeToCompleteDays} working days` : null, false],
+    ['Contents', [t.chattelsPricePennies ? `${gbp0(t.chattelsPricePennies)} for contents` : null, t.fixturesListPresent === false ? 'no fixtures and fittings form attached' : t.fixturesListPresent ? 'TA10 attached' : null].filter(Boolean).join(' · ') || null, t.fixturesListPresent === false],
+    ['Signed', t.signedBy?.length ? `by ${t.signedBy.join(' & ')}` : t.signedBy ? 'Unsigned' : null, false],
+  ];
+  const checklist: ChecklistItem[] = [
+    item('The price is the one agreed', price == null ? 'open' : priceOff ? 'flag' : agreed ? 'ok' : 'open', [ev(price != null ? `Contract: ${gbp0(price)}` : 'The price was not read'), ...(agreed ? [ev(`Agreed: ${gbp0(agreed)}`, priceOff)] : [])]),
+    item('The parties: sellers are the registered owners, buyers are our clients as named on their ID', sellersVsTitle === false || buyersVsInstr === false ? 'flag' : sellersVsTitle ? 'ok' : 'open', [
+      ...(t.sellers?.length ? [ev(`Sellers: ${t.sellers.join(' & ')}`)] : []), ...(proprietors.length ? [ev(`Registered owners: ${proprietors.join(' & ')}`, sellersVsTitle === false)] : []),
+      ...(t.buyers?.length ? [ev(`Buyers: ${t.buyers.join(' & ')}`)] : []), ...(ourClients?.length ? [ev(`Our ${ourClients.length === 1 ? 'client' : 'clients'}: ${ourClients.join(' & ')}`, buyersVsInstr === false)] : []),
+    ]),
+    item('The deposit: how much, and who holds it', dep == null ? 'open' : depPct != null && depPct < 10 ? 'flag' : 'ok', dep != null ? [ev(`${gbp0(dep)}${depPct != null ? ` (${depPct}% of the price)` : ''}${t.depositHolder ? `, held as ${t.depositHolder}` : ''}`, depPct != null && depPct < 10), ...(depPct != null && depPct < 10 ? [ev('Less than 10%: the seller can still claim the full 10% if the buyer defaults (SCS 6.1), so the client must know', true)] : [])] : [ev('The deposit was not read')]),
+    item('The title number is the one on the official copies', titleOff ? 'flag' : t.titleNumber && titleNo ? 'ok' : 'open', [ev(`Contract: ${t.titleNumber ?? 'not stated'}`), ...(titleNo ? [ev(`Official copies: ${titleNo}`, titleOff)] : [])]),
+    item(specials.length ? `Special conditions: what each one does to the client (${specials.length})` : 'Special conditions', specials.length ? 'flag' : 'ok', specials.length ? specials.map((c) => ev(`${c.code}: ${c.text}`, false, c.locator)) : [ev('None beyond the standard conditions')]),
+    ...(t.indemnities?.length ? [item('Indemnities the client gives or takes', 'flag', t.indemnities.map((c) => ev(c.text, false, c.locator)))] : []),
+    ...(flags.length ? [item('What the rules found', 'flag', flags.map((f) => ev(f.description, f.severity === 'high' || f.severity === 'medium', f.locator)))] : []),
+    item('Completion date and notice to complete', 'open', [ev(t.completionDate ? `Completion ${day(t.completionDate)}` : 'Completion date blank: agreed at exchange'), ...(t.noticeToCompleteDays != null ? [ev(`Notice to complete: ${t.noticeToCompleteDays} working days`)] : [])]),
+  ];
+  return { headline, rows, checklist };
+}
+
+const contractTermsOf = (events: EngineEvent[], d: DecisionState): Partial<ContractFacts> | null => {
+  const e = events.find((x) => x.id === d.eventId && x.type === 'contract_review_raised');
+  return ((e?.payload as { terms?: Partial<ContractFacts> | null } | undefined)?.terms) ?? null;
+};

@@ -160,7 +160,7 @@ type CommandBody =
   // ── eventualities (docs/engine-eventualities.md) ──
   | { type: 'abandon_matter'; actor: Actor; reason: AbandonReason; detail?: string | null }
   | { type: 'record_contract_filed'; documentId: string; points: number }
-  | { type: 'raise_contract_review'; documentId: string; summary: string; citations?: Citation[]; /** What the contract read says, for the rules (findings.ts). */ terms?: (Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'> & { completionDate?: string | null; chattelsPricePennies?: number | null; fixturesListPresent?: boolean | null }) | null }
+  | { type: 'raise_contract_review'; documentId: string; summary: string; citations?: Citation[]; /** What the contract read says, for the rules (findings.ts). */ terms?: (Pick<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions'> & Partial<Omit<ContractFacts, 'pricePennies' | 'depositPennies' | 'depositHolder' | 'noticeToCompleteDays' | 'specialConditions' | 'completionDate' | 'chattelsPricePennies' | 'fixturesListPresent'>> & { completionDate?: string | null; chattelsPricePennies?: number | null; fixturesListPresent?: boolean | null }) | null }
   | { type: 'set_clients'; actor: Actor; names: string[]; reason?: string | null }
   | { type: 'set_target_dates'; actor: Actor; targetExchangeDate?: string | null; targetCompletionDate?: string | null; reason?: string | null }
   | { type: 'change_completion_date'; actor: Actor; completionDate: string; reason?: string | null }
@@ -1751,7 +1751,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (Object.values(s.decisions).some((d) => d.kind === 'contract' && d.status === 'pending' && d.sourceDocumentId === cmd.documentId)) reject('This contract is already waiting for approval.');
       const decision: DecisionSpec = { kind: 'contract', summary: cmd.summary, sourceDocumentId: cmd.documentId, citations: cmd.citations ?? [], options: OPTIONS_FOR.contract, summarisedBy: 'template' };
       return [
-        { type: 'contract_review_raised', actor: SYSTEM, payload: { documentId: cmd.documentId, decision, depositPennies: cmd.terms?.depositPennies ?? null }, sourceDocumentId: cmd.documentId },
+        { type: 'contract_review_raised', actor: SYSTEM, payload: { documentId: cmd.documentId, decision, depositPennies: cmd.terms?.depositPennies ?? null, terms: (cmd.terms ?? null) as Partial<ContractFacts> | null }, sourceDocumentId: cmd.documentId },
         ...(cmd.terms ? findingEvents(s, contractFindings(cmd.terms, findingContext(s)), cmd.documentId) : []),
         // An amended contract is not the one the client authorised (exchange.md 4.2).
         ...(s.readiness.contractDocumentId && s.readiness.contractDocumentId !== cmd.documentId ? lapseExchangeAuthority(s, 'the contract was amended') : []),

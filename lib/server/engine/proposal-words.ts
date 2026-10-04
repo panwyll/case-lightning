@@ -189,7 +189,7 @@ export function proposalBrief(input: { s: MatterState; action: string; detail: R
       const k = items.length || 1;
       const issue = typeof det.issueId === 'string' ? s.issues[det.issueId] : null;
       return {
-        headline: `${k} ${k === 1 ? 'enquiry' : 'enquiries'} to ${who}${named ? ` (${named})` : ''}${str(det.about) ? ` arising from ${det.about}` : ''}. Read each one and edit or remove any before they go; the replies come back to the case to review.`,
+        headline: `${k} ${k === 1 ? 'enquiry' : 'enquiries'} to ${who}${named ? ` (${named})` : ''}${str(det.about) ? ` arising from ${det.about}` : ''}. ${k === 1 ? 'Read it and edit it before it goes' : 'Read each one and edit or remove any before they go'}; the replies come back to the case to review.`,
         rows: [toRow, ['Enquiries', items.length ? items.slice(0, 6).map((x, i) => `${i + 1}. ${x.length > 90 ? `${x.slice(0, 88)}…` : x}`).join('\n') : null], ['From the issue', issue ? issue.title : null]],
       };
     }
