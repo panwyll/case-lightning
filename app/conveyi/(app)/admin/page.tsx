@@ -979,7 +979,7 @@ function AdminPageInner() {
                     <button style={btnPrimary} disabled={billingBusy} onClick={subscribe}>{billingBusy ? <Spin>Working…</Spin> : 'Add Payment Details'}</button>
                   )}
                   {billing.hasSubscription && (
-                    <button style={btnGhost} disabled={billingBusy} onClick={manageSubscription}>Manage subscription</button>
+                    <button style={btnGhost} disabled={billingBusy} onClick={manageSubscription}>Manage Subscription</button>
                   )}
                 </div>
               </div>

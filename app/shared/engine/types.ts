@@ -342,7 +342,7 @@ export interface NoteRow {
   refusedActions: Array<{ id: string; reason: string }>;
 }
 
-export interface CompletionField { key: string; label: string; kind: 'money' | 'date' | 'datetime' | 'text' | 'names' | 'flag'; required?: boolean; hint?: string }
+export interface CompletionField { key: string; label: string; kind: 'money' | 'date' | 'datetime' | 'text' | 'names' | 'flag' | 'number' | 'choice'; required?: boolean; hint?: string; options?: Array<{ value: string; label: string }> }
 export interface CompletionContract { label: string; documentRoles?: string[]; documentLabel?: string; documentRequired?: boolean; fields?: CompletionField[]; checklist?: Array<{ key: string; label: string }>; party?: { label: string }; effect: string }
 export interface DocumentReviewSummary { pages: number; read: number; withFacts: number; unreadable: number; unattested: number; complete: boolean; facts: number; verified: number }
 export interface CaseDocument {

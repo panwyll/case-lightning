@@ -27,6 +27,7 @@ import { ClientDecisionSheet } from './ClientDecisionSheet';
 import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, Mail, User, X, Zap } from '@/app/shared/icons';
 import { CASE_SHAPES, SHAPE_SPEC } from '@/lib/server/engine/shapes';
 import { noReturnReason } from '@/lib/server/engine/sdlt-facts';
+import { QuickForm, type QuickFormSpec } from './QuickForm';
 
 /**
  * The work panel for one matter: where it is on this transaction type's spine, what
@@ -360,7 +361,7 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
     <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id} data-unfed={unfed ? '' : undefined}>
       {!lane.plain && (LANE_EMAILS[lane.id]?.exit?.length ?? 0) > 0 && <div className="ep-exit">{LANE_EMAILS[lane.id]!.exit!.map((e) => <EmailMark key={e.template} e={e} size={12} />)}</div>}
       <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
-        <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}{!lane.plain && (LANE_EMAILS[lane.id]?.start ?? []).map((e) => <EmailMark key={e.template} e={e} />)}{lane.holds && <Tip label={lane.holds} icon={<Lock size={11} />} text={<><span className="k">{lane.holds}</span> The rest of this band carries on without it; {lane.holds.replace(/^Holds /, '').toLowerCase()} cannot happen until this box is done.</>} />}</span>
+        <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}{!lane.plain && (LANE_EMAILS[lane.id]?.start ?? []).map((e) => <EmailMark key={e.template} e={e} />)}</span>
         {!lane.plain && <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span><span className="n">{done}/{steps.length}</span></span>}
         {!lane.plain && <span className="ep-bar"><i style={{ width: `${pct}%`, background: colour }} /></span>}
       </button>
@@ -704,11 +705,13 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
     if (!list.length) return <InlineBankDetails kind={kind} label={kind === 'lender' ? "The lender's bank details" : kind === 'seller_solicitor' ? "The seller's solicitor's bank details" : `${pretty(kind)} bank details`} details={s.bankDetails} busy={busy} cmd={cmd} />;
     return <span>{pickAccount(kind, list)}<BusyButton disabled={busy} busyLabel="Authorising…" doneLabel="Authorised" onClick={() => cmd({ type: 'payment_authorised', payeeKind: kind, bankDetailsId: payFrom[kind] ?? list[0].id, purpose, amountPennies: amountPennies ?? undefined })}>{label}</BusyButton></span>;
   };
-  const ask = (q: string, dflt = '') => window.prompt(q, dflt);
   // A contracted milestone opens its completion sheet in the lane; the sheet gathers the
   // evidence the contract asks for and records the command with it.
   const contracts = view.contracts ?? {};
   const [sheet, setSheet] = useState<{ laneId: string; type: string; extra: Record<string, unknown> } | null>(null);
+  const [quick, setQuick] = useState<QuickFormSpec | null>(null);
+  const form = (spec: QuickFormSpec) => setQuick({ ...spec, run: async (v) => { await spec.run(v); setQuick(null); } });
+  const opt = (pairs: Array<[string, string]>) => pairs.map(([value, label]) => ({ value, label }));
   const [docs, setDocs] = useState<CaseDocument[] | null>(null);
   // The documents (with what the engine read of each) feed the Document Review steps and the completion sheets; refreshed whenever the log moves.
   useEffect(() => {
@@ -1036,10 +1039,10 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       ...clientChecks.map((pc) => ({ label: `ID / AML check · ${pc.label}`, status: pc.status, documentId: pc.documentId, focus: 'id_check' })),
     ],
     actions: <>
-      {s.stage === 'instruction' && s.idCheck.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_id_check' })}>Request ID / AML check</button>}
-      {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const name = ask('Name of the person to identify:'); if (!name) return; const role = ask('Their role: buyer, seller, owner, donor, attorney, director or executor', buyer ? 'buyer' : seller ? 'seller' : 'owner'); if (role) void cmd({ type: 'add_party', name, role }); }}>Add Party</button>}
-      {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const from = ask('Name as it appears on the older document:'); if (!from) return; const to = ask('Name now:'); if (!to) return; const reason = ask('Evidence of the change (marriage certificate, deed poll, decree absolute):'); if (reason) void cmd({ type: 'name_change_evidenced', from, to, reason }); }}>Name Change Evidenced</button>}
-      {!exchanged && buyer && <button className="ep-btn" disabled={busy} onClick={() => { const r = ask(s.hasLender ? 'The buyer is now buying without a mortgage. Why?' : 'The buyer now has a mortgage. Lender or broker, and why?'); if (r) void cmd({ type: 'set_funding', hasLender: !s.hasLender, reason: r }); }}>{s.hasLender ? 'Now A Cash Purchase' : 'Now With A Mortgage'}</button>}
+      {s.stage === 'instruction' && s.idCheck.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_id_check' })}>Request ID / AML Check</button>}
+      {!completed && <button className="ep-btn" disabled={busy} onClick={() => form({ title: 'Add A Party To Identify', submitLabel: 'Add Party', fields: [{ key: 'name', label: 'Full name', required: true }, { key: 'role', label: 'Who they are', kind: 'select', required: true, initial: buyer ? 'buyer' : seller ? 'seller' : 'owner', options: opt([['buyer', 'Buyer'], ['seller', 'Seller'], ['owner', 'Owner'], ['donor', 'Giving Money (Donor)'], ['attorney', 'Attorney For A Client'], ['director', 'Director Or PSC Of A Company Client'], ['executor', 'Executor Or Trustee']]) }], run: (v) => cmd({ type: 'add_party', name: v.name, role: v.role }) })}>Add Party</button>}
+      {!completed && <button className="ep-btn" disabled={busy} onClick={() => form({ title: 'Name Change Evidenced', submitLabel: 'Record', fields: [{ key: 'from', label: 'Name on the older document', required: true }, { key: 'to', label: 'Name now', required: true }, { key: 'reason', label: 'Evidence seen', kind: 'select', required: true, options: opt([['Marriage certificate', 'Marriage Certificate'], ['Civil partnership certificate', 'Civil Partnership Certificate'], ['Deed poll', 'Deed Poll'], ['Decree absolute or final order', 'Decree Absolute Or Final Order'], ['Other evidence', 'Other Evidence']]) }], run: (v) => cmd({ type: 'name_change_evidenced', from: v.from, to: v.to, reason: v.reason }) })}>Name Change Evidenced</button>}
+      {!exchanged && buyer && <button className="ep-btn" disabled={busy} onClick={() => form({ title: s.hasLender ? 'Now A Cash Purchase' : 'Now With A Mortgage', submitLabel: 'Record', fields: [{ key: 'reason', label: s.hasLender ? 'Why, and where the money now comes from' : 'Lender or broker, and why', kind: 'textarea', required: true }], run: (v) => cmd({ type: 'set_funding', hasLender: !s.hasLender, reason: v.reason }) })}>{s.hasLender ? 'Now A Cash Purchase' : 'Now With A Mortgage'}</button>}
     </> });
 
   if (has('source_of_funds')) {
@@ -1048,7 +1051,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
     const qs = Object.values(pof?.queries ?? {}).sort((a, b) => a.raisedAt.localeCompare(b.raisedAt) || (a.id > b.id ? 1 : -1));
     const open = qs.filter((q) => q.status === 'draft' || q.status === 'sent');
     const QCHIP: Record<string, { bg: string; fg: string }> = { draft: { bg: '#fef3c7', fg: '#78350f' }, sent: { bg: '#e0e7ff', fg: '#3730a3' }, answered: { bg: '#dcfce7', fg: '#14532d' }, withdrawn: { bg: '#f1f5f9', fg: '#94a3b8' } };
-    lane({ id: 'source_of_funds', title: 'Source of funds', holds: s.requireProofOfFunds ? 'Holds Exchange' : undefined, state: st, note: pof?.risk ? `risk ${pof.risk}${pof.approvedAt ? ` · signed off ${fmtDay(pof.approvedAt)}` : ''}` : s.requireProofOfFunds ? 'firm policy: signed off before exchange' : undefined,
+    lane({ id: 'source_of_funds', title: 'Source of funds', holds: s.requireProofOfFunds ? 'Holds Exchange' : undefined, state: st, note: pof?.risk ? `${cap(pof.risk)} risk${pof.approvedAt ? ` · signed off ${fmtDay(pof.approvedAt)}` : ''}` : undefined,
       tiles: [
         { label: `Proof of funds${pof?.rounds ? ` · round ${pof.rounds}` : ''}`, documentId: pof?.documentId, focus: 'proof_of_funds', status: pof?.status === 'reviewed' ? (pof.resolution === 'approve' ? 'reviewed' : pof.resolution === 'reject' ? 'rejected' : 'reviewed') : pof?.status === 'submitted' ? 'awaiting_sign_off' : pof?.status === 'requested' ? 'requested' : 'not_started', detail: pof?.facts ? `declared ${gbp(pof.facts.totalDeclaredPennies)}${pof.facts.requiredPennies != null ? ` of ${gbp(pof.facts.requiredPennies)} needed` : ''}${pof.facts.giftedPennies ? ' · includes a gift' : ''}` : pof?.status === 'requested' ? `form with the client since ${fmtDay(pof.requestedAt)}` : undefined },
         ...donorChecks.map((pc) => ({ label: `ID / AML check · ${pc.label}`, status: pc.status, documentId: pc.documentId, focus: 'id_check', key: 'donor_id' })),
@@ -1063,17 +1066,16 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
           )}
           {pof.status === 'requested' && pof.formUrl && !exchanged && (
             <div className="acts" style={{ marginBottom: 8 }}>
-              <button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5 }} disabled={busy} onClick={() => cmd({ type: 'resend_proof_of_funds' })}>{pof.channel === 'unsent' ? 'Try Sending Again' : 'Resend the Form'}</button>
+              <button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5 }} disabled={busy} onClick={() => cmd({ type: 'resend_proof_of_funds' })}>{pof.channel === 'unsent' ? 'Try Sending Again' : 'Resend The Form'}</button>
             </div>
           )}
           {(pof.statements?.length ?? 0) > 0 && <div style={{ fontSize: 12.5, marginBottom: 6 }}><b>Statements read:</b> {pof.statements!.map((x) => `${x.fileName ?? x.documentId}${x.readable ? ` (${x.holder ?? '?'}, ${x.from ?? '?'}–${x.to ?? '?'}, ${x.transactions} lines)` : ' (unreadable)'}`).join(' · ')}</div>}
-          {(pof.flags?.length ?? 0) > 0 && <div style={{ fontSize: 12.5, marginBottom: 6 }}><b>Flags:</b> {pof.flags!.map((f) => f.code).join(', ')}</div>}
-          {qs.length === 0 && <div className="ep-note">No queries.</div>}
-          {qs.map((q) => (
+          {(pof.flags?.length ?? 0) > 0 && <div style={{ fontSize: 12.5, marginBottom: 6 }}><b>Points:</b> {pof.flags!.map((f) => (f as { description?: string }).description || cap(f.code.split(':')[0].replace(/_/g, ' ').toLowerCase())).join(' · ')}</div>}
+                    {qs.map((q) => (
             <div key={q.id} className="ep-row" style={{ display: 'block' }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                <b>{q.id}</b><span className="ep-pill" style={{ background: QCHIP[q.status].bg, color: QCHIP[q.status].fg, marginTop: 0 }}>{q.status}</span><span className="ep-note">{pretty(q.flagCode.split(':')[0].toLowerCase())}{q.raisedBy === 'system' ? ' · drafted by the rules' : ' · added by a person'}</span>
-                {(q.status === 'draft' || q.status === 'sent') && <button className="ep-btn" style={{ margin: '0 0 0 auto', padding: '2px 8px', fontSize: 11.5 }} disabled={busy} onClick={() => { const r = ask('Why is this query not needed? (recorded on the log)'); if (r) void cmd({ type: 'withdraw_proof_of_funds_query', queryId: q.id, reason: r }); }}>Withdraw</button>}
+                <b>{q.id}</b><span className="ep-pill" style={{ background: QCHIP[q.status].bg, color: QCHIP[q.status].fg, marginTop: 0 }}>{cap(q.status)}</span><span className="ep-note">{pretty(q.flagCode.split(':')[0].toLowerCase())}{q.raisedBy === 'system' ? ' · drafted by the rules' : ' · added by a person'}</span>
+                {(q.status === 'draft' || q.status === 'sent') && <button className="ep-btn" style={{ margin: '0 0 0 auto', padding: '2px 8px', fontSize: 11.5 }} disabled={busy} onClick={() => form({ title: `Withdraw ${q.id}`, submitLabel: 'Withdraw', fields: [{ key: 'reason', label: 'Why it is not needed', kind: 'textarea', required: true }], run: (v) => cmd({ type: 'withdraw_proof_of_funds_query', queryId: q.id, reason: v.reason }) })}>Withdraw</button>}
               </div>
               <div>{q.question}</div>
               {q.transaction && <div className="ep-note">Line: {q.transaction.date} · {q.transaction.description} · {gbp(Math.abs(q.transaction.amountPennies))}</div>}
@@ -1083,14 +1085,14 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
           {!pof.approvedAt && (
             <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <input className="ep-input" placeholder="Add a query for the client…" value={pofQuestion} onChange={(e) => setPofQuestion(e.target.value)} style={{ width: 420, maxWidth: '100%' }} />
-              <button className="ep-btn" style={{ margin: 0 }} disabled={busy || pofQuestion.trim().length < 5} onClick={() => { void cmd({ type: 'raise_proof_of_funds_query', question: pofQuestion.trim() }); setPofQuestion(''); }}>Add query</button>
+              <button className="ep-btn" style={{ margin: 0 }} disabled={busy || pofQuestion.trim().length < 5} onClick={() => { void cmd({ type: 'raise_proof_of_funds_query', question: pofQuestion.trim() }); setPofQuestion(''); }}>Add Query</button>
               {open.length > 0 && <span className="ep-note">{open.length} open — sign-off is unavailable until each is sent (query from the decision) or withdrawn with a reason.</span>}
             </div>
           )}
         </div>
       ) : null,
       actions: <>
-        {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const r = ask('Name on the sending account (as the bank shows it):'); if (!r) return; const p = ask('What for: fees, deposit, completion or other', 'fees'); if (!p) return; const a = ask('Amount in £ (blank if unknown):', ''); if (a === null) return; void cmd({ type: 'client_account_receipt', remitter: r, purpose: /^(fees|deposit|completion|other)$/.test(p.trim()) ? p.trim() : 'other', amountPennies: a.trim() ? Math.round(Number(a) * 100) : null }); }}>Receipt on Client Account</button>}
+        {!completed && <button className="ep-btn" disabled={busy} onClick={() => form({ title: 'Receipt On Client Account', submitLabel: 'Record Receipt', fields: [{ key: 'remitter', label: 'Name on the sending account', required: true, placeholder: 'As the bank shows it' }, { key: 'purpose', label: 'What it is for', kind: 'select', required: true, options: opt([['fees', 'Fees'], ['deposit', 'Deposit'], ['completion', 'Completion Money'], ['other', 'Other']]) }, { key: 'amount', label: 'Amount', kind: 'money' }], run: (v) => cmd({ type: 'client_account_receipt', remitter: v.remitter, purpose: v.purpose, amountPennies: v.amount }) })}>Receipt On Client Account</button>}
         {!exchanged && (pof?.status === 'not_started' || (pof?.status === 'reviewed' && pof.resolution !== 'approve')) ? (
         <span><input className="ep-input" placeholder="Note to the client (optional)" value={pofNote} onChange={(e) => setPofNote(e.target.value)} style={{ width: 260 }} /><button className="ep-btn primary" disabled={busy} onClick={() => { void cmd({ type: 'request_proof_of_funds', noteToClient: pofNote.trim() || null }); setPofNote(''); }}>Send Proof-of-Funds Form</button></span>
       ) : null}
@@ -1098,15 +1100,15 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
   }
 
   if (has('property_forms')) lane({ id: 'property_forms', order: 'sequence', title: 'Property forms (TA6 / TA10 / TA7)', state: forms.status === 'received' ? 'done' : forms.status === 'requested' ? 'open' : 'idle', 
-    tiles: [{ label: `Forms${forms.forms.length ? ` · ${forms.forms.join(', ')}` : ''}`, status: forms.status, detail: forms.requestedAt && !forms.receivedAt ? `requested ${fmtDay(forms.requestedAt)} · the client is chased on the SLA` : forms.receivedAt ? `received ${fmtDay(forms.receivedAt)}` : undefined }],
+    tiles: [{ label: `Forms${forms.forms.length ? ` · ${forms.forms.join(', ')}` : ''}`, status: forms.status, detail: forms.requestedAt && !forms.receivedAt ? `requested ${fmtDay(forms.requestedAt)}` : forms.receivedAt ? `received ${fmtDay(forms.receivedAt)}` : undefined }],
     actions: <>
-      {forms.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_property_forms' })}>Send the forms to the client</button>}
+      {forms.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_property_forms' })}>Send The Forms To The Client</button>}
       {forms.status !== 'received' && forms.status !== 'not_applicable' && act('property_forms', 'property_forms_received', 'Forms Received', { forms: leasehold ? ['TA6', 'TA10', 'TA7'] : ['TA6', 'TA10'] })}
     </> });
 
   lane({ id: 'title', order: 'sequence', title: 'Title', state: resolved(s.title.status) ? (has('report_on_title') && s.reportOnTitle.status !== 'sent' ? 'open' : 'done') : s.title.status === 'flagged' ? 'blocked' : buyer && s.contractPack?.requestedAt && !s.title.documentId ? 'open' : 'idle', note: p.tenure === 'any' ? 'freehold or leasehold' : `expected ${p.tenure}`,
     tiles: [
-      { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, documentId: s.title.documentId, focus: 'title', status: s.title.status, detail: s.title.facts?.tenure ?? (buyer && s.contractPack?.requestedAt && !s.title.documentId ? `contract pack asked of the seller's solicitor ${fmtDay(s.contractPack.requestedAt)} · chased on the SLA` : undefined) },
+      { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, documentId: s.title.documentId, focus: 'title', status: s.title.status, detail: s.title.facts?.tenure ?? (buyer && s.contractPack?.requestedAt && !s.title.documentId ? `contract pack asked for ${fmtDay(s.contractPack.requestedAt)}` : undefined) },
       ...(buyer ? (() => {
         // The forms as a set, across however many files they came in: which are in, which are still to come.
         const expected = leasehold ? ['TA6', 'TA10', 'TA7'] : ['TA6', 'TA10'];
@@ -1131,7 +1133,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
     </> : null });
 
   if (has('searches') && s.requiredSearches.length > 0) lane({ id: 'searches', title: 'Searches', state: s.requiredSearches.every((t) => resolved(s.searches[t]?.status ?? '')) ? 'done' : s.requiredSearches.some((t) => s.searches[t]?.status === 'flagged') ? 'blocked' : 'open', 
-    tiles: s.requiredSearches.map((t) => ({ key: `search:${t}`, label: SEARCH_NAME[t] ?? t, documentId: s.searches[t]?.documentId, focus: t, status: s.searches[t]?.status ?? 'not_started', detail: s.searches[t]?.flags.length ? s.searches[t].flags.map((f) => cap(f.code.toLowerCase())).join(', ') : undefined })) });
+    tiles: s.requiredSearches.map((t) => ({ key: `search:${t}`, label: SEARCH_NAME[t] ?? t, documentId: s.searches[t]?.documentId, focus: t, status: s.searches[t]?.status ?? 'not_started', detail: s.searches[t]?.flags.length ? s.searches[t].flags.map((f) => (f as { description?: string }).description || cap(f.code.toLowerCase())).join(' · ') : undefined })) });
 
   if (has('enquiries') && buyer) {
     const qs = Object.values(s.enquiries).sort((a, b) => a.raisedAt.localeCompare(b.raisedAt));
@@ -1184,7 +1186,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       { label: 'Redeemed', status: red.status === 'redeemed' || red.status === 'discharged' ? 'redeemed' : 'not_started', detail: red.redeemedAt ? fmtDay(red.redeemedAt) : undefined },
     ],
     actions: <>
-      {red.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => { const l = ask('Lender?', red.lender ?? ''); if (l !== null) void cmd({ type: 'request_redemption_statement', lender: l || undefined }); }}>Request redemption statement</button>}
+      {red.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => form({ title: 'Request Redemption Statement', submitLabel: 'Request', fields: [{ key: 'lender', label: 'Lender', initial: red.lender ?? '' }], run: (v) => cmd({ type: 'request_redemption_statement', lender: v.lender ?? undefined }) })}>Request Redemption Statement</button>}
       {(red.status === 'not_started' || red.status === 'requested') && act('redemption', 'redemption_statement_received', 'Statement Received')}
       {red.status === 'received' && atLeast('pre_completion') && !paidTo('lender') && authorise('lender', 'other', 'Authorise redemption payment', red.redemptionPennies)}
       {red.status === 'received' && completed && paidTo('lender') && act('redemption', 'mortgage_redeemed', 'Mortgage Redeemed', {}, { primary: true })}
@@ -1193,7 +1195,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
   if (has('lender_consent') && s.hasExistingMortgage) lane({ id: 'lender_consent', order: 'sequence', title: "Lender's consent to the transfer", state: consent.status === 'received' ? 'done' : consent.status === 'requested' ? 'open' : 'blocked', note: consent.lender ?? undefined,
     tiles: [{ label: 'Consent', status: consent.status, detail: consent.conditions ?? undefined }],
     actions: <>
-      {consent.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => { const l = ask('Lender?'); if (l !== null) void cmd({ type: 'request_lender_consent', lender: l || undefined }); }}>Request consent</button>}
+      {consent.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => form({ title: "Request The Lender's Consent", submitLabel: 'Request', fields: [{ key: 'lender', label: 'Lender' }], run: (v) => cmd({ type: 'request_lender_consent', lender: v.lender ?? undefined }) })}>Request Consent</button>}
       {consent.status !== 'received' && consent.status !== 'not_applicable' && act('lender_consent', 'lender_consent_received', 'Consent Received')}
     </> });
 
@@ -1240,7 +1242,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       tiles: [...([{ label: 'Report', status: s.survey.reports.length ? 'on_file' : 'not_started', href: lastReport?.documentId ? `/api/v1/documents/${lastReport.documentId}/raw` : undefined }, ...(findings ? [findings] : [])] as Tile[]), ...investigations, { label: "Client's view", status: clientView }],
       // The client can change their mind until exchange: every option stays, the one on record is ticked.
       actions: !exchanged && s.survey.status === 'not_started' ? <>
-        <button className="ep-btn" disabled={busy} onClick={() => { const d = ask('Survey date (YYYY-MM-DD, blank if not known):', plan?.date ?? ''); if (d !== null) void cmd({ type: 'record_survey_plan', plan: 'booked', date: d.trim() || null }); }}>Survey Booked</button>
+        <button className="ep-btn" disabled={busy} onClick={() => form({ title: 'Survey Booked', submitLabel: 'Record', fields: [{ key: 'date', label: 'Survey date', kind: 'date', initial: plan?.date ?? '' }], run: (v) => cmd({ type: 'record_survey_plan', plan: 'booked', date: v.date }) })}>Survey Booked</button>
         {plan?.plan !== 'none' && <button className="ep-btn" disabled={busy} onClick={() => { if (confirm('Record that the client has chosen not to have a survey? They will no longer be asked about one.')) void cmd({ type: 'record_survey_plan', plan: 'none' }); }}>No Survey</button>}
       </> : !exchanged && s.survey.status !== 'not_started' ? <>
         {act('survey', 'client_decision_recorded', `Satisfied${current(pc === 'satisfied')}`, { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status === 'awaiting_client', disabled: pc === 'satisfied' })}
@@ -1258,7 +1260,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       ...(buyer ? [{ label: 'Notice of assignment', status: s.postCompletion.noticeOfAssignmentAt ? 'sent' : 'not_started' }] : []),
     ],
     actions: <>
-      {['pre_contract', 'contract_review', 'pre_exchange'].includes(s.stage) && s.managementPack?.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => { const from = ask('Requested from?', seller ? 'Freeholder / managing agent' : "Seller's solicitor"); if (from) void cmd({ type: 'management_pack_requested', from }); }}>Management pack requested</button>}
+      {['pre_contract', 'contract_review', 'pre_exchange'].includes(s.stage) && s.managementPack?.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => form({ title: 'Management Pack Requested', submitLabel: 'Record', fields: [{ key: 'from', label: 'Asked of', required: true, initial: seller ? '' : "The seller's solicitor", placeholder: 'The managing agent or landlord' }], run: (v) => cmd({ type: 'management_pack_requested', from: v.from }) })}>Management Pack Requested</button>}
       {buyer && completed && !s.postCompletion.noticeOfAssignmentAt && act('leasehold', 'notice_of_assignment_served', 'Notice of Assignment Served')}
     </> });
 
@@ -1324,7 +1326,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
         };
       }),
       actions: !completed && toSign.some((d) => !done(d)) ? <>
-        <button className="ep-btn primary" disabled={busy || packBusy} onClick={() => void sendPack()}>{packBusy ? <Spin>Sending…</Spin> : sg.packSentAt ? 'Send the Pack Again' : 'Send Signing Pack'}</button>
+        <button className="ep-btn primary" disabled={busy || packBusy} onClick={() => void sendPack()}>{packBusy ? <Spin>Sending…</Spin> : sg.packSentAt ? 'Send The Pack Again' : 'Send Signing Pack'}</button>
         {packNote && <span className="ep-note">{packNote}</span>}
       </> : null,
     });
@@ -1384,11 +1386,11 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
     ],
     actions: atLeast('completed') && !closed ? <>
       {p.registration === 'ap1' && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt && act('registration', 'sdlt_submitted', 'SDLT Return Filed')}
-      {p.registration === 'ap1' && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt && <button className="ep-btn" disabled={busy} onClick={() => { const r = ask('Why is no SDLT return due? (recorded as your determination)'); if (r) void cmd({ type: 'sdlt_not_required', reason: r }); }}>No SDLT return due</button>}
+      {p.registration === 'ap1' && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt && <button className="ep-btn" disabled={busy} onClick={() => form({ title: 'No SDLT Return Due', submitLabel: 'Record', fields: [{ key: 'reason', label: 'Why no return is due', kind: 'textarea', required: true }], run: (v) => cmd({ type: 'sdlt_not_required', reason: v.reason }) })}>No SDLT Return Due</button>}
       {p.registration === 'ap1' && !s.postCompletion.ap1SubmittedAt && act('registration', 'ap1_submitted', 'AP1 Lodged')}
       {p.registration === 'ap1' && s.postCompletion.ap1SubmittedAt && !s.postCompletion.ap1ConfirmedAt && act('registration', 'ap1_confirmed', 'Registration Confirmed', {}, { primary: true })}
       {redemptionApplies && red.status === 'redeemed' && act('registration', 'discharge_confirmed', 'Discharge Confirmed', {}, { primary: true })}
-      {s.stage === 'post_completion' && <button className="ep-btn" disabled={busy} onClick={() => { if (window.confirm('Close the file? Nothing further can be recorded except corrections.')) void cmd({ type: 'close_matter' }); }}>Close file</button>}
+      {s.stage === 'post_completion' && <button className="ep-btn" disabled={busy} onClick={() => { if (window.confirm('Close the file? Nothing further can be recorded except corrections.')) void cmd({ type: 'close_matter' }); }}>Close File</button>}
     </> : null });
 
   // A sub-block with a decision waiting on it links straight to that decision.
@@ -1418,6 +1420,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       )}
 
       {sheetDialog}
+      {quick && <div className={inPlace ? 'ep-inplace' : 'ep-veil'} onMouseDown={(e) => { if (!inPlace && e.target === e.currentTarget && !busy) setQuick(null); }}><QuickForm spec={quick} busy={busy} onCancel={() => setQuick(null)} /></div>}
       {readDialog}
 
       {section === 'step' && stepKey && (
@@ -1541,8 +1544,8 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
 
       <div className="ep-sec">Case</div>
       <div data-lane="case">
-        {!s.manualHandling.required && !closed && <button className="ep-btn" disabled={busy} onClick={() => { const reason = ask('Why does this case need manual handling?'); if (reason) void cmd({ type: 'mark_manual_handling', reason }); }}>Take Over Manually</button>}
-        {!completed && !s.abandoned && <button className="ep-btn" disabled={busy} onClick={() => { const reason = ask('Abandonment reason (client_withdrew, seller_withdrew, chain_collapsed, gazumped, survey, finance_failed, conflict, other):', 'client_withdrew'); if (reason) { const detail = ask('Detail (optional):', '') ?? ''; void cmd({ type: 'abandon_matter', reason, detail: detail || null }); } }}>Abandon Case</button>}
+        {!s.manualHandling.required && !closed && <button className="ep-btn" disabled={busy} onClick={() => form({ title: 'Take Over Manually', submitLabel: 'Take Over', fields: [{ key: 'reason', label: 'Why', kind: 'textarea', required: true }], run: (v) => cmd({ type: 'mark_manual_handling', reason: v.reason }) })}>Take Over Manually</button>}
+        {!completed && !s.abandoned && <button className="ep-btn" disabled={busy} onClick={() => form({ title: 'Abandon Case', submitLabel: 'Abandon Case', danger: true, fields: [{ key: 'reason', label: 'Why', kind: 'select', required: true, options: opt([['client_withdrew', 'The Client Withdrew'], ['seller_withdrew', buyer ? 'The Seller Withdrew' : 'The Buyer Withdrew'], ['chain_collapsed', 'The Chain Collapsed'], ['gazumped', 'Gazumped'], ['survey', 'The Survey'], ['finance_failed', 'The Mortgage Or Money Fell Through'], ['conflict', 'A Conflict Of Interest'], ['other', 'Other']]) }, { key: 'detail', label: 'Detail', kind: 'textarea' }], run: (v) => cmd({ type: 'abandon_matter', reason: v.reason, detail: v.detail }) })}>Abandon Case</button>}
       </div>
       <NoticeBox n={noticeFor('case')} />
       </>)}

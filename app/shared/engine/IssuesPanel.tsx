@@ -702,7 +702,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
       <style>{CSS}</style>
       <div className="is-h">
         <h3>Issues</h3>
-        <span className="n">{open.length ? [`${open.length} open`, holding ? `${holding} stopping ${exchanged ? 'completion' : 'exchange'}` : '', late ? `${late} overdue` : ''].filter(Boolean).join(' · ') : 'None open'}</span>
+        <span className="n">{open.length ? [`${open.length} open`, late ? `${late} overdue` : ''].filter(Boolean).join(' · ') : 'None open'}</span>
         {!done && raiseButton && <button className="ep-btn sp" style={{ margin: '0 0 0 auto' }} disabled={busy} onClick={() => { setRaising(true); setFormErr(null); pickKind(draft.kind); }}>Raise Issue</button>}
       </div>
       {outcome && <div className={`is-out${outcome.ok ? '' : ' warn'}`} role="status">{outcome.text}</div>}

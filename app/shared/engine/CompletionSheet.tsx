@@ -58,6 +58,7 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
       else if (f.kind === 'money') body[f.key] = Math.round(Number(v.replace(/[£,\s]/g, '')) * 100);
       else if (f.kind === 'names') body[f.key] = v.split(',').map((x) => x.trim()).filter(Boolean);
       else if (f.kind === 'datetime') body[f.key] = new Date(v).toISOString();
+      else if (f.kind === 'number') body[f.key] = Number(v);
       else body[f.key] = v;
     }
     if (contract.party) body.note = [`${party.who} confirmed by ${party.channel} on ${party.at}`, note.trim()].filter(Boolean).join('. ');
@@ -94,11 +95,16 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
       ))}
       {(contract.fields ?? []).map((f) => f.kind === 'flag' ? row('', (
         <label className="cs-tick"><input type="checkbox" checked={values[f.key] === 'yes'} onChange={(e) => setValues({ ...values, [f.key]: e.target.checked ? 'yes' : '' })} />{f.label}</label>
+      ), f.key) : f.kind === 'choice' ? row(f.label, (
+        <select className="ep-input" value={values[f.key] ?? ''} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} style={{ width: 280, maxWidth: '100%' }}>
+          <option value="">{f.required ? 'Choose…' : 'None'}</option>
+          {(f.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
       ), f.key) : row(f.label, (
         <input
           className="ep-input"
-          type={f.kind === 'date' ? 'date' : f.kind === 'datetime' ? 'datetime-local' : 'text'}
-          inputMode={f.kind === 'money' ? 'decimal' : undefined}
+          type={f.kind === 'date' ? 'date' : f.kind === 'datetime' ? 'datetime-local' : f.kind === 'number' ? 'number' : 'text'}
+          inputMode={f.kind === 'money' ? 'decimal' : f.kind === 'number' ? 'numeric' : undefined}
           placeholder={f.kind === 'money' ? '£' : f.hint ?? ''}
           value={values[f.key] ?? ''}
           onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}

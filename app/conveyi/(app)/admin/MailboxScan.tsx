@@ -341,7 +341,7 @@ export default function MailboxScan({ onImported }: { onImported?: (count: numbe
                   Select all
                 </button>
                 <button onClick={() => setSel({})} style={link}>Clear</button>
-                <button onClick={cancel} disabled={busy} style={{ ...link, marginLeft: 'auto' }}>Discard this scan</button>
+                <button onClick={cancel} disabled={busy} style={{ ...link, marginLeft: 'auto' }}>Discard This Scan</button>
               </div>
             </>
           )}
