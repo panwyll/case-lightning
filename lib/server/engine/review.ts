@@ -42,7 +42,40 @@ export type PageLedger = z.infer<typeof PageLedgerSchema>;
 
 export interface PageTexts { pages: string[]; textLayer: boolean; /** per page, OCR confidence when that page's text came from OCR */ ocr?: Array<number | null> }
 
-/** Per-page text of a PDF through pdf.js; an image or a scan without a text layer yields empty pages. */
+type TextItem = { str: string; x: number; y: number; w: number; h: number; eol: boolean };
+
+/**
+ * One page's text items as lines, in reading order, with a table's cells kept apart: items on the same
+ * baseline make a line; a wide gap between two of them (a column) becomes " | ", so a statement row reads
+ * "02/09 | Salary | 2,450.00" and a schedule row stays one row. Pure, for the tests.
+ */
+export function layoutLines(items: TextItem[]): string {
+  const live = items.filter((i) => i.str.trim() || i.eol);
+  if (!live.length) return '';
+  // Top to bottom (PDF y grows upwards), then left to right; a line is items within half a line height of each other.
+  const sorted = live.slice().sort((a, b) => b.y - a.y || a.x - b.x);
+  const lines: TextItem[][] = [];
+  for (const it of sorted) {
+    const line = lines[lines.length - 1];
+    const ref = line?.[0];
+    if (line && Math.abs(ref.y - it.y) <= Math.max(2, Math.min(ref.h || 10, it.h || 10) * 0.5)) line.push(it);
+    else lines.push([it]);
+  }
+  return lines.map((line) => {
+    const row = line.filter((i) => i.str.trim()).sort((a, b) => a.x - b.x);
+    let s = '';
+    let end = -Infinity;
+    for (const it of row) {
+      const size = it.h || 10;
+      const gap = it.x - end;
+      s += !s ? it.str : gap > size * 0.8 ? ` | ${it.str}` : gap > size * 0.15 && !/\s$/.test(s) && !/^\s/.test(it.str) ? ` ${it.str}` : it.str;
+      end = it.x + it.w;
+    }
+    return s.replace(/[ \t]{2,}/g, ' ').trim();
+  }).filter(Boolean).join('\n');
+}
+
+/** Per-page text of a PDF through pdf.js, laid out as lines (tables as rows); an image or a scan without a text layer yields empty pages. */
 export async function pdfPageTexts(bytes: Buffer): Promise<PageTexts> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: true }).promise;
@@ -50,8 +83,8 @@ export async function pdfPageTexts(bytes: Buffer): Promise<PageTexts> {
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
-    // Lines kept as lines (pdf.js marks the end of each): a table row, a clause heading and a list stay apart in the index.
-    pages.push(content.items.map((it) => ('str' in it ? it.str + (it.hasEOL ? '\n' : ' ') : '')).join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' '));
+    const items: TextItem[] = content.items.flatMap((it) => ('str' in it ? [{ str: it.str, x: it.transform[4], y: it.transform[5], w: it.width, h: it.height || Math.abs(it.transform[3]) || 10, eol: !!it.hasEOL }] : []));
+    pages.push(layoutLines(items));
   }
   await (doc as unknown as { cleanup?: () => Promise<void> }).cleanup?.().catch(() => {});
   return { pages, textLayer: pages.some((p) => p.replace(/\s+/g, '').length > 20) };

@@ -17,8 +17,11 @@ How a document on a case becomes facts the engine acts on and passages anyone ca
 - **A replaced version is not the file**: superseded documents are excluded from search, Ask The File and the drafter's retrieval.
 - **Draft check**: every engine draft's figures, dates and names are checked against the register (`draft-check.ts`); what is not on it is struck.
 
+- **Long documents are read in sections** (`sections.ts`): a PDF over 80 pages is cut into even sections of at most 60, each read with the same instructions (three at a time), every page number moved back to the whole document's, and the readings merged: lists joined (a clause read twice kept once), the first section to state a single value wins, a yes from any section stands, the lowest confidence, the worst scan. Classifying a long scan sends only its first pages.
+- **Scans are read to a time budget, not a page cap**: pages without text are OCR'd two at a time for up to 90 seconds (up to 300 pages); a page not reached stays without text and the ledger says so.
+- **Tables stay tables**: PDF text is laid out from positions, a line per baseline, a wide gap between items (a column) written " | ", so a statement row reads "02/09/2026 | Salary | 2,450.00"; justified text is not split. A Word table's rows come through as cells joined by " | ".
+
 ## Not yet
 
-- Long documents in sections (a lease over about 80 pages is read in one call); OCR past 60 pages.
-- Tables kept as tables (cells are lines).
 - An embeddings provider on production (search runs on words and the relevance pass until one is set; the provider's data processing terms are an open go-live item).
+- OCR of the pages a long scan's time budget did not reach, later (a person sees them as without text).

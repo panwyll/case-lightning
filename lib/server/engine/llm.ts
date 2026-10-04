@@ -192,9 +192,11 @@ export async function leanDocument(input: EngineDocumentInput, opts: { keepPdf?:
   const { pageTextsWithOcr } = await import('./review');
   const t = await pageTextsWithOcr(input, { ocr: false }).catch(() => ({ pages: [] as string[], textLayer: false }));
   const pages = opts.firstPages ? t.pages.slice(0, opts.firstPages) : t.pages;
-  if (!pages.length) return input;
+  // Mostly scanned: the model needs to see the PDF, but only as much of it as was asked for.
+  const asPdf = async (): Promise<EngineDocumentInput> => (opts.firstPages ? { ...input, data: await (await import('./sections')).pdfFirstPages(input.data, opts.firstPages) } : input);
+  if (!pages.length) return asPdf();
   const thin = pages.filter((p) => p.trim().length < THIN).length;
-  if (thin / pages.length > 0.2) return input; // mostly scanned: the model needs to see it
+  if (thin / pages.length > 0.2) return asPdf();
   const text = pages.map((p, i) => `=== Page ${i + 1} ===\n${p.trim() || '[no text on this page]'}`).join('\n\n');
   return { kind: 'text', data: opts.firstPages ? text.slice(0, 12_000) : text, title: input.title };
 }

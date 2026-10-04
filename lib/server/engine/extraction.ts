@@ -26,6 +26,7 @@ import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOffe
 import { type PropertyFormsFacts, SEARCH_TYPES } from './types';
 import type { DocumentExtractor, DocumentRef } from './ports';
 import { ENGINE_SYSTEM_GUARD, EngineLlmError, leanDocument, type EngineDocumentInput, type StructuredLlm } from './llm';
+import { mergeReadings, pdfSections, shiftPages, type PdfSection } from './sections';
 
 /** Documents where a misread costs the client: read as the PDF itself, on the strongest model. */
 const CRITICAL_ROLES = new Set(['title', 'contract', 'lease']);
@@ -719,9 +720,31 @@ export class ClaudeExtractor implements DocumentExtractor {
     const base = role.split(':')[0];
     const critical = CRITICAL_ROLES.has(base);
     const classify = base === 'classify';
-    const input = await leanDocument(full, { keepPdf: critical, firstPages: classify ? 3 : undefined });
     const model = classify ? this.opts.classifyModel ?? this.opts.model : critical ? this.opts.criticalModel ?? this.opts.model : this.opts.model;
     const effort = tune.effort ?? (classify ? 'low' : critical ? 'high' : 'medium');
+    // A long PDF (a 150-page lease) is read in sections, each with the same instructions, and the readings merged (sections.ts).
+    const sections = !classify && full.kind === 'pdf' ? await pdfSections(full.data) : null;
+    if (sections) {
+      const read = async (sec: PdfSection) => {
+        const part = await leanDocument({ kind: 'pdf', data: sec.data, title: full.title }, { keepPdf: critical });
+        const res = await this.llm.call<z.infer<S>>({
+          schema: schema as unknown as z.ZodType<z.infer<S>>,
+          instructions,
+          documents: [{ ...part, title: `${doc.fileName ?? doc.id} (pages ${sec.firstPage}–${sec.lastPage} of ${sec.total})` }],
+          prompt: `${prompt}\n\nThis is one part of a ${sec.total}-page document: its pages ${sec.firstPage} to ${sec.lastPage}, sent separately because of its length. Report what is on these pages only. Number pages as they are numbered in this part (its first page is 1). Leave out anything these pages do not state.`,
+          model,
+          effort,
+          maxTokens: tune.maxTokens,
+          meter: { tenantId: doc.tenantId, matterId: doc.matterId, feature },
+        });
+        return { out: shiftPages(res.output, sec.firstPage - 1), model: res.model, promptHash: res.promptHash };
+      };
+      // Three at a time: quicker than one by one, without a burst of rate-limited calls.
+      const parts: Array<{ out: z.infer<S>; model: string; promptHash: string }> = [];
+      for (let i = 0; i < sections.length; i += 3) parts.push(...(await Promise.all(sections.slice(i, i + 3).map(read))));
+      return { out: mergeReadings(parts.map((x) => x.out)), contentHash, model: parts[0].model, promptHash: parts[0].promptHash };
+    }
+    const input = await leanDocument(full, { keepPdf: critical, firstPages: classify ? 3 : undefined });
     const res = await this.llm.call<z.infer<S>>({
       schema: schema as unknown as z.ZodType<z.infer<S>>,
       instructions,

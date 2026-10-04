@@ -91,11 +91,20 @@ export async function setDocumentFacts(tenantId: string, documentId: string, fac
  * document_blob (migration 066). Anything else is unreadable → the extractor fails →
  * the engine flags it for a human.
  */
-/** A Word document's text (mammoth: paragraphs in order, headers and tables included as lines). */
+/** A Word document's text: paragraphs in order, and each table row as one line of cells ("Item | Cost"). */
 async function docxText(bytes: Buffer): Promise<string> {
   const mammoth = await import('mammoth');
-  const r = await mammoth.extractRawText({ buffer: bytes });
-  return r.value.replace(/\n{3,}/g, '\n\n').trim();
+  const r = await mammoth.convertToHtml({ buffer: bytes });
+  return htmlToLines(r.value);
+}
+
+/** Mammoth's HTML as plain lines: a paragraph, heading or list item a line; a table row its cells joined by " | ". */
+export function htmlToLines(html: string): string {
+  const text = (s: string) => s.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
+  const rows = html
+    .replace(/<tr[^>]*>([\s\S]*?)<\/tr>/gi, (_m, row: string) => `<p>${[...row.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((c) => text(c[1])).join(' | ')}</p>`)
+    .replace(/<\/(p|h[1-6]|li)>/gi, '\n');
+  return rows.split('\n').map(text).filter(Boolean).join('\n');
 }
 
 export class PgDocumentBytesLoader implements DocumentBytesLoader {
