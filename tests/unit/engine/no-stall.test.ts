@@ -302,7 +302,7 @@ async function drive(c: Case, policy: Policy = 'approve') {
   const lint = new Set<string>();
   for (let i = 0; i < 300; i++) {
     const s = await state();
-    if (s.closedAt) return { closed: true, log, lint: [...lint] };
+    if (s.closedAt) { for (const l of await dumpMessages(c, policy, ports)) lint.add(`message: ${l}`); return { closed: true, log, lint: [...lint] }; }
     const now = ports.now();
     for (const l of lintTasks(s, now, c, await store.listEvents(TENANT, MATTER))) lint.add(`${s.stage}: ${l}`);
     for (const d of dueSteps(s, now)) DUE_KEYS.set(d.key, c.id);
@@ -345,3 +345,35 @@ test('every step the drives meet has its action on the Tasks list (an upload, a 
   assert.ok(DUE_KEYS.size > 20, `the drives met ${DUE_KEYS.size} step kinds`);
   assert.deepEqual(missing.map(([k, c]) => `${k} (on a ${c})`), []);
 });
+
+/** Every message the case sent, rendered with the real templates as its recipient reads it (MSG_OUT=file). */
+async function dumpMessages(c: Case, policy: string, ports: ReturnType<typeof mockPorts>): Promise<string[]> {
+  const { ProductionClientComms, ProductionChaser } = await import('../../../lib/server/comms/client-comms');
+  const side = profileOf(c.tt).side;
+  const transaction = c.tt === 'remortgage' ? 'remortgage' : c.tt === 'transfer_of_equity' ? 'transfer' : side === 'seller' ? 'sale' : 'purchase';
+  const info = { matterRef: 'TEST-001', propertyAddress: '1 Test Street, Testtown TE1 1ST', firmName: 'Test & Co', feeEarnerName: 'Pat Lee', feeEarnerUserId: null, clientFirstName: 'Ann', clientEmail: 'ann@example.invalid', clientEmails: ['ann@example.invalid'], transaction, clientPhone: null, clientWhatsAppOptIn: false, contacts: { seller_solicitor: { email: 'other@example.invalid', name: 'Other Side LLP' }, estate_agent: { email: 'agent@example.invalid', name: 'Agents Ltd' }, lender: { email: 'lender@example.invalid', name: 'Mock Building Society' } }, completionDate: '2026-11-30', footer: '' };
+  const deps = { contactInfo: async () => info, whatsapp: null, email: null, mailbox: null, log: async () => {}, routeToHuman: async () => {}, matterForAddress: async () => null, tenantForAddress: async () => null, chaseMode: 'send' } as never;
+  const comms = new ProductionClientComms(deps);
+  const chaser = new ProductionChaser(deps);
+  const out: string[] = [];
+  const put = (kind: string, m: { to?: string; subject: string; body: string } | null, err?: unknown) => out.push(JSON.stringify({ tt: c.tt, policy, kind, to: m?.to ?? null, subject: m?.subject ?? null, body: m?.body ?? null, error: err ? String((err as Error).message ?? err) : null }));
+  for (const x of ports.clientComms.sent) { try { put(`client:${x.template}`, x.override?.body ? { subject: x.override.subject ?? '', body: x.override.body } : await comms.previewStatusUpdate({ tenantId: TENANT, matterId: MATTER, template: x.template, context: x.context })); } catch (e) { put(`client:${x.template}`, null, e); } }
+  const ch = ports.chaser as unknown as { chases: Array<{ recipientRole: string; template: string; context?: Record<string, unknown> }>; requests: Array<{ recipientRole: string; template: string; context?: Record<string, unknown> }>; acks: Array<{ recipientRole: string; what: string }>; messages: Array<{ recipientRole: string; subject: string; body: string }> };
+  for (const x of ch.chases) { try { put(`chase:${x.template}`, await chaser.previewChase({ tenantId: TENANT, matterId: MATTER, recipientRole: x.recipientRole, template: x.template, context: x.context ?? {} })); } catch (e) { put(`chase:${x.template}`, null, e); } }
+  for (const x of ch.requests) { try { put(`request:${x.template}`, await chaser.previewRequest({ tenantId: TENANT, matterId: MATTER, recipientRole: x.recipientRole as never, template: x.template, context: x.context ?? {} })); } catch (e) { put(`request:${x.template}`, null, e); } }
+  for (const x of ch.acks) { try { put(`ack:${x.recipientRole}`, await chaser.previewAcknowledgement({ tenantId: TENANT, matterId: MATTER, recipientRole: x.recipientRole, what: x.what })); } catch (e) { put(`ack:${x.recipientRole}`, null, e); } }
+  for (const x of ch.messages) put(`message:${x.recipientRole}`, { to: x.recipientRole, subject: x.subject, body: x.body });
+  if (process.env.MSG_OUT) (await import('node:fs')).appendFileSync(process.env.MSG_OUT, out.join('\n') + '\n');
+  // What a recipient must never read: a raw date, a template's leftovers, our own key, or the wrong side's words.
+  const problems: string[] = [];
+  for (const line of out) {
+    const r = JSON.parse(line) as { kind: string; subject: string | null; body: string | null; error: string | null };
+    if (r.error) { problems.push(`${r.kind} could not be written: ${r.error}`); continue; }
+    const t = `${r.subject ?? ''}\n${r.body ?? ''}`;
+    const bad: Array<[RegExp, string]> = [[/\b\d{4}-\d{2}-\d{2}\b/, 'a raw date'], [/\{\{|\}\}|\bundefined\b|\bnull\b|NaN/, 'a leftover'], [/\bISS-\d|\b[A-Z0-9]+-F\d\b/, 'an internal key']];
+    if (r.kind.startsWith('client') && side === 'seller') bad.push([/your purchase|the seller's solicitor/i, 'purchase words on a sale']);
+    if (side === 'owner') bad.push([/\bexchange|seller's solicitor|your purchase|your sale\b/i, 'sale or purchase words on a ' + c.tt.replace(/_/g, ' ')]);
+    for (const [re, what] of bad) { const m = re.exec(t); if (m) problems.push(`${r.kind} has ${what}: "${t.slice(Math.max(0, m.index - 40), m.index + 40).replace(/\n/g, ' / ')}"`); }
+  }
+  return [...new Set(problems)];
+}

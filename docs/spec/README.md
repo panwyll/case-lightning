@@ -23,6 +23,6 @@ Short, testable rules. A change — core or a client's variant — is done when 
 
 ## Checks (run before shipping)
 
-- `npm run test:unit` — includes the stall detector: 26 case types × 6 answer policies must each reach a closed file doing only what the Tasks list offers.
+- `npm run test:unit` — includes the stall detector: 26 case types × 6 answer policies must each reach a closed file doing only what the Tasks list offers. At every step it also reads the Tasks list (titles, chips, opened briefs) and, at the close, renders every email the case sent with the real templates; it fails on internal keys, raw dates, template leftovers, titles nested in titles and words for the wrong side (a sale told about 'your purchase', a remortgage told about exchange). `MSG_OUT=file`, `TITLE_OUT=file`, `CONTEXT_OUT=file` and `BRIEF_OUT=file` write what it read, for reading by eye.
 - `/dev/harness` (local only) — the real Tasks list, case task tab and flowchart over an in-memory case. Click the change through at 1280–1400px before shipping UI.
 - A new wait key, due step, decision kind or gate is not done until the simulator answers/does it (see each file's **Adding one** line).

@@ -268,9 +268,9 @@ export class MockChaser implements ThirdPartyChaser {
     this.chases.push({ matterId: input.matterId, recipientRole: input.recipientRole, template: input.template, context: input.context });
     return { channel: 'mock' as const, messageId: `mock-chase-${this.chases.length}` };
   }
-  requests: Array<{ matterId: string; recipientRole: string; template: string }> = [];
-  async sendRequest(input: { matterId: string; recipientRole: string; template: string }) {
-    this.requests.push({ matterId: input.matterId, recipientRole: input.recipientRole, template: input.template });
+  requests: Array<{ matterId: string; recipientRole: string; template: string; context?: Record<string, unknown> }> = [];
+  async sendRequest(input: { matterId: string; recipientRole: string; template: string; context?: Record<string, unknown> }) {
+    this.requests.push({ matterId: input.matterId, recipientRole: input.recipientRole, template: input.template, context: input.context });
     return { channel: 'mock' as const, messageId: `mock-request-${this.requests.length}` };
   }
   enquiriesSent: Array<{ matterId: string; enquiryId: string; text: string }> = [];

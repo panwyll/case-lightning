@@ -165,7 +165,8 @@ export class ProductionClientComms implements ClientComms {
       searchName: SEARCH_NAMES[searchType] ?? 'search',
       searchList: (Array.isArray(context.searches) ? (context.searches as string[]) : Array.isArray(payload.requiredSearches) ? (payload.requiredSearches as string[]) : null)?.map((s) => SEARCH_NAMES[s] ?? s).join(', ') ?? 'local authority, drainage & water and environmental',
       completionDate: typeof payload.completionDate === 'string' ? payload.completionDate : info.completionDate ?? 'the agreed date',
-      transaction: typeof context.transaction === 'string' ? context.transaction : (info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase'),
+      // What the case is, from the case itself (an engine context saying 'purchase' for any non-sale is not trusted over it).
+      transaction: info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? (typeof context.transaction === 'string' ? context.transaction : 'purchase'),
       waitingOn: typeof context.waitingOn === 'string' ? context.waitingOn : '',
       waitingFor: typeof context.waitingFor === 'string' ? context.waitingFor : '',
       nextChaseNote: typeof context.nextChase === 'string' && context.nextChase ? ` and will chase again on ${context.nextChase} if we have not heard` : ' and will keep following it up',
@@ -284,11 +285,11 @@ export class ProductionChaser implements ThirdPartyChaser {
       firmName: info.feeEarnerName && info.feeEarnerName.trim().toLowerCase() === (info.firmName ?? '').trim().toLowerCase() ? '' : info.firmName,
       feeEarner: info.feeEarnerName ?? info.firmName,
       searchName: SEARCH_NAMES[subject] ?? subject,
-      orderedDate: typeof ctx.openedAt === 'string' ? ctx.openedAt.slice(0, 10) : '',
+      orderedDate: typeof ctx.openedAt === 'string' ? ctx.openedAt.slice(0, 10) : '', // a date-only value: render() writes it as a date
       ageWorkingDays: String(ctx.ageWorkingDays ?? ''),
       priorChaseNote: prior > 0 ? `, despite ${prior} previous reminder${prior === 1 ? '' : 's'}` : '',
       completionDate: info.completionDate ?? '',
-      transaction: typeof ctx.transaction === 'string' ? ctx.transaction : (info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase'),
+      transaction: info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? (typeof ctx.transaction === 'string' ? ctx.transaction : 'purchase'),
       // The thing we asked for, again (engine/chase-content.ts): the link, the form, or what is still outstanding.
       resend: typeof ctx.resend === 'string' ? ctx.resend : '',
       // Said only when there is a lender: a cash buyer never reads about a mortgage.
@@ -302,7 +303,8 @@ export class ProductionChaser implements ThirdPartyChaser {
     if (role === 'client' || role === 'id_provider') return { to: clientLine(info), ...clientAddress(info) };
     const key = role === 'seller_solicitor' ? 'seller_solicitor' : role === 'lender' ? 'lender' : null;
     const c = key ? info.contacts[key] : null;
-    const label = role.replace(/_/g, ' ');
+    // The engine's 'seller_solicitor' is the other side's: acting for the seller, the buyer's solicitor.
+    const label = role === 'seller_solicitor' ? (info.transaction === 'sale' ? "buyer's solicitor" : "seller's solicitor") : role.replace(/_/g, ' ');
     if (!c?.email) return { to: `the ${label} · no address on the case`, address: null, channel: 'none' };
     return { to: `${c.name ? `${c.name} (${label})` : `the ${label}`} · ${c.email}`, address: c.email, channel: this.deps.chaseMode === 'send' ? 'email' : 'draft' };
   }
@@ -320,7 +322,7 @@ export class ProductionChaser implements ThirdPartyChaser {
   /** The acknowledgement exactly as sendAcknowledgement would send it. */
   async previewAcknowledgement(input: { tenantId: string; matterId: string; recipientRole: string; what: string }): Promise<MessagePreview> {
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
-    const vars = { matterRef: info.matterRef, address: info.propertyAddress, property: info.propertyAddress, firstName: info.clientFirstName ?? 'there', firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, what: input.what };
+    const vars = { matterRef: info.matterRef, address: info.propertyAddress, property: info.propertyAddress, firstName: info.clientFirstName ?? 'there', firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, what: input.what, recipientName: (input.recipientRole === 'lender' ? info.contacts.lender?.name : info.contacts.seller_solicitor?.name) || 'Colleagues' };
     const r = render(await resolveTemplate(this.deps, input.tenantId, input.recipientRole === 'client' ? ACKS.ack_client : ACKS.ack_counterparty), vars);
     const who = this.recipient(info, input.recipientRole === 'client' ? 'client' : 'seller_solicitor');
     return { ...who, channel: who.channel === 'draft' ? 'email' : who.channel, subject: r.subject, body: r.body };

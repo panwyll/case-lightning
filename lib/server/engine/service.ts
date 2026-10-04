@@ -136,7 +136,7 @@ const STAGE_NEXT: Record<'buyer' | 'seller' | 'owner', Record<string, string>> =
   buyer: {
     instruction: 'Once your checks are through we get the contract papers and the searches under way.',
     pre_contract: 'Once the contract papers and the search results are in, we raise our enquiries with the seller\'s solicitor and report to you before exchange.',
-    contract_review: 'Once the replies to our enquiries are in and the report on title is with you, we can look at exchanging.',
+    contract_review: 'Next we send you our report on title. Once you have read it, and the deposit is with us, we can exchange.',
     pre_exchange: 'When you have read the report and are ready, and the deposit is with us, we can exchange.',
   },
   seller: {
@@ -146,7 +146,7 @@ const STAGE_NEXT: Record<'buyer' | 'seller' | 'owner', Record<string, string>> =
     pre_exchange: 'When you have signed the contract and the buyer is ready, we can exchange.',
   },
   owner: {
-    instruction: 'Once your checks are through we get the title and the searches the lender needs.',
+    instruction: 'Once your checks are through and the searches the lender needs are back, we report to the lender and send you the mortgage deed to sign.',
     pre_contract: 'Once the title and the searches are in and checked, we report to the lender and send you the mortgage deed to sign.',
     contract_review: 'Next we report to the lender and send you the mortgage deed to sign.',
   },
@@ -164,8 +164,12 @@ export const CLIENT_UPDATE_TEMPLATES: Partial<Record<EventType, string>> = {
 };
 
 /** What the client hears when we ask the seller's side something: what it was for, plainly, and what happens next. */
-function enquiryLine(purpose: string, about: string | null): string {
+function enquiryLine(purpose: string, about: string | null, side: 'buyer' | 'seller' | 'owner' = 'buyer'): string {
+  // Acting for the seller our questions go to the buyer's solicitor; on a remortgage or transfer there is no other side.
+  if (side === 'owner') return "We've raised a question on the papers for your property. We'll let you know what comes back and whether it needs anything from you.";
+  if (side === 'seller') return enquiryLine(purpose, about, 'buyer').replace(/seller's solicitor/g, "buyer's solicitor").replace(/your purchase/g, 'your sale').replace(/contract papers/g, 'contract papers we sent');
   switch (purpose) {
+    case 'followup': return "We've asked the seller's solicitor a further question arising from our checks. We'll let you know what they say.";
     case 'client_instruction': return `We've asked the seller's solicitor ${about ? `about ${about.replace(/^[A-Z]/, (c) => c.toLowerCase())}` : 'for what you wanted'}, as you asked. We'll let you know what they say.`;
     case 'evidence': return "We've asked the seller's solicitor for any reports, certificates or guarantees that answer the points in your survey. We'll send on whatever they have.";
     case 'access': return "We've asked the seller's solicitor whether your specialists can get in, and when. We'll pass on their answer as soon as we have it.";
@@ -173,6 +177,14 @@ function enquiryLine(purpose: string, about: string | null): string {
     case 'forms': return "We've sent the seller's solicitor our questions on the contract papers. Replies usually take a week or two; we'll chase if they're slow and tell you if anything needs you.";
     default: return "We've sent the seller's solicitor a question on your purchase. We'll let you know what they say.";
   }
+}
+
+/** A source-of-funds question as the client reads it (the issue's title is ours, not theirs). */
+function fundsAsk(title: string): string {
+  if (/^Extra money from the client/i.test(title)) return 'Where the extra money you are putting in comes from, with a bank statement that shows it.';
+  if (/^Money still to arrive/i.test(title)) return 'When the rest of the money will reach the account, and from where.';
+  if (/gift/i.test(title)) return 'The gift: who it is from, a signed gift letter, and a statement showing the money leaving their account and reaching yours.';
+  return `${title.replace(/^[^:]+:\s*/, '').replace(/^./, (c) => c.toUpperCase()).replace(/\.?$/, '.')}`;
 }
 
 /** Marks the client-comms port once it stops messages to a client who has died. */
@@ -529,7 +541,7 @@ export class EngineService {
     if (!this.ports.pofForms) throw Object.assign(new Error('Proof-of-funds forms are not configured on this deployment.'), { status: 501 });
     const state = await this.getState(tenantId, matterId);
     // Already signed off: this is a further round (money.md 1.1, a gift or loan mentioned later).
-    if (!opts.followUpOf && state.proofOfFunds.status === 'reviewed' && state.proofOfFunds.resolution === 'approve' && state.proofOfFunds.requestId && openFundsIssues(state).length) opts = { ...opts, followUpOf: state.proofOfFunds.requestId, noteToClient: opts.noteToClient ?? openFundsIssues(state).map((i) => i.title).join('; ') };
+    if (!opts.followUpOf && state.proofOfFunds.status === 'reviewed' && state.proofOfFunds.resolution === 'approve' && state.proofOfFunds.requestId && openFundsIssues(state).length) opts = { ...opts, followUpOf: state.proofOfFunds.requestId, noteToClient: opts.noteToClient ?? openFundsIssues(state).map((i) => fundsAsk(i.title)).join('\n') };
     const form = await this.ports.pofForms.create({ tenantId, matterId, requestedBy: actor, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null });
     // Drafted queries go out with this round; the client answers them in the form.
     const queryIds = openPofQueries(state).filter((q) => q.status === 'draft').map((q) => q.id);
@@ -852,7 +864,8 @@ export class EngineService {
   private async sendFirstRequest(tenantId: string, matterId: string, subflows: LevelConfig, first: FirstRequest, e: EngineEvent, extra: Record<string, unknown> = {}): Promise<void> {
     const fresh = await this.getState(tenantId, matterId);
     const side = profileOf(fresh.transactionType ?? 'freehold_purchase').side;
-    if (!first.buyerOnly || side === 'buyer') {
+    // A remortgage or transfer has no estate agent: nobody to tell about keys.
+    if ((!first.buyerOnly || side === 'buyer') && !(first.to === 'estate_agent' && side === 'owner')) {
       const p = (e.payload ?? {}) as Record<string, unknown>;
       const leasehold = /leasehold/.test(fresh.transactionType ?? '');
       const price = fresh.purchasePricePennies;
@@ -2010,8 +2023,8 @@ export class EngineService {
           const done = phaseDone ? phaseDone.done : e.type === 'proof_of_funds_reviewed' ? 'source of funds approved' : 'title approved';
           const doneLine = phaseDone ? phaseDone.line : e.type === 'proof_of_funds_reviewed' ? 'We have signed off your proof of funds: that part of the file is complete.' : 'We have reviewed the title to the property and approved it.';
           // What comes next, once: one sentence for the stage, the target date if there is one. Outstanding items are the "where things stand" tail every client update carries.
-          const target = brief.milestones.targetExchangeDate;
-          const targetNote = target ? ` We are working towards exchange around ${new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}.` : '';
+          const target = profileOf(fresh.transactionType).hasExchange ? brief.milestones.targetExchangeDate : fresh.targetCompletionDate ?? null;
+          const targetNote = target ? ` We are working towards ${profileOf(fresh.transactionType).hasExchange ? 'exchange' : 'completion'} around ${new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}.` : '';
           const stageNext = STAGE_NEXT[phaseSide];
           const nextStep = `${stageNext[fresh.stage] ?? 'We will be in touch as the next piece comes in.'}${targetNote}`;
           const context = { eventType: e.type, payload: e.payload, done, doneLine, nextStep, transaction: brief.side === 'seller' ? 'sale' : 'purchase' };
@@ -2179,8 +2192,8 @@ export class EngineService {
           // Searches are ordered as a set: the client hears once, when the last one has gone, not once per search.
           if (e.type === 'enquiry_raised') {
             const o = ((e.payload as { origin?: { purpose?: string; about?: string } | null }).origin ?? {}) as { purpose?: string; about?: string };
-            const purpose = o.purpose ?? 'forms';
-            context = { ...context, enquiryLine: enquiryLine(purpose, o.about ?? null) };
+            const purpose = o.purpose ?? ((e.payload as { origin?: { decisionEventId?: string } | null }).origin?.decisionEventId ? 'followup' : 'forms');
+            context = { ...context, enquiryLine: enquiryLine(purpose, o.about ?? null, profileOf(state.transactionType).side) };
             dedupKey = `${template}:${purpose}:${this.ports.now().toISOString().slice(0, 10)}`;
             because = `${purpose.replace(/_/g, ' ')} enquiry raised`;
           }
