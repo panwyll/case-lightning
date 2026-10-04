@@ -306,7 +306,6 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
                     <div className="what">{i.kind && <span className={`tl-chip${i.bucket === 'escalate' || i.kind.startsWith('escalation') ? ` esc${due != null && due < 0 ? ' late' : ''}` : i.kind.startsWith('proposal') ? ' prop' : i.severity ? ` sev-${i.severity}` : ''}`} title={i.severity ? `${SEVERITY_LABEL[i.severity]} severity` : undefined}>{i.chip ?? chipLabel(i.kind)}</span>}{sentence(i.what)}</div>
                     {quickErr?.id === i.ref?.id && <div className="sub" style={{ color: '#b91c1c' }}>{quickErr.text}</div>}
                     {stepMsg[key] && <div className={`tl-msg${stepMsg[key].ok ? ' ok' : ''}`}>{stepMsg[key].text}</div>}
-                    {i.unblocks && i.bucket !== 'escalate' && <div className="sub">{i.ref?.type === 'issue' ? `Stops ${i.unblocks.toLowerCase()}` : `Unblocks ${i.unblocks.toLowerCase()}`}</div>}
                   </div>
                   <span className={`age${due != null && due < 0 ? ' over' : due != null && due <= 2 ? ' soon' : ''}`}>{due != null ? (due < 0 ? `${-due}d overdue` : due === 0 ? 'due today' : `due in ${due}d`) : i.since ? stamp(i.since) : ''}</span>
                   <span className="tl-acts">

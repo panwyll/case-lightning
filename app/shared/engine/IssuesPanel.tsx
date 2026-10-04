@@ -319,7 +319,6 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   /** The line under the title: its kind, what it stops, where it stands, and when it is due. */
   const statusLine = (i: IssueRow, ctx: boolean) => {
     const parts: Array<{ text: string; cls?: string }> = [{ text: chip(i) }];
-    if (!ctx && i.gate !== 'none') parts.push({ text: `Stops ${i.gate}`, cls: 'stops' });
     if (i.status === 'negotiating') parts.push({ text: 'In negotiation' });
     if (i.party) parts.push({ text: `Re ${i.party}` });
     if (!ctx && i.resolveBy) {

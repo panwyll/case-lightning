@@ -34,7 +34,6 @@ export const TASK_CONTEXT_CSS = `
 .tc-list li{display:flex;gap:8px;align-items:baseline}
 .tc-list time{color:#94a3b8;white-space:nowrap;font-variant-numeric:tabular-nums;font-size:11.5px}
 .tc-list li.warn{color:#92400e}
-.tc-unblocks{margin-top:10px;font-size:12.5px;border-left:3px solid #5A27E0;padding:4px 10px;background:#faf8ff;color:#312e81;border-radius:0 8px 8px 0}
 `;
 
 const HOT = /^(Offer expires|Target exchange|Completion|Open issues|Arrears)$/;
@@ -92,7 +91,6 @@ export function TaskContextBody({ ctx, headline = true }: { ctx: TaskContextView
           </div>
         )}
       </div>
-      {ctx.unblocks && <div className="tc-unblocks">{ctx.unblocks}</div>}
     </div>
   );
 }

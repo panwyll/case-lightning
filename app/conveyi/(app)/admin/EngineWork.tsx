@@ -121,7 +121,6 @@ function Item({ i }: { i: WorkItem }) {
       <div className="wk-where">
         <House band={i.urgency} size={16} />
         <span>{i.propertyAddress ?? i.matterRef ?? 'Case'}</span>
-        {i.unblocks && <span>· unblocks {i.unblocks.toLowerCase()}</span>}
       </div>
       {i.bucket === 'escalate' && i.chasesSent > 0 && <div className="wk-clock"><span className="over">{i.chasesSent} chase{i.chasesSent === 1 ? '' : 's'} unanswered</span></div>}
     </a>

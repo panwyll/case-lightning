@@ -128,7 +128,7 @@ const DECISION_LABEL: Record<string, string> = {
 /** What we are waiting for them to do, as the second half of "waiting on X to …". */
 const SEARCH_NAME: Record<string, string> = { LLC1: 'LLC1', CON29: 'CON29', DRAINAGE_WATER: 'drainage and water', ENVIRONMENTAL: 'environmental', CHANCEL: 'chancel', MINING: 'coal mining', FLOOD: 'flood risk', HIGHWAYS: 'highways', PLANNING: 'planning history' };
 const WAIT_ACTION: Record<string, (subject: string) => string> = {
-  search: (sub) => `return the ${sub ? `${SEARCH_NAME[sub] ?? sub.toLowerCase().replace(/_/g, ' ')} ` : ''}search`, enquiry: (sub) => `reply to ${sub ? `enquiry ${sub}` : 'our enquiries'}`, id_check: () => 'return the ID / AML result',
+  search: (sub) => `return the ${sub ? `${SEARCH_NAME[sub] ?? sub.toLowerCase().replace(/_/g, ' ')} ` : ''}search`, enquiry: (sub) => `reply to ${sub ? `enquiry ${sub.replace(/^ISS-\d+-/, '')}` : 'our enquiries'}`, id_check: () => 'return the ID / AML result',
   funds: (sub) => ({ client: 'send the balance of the completion money', lender: 'release the mortgage advance', isa_provider: 'pay the ISA money', buyer_solicitor: 'send the completion money' } as Record<string, string>)[sub] ?? 'send the completion money', registration: () => 'complete the registration', proof_of_funds: () => 'complete the proof of funds form',
   management_pack: () => 'send the management pack', property_forms: () => 'return the property forms', redemption: () => 'send the redemption statement',
   lender_consent: () => 'confirm consent', discharge: () => 'confirm the discharge', contract_pack: () => 'send the draft contract pack and official copies',
@@ -369,7 +369,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
       }
       return escalationLine(firstLine || 'Deal with an escalation');
     })()
-    : d.kind === 'auto_clear' ? `Confirm the rules' clear of ${cleanSubject ? cleanSubject.replace(/^ID\/AML check(?: — (.*?))?(?: \([^)]*\))?$/, (_m, who: string | undefined) => `the ID / AML check${who ? ` for ${who}` : ''}`) : 'the document'}`
+    : d.kind === 'auto_clear' ? `Confirm the rules' clear of ${!cleanSubject ? 'the document' : /^(?:ISS-\d+-)?E\d+$/.test(cleanSubject) ? `the reply to enquiry ${cleanSubject.replace(/^ISS-\d+-/, '')}` : SEARCH_NAME[cleanSubject] ? `the ${SEARCH_NAME[cleanSubject]} search` : cleanSubject.replace(/^ID\/AML check(?: — (.*?))?(?: \([^)]*\))?$/, (_m, who: string | undefined) => `the ID / AML check${who ? ` for ${who}` : ''}`)}`
     : d.kind === 'proposal' ? proposalLine()
     : d.kind === 'id_check' ? `ID / AML result for ${d.subject && s.partyChecks[d.subject] ? s.partyChecks[d.subject].label : 'the client'}`
     : d.kind === 'search' ? `${SEARCH_NAME[cleanSubject ?? ''] ? `${SEARCH_NAME[cleanSubject ?? '']} search result` : 'Search result'}${points(flagsOf(), 'point')}`

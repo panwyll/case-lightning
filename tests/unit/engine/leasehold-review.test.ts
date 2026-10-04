@@ -134,6 +134,14 @@ test('service: the lease read raises the title decision, stays with the official
   const d = firstDecision(s, 'title');
   assert.equal(d.sourceDocumentId, leaseDoc);
   assert.match(d.summary, /doubl/i);
+  // Reviewed as the lease it is: its term, rent and review, not the official copies' checks.
+  const { taskContext } = await import('../../../lib/server/engine/context');
+  const ctx = taskContext({ state: s, matter: { matterRef: null, propertyAddress: null }, events: [], target: { kind: 'decision', decision: d } });
+  assert.match(ctx.headline, /^Lease of Flat 3.*96 years unexpired, ground rent £250/);
+  const lines = ctx.checklist.map((c) => `${c.status}: ${c.text} | ${c.evidence.map((e) => e.text).join(' / ')}`);
+  assert.ok(lines.some((l) => /^flag: Ground rent and its review \| £250 a year \/ Review: The rent doubles/.test(l)), lines.join('\n'));
+  assert.ok(!lines.some((l) => /registered proprietor|Restrictions/i.test(l)), lines.join('\n'));
+  assert.ok(lines.some((l) => /^ok: Assignment and subletting.*consent/.test(l)), lines.join('\n'));
   await resolve(h, d.eventId, 'approve', USER, 'Deed of variation to be obtained; lender content');
   // The official copy arrives afterwards: the rules see the lease with it.
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleLeasehold()));

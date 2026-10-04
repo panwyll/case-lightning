@@ -13,7 +13,8 @@ import { profileOf } from './transactions';
 import { describeIdDocument, idDay, ID_DOCUMENT_TYPE } from './id-document';
 import { whyNot, gate, type GateId } from './graph';
 import { ISSUE_KIND_SPEC } from './issues';
-import { openIssues, openWaits, pendingDecisions, type DecisionState, type EngineEvent, type Flag, type IdCheckFacts, type MatterState, type Payloads, type SearchType } from './types';
+import { leaseFlags } from './rules';
+import { openIssues, openWaits, pendingDecisions, type DecisionState, type EngineEvent, type Flag, type EnquiryReplyFacts, type IdCheckFacts, type LeaseFacts, type MatterState, type Payloads, type SearchType } from './types';
 
 export interface TaskContext {
   headline: string;
@@ -97,7 +98,7 @@ function clearedWhat(subFlow: string | undefined, subject: string | undefined): 
   switch (subFlow) {
     case 'id_check': return 'The ID and AML check';
     case 'search': return `The ${tail ? `${(SEARCH_LABEL as Record<string, string>)[tail] ?? tail.replace(/_/g, ' ').toLowerCase()} ` : ''}search`;
-    case 'enquiry': return `The reply to enquiry ${tail}`.trim();
+    case 'enquiry': return `The reply to enquiry ${tail.replace(/^ISS-\d+-/, '')}`.trim();
     case 'mortgage': return 'The mortgage offer';
     case 'title': return 'The official copies';
     case 'proof_of_funds': return 'Proof of funds';
@@ -127,6 +128,7 @@ const KIND_CHECKS: Record<string, string[]> = {
   id_check: ['Names on the ID match the instruction, the contract and the title exactly', 'Address on the proof of address matches the correspondence address', 'Document in date and not flagged as tampered', 'PEP or sanctions hit: escalate, never approve alone', 'Does the source of funds position change the risk'],
   enquiry: ['Does the reply answer the question actually asked', 'Is what it says backed by a document (certificate, consent, policy)', 'Does the answer create a new issue or a lender point', 'Further enquiry, indemnity, or report to the client: which is the right next step'],
   mortgage: ['Every special condition against the title and the searches', 'Offer expiry against the target exchange and completion dates', 'Advance, term and retention against the completion statement', 'Valuation against the price; any down-valuation', 'Lender handbook Part 2 requirements for this lender'],
+  lease: ['Term and unexpired years against the lender and the client\'s plans', 'Ground rent and its review: doubling or onerous terms', 'Assignment and subletting: consents, notices, deed of covenant', 'Repairs, service charge and insurance: who does and pays what', 'Use, alterations and forfeiture'],
   title: ['Registered proprietor is the seller named in the contract', 'Restrictions: whose consent or certificate is needed before registration', 'Charges to be discharged on completion, and the redemption position', "Covenants and easements: do they affect the client's intended use", 'Class of title; any caution or notice', 'Leasehold: term, ground rent and its review, forfeiture, consents'],
   report_on_title: ['Every search, enquiry and title point appears, with the advice', 'Mortgage conditions the client must meet', 'Dates and money: deposit, completion, retention', 'Reads plainly, and agrees with what the client has already been told'],
   proof_of_funds: ['Declared total covers price plus costs less mortgage', "Every source evidenced by statements in the client's name", 'Large or recent credits explained', "Gifts: donor identified, no repayment, donor's own funds", 'Higher-risk sources escalated, not signed off'],
@@ -266,8 +268,9 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       const rf = replyEv ? (replyEv.payload as Payloads['enquiry_reply_received']).facts : null;
       const origin = raisedEv ? (raisedEv.payload as Payloads['enquiry_raised']).origin : null;
       const flags = raised?.type === 'enquiry_reply_flagged' ? (rp as Payloads['enquiry_reply_flagged']).flags : [];
-      headline = q ? `Reply to enquiry ${q.enquiryId}, ${q.subject}: ${rf?.status === 'partial' ? 'answers part of it' : rf?.status === 'refused' ? 'declines to answer' : rf?.status === 'unclear' ? 'is unclear' : rf?.status === 'answered' ? 'answers it' : 'needs reading'}.` : `Reply to enquiry ${subjectKey ?? ''}.`;
-      addT('Enquiry', q ? `${q.enquiryId} · ${q.subject}` : subjectKey);
+      headline = q ? `Reply to enquiry ${q.enquiryId.replace(/^ISS-\d+-/, '')}, ${q.subject}: ${rf?.status === 'partial' ? 'answers part of it' : rf?.status === 'refused' ? 'declines to answer' : rf?.status === 'unclear' ? 'is unclear' : rf?.status === 'answered' ? 'answers it' : 'needs reading'}.` : `Reply to enquiry ${subjectKey ?? ''}.`;
+      addT('Enquiry', q ? `${q.enquiryId.replace(/^ISS-\d+-/, '')} · ${q.subject}` : subjectKey);
+      addT('Reply', rf?.replyText ? `“${rf.replyText}”` : null);
       addT('Raised', raisedEv ? `${day(raisedEv.createdAt)}${raisedEv.actor === 'system' ? ' by the rules' : ' by hand'}${origin?.issueId ? ` from issue ${origin.issueId}` : origin?.followUpOf ? ` as a follow-up to ${origin.followUpOf}` : ''}` : null);
       addT('Reply received', day(replyEv?.createdAt ?? q?.repliedAt));
       addT('Reply reads as', rf ? `${rf.status}${rf.confidence < 0.85 ? ` (read with ${Math.round(rf.confidence * 100)}% confidence)` : ''}` : null, rf?.status === 'refused' || rf?.status === 'unclear');
@@ -291,6 +294,13 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       addT('Standard conditions cleared', f ? String(f.conditions.filter((c) => c.standard).length) : null);
       if (s.mortgage.status === 'awaiting' || s.mortgage.status === 'not_required') addT('Offer now', 'withdrawn or replaced since this was raised — check the current offer before deciding', true);
       checks = KIND_CHECKS.mortgage;
+    } else if (d.kind === 'title' && leaseSourced(s, d)) {
+      const l = s.title.lease!;
+      const flags = raised?.type === 'title_flagged' ? (rp as Payloads['title_flagged']).flags : leaseFlags(l, s.lenderRequirements?.minUnexpiredYears ?? null);
+      headline = `Lease${l.demise ? ` of ${l.demise}` : ''}: ${l.unexpiredYears != null ? `${n(l.unexpiredYears, 'year')} unexpired` : 'term not read'}${l.groundRentPenniesPa != null ? `, ground rent ${gbp(l.groundRentPenniesPa)} a year` : ''}${flags.length ? `. ${n(flags.length, 'point')} to decide.` : '.'}`;
+      for (const [k, v, warn] of leaseRows(l, flags)) addT(k, v, warn);
+      addT('Points', flagLines(flags), flags.some((x) => x.severity === 'high'));
+      checks = KIND_CHECKS.lease;
     } else if (d.kind === 'title') {
       const f = s.title.facts;
       const flags = raised?.type === 'title_flagged' ? (rp as Payloads['title_flagged']).flags : [];
@@ -373,8 +383,11 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       addT('Proposed', day(pr?.proposedAt ?? raised?.createdAt));
       checks = KIND_CHECKS.proposal;
     } else if (d.kind === 'auto_clear') {
-      const ac = raised?.type === 'auto_clear_review_raised' ? (rp as Payloads['auto_clear_review_raised']) : null;
-      headline = `${clearedWhat(ac?.subFlow, ac?.subject ?? d.subject ?? '')} passed the rules. Confirm it, or send it back.`;
+      // Proposed (nothing cleared until a person says so) or already cleared and up for confirming: the same reading either way.
+      const ac = raised?.type === 'auto_clear_review_raised' || raised?.type === 'auto_clear_proposed' ? (rp as Payloads['auto_clear_review_raised']) : null;
+      headline = raised?.type === 'auto_clear_proposed'
+        ? `${clearedWhat(ac?.subFlow, ac?.subject ?? d.subject ?? '')} passed the rules. Approve to clear it, or escalate.`
+        : `${clearedWhat(ac?.subFlow, ac?.subject ?? d.subject ?? '')} passed the rules. Confirm it, or send it back.`;
       addT('Found', plainReasons(ac?.reasons).join('; ') || null);
       checks = KIND_CHECKS.auto_clear;
     } else if (d.kind === 'escalation') {
@@ -517,19 +530,25 @@ function sourceFile(s: MatterState, d: DecisionState, raised: EngineEvent | null
   }
   if (d.kind === 'enquiry') {
     const f = rp.facts as { enquiryId?: string; status?: string; issues?: Flag[] } | undefined;
-    return [{ documentId: docId, title, summary: [`Reply to ${f?.enquiryId ?? 'the enquiry'}`, f?.status ? (f.status === 'answered' ? 'answers it' : f.status === 'partial' ? 'answers part of it' : f.status === 'refused' ? 'declines to answer' : 'unclear') : null, read].filter(Boolean).join(', '), lines: flagLines(f?.issues), warn: f?.status !== 'answered' }];
+    return [{ documentId: docId, title, summary: [`Reply to ${f?.enquiryId ? `enquiry ${f.enquiryId.replace(/^ISS-\d+-/, '')}` : 'the enquiry'}`, f?.status ? (f.status === 'answered' ? 'answers it' : f.status === 'partial' ? 'answers part of it' : f.status === 'refused' ? 'declines to answer' : 'unclear') : null, read].filter(Boolean).join(', '), lines: flagLines(f?.issues), warn: f?.status !== 'answered' }];
   }
   if (d.kind === 'mortgage') {
     const f = s.mortgage.facts;
     const special = f?.conditions.filter((c) => !c.standard) ?? [];
     return [{ documentId: docId, title, summary: [f?.lender ? `Offer from ${f.lender}` : 'Mortgage offer', f?.amountPennies ? `advance ${gbp(f.amountPennies)}` : null, f?.expiryDate ? `expires ${day(f.expiryDate)}` : null, f ? `${n(f.conditions.length, 'condition')}, ${special.length} special` : null, read].filter(Boolean).join(', '), lines: special.map((c) => ({ text: c.text, documentId: docId, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text.slice(0, 80), warn: true })), warn: special.length > 0 }];
   }
+  if (d.kind === 'title' && leaseSourced(s, d)) {
+    const l = s.title.lease!;
+    const flags = leaseFlags(l, s.lenderRequirements?.minUnexpiredYears ?? null);
+    return [{ documentId: docId!, title, summary: [`Lease${l.demise ? ` of ${l.demise}` : ''}`, l.leaseDate ? `dated ${day(l.leaseDate)}` : null, l.unexpiredYears != null ? `${n(l.unexpiredYears, 'year')} unexpired` : null, l.groundRentPenniesPa != null ? `ground rent ${gbp(l.groundRentPenniesPa)} a year` : null].filter(Boolean).join(', '), lines: flagLines(flags), warn: flags.some((x) => x.severity === 'high' || x.severity === 'medium') }];
+  }
   if (d.kind === 'title') {
     const f = s.title.facts;
     const entries = (label: string, arr: { code: string; text: string; locator?: { page?: number; quote?: string } }[]): Ev[] => arr.map((e) => ({ text: `${label}: ${e.text}`, documentId: docId, page: e.locator?.page ?? null, quote: e.locator?.quote ?? e.text.slice(0, 80), warn: true }));
     const cards: TaskContext['files'] = [{ documentId: docId, title, summary: [f ? `Official copy of ${f.titleNumber}, ${f.tenure}${f.unregistered ? ', UNREGISTERED' : ''}` : 'Official copy', f ? `${n(f.restrictions.length, 'restriction')}, ${n(f.charges.length, 'charge')}, ${n(f.covenants.length, 'covenant')}` : null, read].filter(Boolean).join(', '), lines: f ? [...entries('Restriction', f.restrictions), ...entries('Charge', f.charges), ...entries('Covenant', f.covenants)] : [], warn: !!f && (f.restrictions.length + f.charges.length + f.covenants.length) > 0 }];
     const l = f?.lease;
-    if (l && s.title.leaseDocumentId) cards.push({ documentId: s.title.leaseDocumentId, title: 'Lease', summary: [l.unexpiredYears != null ? `${n(l.unexpiredYears, 'year')} unexpired` : null, l.groundRentPenniesPa != null ? `ground rent ${gbp(l.groundRentPenniesPa)} a year` : null, l.groundRentReview ?? null, l.flags?.length ? n(l.flags.length, 'point') : null].filter(Boolean).join(', '), lines: flagLines(l.flags), warn: !!l.flags?.length });
+    const lfl = l ? leaseFlags(l, s.lenderRequirements?.minUnexpiredYears ?? null) : [];
+    if (l && s.title.leaseDocumentId) cards.push({ documentId: s.title.leaseDocumentId, title: 'Lease', summary: [l.unexpiredYears != null ? `${n(l.unexpiredYears, 'year')} unexpired` : null, l.groundRentPenniesPa != null ? `ground rent ${gbp(l.groundRentPenniesPa)} a year` : null, l.groundRentReview ?? null, lfl.length ? n(lfl.length, 'point') : null].filter(Boolean).join(', '), lines: flagLines(lfl), warn: lfl.length > 0 });
     return cards;
   }
   if (d.kind === 'id_check' && (rp.facts as IdCheckFacts | undefined)?.source === 'document') {
@@ -568,12 +587,14 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
     return attachFlags(checks, flags, docId, flags.length ? [] : [{ text: 'The search came back with nothing the rules flag' }]);
   }
   if (d.kind === 'enquiry') {
-    const f = rp.facts as { enquiryId?: string; status?: string; issues?: Flag[] } | undefined;
+    const f = rp.facts as EnquiryReplyFacts | undefined;
     const q = f?.enquiryId ? s.enquiries[f.enquiryId] : null;
     const status = f?.status ?? 'unclear';
+    const ref = (f?.enquiryId ?? '').replace(/^ISS-\d+-/, '');
     const out: ChecklistItem[] = [
       item('The reply answers the question actually asked', status === 'answered' ? 'ok' : 'flag', [
-        { text: `Asked: ${q?.subject ?? d.subject ?? 'the enquiry'}` },
+        { text: `Asked${ref ? ` (${ref})` : ''}: ${q?.subject ?? d.subject ?? 'the enquiry'}` },
+        ...(f?.replyText ? [{ text: `Replied: “${f.replyText}”`, documentId: docId, page: f.locator?.page ?? null, quote: f.locator?.quote ?? f.replyText.slice(0, 80) }] : []),
         { text: `The reply ${status === 'answered' ? 'answers it' : status === 'partial' ? 'answers part of it' : status === 'refused' ? 'declines to answer' : 'is unclear'}`, documentId: docId, warn: status !== 'answered' },
         ...(f?.issues ?? []).map((fl) => flagEv(fl)),
       ]),
@@ -604,6 +625,28 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
       ]),
       item('Valuation against the price; any down-valuation', 'open'),
     ];
+  }
+  if (d.kind === 'title' && leaseSourced(s, d)) {
+    const l = s.title.lease!;
+    const flags = leaseFlags(l, s.lenderRequirements?.minUnexpiredYears ?? null);
+    const of = (codes: string[]) => flags.filter((fl) => codes.includes(fl.code)).map((fl) => flagEv(fl));
+    const clause = (topic: string) => (l.clauses ?? []).filter((c) => c.topic === topic).map((c): Ev => ({ text: `${c.code}: ${c.text}`, documentId: docId, page: c.locator?.page ?? null, quote: c.locator?.quote ?? null }));
+    const row = (text: string, codes: string[], topics: string[], lines: Array<string | null | undefined>): ChecklistItem => {
+      const fl = of(codes);
+      const ev: Ev[] = [...lines.filter((x): x is string => !!x).map((t) => ({ text: t, documentId: docId })), ...topics.flatMap(clause), ...fl];
+      return item(text, fl.length ? 'flag' : ev.length ? 'ok' : 'open', ev.length ? ev : [{ text: 'Not read from the lease' }]);
+    };
+    const known = new Set(['LEASE_BELOW_LENDER_MINIMUM', 'SHORT_LEASE', 'GROUND_RENT_HIGH', 'GROUND_RENT_DOUBLING', 'LEASE_ALIENATION_ABSOLUTE']);
+    const out: ChecklistItem[] = [
+      row('Term and unexpired years, against what the lender accepts', ['LEASE_BELOW_LENDER_MINIMUM', 'SHORT_LEASE'], ['term'], [l.termYears != null ? `${n(l.termYears, 'year')} from ${l.termStartDate ?? 'the start date'}` : null, l.unexpiredYears != null ? `${n(l.unexpiredYears, 'year')} unexpired` : null, s.lenderRequirements?.minUnexpiredYears != null ? `Lender minimum ${n(s.lenderRequirements.minUnexpiredYears, 'year')}` : null]),
+      row('Ground rent and its review', ['GROUND_RENT_HIGH', 'GROUND_RENT_DOUBLING'], ['rent'], [l.groundRentPenniesPa != null ? `${gbp(l.groundRentPenniesPa)} a year` : null, l.groundRentReview ? `Review: ${l.groundRentReview}` : null]),
+      row('Assignment and subletting: consents, notices, deed of covenant', ['LEASE_ALIENATION_ABSOLUTE'], ['alienation', 'notices'], [l.alienation, l.landlordNotices ? `Notices: ${l.landlordNotices}` : null]),
+      row('Repairs, service charge and insurance', [], ['repairs', 'service_charge', 'insurance'], [l.repairs ? `Repairs: ${l.repairs}` : null, l.serviceChargeProportion ? `Service charge: ${l.serviceChargeProportion}` : null, l.insurance ? `Insurance: ${l.insurance}` : null, l.managementCompany ? `Management company: ${l.managementCompany}` : null]),
+      row('Use, alterations and forfeiture', [], ['use', 'alterations', 'forfeiture'], [l.permittedUse ? `Use: ${l.permittedUse}` : null, l.alterations ? `Alterations: ${l.alterations}` : null, l.forfeiture ? `Forfeiture: ${l.forfeiture}` : null]),
+    ];
+    const other = flags.filter((fl) => !known.has(fl.code));
+    if (other.length) out.push(item('Other points in the lease', 'flag', other.map((fl) => flagEv(fl))));
+    return out;
   }
   if (d.kind === 'title') {
     const f = s.title.facts;
@@ -645,7 +688,7 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
     }
     const l = f?.lease;
     if (l) {
-      const lf = (l.flags ?? []).map((fl) => flagEv(fl, s.title.leaseDocumentId ?? docId));
+      const lf = leaseFlags(l, s.lenderRequirements?.minUnexpiredYears ?? null).map((fl) => flagEv(fl, s.title.leaseDocumentId ?? docId));
       out.push(item('The lease: term, rent and its review, what the lender accepts', lf.length ? 'flag' : 'ok', [
         { text: `${l.unexpiredYears != null ? n(l.unexpiredYears, 'year') + ' unexpired' : 'term not read'}${l.groundRentPenniesPa != null ? ` · ground rent ${gbp(l.groundRentPenniesPa)} a year` : ''}${l.groundRentReview ? ` · ${l.groundRentReview}` : ''}${s.lenderRequirements?.minUnexpiredYears != null ? ` · lender minimum ${s.lenderRequirements.minUnexpiredYears} years` : ''}`, documentId: s.title.leaseDocumentId ?? docId, page: l.locator?.page ?? null },
         ...lf,
@@ -910,4 +953,20 @@ function pofChecklist(s: MatterState, docId: string | null, x: BuildExtras): Bui
   const decl = has(/^POF_(DECLARATION_INCOMPLETE|MISSING_DECLARANT|NO_SOURCES|SALE_PROCEEDS_UNLINKED)$/);
   for (const fl of decl) items.push(item(seeTail(fl.description), 'flag', []));
   return { checklist: items, narrative, files, passed, submitted };
+}
+
+/** A title decision raised by reading the lease (the lease's flags ride the title decision): reviewed as a lease, not as official copies. */
+function leaseSourced(s: MatterState, d: DecisionState): boolean {
+  return !!s.title.lease && !!d.sourceDocumentId && d.sourceDocumentId === s.title.leaseDocumentId;
+}
+
+function leaseRows(l: LeaseFacts, flags: Flag[]): Array<[string, string | null, boolean]> {
+  const has = (...codes: string[]) => flags.some((fl) => codes.includes(fl.code));
+  return [
+    ['Term', [l.termYears != null ? `${l.termYears} years${l.termStartDate ? ` from ${l.termStartDate}` : ''}` : null, l.unexpiredYears != null ? `${l.unexpiredYears} unexpired` : null].filter(Boolean).join(' · ') || null, has('LEASE_BELOW_LENDER_MINIMUM', 'SHORT_LEASE')],
+    ['Ground rent', [l.groundRentPenniesPa != null ? `£${(l.groundRentPenniesPa / 100).toLocaleString('en-GB')} a year` : null, l.groundRentReview].filter(Boolean).join(' · ') || null, has('GROUND_RENT_HIGH', 'GROUND_RENT_DOUBLING')],
+    ['Assignment', l.alienation ?? null, has('LEASE_ALIENATION_ABSOLUTE')],
+    ['Service charge', l.serviceChargeProportion ?? null, false],
+    ['Landlord', [l.landlord, l.managementCompany ? `managed by ${l.managementCompany}` : null].filter(Boolean).join(' · ') || null, false],
+  ];
 }

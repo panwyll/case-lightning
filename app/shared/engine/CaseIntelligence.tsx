@@ -201,7 +201,7 @@ export function CaseIntelligence({ m, events, onDiagnostics, compact = false }: 
             {m.nextActions.slice(0, 8).map((a, i) => (
               <div key={i} className="ci-act">
                 <span className="who">{WHO[a.who] ?? pretty(a.who)}</span>
-                <span style={{ flex: 1 }}>{a.what}<div className="m" style={{ color: '#94a3b8', fontSize: 11.5 }}>unblocks {a.unblocks.toLowerCase()}</div></span>
+                <span style={{ flex: 1 }}>{a.what}</span>
               </div>
             ))}
           </div>

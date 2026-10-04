@@ -456,13 +456,15 @@ export function toEnquiryReplyFacts(out: z.infer<typeof EnquiryReplyExtractionSc
   const match = out.replies.find((r) => referencesMatch(r.enquiryReference, enquiryId)) ?? (out.replies.length === 1 ? out.replies[0] : null);
   if (!match) return null;
   const { flags, minConfidence } = normaliseFlags(match.issues);
-  return { enquiryId, status: match.status, issues: flags, confidence: overallConfidence(out.confidence, [match.confidence, minConfidence], out.scanQuality) };
+  const replyText = match.replyText.trim().slice(0, 600) || null;
+  return { enquiryId, status: match.status, issues: flags, confidence: overallConfidence(out.confidence, [match.confidence, minConfidence], out.scanQuality), replyText, locator: { page: match.locator.page, section: match.locator.section || undefined, quote: match.locator.quote || undefined } };
 }
 
 /** "E1" ≈ "1" ≈ "Enquiry 1" ≈ "e1", but "E1" ≠ "E11" and "E2" ≠ "E2-F1" (a follow-up is its own enquiry). */
 const GENERIC_PREFIXES = new Set(['', 'E', 'ENQ', 'ENQUIRY', 'ENQUIRIES', 'Q', 'QUESTION', 'ADDITIONAL', 'ADDITIONALENQUIRY', 'NO', 'NUMBER', 'ITEM', 'REPLY', 'REPLYTO']);
 export function referencesMatch(a: string, b: string): boolean {
-  const norm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]+/g, '');
+  // An enquiry raised from an issue is keyed "ISS-10-E1"; the other side replies to "E1".
+  const norm = (s: string) => s.toUpperCase().replace(/^ISS-\d+-/, '').replace(/[^A-Z0-9]+/g, '');
   const na = norm(a);
   const nb = norm(b);
   if (!na || !nb) return false;

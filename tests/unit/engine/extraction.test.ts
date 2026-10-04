@@ -53,6 +53,8 @@ test('referencesMatch tolerates the ways solicitors write enquiry numbers', () =
   assert.ok(referencesMatch('E1', '1'));
   assert.ok(referencesMatch('Enquiry 3', 'E3'));
   assert.ok(referencesMatch('e2-f1', 'E2-F1'));
+  assert.ok(referencesMatch('E1', 'ISS-10-E1'), 'an enquiry raised from an issue is replied to by its own number');
+  assert.ok(!referencesMatch('E2', 'ISS-10-E1'));
   assert.ok(!referencesMatch('E1', 'E11'));
   assert.ok(!referencesMatch('', 'E1'));
 });

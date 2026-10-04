@@ -520,6 +520,9 @@ export interface EnquiryReplyFacts {
   status: 'answered' | 'partial' | 'refused' | 'unclear';
   issues: Flag[];
   confidence: number;
+  /** The reply as written (≤ 600 chars), and where it is. */
+  replyText?: string | null;
+  locator?: SourceLocator;
 }
 
 /** A survey or specialist report as the pipeline reads it (component #2): facts, never the client's view. */
