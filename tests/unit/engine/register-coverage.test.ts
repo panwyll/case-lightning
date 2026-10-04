@@ -49,3 +49,21 @@ test('every fact carries the reading confidence, and a fact read without a page 
   assert.equal(r.pages.length, 2);
   assert.ok(r.pages.every((p) => p.verdict === 'unattested'), 'no ledger asked of a survey: its pages are recorded, unattested');
 });
+
+test('a fact stated without a quote is checked by its value on the page', async () => {
+  const { findValue } = await import('../../../lib/server/engine/review');
+  const texts = { pages: ['Cover note', 'Insurer: Stewart Title Limited. Policy number ST-448812.\nLimit of indemnity: £350,000.00. The benefit passes.'], textLayer: true };
+  assert.equal(findValue('support.issued_by', 'Stewart Title Limited', texts), 2);
+  assert.equal(findValue('support.reference', 'ST-448812', texts), 2);
+  assert.equal(findValue('support.limit_pennies', '35000000', texts), 2);
+  assert.equal(findValue('support.limit_pennies', '3500000', texts), null, '£35,000 is not £350,000');
+  assert.equal(findValue('support.benefit_passes', 'yes', texts), null, 'a yes proves nothing');
+  assert.equal(findValue('support.kind', 'indemnity_policy', texts), null, 'a code is not text');
+  assert.equal(findValue('support.issued_by', 'Aviva', texts), null);
+  const r = buildReview({ role: 'supporting_document', facts: { kind: 'indemnity_policy', title: 'Indemnity', covers: '', issuedBy: 'Stewart Title Limited', reference: 'ST-448812', date: '', expires: '', limitPennies: 35_000_000, benefitPasses: true, property: '', notes: [], confidence: 0.9 }, ledger: null, texts });
+  const by = Object.fromEntries(r.facts.map((f) => [f.key, f]));
+  assert.equal(by['support.issued_by'].verified, true);
+  assert.equal(by['support.issued_by'].page, 2);
+  assert.equal(by['support.limit_pennies'].verified, true);
+  assert.equal(by['support.kind'].verified, false);
+});

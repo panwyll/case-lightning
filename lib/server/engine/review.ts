@@ -329,12 +329,42 @@ export function flattenFacts(role: string, facts: unknown, raw?: unknown): Array
   return out;
 }
 
+/**
+ * Where a fact's value appears as written: text values of five characters or more (a name, a reference,
+ * a clause), and sums of money in pounds however printed (350,000 / 350000 / 350,000.00). Yes/no answers,
+ * codes and short values are not looked for: too common to prove anything. The page, or null.
+ */
+export function findValue(key: string, value: string, texts: PageTexts): number | null {
+  if (!texts.textLayer || !value) return null;
+  const v = value.trim();
+  let wanted: string[];
+  if (/_pennies(_|$)/.test(key)) {
+    const n = Number(v) / 100;
+    if (!Number.isFinite(n) || n < 10) return null;
+    wanted = [n.toLocaleString('en-GB', { maximumFractionDigits: 2 }), n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })].map((s) => s.replace(/,/g, ''));
+  } else {
+    if (v.length < 5 || /^(yes|no|true|false|present|absent|in place|not in place)$/i.test(v) || /^[a-z0-9_]+$/.test(v)) return null;
+    wanted = [norm(v)];
+  }
+  const money = /_pennies(_|$)/.test(key);
+  for (let p = 0; p < texts.pages.length; p++) {
+    const page = money ? texts.pages[p].replace(/(\d),(\d)/g, '$1$2') : norm(texts.pages[p]);
+    if (wanted.some((w) => (money ? new RegExp(`(^|[^0-9.])${w.replace('.', '\\.')}([^0-9]|\\.[^0-9]|$)`).test(page) : page.includes(w)))) return p + 1;
+  }
+  return null;
+}
+
 export function buildReview(input: { role: string; facts: unknown; ledger: PageLedger | null | undefined; texts: PageTexts; pageCountHint?: number | null; raw?: unknown }): DocumentReview {
   const pages = buildLedger(input.ledger, input.texts, input.pageCountHint);
   // The extractor's confidence in its reading, on every fact it took from it (a field without its own).
   const docConfidence = typeof (input.facts as { confidence?: unknown } | null)?.confidence === 'number' ? (input.facts as { confidence: number }).confidence : null;
   const facts: FactRow[] = flattenFacts(input.role, input.facts, input.raw).map((row) => ({ ...row, confidence: row.confidence ?? docConfidence })).map((f) => {
-    if (!f.quote) return { ...f, verified: false, note: f.page == null ? 'stated without a quote' : 'no quote' };
+    if (!f.quote) {
+      // A value with no quote is still checked: the name, the reference, the sum as printed on the page.
+      const at = findValue(f.key, f.value, input.texts);
+      if (at) return { ...f, page: f.page ?? at, verified: true, note: `the value is on page ${at}` };
+      return { ...f, verified: false, note: f.page == null ? 'stated without a quote' : 'no quote' };
+    }
     const v = verifyQuote(f.quote, f.page, input.texts);
     return { ...f, verified: v.verified, note: v.note };
   });

@@ -150,8 +150,14 @@ export class PgDocumentFactsWriter implements DocumentFactsWriter {
     if (!prev.length) prev = await query<{ key: string; value: string; extractor: string | null; created_at: string }>(`select f.key, f.value, f.extractor, f.created_at from document_fact f join document d on d.id = f.document_id where d.superseded_by = $1 and d.tenant_id = $2 and f.role = $3`, [doc.id, doc.tenantId, review.role]).catch(() => []);
     await query(`delete from document_page where document_id = $1 and tenant_id = $2`, [doc.id, doc.tenantId]);
     for (const pg of review.pages) await query(`insert into document_page (document_id, tenant_id, page, verdict, text_chars, ocr_confidence) values ($1, $2, $3, $4, $5, $6)`, [doc.id, doc.tenantId, pg.page, pg.verdict, pg.textChars, pg.ocr ?? null]);
+    // What a person said about a fact (confirmed, disputed) stays with it when the same fact is read again.
+    const marks = await query<{ key: string; value: string; confirmed_by: string | null; confirmed_at: string | null; disputed_note: string | null }>(
+      `select key, value, confirmed_by, confirmed_at, disputed_note from document_fact where document_id = $1 and tenant_id = $2 and role = $3 and (confirmed_by is not null or disputed_note is not null)`,
+      [doc.id, doc.tenantId, review.role]
+    ).catch(() => []);
     await query(`delete from document_fact where document_id = $1 and tenant_id = $2 and role = $3`, [doc.id, doc.tenantId, review.role]);
     for (const f of review.facts) await query(`insert into document_fact (document_id, tenant_id, matter_id, role, key, value, page, quote, confidence, verified, note, extractor) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, [doc.id, doc.tenantId, doc.matterId, review.role, f.key, f.value, f.page, f.quote, f.confidence, f.verified, f.note, extractor]);
+    for (const m of marks) await query(`update document_fact set confirmed_by = $5, confirmed_at = $6, disputed_note = $7 where document_id = $1 and tenant_id = $2 and role = $3 and key = $4 and lower(trim(value)) = lower(trim($8))`, [doc.id, doc.tenantId, review.role, m.key, m.confirmed_by, m.confirmed_at, m.disputed_note, m.value]).catch(() => {});
     if (prev.length) {
       const diff = diffRegister(prev, review.facts);
       await query(`update document set review_diff = $3::jsonb where id = $1 and tenant_id = $2`, [doc.id, doc.tenantId, JSON.stringify({ role: review.role, at: new Date().toISOString(), previousExtractor: prev[0].extractor, previousAt: prev[0].created_at, extractor, ...diff })]).catch(() => {});

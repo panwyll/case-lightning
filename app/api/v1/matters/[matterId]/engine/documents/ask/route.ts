@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
@@ -6,11 +6,13 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { ok, fail } from '@/lib/server/http';
 import { findFacts } from '@/lib/server/engine/file-index';
 import { askFile } from '@/lib/server/engine/file-ask';
-import { catchUpFileIndex } from '@/lib/server/engine/file-backfill';
+import { catchUpFileIndex, ocrCatchUp } from '@/lib/server/engine/file-backfill';
 import { documentBytesLoader, PgDocumentFactsWriter, PgDocumentRepository } from '@/lib/server/engine/adapters';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// Room for the OCR catch-up that runs after the response.
+export const maxDuration = 60;
 
 /** Ask the file: `q` is answered from the facts and passages (document, page) it finds, every sentence cited (file-ask.ts); `key` lists the register by key prefix. */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ matterId: string }> }) {
@@ -25,7 +27,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ matt
     // Documents filed before the index covered them are caught up first (bounded; the rest on the next question).
     const repo = new PgDocumentRepository();
     const writer = new PgDocumentFactsWriter();
-    await catchUpFileIndex(user.tenantId, matterId, { get: (id) => repo.get(user.tenantId, id), load: (doc) => documentBytesLoader().load(doc), writeReview: (doc, review, extractor, texts) => writer.writeReview(doc, review, extractor, texts) }).catch(() => null);
+    const deps = { get: (id: string) => repo.get(user.tenantId, id), load: (doc: Parameters<ReturnType<typeof documentBytesLoader>['load']>[0]) => documentBytesLoader().load(doc), writeReview: writer.writeReview.bind(writer) };
+    await catchUpFileIndex(user.tenantId, matterId, deps).catch(() => null);
+    // Scanned pages a long document's OCR did not reach are read after the answer goes back, not before.
+    after(async () => { await ocrCatchUp(user.tenantId, matterId, deps, 40_000).catch(() => null); });
     return ok(await askFile(user.tenantId, matterId, q.q.trim(), { userId: user.userId }));
   } catch (error) {
     return fail(error);

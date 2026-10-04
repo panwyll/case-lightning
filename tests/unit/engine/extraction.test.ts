@@ -158,5 +158,5 @@ test('ClaudeExtractor: every read writes a coverage ledger and a fact register, 
   assert.equal(reviews[0].pages, 2, 'pdf.js counted the pages');
   assert.equal(reviews[0].unattested, 0);
   assert.equal(reviews[0].facts, 4, 'search type, the address as searched, and two flags');
-  assert.equal(reviews[0].verified, 1, 'the real quote is found on page 2; the invented one is not');
+  assert.equal(reviews[0].verified, 3, 'the real quote is found on page 2, the invented one is not; the search type and the address as searched are on page 1 as printed');
 });

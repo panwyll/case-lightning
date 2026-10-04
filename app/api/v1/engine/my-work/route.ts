@@ -9,9 +9,13 @@ import { query } from '@/lib/server/db';
 import { buckets, OWNER_LABEL } from '@/lib/server/engine/work';
 import { workItems, canCover } from '@/lib/server/engine/my-work';
 import { assistantMay } from '@/lib/server/engine/http';
+import { ocrCatchUp } from '@/lib/server/engine/file-backfill';
+import { documentBytesLoader, PgDocumentFactsWriter, PgDocumentRepository } from '@/lib/server/engine/adapters';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// Room for the OCR catch-up that runs after the response.
+export const maxDuration = 60;
 
 /**
  * The personal work list (docs/caseload-ux.md §4): DO · WAITING · CHASE across this
@@ -54,7 +58,13 @@ export async function GET(req: NextRequest) {
     }
     for (const i of items) (i as { assistantCan?: boolean }).assistantCan = assistantMay(i.kind);
     // A file wrongly flagged as password-protected clears itself in the background (reading goes after the response).
-    after(async () => { await recheckLockedDocuments(user.tenantId, 10).catch(() => null); });
+    after(async () => {
+      await recheckLockedDocuments(user.tenantId, 10).catch(() => null);
+      // One long scan's unread pages at a time, firm-wide, while the list is open (documents.md).
+      const repo = new PgDocumentRepository();
+      const writer = new PgDocumentFactsWriter();
+      await ocrCatchUp(user.tenantId, null, { get: (id) => repo.get(user.tenantId, id), load: (doc) => documentBytesLoader().load(doc), writeReview: writer.writeReview.bind(writer) }, 40_000).catch(() => null);
+    });
     return ok({ ...buckets(items), viewerRole: user.role, scope: all ? 'all' : who === user.userId ? 'mine' : 'colleague', matters, ownerLabels: OWNER_LABEL });
   } catch (error) {
     return fail(error);

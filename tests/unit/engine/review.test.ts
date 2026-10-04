@@ -36,8 +36,9 @@ test('title facts flatten to keyed rows and are verified against the page text',
   const review = buildReview({ role: 'title', facts, ledger: [{ page: 1, verdict: 'facts' }, { page: 2, verdict: 'facts' }, { page: 3, verdict: 'nothing' }], texts });
   assert.equal(review.summary.complete, true);
   assert.equal(review.summary.facts, 3);
-  assert.equal(review.summary.verified, 1, 'the charge has a quote on the page; the number and tenure were stated without one');
-  assert.equal(review.facts.find((f) => f.key === 'title.number')?.note, 'stated without a quote');
+  assert.equal(review.summary.verified, 2, 'the charge by its quote; the title number, stated without one, by its value on page 1; the tenure (a code) is not looked for');
+  assert.equal(review.facts.find((f) => f.key === 'title.number')?.note, 'the value is on page 1');
+  assert.equal(review.facts.find((f) => f.key === 'title.tenure')?.note, 'stated without a quote');
   assert.equal(coverageLine(review.summary), '3 of 3 pages read · 2 with facts');
 });
 

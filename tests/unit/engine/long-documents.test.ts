@@ -34,7 +34,8 @@ test("a section's pages are moved to the whole document's, and the readings merg
   assert.equal(second.clauses[0].locator.page, 69);
   assert.equal(second.pages[0].page, 66);
   assert.equal(second.termYears, 125, 'only page numbers move');
-  const merged = mergeReadings([
+  type Reading = { landlord: string; termYears: number | null; groundRentPenniesPa: number | null; clauses: Array<{ code: string; text: string }>; flags: Array<{ code: string; text: string }>; pages: Array<{ page: number; verdict: string }>; confidence: number; scanQuality: string; forfeitureClause: boolean };
+  const merged = mergeReadings<Reading>([
     { landlord: 'Acme Estates Ltd', termYears: 125, groundRentPenniesPa: null, clauses: [{ code: 'alienation', text: 'No assignment of part' }], flags: [], pages: [{ page: 1, verdict: 'facts' }], confidence: 0.9, scanQuality: 'good', forfeitureClause: false },
     { landlord: 'Someone Else', termYears: null, groundRentPenniesPa: 25_000, clauses: [{ code: 'alienation', text: 'No assignment of part' }, { code: 'repair', text: 'The Tenant repairs the interior' }], flags: [{ code: 'DOUBLING_RENT', text: 'Rent doubles every 25 years' }], pages: [{ page: 66, verdict: 'facts' }], confidence: 0.7, scanQuality: 'fair', forfeitureClause: true },
   ]);
@@ -62,4 +63,15 @@ test("a PDF table's cells stay apart, and words on a line join as written", () =
 test('a Word table comes through as rows of cells', () => {
   const html = '<h1>Schedule</h1><p>Fixtures &amp; fittings</p><table><tr><td><p>Item</p></td><td><p>Price</p></td></tr><tr><td>Curtains</td><td>£300</td></tr></table><ul><li>Carpets stay</li></ul>';
   assert.equal(htmlToLines(html), 'Schedule\nFixtures & fittings\nItem | Price\nCurtains | £300\nCarpets stay');
+});
+
+test("a page's text comes back whole from its overlapping chunks (for reading the pages OCR did not reach)", async () => {
+  const { chunks } = await import('../../../lib/server/engine/file-index');
+  const { joinChunks } = await import('../../../lib/server/engine/file-backfill');
+  const page = Array.from({ length: 50 }, (_, i) => `${i + 1}. The Tenant covenants to keep the Flat in repair and to pay the rent on the due dates without deduction.`).join('\n');
+  const parts = chunks(page);
+  assert.ok(parts.length > 2);
+  assert.equal(joinChunks(parts), page);
+  assert.equal(joinChunks([]), '');
+  assert.equal(joinChunks(['Only chunk.']), 'Only chunk.');
 });
