@@ -325,7 +325,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
       const d = daysBetween(todayIso(), i.resolveBy);
       parts.push(d < 0 ? { text: `${-d} day${d === -1 ? '' : 's'} overdue`, cls: 'late' } : d === 0 ? { text: 'Due today', cls: 'soon' } : { text: `Resolve by ${fmtDay(i.resolveBy)}`, cls: d <= 2 ? 'soon' : undefined });
     }
-    if (i.enquiryIds?.length) parts.push({ text: `Enquiry ${i.enquiryIds.join(', ')}` });
+    if (i.enquiryIds?.length) parts.push({ text: `Enquiry ${i.enquiryIds.map((x) => x.replace(/^ISS-\d+-/, '')).join(', ')}` });
     return <div className="is-s">{!ctx && i.severity && <i className={`sev ${i.severity}`} title="Severity">{SEVERITY_LABEL[i.severity]}</i>}{parts.map((p, n) => <span key={n} className={p.cls}>{p.text}</span>)}</div>;
   };
 
@@ -542,7 +542,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
         {formErr && <div className="bad">{formErr === 'It did not save.' && err ? err : formErr}</div>}
         <div className="f">
           <button type="button" className="ep-btn" style={{ margin: 0 }} onClick={closeForm}>Cancel</button>
-          <BusyButton className={`ep-btn${mode === 'fatal' || mode === 'delete' ? '' : ' primary'}`} style={mode === 'fatal' ? { color: '#b91c1c', borderColor: '#fecaca' } : undefined} disabled={busy || !ready} doneLabel={spec.done} onClick={() => submitSmall(i, mode)}>{spec.button}</BusyButton>
+          <BusyButton className={`ep-btn${mode === 'fatal' || mode === 'delete' ? '' : ' primary'}`} style={mode === 'fatal' || mode === 'delete' ? { background: '#dc2626', color: '#fff', borderColor: '#dc2626' } : undefined} disabled={busy || !ready} doneLabel={spec.done} onClick={() => submitSmall(i, mode)}>{spec.button}</BusyButton>
         </div>
       </div>
     );

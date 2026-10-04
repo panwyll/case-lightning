@@ -125,10 +125,12 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     const r = await api<{ pages: Array<{ page: number; verdict: string }>; facts: typeof table extends infer T ? (T extends { facts: infer F } ? F : never) : never; diff?: RegisterDiffView | null; draftCheck?: DraftCheckView | null }>(`/documents/${id}/review`).catch(() => null);
     setTable(r ? { id, pages: r.pages, facts: r.facts as never, diff: r.diff ?? null, draftCheck: r.draftCheck ?? null } : null);
   };
-  const mark = async (factId: string, action: 'confirm' | 'dispute' | 'clear') => {
+  // Disputing a fact asks what is wrong with it, in the row (never a browser prompt).
+  const [disputing, setDisputing] = useState<{ factId: string; note: string } | null>(null);
+  const mark = async (factId: string, action: 'confirm' | 'dispute' | 'clear', note: string | null = null) => {
     if (!table) return;
-    const note = action === 'dispute' ? window.prompt('What is wrong with this fact?') : null;
-    if (action === 'dispute' && !note) return;
+    if (action === 'dispute' && !note?.trim()) return;
+    setDisputing(null);
     await api(`/documents/${table.id}/review`, { method: 'POST', body: JSON.stringify({ factId, action, note }) }).catch(() => {});
     await loadTable(table.id);
   };
@@ -225,10 +227,10 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
                       <td style={{ padding: '6px 10px', color: '#64748b' }}>{f.page ?? ''}</td>
                       <td style={{ padding: '6px 10px', color: '#64748b', fontStyle: 'italic', maxWidth: 320 }}>{f.quote ? `“${f.quote.slice(0, 140)}${f.quote.length > 140 ? '…' : ''}”` : ''}</td>
                       <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
-                        {f.confirmedAt ? <span style={{ color: '#14532d', fontWeight: 700 }}>Confirmed · {f.confirmedBy}</span> : f.disputedNote ? <span style={{ color: '#b91c1c', fontWeight: 700 }} title={f.disputedNote}>Disputed</span> : f.verified ? <span style={{ color: '#14532d' }}>Quote found</span> : <span style={{ color: '#b45309' }} title={f.note ?? ''}>{f.note ?? 'unchecked'}</span>}
+                        {f.confirmedAt ? <span style={{ color: '#14532d', fontWeight: 700 }}>Confirmed · {f.confirmedBy}</span> : f.disputedNote ? <span style={{ color: '#b91c1c', fontWeight: 700 }} title={f.disputedNote}>Disputed</span> : f.verified ? <span style={{ color: '#14532d' }}>Quote found</span> : <span style={{ color: '#b45309' }} title={f.note ?? ''}>{f.note ?? 'Unchecked'}</span>}
                       </td>
                       <td style={{ padding: '4px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                        {f.confirmedAt || f.disputedNote ? <button className="ep-btn" style={{ margin: 0, padding: '2px 8px', fontSize: 11.5 }} onClick={() => void mark(f.id, 'clear')}>Undo</button> : <><button className="ep-btn" style={{ margin: '0 4px 0 0', padding: '2px 8px', fontSize: 11.5 }} onClick={() => void mark(f.id, 'confirm')}>Confirm</button><button className="ep-btn" style={{ margin: 0, padding: '2px 8px', fontSize: 11.5 }} onClick={() => void mark(f.id, 'dispute')}>Dispute</button></>}
+                        {disputing?.factId === f.id ? <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><input className="ep-input" autoFocus placeholder="What is wrong with it" value={disputing.note} onChange={(e) => setDisputing({ factId: f.id, note: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') void mark(f.id, 'dispute', disputing.note); if (e.key === 'Escape') setDisputing(null); }} style={{ width: 220, margin: 0, padding: '3px 8px', fontSize: 12 }} /><button className="ep-btn primary" style={{ margin: 0, padding: '2px 8px', fontSize: 11.5 }} disabled={!disputing.note.trim()} onClick={() => void mark(f.id, 'dispute', disputing.note)}>Dispute</button><button className="ep-btn" style={{ margin: 0, padding: '2px 8px', fontSize: 11.5 }} onClick={() => setDisputing(null)}>Cancel</button></span> : f.confirmedAt || f.disputedNote ? <button className="ep-btn" style={{ margin: 0, padding: '2px 8px', fontSize: 11.5 }} onClick={() => void mark(f.id, 'clear')}>Undo</button> : <><button className="ep-btn" style={{ margin: '0 4px 0 0', padding: '2px 8px', fontSize: 11.5 }} onClick={() => void mark(f.id, 'confirm')}>Confirm</button><button className="ep-btn" style={{ margin: 0, padding: '2px 8px', fontSize: 11.5 }} onClick={() => setDisputing({ factId: f.id, note: '' })}>Dispute</button></>}
                       </td>
                     </tr>
                   ))}
