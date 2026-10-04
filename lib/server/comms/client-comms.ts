@@ -167,6 +167,8 @@ export class ProductionClientComms implements ClientComms {
       completionDate: typeof payload.completionDate === 'string' ? payload.completionDate : info.completionDate ?? 'the agreed date',
       // What the case is, from the case itself (an engine context saying 'purchase' for any non-sale is not trusted over it).
       transaction: info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? (typeof context.transaction === 'string' ? context.transaction : 'purchase'),
+      // "Your purchase of 14 Oak Street", "Your transfer of equity in 14 Oak Street".
+      dealOf: info.transaction === 'transfer' ? 'transfer of equity in' : `${info.transaction ?? 'purchase'} of`,
       waitingOn: typeof context.waitingOn === 'string' ? context.waitingOn : '',
       waitingFor: typeof context.waitingFor === 'string' ? context.waitingFor : '',
       nextChaseNote: typeof context.nextChase === 'string' && context.nextChase ? ` and will chase again on ${context.nextChase} if we have not heard` : ' and will keep following it up',
@@ -274,6 +276,12 @@ export class ProductionChaser implements ThirdPartyChaser {
   readonly name = 'chaser';
   constructor(private deps: CommsDeps) {}
 
+  /** How a letter to this role opens: the firm or lender by name, else the formal form. */
+  private nameFor(info: MatterContactInfo, role: string): string {
+    const c = role === 'seller_solicitor' ? info.contacts.seller_solicitor : role === 'lender' ? info.contacts.lender : null;
+    return c?.name || (role === 'seller_solicitor' ? 'Colleagues' : 'Sir or Madam');
+  }
+
   private chaseVars(info: MatterContactInfo, ctx: Record<string, unknown>): Record<string, string> {
     const subject = typeof ctx.subject === 'string' ? ctx.subject : '';
     const prior = Number(ctx.priorChases ?? 0);
@@ -290,6 +298,8 @@ export class ProductionChaser implements ThirdPartyChaser {
       priorChaseNote: prior > 0 ? `, despite ${prior} previous reminder${prior === 1 ? '' : 's'}` : '',
       completionDate: info.completionDate ?? '',
       transaction: info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? (typeof ctx.transaction === 'string' ? ctx.transaction : 'purchase'),
+      // "Your purchase of 14 Oak Street", "Your transfer of equity in 14 Oak Street".
+      dealOf: info.transaction === 'transfer' ? 'transfer of equity in' : `${info.transaction ?? 'purchase'} of`,
       // The thing we asked for, again (engine/chase-content.ts): the link, the form, or what is still outstanding.
       resend: typeof ctx.resend === 'string' ? ctx.resend : '',
       // Said only when there is a lender: a cash buyer never reads about a mortgage.
@@ -315,7 +325,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     const baseChase = forTransaction(CHASES, input.template, info.transaction);
     if (!baseChase) throw new Error(`Unknown chase template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, baseChase);
-    const r = render(t, this.chaseVars(info, input.context));
+    const r = render(t, { ...this.chaseVars(info, input.context), recipientName: this.nameFor(info, input.recipientRole) });
     return { ...this.recipient(info, input.recipientRole), subject: r.subject, body: r.body };
   }
 
@@ -333,7 +343,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     const baseChase = forTransaction(CHASES, input.template, info.transaction);
     if (!baseChase) throw new Error(`Unknown chase template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, baseChase);
-    const r = applyOverride(render(t, this.chaseVars(info, input.context)), input.override);
+    const r = applyOverride(render(t, { ...this.chaseVars(info, input.context), recipientName: this.nameFor(info, input.recipientRole) }), input.override);
     if (r.missing.length) throw new Error(`Chase template ${t.key} missing ${r.missing.join(', ')}`);
     { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
 
@@ -375,7 +385,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     const party = !!(PARTY_NOTICES[input.key] ?? PARTY_NOTICES[base]);
     const t: Template = { key: input.key, channel: client ? 'client' : 'chase', subject: input.subject, body: input.body, requires: [] };
     const word = info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase';
-    const other = info.contacts.seller_solicitor?.name ?? 'Sirs';
+    const other = info.contacts.seller_solicitor?.name ?? 'Colleagues';
     const vars: Record<string, string> = client ? new ProductionClientComms(this.deps).vars(info, {}) : party
       ? { matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, recipientName: other, solicitorName: other, completionDate: info.completionDate ?? 'the agreed date', leaseholdForms: '', transaction: word }
       : this.chaseVars(info, {});
@@ -391,7 +401,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     const to = info.contacts[input.recipientRole];
     const label = input.recipientRole === 'seller_solicitor' ? "The other side's solicitor" : input.recipientRole === 'estate_agent' ? 'The estate agent' : 'The lender';
     const ctx = input.context;
-    const r = render(t, { matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, recipientName: to?.name || 'Sirs', completionDate: typeof ctx.completionDate === 'string' && ctx.completionDate ? ctx.completionDate : info.completionDate ?? 'the agreed date', leaseholdForms: typeof ctx.leaseholdForms === 'string' ? ctx.leaseholdForms : '', transaction: info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase' });
+    const r = render(t, { matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, recipientName: to?.name || 'Sir or Madam', completionDate: typeof ctx.completionDate === 'string' && ctx.completionDate ? ctx.completionDate : info.completionDate ?? 'the agreed date', leaseholdForms: typeof ctx.leaseholdForms === 'string' ? ctx.leaseholdForms : '', transaction: info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase' });
     return { to: `${label}${to?.name ? ` (${to.name})` : ''}`, address: to?.email ?? null, channel: to?.email ? 'email' : 'none', subject: r.subject, body: r.body };
   }
 
@@ -404,7 +414,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     const label = input.recipientRole === 'seller_solicitor' ? "the seller's solicitor" : input.recipientRole === 'estate_agent' ? 'the estate agent' : 'the lender';
     if (!to?.email) throw new Error(`There is no email address for ${label} on the case, so this could not be sent. Add them as a contact, then Try Again.`);
     const ctx = input.context;
-    const r = render(t, { matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, recipientName: to.name || 'Sirs', completionDate: typeof ctx.completionDate === 'string' && ctx.completionDate ? ctx.completionDate : info.completionDate ?? 'the agreed date', leaseholdForms: typeof ctx.leaseholdForms === 'string' ? ctx.leaseholdForms : '', transaction: info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase' });
+    const r = render(t, { matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, recipientName: to.name || 'Sir or Madam', completionDate: typeof ctx.completionDate === 'string' && ctx.completionDate ? ctx.completionDate : info.completionDate ?? 'the agreed date', leaseholdForms: typeof ctx.leaseholdForms === 'string' ? ctx.leaseholdForms : '', transaction: info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase' });
     if (r.missing.length) throw new Error(`Request template ${t.key} missing ${r.missing.join(', ')}`);
     { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
     let sent: { messageId: string | null };
@@ -457,7 +467,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     const ctx = input.context;
     const vars = {
       matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName,
-      agentName: agent.name || 'Sirs',
+      agentName: agent.name || 'Sir or Madam',
       quote: typeof ctx.quote === 'string' ? ctx.quote : '',
       waitingOn: typeof ctx.waitingOn === 'string' ? ctx.waitingOn : '', waitingFor: typeof ctx.waitingFor === 'string' ? ctx.waitingFor : '',
       nextChaseNote: typeof ctx.nextChase === 'string' && ctx.nextChase ? ` and will chase again on ${ctx.nextChase} if we have not heard` : ' and will keep following it up',

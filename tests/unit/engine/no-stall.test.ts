@@ -370,7 +370,7 @@ async function dumpMessages(c: Case, policy: string, ports: ReturnType<typeof mo
     const r = JSON.parse(line) as { kind: string; subject: string | null; body: string | null; error: string | null };
     if (r.error) { problems.push(`${r.kind} could not be written: ${r.error}`); continue; }
     const t = `${r.subject ?? ''}\n${r.body ?? ''}`;
-    const bad: Array<[RegExp, string]> = [[/\b\d{4}-\d{2}-\d{2}\b/, 'a raw date'], [/\{\{|\}\}|\bundefined\b|\bnull\b|NaN/, 'a leftover'], [/\bISS-\d|\b[A-Z0-9]+-F\d\b/, 'an internal key']];
+    const bad: Array<[RegExp, string]> = [[/\b\d{4}-\d{2}-\d{2}\b/, 'a raw date'], [/\{\{|\}\}|\bundefined\b|\bnull\b|NaN/, 'a leftover'], [/\bISS-\d|\b[A-Z0-9]+-F\d\b/, 'an internal key'], [/Your\s{2}|\b(of|in) (of|in)\b|transfer of equity of\b/, 'a broken subject']];
     if (r.kind.startsWith('client') && side === 'seller') bad.push([/your purchase|the seller's solicitor/i, 'purchase words on a sale']);
     if (side === 'owner') bad.push([/\bexchange|seller's solicitor|your purchase|your sale\b/i, 'sale or purchase words on a ' + c.tt.replace(/_/g, ' ')]);
     for (const [re, what] of bad) { const m = re.exec(t); if (m) problems.push(`${r.kind} has ${what}: "${t.slice(Math.max(0, m.index - 40), m.index + 40).replace(/\n/g, ' / ')}"`); }
