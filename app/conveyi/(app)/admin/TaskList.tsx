@@ -230,9 +230,13 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
     const tick = () => { if (document.visibilityState === 'visible' && quiet.current) { void load(); window.dispatchEvent(new Event('conveyi:counts')); } };
     const t = setInterval(tick, 30_000);
     const back = () => { if (document.visibilityState === 'visible') tick(); };
+    // An action inside an opened task (StepReview) may add or clear other tasks: reload, once things settle.
+    let soon: ReturnType<typeof setTimeout> | null = null;
+    const changed = () => { if (soon) clearTimeout(soon); soon = setTimeout(() => { void load(); window.dispatchEvent(new Event('conveyi:counts')); }, 900); };
+    window.addEventListener('conveyi:tasks-changed', changed);
     document.addEventListener('visibilitychange', back);
     window.addEventListener('focus', back);
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', back); window.removeEventListener('focus', back); };
+    return () => { clearInterval(t); if (soon) clearTimeout(soon); window.removeEventListener('conveyi:tasks-changed', changed); document.removeEventListener('visibilitychange', back); window.removeEventListener('focus', back); };
   }, [load]);
   // The Refresh beside the heading asks the list to reload in place; it says when it is done.
   useEffect(() => {

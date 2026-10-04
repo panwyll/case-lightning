@@ -5,13 +5,16 @@ import { WorkPanel, WORK_CSS } from './WorkPanel';
 import { IssuesPanel, loadIssueCatalogue } from './IssuesPanel';
 import type { Api } from './types';
 
+/** Something done inside an opened task can add or clear others (bank details raise their verification): the list reloads. */
+const tasksChanged = () => window.dispatchEvent(new Event('conveyi:tasks-changed'));
+
 /**
  * One flowchart step, done from the Tasks list: the same action the case page offers (an upload,
  * a record, an authorisation), in place, so nobody has to open the case to find it. When the step
  * is no longer due, `onDone` fires. An upload is read after it lands, so the step is re-checked for a little while.
  */
 export function StepReview({ api, matterId, stepKey, onDone }: { api: Api; matterId: string; stepKey: string; onDone: () => void }) {
-  const eng = useEngine(matterId, api);
+  const eng = useEngine(matterId, api, tasksChanged);
   const due = eng.view ? (eng.view.due ?? []).some((d) => d.key === stepKey) : true;
   // Done: the confirmation stays on screen a moment, then the task leaves the list.
   useEffect(() => { if (!eng.view || due) return; const t = setTimeout(onDone, 2500); return () => clearTimeout(t); }, [eng.view, due]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -29,7 +32,7 @@ export function StepReview({ api, matterId, stepKey, onDone }: { api: Api; matte
 export function IssueReview({ api, matterId, issueId, onDone, onCancel }: { api: Api; matterId: string; issueId: string; onDone: () => void; onCancel?: () => void }) {
   // The case and the catalogue load together; the issue form needs no event history.
   useEffect(() => { void loadIssueCatalogue(api); }, [api]);
-  const eng = useEngine(matterId, api, undefined, { events: false });
+  const eng = useEngine(matterId, api, tasksChanged, { events: false });
   const st = eng.view?.state.issues?.[issueId]?.status;
   const live = st === 'open' || st === 'negotiating';
   // Resolved: the confirmation stays on screen a moment, then the task leaves the list.
@@ -46,7 +49,7 @@ export function IssueReview({ api, matterId, issueId, onDone, onCancel }: { api:
 
 /** A date we owe coming up (or gone): the case's own to-do list in place, since the way through is one of its steps, decisions or issues. */
 export function CaseTodoReview({ api, matterId }: { api: Api; matterId: string }) {
-  const eng = useEngine(matterId, api);
+  const eng = useEngine(matterId, api, tasksChanged);
   if (!eng.view) return <div style={{ fontSize: 13, color: eng.err ? '#b91c1c' : '#94a3b8', padding: 4 }}>{eng.err ?? 'Loading…'}</div>;
   return (
     <div>
@@ -57,7 +60,7 @@ export function CaseTodoReview({ api, matterId }: { api: Api; matterId: string }
 
 /** Something the case is waiting for, recorded from the Tasks list (its form in place). `onDone` fires once the wait has closed. */
 export function WaitReview({ api, matterId, wait, onDone }: { api: Api; matterId: string; wait: string; onDone: () => void }) {
-  const eng = useEngine(matterId, api);
+  const eng = useEngine(matterId, api, tasksChanged);
   const at = wait.indexOf(':');
   const key = at < 0 ? wait : wait.slice(0, at), subject = at < 0 ? '' : wait.slice(at + 1);
   const open = eng.view ? eng.view.state.waits.some((w) => w.key === key && w.subject === subject && !w.closedAt) : true;

@@ -254,7 +254,7 @@ test('work: a decision is a DO for a person, a hard stop is critical, and a prop
   assert.ok(rec.events.length);
   s = await h.svc.getState(TENANT, MATTER);
   items = matterWork(s, h.ports.now(), { assignedTo: USER, levels: cfg }).items;
-  const stop = items.find((i) => i.what.startsWith('Verify bank details'))!;
+  const stop = items.find((i) => i.what.startsWith("Confirm the seller's solicitor's bank details by phone"))!;
   assert.ok(stop, 'the hard stop is on the list');
   assert.equal(stop.urgency, 'critical');
   assert.match(stop.unblocks ?? '', /payment/i);

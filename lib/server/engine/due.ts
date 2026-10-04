@@ -42,7 +42,7 @@ const RESEND_TITLE: Record<string, (d: { searchType?: string }) => string> = {
   exchange_authority_request: () => "Ask the client for authority to exchange",
   balance_request: () => 'Ask the client for the balance of the completion money',
   ownership_basis_request: () => 'Ask the clients how they will own the property',
-  buildings_insurance_request: () => 'Ask the client for buildings insurance from exchange',
+  buildings_insurance_request: () => 'Ask the client for their buildings insurance',
 };
 const RESEND_LANE: Record<string, string> = { search_order: 'searches', id_check_request: 'id_aml', proof_of_funds_request: 'source_of_funds', proof_of_funds_followup: 'source_of_funds', signing_pack: 'signing', deposit_request: 'exchange', property_forms_request: 'property_forms', exchange_authority_request: 'exchange', balance_request: 'completion', ownership_basis_request: 'co_ownership', buildings_insurance_request: 'pre_completion_checks' };
 

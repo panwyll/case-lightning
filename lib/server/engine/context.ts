@@ -12,6 +12,7 @@
 import { profileOf } from './transactions';
 import { describeIdDocument, idDay, ID_DOCUMENT_TYPE } from './id-document';
 import { whyNot, gate, type GateId } from './graph';
+import { ISSUE_KIND_SPEC } from './issues';
 import { openIssues, openWaits, pendingDecisions, type DecisionState, type EngineEvent, type Flag, type IdCheckFacts, type MatterState, type Payloads, type SearchType } from './types';
 
 export interface TaskContext {
@@ -706,13 +707,17 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
       ...Object.values(s.searches).filter((sr) => sr.status === 'ordered' || sr.status === 'flagged').map((sr) => `${sr.searchType} search`),
       ...(s.hasLender && s.mortgage.status !== 'cleared' && s.mortgage.status !== 'reviewed' ? ['mortgage offer'] : []),
       ...(s.requireProofOfFunds && !s.proofOfFunds.approvedAt ? ['proof of funds'] : []),
+      // An open issue holding exchange, enquiries drafted but not sent, the pack itself: a report that says "all in" must mean it.
+      ...openIssues(s).filter((i) => i.gate !== 'none' && !ISSUE_KIND_SPEC[i.kind]?.context && i.kind !== 'send_failed' && i.kind !== 'file_locked').map((i) => `"${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim()}"`),
+      ...(Object.values(s.proposals).some((p) => p.status === 'pending' && p.action === 'enquiry_draft') ? ['enquiries drafted and not yet sent'] : []),
+      ...(openWaits(s).some((w) => w.key === 'contract_pack') ? ['the draft contract pack'] : []),
     ];
     return [
       item('Every figure and fact in the draft is backed by the file', rv?.facts ? (rv.unverified.length ? 'flag' : 'ok') : 'open', rv?.facts ? [
         { text: `${rv.verified} of ${n(rv.facts, 'quoted fact')} found on the page`, documentId: docId },
         ...rv.unverified.slice(0, 6).map((u) => ({ text: `Not found in the documents: ${u.value}`, warn: true })),
       ] : [{ text: 'Not yet checked against the documents on file' }]),
-      item(pendingBits.length ? 'What is still to come is said to be still to come' : 'Everything it reports on is in', pendingBits.length ? 'flag' : 'ok', pendingBits.length ? [{ text: `Still to come: ${pendingBits.join(', ')}`, warn: true }] : [{ text: 'Every search, enquiry and title point is resolved' }]),
+      item(pendingBits.length ? 'What is still to come is said to be still to come' : 'Everything it reports on is in', pendingBits.length ? 'flag' : 'ok', pendingBits.length ? [{ text: `Still to come: ${pendingBits.join(', ')}`, warn: true }] : [{ text: 'Every search, enquiry and issue holding exchange is resolved' }]),
       item('Mortgage conditions the client must meet are in it', s.hasLender ? 'open' : 'ok', s.hasLender && s.mortgage.facts ? s.mortgage.facts.conditions.filter((c) => !c.standard).map((c) => ({ text: c.text })) : []),
       item('Reads plainly, and agrees with what the client has already been told', 'open'),
     ];

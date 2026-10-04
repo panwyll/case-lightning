@@ -26,7 +26,7 @@ import crypto from 'node:crypto';
 import { query, queryOne } from '../db';
 import { config } from '../config';
 import { DeterministicNoteReader } from './notes';
-import { FixtureExtractor, MockChaser, MockClientComms, MockIdCheckProvider, MockSearchProvider, TemplateReportDrafter, TemplateSummariser } from './mocks';
+import { FixtureExtractor, MockChaser, MockClientComms, MockIdCheckProvider, MockSearchProvider, MockSigning, TemplateReportDrafter, TemplateSummariser } from './mocks';
 import type { DocumentClassification, DocumentClassifier, DocumentRef, DocumentRepository, EnginePorts } from './ports';
 import { EngineService } from './service';
 import { PgEventStore } from './store';
@@ -210,7 +210,8 @@ export function productionPorts(): EnginePorts {
       clientComms,
       clientReminderHours: (tenantId: string) => getPolicy(tenantId, 'clientReminderHours'),
       chaser,
-      signing: clientComms.name.startsWith('mock') ? null : productionSigningPort(),
+      // With mock mail (local development) the signing pack is mocked too, so a case moves as it would in production.
+      signing: clientComms.name.startsWith('mock') ? new MockSigning() : productionSigningPort(),
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       mailFolders: clientComms.name.startsWith('mock') ? null : { archiveCase: (t: string, m: string) => (require('../mail/archive') as typeof import('../mail/archive')).archiveCaseFolders(t, m) },
       now: () => new Date(),

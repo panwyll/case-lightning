@@ -132,6 +132,14 @@ const WAIT_ACTION: Record<string, (subject: string) => string> = {
   funds: () => 'release the completion funds', registration: () => 'complete the registration', proof_of_funds: () => 'complete the proof of funds form',
   management_pack: () => 'send the management pack', property_forms: () => 'return the property forms', redemption: () => 'send the redemption statement',
   lender_consent: () => 'confirm consent', discharge: () => 'confirm the discharge', contract_pack: () => 'send the draft contract pack and official copies',
+  // What the client owes us, in words (never the wait's own key).
+  deposit: () => 'send the deposit', insurance: () => 'send the buildings insurance schedule', signed_documents: () => 'return the signed documents',
+  mortgage_offer: () => 'tell us when the mortgage offer is issued', survey: () => 'say whether they are having a survey', balance: () => 'send the balance of the completion money',
+  client_decision: (sub) => CLIENT_DECISION_WAIT[sub] ?? `give their instruction${sub ? ` on ${sub.replace(/_/g, ' ')}` : ''}`,
+};
+const CLIENT_DECISION_WAIT: Record<string, string> = {
+  exchange_authority: 'authorise exchange', physical_condition: 'say how they want to go ahead after the survey', further_investigation: 'decide on the further investigation',
+  accept_risk: 'say whether they accept the risk', accept_terms: 'accept the terms', completion_date: 'agree the completion date', ownership_basis: 'say how they will own the property',
 };
 /** "Client to answer query Q4 sent: …" → "answer query Q4"; "Take the client's instruction: X has not been recorded" → "give their instruction on X". */
 export function clientAction(what: string): string {
@@ -139,7 +147,13 @@ export function clientAction(what: string): string {
   if (q) return `answer ${q[1]}`;
   if (/instruction to exchange/i.test(what)) return 'authorise exchange';
   const i = what.match(/^Take the client's instruction:\s*(.+?)(?: has not been recorded)?$/i);
-  if (i) return `give their instruction — ${i[1].replace(/^the client's instruction to /i, '').trim()}`;
+  if (i) {
+    const t = i[1].replace(/^the client's instruction to /i, '').trim();
+    // "the client has not sent the policy schedule" → "send the policy schedule"
+    const owed = t.match(/^the clients? (?:has|have) not (sent|returned|given|signed|paid) (.+)$/i);
+    if (owed) return `${({ sent: 'send', returned: 'return', given: 'give', signed: 'sign', paid: 'pay' } as Record<string, string>)[owed[1].toLowerCase()]} ${owed[2]}`;
+    return `give their instruction on ${t}`;
+  }
   return what.charAt(0).toLowerCase() + what.slice(1);
 }
 /** "Still waiting on enquiry E2 since 2026-08-24 — no response after 16 working days; chased 1× (last …)." → "Enquiry E2: no reply in 16 working days, chased once". */
@@ -151,6 +165,13 @@ export function escalationLine(text: string): string {
   return `${what.charAt(0).toUpperCase()}${what.slice(1)}: no reply in ${m[2]} working days${chased}`;
 }
 export const waitAction = (key: string, subject: string): string => (WAIT_ACTION[key] ? WAIT_ACTION[key](subject) : `${key.replace(/_/g, ' ')}${subject ? ` — ${subject}` : ''}`);
+/** Whose bank details a verification is for, in words. */
+const BANK_WHOSE: Record<string, string> = { lender: "the lender's", seller_solicitor: "the seller's solicitor's", buyer_solicitor: "the buyer's solicitor's", firm_client_account: 'our client account', client: "the client's", estate_agent: "the estate agent's", hmrc: "HMRC's" };
+const BANK_WHO: Record<string, string> = { lender: 'the lender', seller_solicitor: "the seller's solicitor", buyer_solicitor: "the buyer's solicitor", firm_client_account: 'or from our client account', client: 'the client', estate_agent: 'the estate agent', hmrc: 'HMRC' };
+const bankPayee = (s: MatterState, subject: string | null | undefined): string => {
+  const rec = subject ? (s.bankDetails as Record<string, { payeeKind: string } | undefined>)[subject] : undefined;
+  return rec?.payeeKind ?? Object.values(s.bankDetails as Record<string, { payeeKind: string; status: string }>).find((b) => b.status === 'unverified')?.payeeKind ?? '';
+};
 const WAIT_WHAT: Record<string, string> = {
   search: 'Search result', enquiry: 'Reply to enquiry', id_check: 'ID / AML result', funds: 'Completion funds',
   registration: 'HMLR registration', proof_of_funds: 'Proof of funds from the client', management_pack: 'Management pack',
@@ -319,7 +340,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
         const ctx = (det.context ?? {}) as Record<string, unknown>;
         if (tpl === 'progress_update' && typeof ctx.done === 'string') return `Update the client: ${low(ctx.done)}`;
         if (tpl === 'file_copy') return `Send the client a copy of ${typeof ctx.what === 'string' ? ctx.what : 'the file'}`;
-        const asks: Record<string, string> = { property_forms_request: 'Send the client the property forms', deposit_request: 'Ask the client for the deposit', exchange_authority_request: 'Ask the client for authority to exchange', balance_request: 'Ask the client for the balance of the completion money', ownership_basis_request: 'Ask the clients how they will own the property', buildings_insurance_request: 'Ask the client for buildings insurance from exchange', request_survey_report: 'Ask the client for the survey report', mortgage_change_query: 'Ask the client what changed with the mortgage', completion_statement: 'Send the client the completion statement' };
+        const asks: Record<string, string> = { property_forms_request: 'Send the client the property forms', deposit_request: 'Ask the client for the deposit', exchange_authority_request: 'Ask the client for authority to exchange', balance_request: 'Ask the client for the balance of the completion money', ownership_basis_request: 'Ask the clients how they will own the property', buildings_insurance_request: s.transactionType === 'remortgage' ? 'Ask the client for their buildings insurance schedule' : 'Ask the client for buildings insurance from exchange', request_survey_report: 'Ask the client for the survey report', mortgage_change_query: 'Ask the client what changed with the mortgage', completion_statement: 'Send the client the completion statement' };
         if (asks[tpl]) return asks[tpl];
         return `Update the client: ${low(UPDATE_TITLE[tpl] ?? tpl.replace(/_/g, ' '))}`;
       }
@@ -334,7 +355,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
     if (title) return title;
   }
   return (
-    d.kind === 'bank_details' ? 'Verify bank details out-of-band (payments are stopped until you do)'
+    d.kind === 'bank_details' ? `Confirm ${BANK_WHOSE[bankPayee(s, d.subject ?? cleanSubject)] ?? 'the new'} bank details by phone, on a number you find yourself (no payment until you do)`
     : d.kind === 'escalation' ? escalationLine(firstLine || 'Deal with an escalation')
     : d.kind === 'auto_clear' ? `Confirm the rules' clear of ${cleanSubject ? cleanSubject.replace(/^ID\/AML check(?: — (.*?))?(?: \([^)]*\))?$/, (_m, who: string | undefined) => `the ID / AML check${who ? ` for ${who}` : ''}`) : 'the document'}`
     : d.kind === 'proposal' ? proposalLine()
@@ -379,7 +400,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       bucket: d.kind === 'escalation' ? 'escalate' : 'do',
       ...decisionTask(s, d),
       what,
-      unblocks: d.kind === 'bank_details' ? 'Any payment to this payee' : null,
+      unblocks: d.kind === 'bank_details' ? `Payment to ${BANK_WHO[bankPayee(s, d.subject ?? null)] ?? 'them'}` : null,
       actionOwner: 'conveyancer',
       // An escalation exists because a clock already ran out — it is never "normal".
       urgency: d.kind === 'bank_details' || severity === 'critical' ? 'critical' : severity === 'warning' ? 'delayed' : d.kind === 'escalation' || age >= 2 ? 'attention' : 'normal',
@@ -544,7 +565,13 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   // Only once it is theirs to give: nobody asks a client to authorise exchange while the
   // searches are still out, so until pre-exchange that is not something we are waiting on.
   const askable = (id: string) => id !== 'exchange_authority' || s.stage === 'pre_exchange';
-  for (const a of nextActions(s, now).filter((x) => x.who === 'client' && x.ref.type === 'client' && askable(x.ref.id))) {
+  // A client wait (the deposit, the insurance, the decision to exchange) is already on the list with its chase: not twice.
+  // A request we have not sent yet is our task, not something we wait for: the same holds until it goes.
+  const ASKED_BY: Record<string, string> = { buildings_insurance_request: 'insurance', deposit_request: 'deposit', exchange_authority_request: 'exchange_authority' };
+  const unsent = Object.values(s.proposals).filter((p) => p.status === 'pending' && p.action === 'client_update').map((p) => ASKED_BY[String((p.detail as { template?: unknown }).template ?? '')]).filter(Boolean);
+  const waitedOn = new Set([...openWaits(s).flatMap((w) => [w.key, w.key === 'client_decision' ? w.subject : '']), ...unsent].filter(Boolean));
+  const sameAsWait = (id: string, what: string) => waitedOn.has(id) || (waitedOn.has('exchange_authority') && /instruction to exchange|authorise exchange/i.test(what)) || (waitedOn.has('insurance') && /insurance|policy schedule/i.test(what));
+  for (const a of nextActions(s, now).filter((x) => x.who === 'client' && x.ref.type === 'client' && askable(x.ref.id) && !sameAsWait(x.ref.id, x.what))) {
     out.push({
       ...base,
       id: `waiting:client:${a.ref.id}`,

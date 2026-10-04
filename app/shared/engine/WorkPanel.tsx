@@ -611,6 +611,27 @@ const PAYER: Record<string, string> = { client: 'Client', lender: 'Lender', isa_
 
 type WorkPanelProps = { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' | 'step' | 'todo' | 'wait'; /** section 'step': the one due step whose action to show (the Tasks list opens it in place); section 'wait': the wait, as `key:subject`. */ stepKey?: string };
 /** Remounted when the case is enrolled: the enrol form returns before the panel's own hooks. */
+/**
+ * Bank details recorded where they are needed (a payment or a funds request on the Tasks list), not only in the
+ * case's Bank Details section. Recording them raises the out-of-band verification, which is its own task; until
+ * that is done the step says so.
+ */
+function InlineBankDetails({ kind, label, details, busy, cmd }: { kind: string; label: string; details: EngineState['bankDetails']; busy: boolean; cmd: (body: Record<string, unknown>) => Promise<boolean | void> }) {
+  const [f, setF] = useState({ accountName: '', sortCode: '', accountNumber: '', firmName: '' });
+  const waiting = Object.values(details ?? {}).filter((b) => b.payeeKind === kind && b.status === 'unverified');
+  if (waiting.length) return <span className="ep-note">{label}: recorded, waiting for the call-back check (it is on the Tasks list) before money can move.</span>;
+  const ready = f.accountName.trim() && /^\d{6}$/.test(f.sortCode) && /^\d{8}$/.test(f.accountNumber);
+  return (
+    <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      <b style={{ fontSize: 12.5 }}>{label}</b>
+      <input className="ep-input" placeholder="Account Name" value={f.accountName} onChange={(e) => setF({ ...f, accountName: e.target.value })} style={{ minWidth: 200 }} />
+      <input className="ep-input" placeholder="Sort Code (6 Digits)" inputMode="numeric" value={f.sortCode} onChange={(e) => setF({ ...f, sortCode: e.target.value.replace(/\D/g, '').slice(0, 6) })} style={{ width: 150 }} />
+      <input className="ep-input" placeholder="Account No. (8 Digits)" inputMode="numeric" value={f.accountNumber} onChange={(e) => setF({ ...f, accountNumber: e.target.value.replace(/\D/g, '').slice(0, 8) })} style={{ width: 170 }} />
+      <BusyButton disabled={busy || !ready} busyLabel="Recording…" doneLabel="Recorded" onClick={async () => (await cmd({ type: 'record_bank_details', payeeKind: kind, payeeRef: null, details: { sortCode: f.sortCode, accountNumber: f.accountNumber, accountName: f.accountName.trim(), firmName: f.firmName || null }, sourceChannel: 'email' })) !== false}>Record Bank Details</BusyButton>
+    </span>
+  );
+}
+
 export function WorkPanel(props: WorkPanelProps) { return <WorkPanelBody key={props.view.state.enrolled ? 'enrolled' : 'enrol'} {...props} />; }
 
 function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow', stepKey }: WorkPanelProps) {
@@ -680,7 +701,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
   );
   const authorise = (kind: string, purpose: 'completion_monies' | 'other', label: string, amountPennies?: number | null) => {
     const list = verified(kind);
-    if (!list.length) return <span className="ep-block" style={{ display: 'inline-block', marginRight: 6 }}>No verified {pretty(kind)} bank details.</span>;
+    if (!list.length) return <InlineBankDetails kind={kind} label={kind === 'lender' ? "The lender's bank details" : kind === 'seller_solicitor' ? "The seller's solicitor's bank details" : `${pretty(kind)} bank details`} details={s.bankDetails} busy={busy} cmd={cmd} />;
     return <span>{pickAccount(kind, list)}<BusyButton disabled={busy} busyLabel="Authorising…" doneLabel="Authorised" onClick={() => cmd({ type: 'payment_authorised', payeeKind: kind, bankDetailsId: payFrom[kind] ?? list[0].id, purpose, amountPennies: amountPennies ?? undefined })}>{label}</BusyButton></span>;
   };
   const ask = (q: string, dflt = '') => window.prompt(q, dflt);
@@ -800,7 +821,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
   const dueAction = (key: string): ReactNode => {
     const unreplied = Object.values(s.inboundEnquiries ?? {}).filter((q) => !q.repliedAt).map((q) => q.id);
     if (key.startsWith('funds_cleared:')) return <BusyButton className="ep-btn primary" busyLabel="Recording…" doneLabel="Cleared" disabled={busy} onClick={() => cmd({ type: 'funds_cleared', receiptId: key.slice('funds_cleared:'.length) })}>Record Cleared</BusyButton>;
-    if (key.startsWith('shortfall_request:')) { const acc = firmAccounts(); return acc.length ? act('completion', 'funds_requested', 'Ask The Client', { fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: Number(key.slice('shortfall_request:'.length)) }, { primary: true }) : <span className="ep-note">Verify our client account under Bank Details first.</span>; }
+    if (key.startsWith('shortfall_request:')) { const acc = firmAccounts(); return acc.length ? act('completion', 'funds_requested', 'Ask The Client', { fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: Number(key.slice('shortfall_request:'.length)) }, { primary: true }) : <InlineBankDetails kind="firm_client_account" label="Our client account" details={s.bankDetails} busy={busy} cmd={cmd} />; }
     if (key.startsWith('charge_statement:')) return act('redemption', 'charge_statement_received', 'Record Figure', { chargeId: key.slice('charge_statement:'.length) }, { primary: true });
     if (key.startsWith('charge_redeemed:')) return act('redemption', 'charge_redeemed', 'Record Paid Off', { chargeId: key.slice('charge_redeemed:'.length), amountPennies: (s.otherCharges ?? []).find((c) => c.id === key.slice('charge_redeemed:'.length))?.redemptionPennies ?? undefined }, { primary: true });
     if (key === 'deposit_in') return act('exchange', 'deposit_received', 'Record Received', {}, { primary: true });
@@ -837,14 +858,14 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       case 'priority_search': return act('pre_completion_checks', 'priority_search_made', 'Record Made', {}, { primary: true });
       case 'funds_request': {
         const acc = firmAccounts();
-        if (!acc.length) return <span className="ep-note">Verify our client account under Bank Details first.</span>;
+        if (!acc.length) return <InlineBankDetails kind="firm_client_account" label="Our client account" details={s.bankDetails} busy={busy} cmd={cmd} />;
         // The client's money (and an ISA bonus): the lender's advance is its own step, after the certificate of title.
         const asked = (f: string) => (s.waits ?? []).some((w: { key: string; subject: string }) => w.key === 'funds' && w.subject === f);
         return <>{[...p.fundsFrom, ...(s.shapes ?? []).map((sh: string) => (sh === 'lifetime_isa' || sh === 'help_to_buy_isa' ? 'isa_provider' : null)).filter(Boolean)].filter((f, i, all) => (f === 'client' || f === 'isa_provider') && all.indexOf(f) === i && !asked(f as string)).map((f) => <span key={f as string}>{act('completion', 'funds_requested', f === 'client' ? 'Request From The Client' : 'Request The ISA Bonus', { fromRole: f, bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: askFor(f as string) }, { primary: true })}</span>)}</>;
       }
       case 'advance_request': {
         const acc = firmAccounts();
-        if (!acc.length) return <span className="ep-note">Verify our client account under Bank Details first.</span>;
+        if (!acc.length) return <InlineBankDetails kind="firm_client_account" label="Our client account" details={s.bankDetails} busy={busy} cmd={cmd} />;
         return act('completion', 'funds_requested', 'Request The Advance', { fromRole: 'lender', bankDetailsId: payFrom.firm_client_account ?? acc[0].id, amountPennies: askFor('lender') }, { primary: true });
       }
       case 'completion_monies': return act('completion', 'funds_received', 'Record Received', { fromRole: 'buyer_solicitor' }, { primary: true });

@@ -499,6 +499,9 @@ export class EngineService {
     // Drafted queries go out with this round; the client answers them in the form.
     const queryIds = openPofQueries(state).filter((q) => q.status === 'draft').map((q) => q.id);
     const template = opts.followUpOf ? 'proof_of_funds_request_again' : 'proof_of_funds_request';
+    // A further round always says what more is needed: the person's note, else the questions going with it.
+    const asked = openPofQueries(state).filter((q) => q.status === 'draft');
+    const note = opts.noteToClient?.trim() || (opts.followUpOf ? (asked.length ? asked.map((q) => `• ${q.question}`).join('\n') : 'A few of your answers need a little more detail; you will see what when you open the form.') : '');
     // The form exists whether or not the message gets out. A send failure (no client email on
     // the case, the mailbox not connected, a provider down) must not lose the request: record
     // it as unsent with the reason and the link, so the conveyancer can send it themselves.
@@ -506,7 +509,7 @@ export class EngineService {
     let sendError: string | null = null;
     let pofSendErr: unknown = null;
     try {
-      sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { formUrl: form.formUrl, noteToClient: opts.noteToClient ?? '', requestId: form.requestId, queryCount: queryIds.length } });
+      sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { formUrl: form.formUrl, noteToClient: note, requestId: form.requestId, queryCount: queryIds.length } });
     } catch (err) {
       sendError = (err instanceof Error ? err.message : String(err)).trim().replace(/[.!]*$/, '.');
       this.ports.log('proof-of-funds form could not be sent; recorded as unsent', err);
@@ -1152,7 +1155,7 @@ export class EngineService {
    * document they arrived on; a manually keyed set gets a generated note as its source so
    * the decision still cites something. Always a hard-stop decision, first time included.
    */
-  async recordBankDetails(tenantId: string, matterId: string, input: { actor: string; payeeKind: PayeeKind; payeeRef?: string | null; details: BankDetails; sourceChannel: SourceChannel; sourceDocumentId?: string | null; note?: string | null }): Promise<RunResult> {
+  async recordBankDetails(tenantId: string, matterId: string, input: { actor: string; /** Who keyed them in, as the note names them. */ actorName?: string | null; payeeKind: PayeeKind; payeeRef?: string | null; details: BankDetails; sourceChannel: SourceChannel; sourceDocumentId?: string | null; note?: string | null }): Promise<RunResult> {
     let sourceDocumentId = input.sourceDocumentId ?? null;
     if (!sourceDocumentId) {
       const doc = await this.ports.documents.createGenerated({
@@ -1160,7 +1163,7 @@ export class EngineService {
         matterId,
         docType: 'BANK_DETAILS_NOTE',
         fileName: readableName(`Bank details for the ${input.payeeKind.replace(/_/g, ' ')}`, this.ports.now()),
-        content: [`Bank details recorded manually (${input.sourceChannel}) by ${input.actor} on ${this.ports.now().toISOString()}`, `Payee: ${input.payeeKind}${input.payeeRef ? ` — ${input.payeeRef}` : ''}`, `Account name: ${input.details.accountName}`, `Sort code: ${input.details.sortCode}  Account: ${input.details.accountNumber}`, input.details.firmName ? `Firm: ${input.details.firmName}` : '', input.note ? `Note: ${input.note}` : ''].filter(Boolean).join('\n'),
+        content: [`Bank details keyed in by ${input.actorName || 'a member of the firm'} (received by ${input.sourceChannel.replace(/_/g, ' ')}) on ${this.ports.now().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/London' })}`, `Payee: ${input.payeeKind.replace(/_/g, ' ')}${input.payeeRef ? ` — ${input.payeeRef}` : ''}`, `Account name: ${input.details.accountName}`, `Sort code: ${input.details.sortCode}  Account: ${input.details.accountNumber}`, input.details.firmName ? `Firm: ${input.details.firmName}` : '', input.note ? `Note: ${input.note}` : ''].filter(Boolean).join('\n'),
       });
       sourceDocumentId = doc.id;
     }
@@ -2293,7 +2296,9 @@ export class EngineService {
     const template = (pof.rounds ?? 1) > 1 ? 'proof_of_funds_request_again' : 'proof_of_funds_request';
     let sent: { channel: string; messageId: string | null; address?: string | null };
     try {
-      sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { formUrl: pof.formUrl, noteToClient: '', requestId: pof.requestId, queryCount: 0, resend: 'yes' } });
+      // The same round, the same words: a further round's note again (it is required), else its open questions.
+      const again = template === 'proof_of_funds_request_again' ? (openPofQueries(s).filter((q) => q.status === 'sent').map((q) => `• ${q.question}`).join('\n') || 'A few of your answers need a little more detail; you will see what when you open the form.') : '';
+      sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { formUrl: pof.formUrl, noteToClient: again, requestId: pof.requestId, queryCount: 0, resend: 'yes' } });
     } catch (err) {
       await this.recordSendFailure(tenantId, matterId, 'client_update', { kind: 'proof_of_funds_request', formUrl: pof.formUrl }, err);
       throw Object.assign(new Error(explainSendError(err).reason), { status: 502 });
