@@ -134,6 +134,32 @@ export function verifyQuote(quote: string | null | undefined, page: number | nul
   if (onPage) return { verified: true, note: ocrConf != null ? `matched against OCR text (${ocrConf}% confidence)` : null };
   const elsewhere = texts.pages.findIndex((t) => norm(t).includes(q));
   if (elsewhere >= 0) return { verified: true, note: `found on page ${elsewhere + 1}, not page ${page ?? '?'}` };
+  // A quote with words left out ("served on 3 February 2025 … no record that"): each part, in order.
+  const parts = quote.split(/\.{3}|…/).map(norm).filter((x) => x.length >= 6);
+  if (parts.length > 1) {
+    const inOrder = (t: string) => { let at = 0; for (const x of parts) { const i = t.indexOf(x, at); if (i < 0) return false; at = i + x.length; } return true; };
+    const p = page != null && texts.pages[page - 1] && inOrder(norm(texts.pages[page - 1])) ? page : texts.pages.findIndex((t) => inOrder(norm(t))) + 1 || null;
+    if (p) return { verified: true, note: `found in parts on page ${p} (the quote leaves words out)` };
+  }
+  // A table cell that wraps puts its words out of reading order: every word of the quote, close together.
+  const words = q.split(' ').filter(Boolean);
+  if (words.length >= 4) {
+    const near = (t: string) => {
+      const toks = t.split(' ');
+      const span = Math.ceil(words.length * 2);
+      const need = new Map<string, number>();
+      for (const w of words) need.set(w, (need.get(w) ?? 0) + 1);
+      for (let i = 0; i < toks.length; i++) {
+        if (!need.has(toks[i])) continue;
+        const have = new Map<string, number>();
+        for (const w of toks.slice(i, i + span)) have.set(w, (have.get(w) ?? 0) + 1);
+        if ([...need].every(([w, n]) => (have.get(w) ?? 0) >= n)) return true;
+      }
+      return false;
+    };
+    const p = page != null && texts.pages[page - 1] && near(norm(texts.pages[page - 1])) ? page : texts.pages.findIndex((t) => near(norm(t))) + 1 || null;
+    if (p) return { verified: true, note: `its words are on page ${p}, not in that order (a table)` };
+  }
   return { verified: false, note: page != null ? `quote not found on page ${page}` : 'quote not found in the document' };
 }
 

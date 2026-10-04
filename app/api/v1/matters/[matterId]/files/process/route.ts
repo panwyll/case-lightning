@@ -8,6 +8,7 @@ import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // a long document is read in sections (sections.ts): room for it on Vercel Pro
 
 type Ctx = { params: Promise<{ matterId: string }> };
 

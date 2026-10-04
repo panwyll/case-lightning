@@ -60,3 +60,9 @@ test('an answer sentence stands only on a cited source that holds its figures', 
   assert.deepEqual(checked[4].sources, [], 'an id that is not a source is dropped');
   assert.deepEqual(figuresIn('£250,000 on 1 March 2026, 12.5% and ref AB12345'), ['250000', '2026', '12.5', '12345']);
 });
+
+test('a house number or a postcode names a place: it is not a figure the answer must cite', () => {
+  assert.deepEqual(figuresIn('Buildings insurance for 22 Wharf Road is placed with Aviva, renewing on 24 June 2027.'), ['24', '2027']);
+  assert.deepEqual(figuresIn('Flat 3, 22 Wharf Road, Leeds LS10 1PS pays £1,840 a year.'), ['1840']);
+  assert.deepEqual(figuresIn('The deposit is £42,500.'), ['42500'], 'money is still a claim');
+});

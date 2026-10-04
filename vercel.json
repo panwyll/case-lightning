@@ -19,11 +19,23 @@
     },
     {
       "path": "/api/v1/cron/engine-tick",
-      "schedule": "30 6 * * 1-5"
+      "schedule": "30 6-17 * * 1-5"
     },
     {
       "path": "/api/v1/cron/intouch-sync",
       "schedule": "45 6 * * *"
+    },
+    {
+      "path": "/api/v1/cron/send-scheduled",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/v1/cron/notify",
+      "schedule": "*/30 7-18 * * 1-5"
+    },
+    {
+      "path": "/api/v1/cron/leap-sync",
+      "schedule": "15 * * * *"
     }
   ]
 }

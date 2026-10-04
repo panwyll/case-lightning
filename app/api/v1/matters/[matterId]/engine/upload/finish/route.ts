@@ -13,7 +13,7 @@ import { UploadRoutingSchema, routeUpload } from '@/lib/server/engine/case-uploa
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 300; // a long document is read in sections (sections.ts): room for it on Vercel Pro
 
 /** The browser has put the file into storage: record it as held, then route it like any upload. */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ matterId: string }> }) {

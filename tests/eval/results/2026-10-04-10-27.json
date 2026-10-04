@@ -1,0 +1,933 @@
+{
+  "summary": {
+    "at": "2026-10-04T10:27:44.280Z",
+    "models": {
+      "classify": "claude-haiku-4-5",
+      "extract": "claude-sonnet-5",
+      "critical": "claude-opus-5-5",
+      "qa": "claude-sonnet-5"
+    },
+    "embeddings": false,
+    "minutes": 3.5,
+    "classification": "10/10",
+    "factRecall": "100% (61/61)",
+    "citationPages": "5/5",
+    "quotesVerified": "96% of quoted facts",
+    "registerVerified": "68% of all facts",
+    "askRetrieval": "10/10",
+    "askAnswered": "10/10",
+    "askUnsupportedSentences": 0
+  },
+  "documents": [
+    {
+      "file": "01-official-copy",
+      "expectedRole": "title",
+      "role": "title",
+      "roleOk": true,
+      "seconds": 22,
+      "error": null,
+      "facts": {
+        "expected": 7,
+        "found": 7
+      },
+      "checks": [
+        {
+          "why": "title number",
+          "key": "title.number",
+          "ok": true,
+          "pageOk": null,
+          "got": "WYK884213"
+        },
+        {
+          "why": "first proprietor",
+          "key": "title.proprietor.",
+          "ok": true,
+          "pageOk": null,
+          "got": "DANIEL JAMES HARGREAVES"
+        },
+        {
+          "why": "second proprietor",
+          "key": "title.proprietor.",
+          "ok": true,
+          "pageOk": null,
+          "got": "PRIYA SHAH"
+        },
+        {
+          "why": "the lender's consent restriction",
+          "key": "title.restriction.",
+          "ok": true,
+          "pageOk": null,
+          "got": "(14.03.2019) RESTRICTION: No disposition of the registered estate by the proprie"
+        },
+        {
+          "why": "the Form A joint proprietor restriction",
+          "key": "title.restriction.",
+          "ok": true,
+          "pageOk": null,
+          "got": "(14.03.2019) RESTRICTION: No disposition by a sole proprietor of the registered "
+        },
+        {
+          "why": "the registered charge, on page 2",
+          "key": "title.charge.",
+          "ok": true,
+          "pageOk": true,
+          "got": "(14.03.2019) REGISTERED CHARGE dated 1 March 2019."
+        },
+        {
+          "why": "the 1956 covenants, on page 2",
+          "key": "title.covenant.",
+          "ok": true,
+          "pageOk": true,
+          "got": "\"The Purchaser hereby covenants with the Vendor that she will not at any time he"
+        }
+      ],
+      "pages": {
+        "expected": 2,
+        "right": 2
+      },
+      "register": {
+        "rows": 12,
+        "verified": 11,
+        "quoted": 11,
+        "quotedVerified": 11
+      }
+    },
+    {
+      "file": "02-lease",
+      "expectedRole": "lease",
+      "role": "lease",
+      "roleOk": true,
+      "seconds": 47,
+      "error": null,
+      "facts": {
+        "expected": 9,
+        "found": 9
+      },
+      "checks": [
+        {
+          "why": "term",
+          "key": "lease.term_years",
+          "ok": true,
+          "pageOk": null,
+          "got": "125"
+        },
+        {
+          "why": "term start",
+          "key": "lease.term_start_date",
+          "ok": true,
+          "pageOk": null,
+          "got": "2005-01-01"
+        },
+        {
+          "why": "date of lease",
+          "key": "lease.date",
+          "ok": true,
+          "pageOk": null,
+          "got": "2005-01-20"
+        },
+        {
+          "why": "ground rent £250",
+          "key": "lease.ground_rent_pennies_pa",
+          "ok": true,
+          "pageOk": null,
+          "got": "25000"
+        },
+        {
+          "why": "doubling every 25 years",
+          "key": "lease.ground_rent_review",
+          "ok": true,
+          "pageOk": null,
+          "got": "£250 a year for the first twenty-five years of the Term, doubling on the twenty-"
+        },
+        {
+          "why": "landlord",
+          "key": "lease.landlord",
+          "ok": true,
+          "pageOk": null,
+          "got": "CALDER WHARF ESTATES LIMITED (company number 04411902)"
+        },
+        {
+          "why": "management company",
+          "key": "lease.management_company",
+          "ok": true,
+          "pageOk": null,
+          "got": "WHARF ROAD (LEEDS) MANAGEMENT COMPANY LIMITED (company number 05120774)"
+        },
+        {
+          "why": "service charge share",
+          "key": "lease.service_charge_proportion",
+          "ok": true,
+          "pageOk": null,
+          "got": "8.33 per cent (one twelfth) of the Service Costs, paid on estimates by two equal"
+        },
+        {
+          "why": "alienation terms",
+          "key": "lease.alienation",
+          "ok": true,
+          "pageOk": null,
+          "got": "No assignment, underletting or parting with possession of part only. Assignment "
+        }
+      ],
+      "pages": {
+        "expected": 0,
+        "right": 0
+      },
+      "register": {
+        "rows": 42,
+        "verified": 28,
+        "quoted": 28,
+        "quotedVerified": 28
+      }
+    },
+    {
+      "file": "03-contract",
+      "expectedRole": "contract",
+      "role": "contract",
+      "roleOk": true,
+      "seconds": 29,
+      "error": null,
+      "facts": {
+        "expected": 9,
+        "found": 9
+      },
+      "checks": [
+        {
+          "why": "price £425,000",
+          "key": "contract.price_pennies",
+          "ok": true,
+          "pageOk": null,
+          "got": "42500000"
+        },
+        {
+          "why": "deposit £42,500",
+          "key": "contract.deposit_pennies",
+          "ok": true,
+          "pageOk": null,
+          "got": "4250000"
+        },
+        {
+          "why": "completion date",
+          "key": "contract.completion_date",
+          "ok": true,
+          "pageOk": null,
+          "got": "2026-11-13"
+        },
+        {
+          "why": "title number",
+          "key": "contract.title_number",
+          "ok": true,
+          "pageOk": null,
+          "got": "WYK884213"
+        },
+        {
+          "why": "seller",
+          "key": "contract.seller.",
+          "ok": true,
+          "pageOk": null,
+          "got": "DANIEL JAMES HARGREAVES"
+        },
+        {
+          "why": "buyer",
+          "key": "contract.buyer.",
+          "ok": true,
+          "pageOk": null,
+          "got": "ELEANOR GRACE WHITFIELD"
+        },
+        {
+          "why": "contents £2,500",
+          "key": "contract.chattels_price_pennies",
+          "ok": true,
+          "pageOk": null,
+          "got": "250000"
+        },
+        {
+          "why": "SCS 5th edition",
+          "key": "contract.incorporated_conditions",
+          "ok": true,
+          "pageOk": null,
+          "got": "Standard Conditions of Sale (Fifth Edition - 2018 Revision)"
+        },
+        {
+          "why": "the indemnity special condition, on page 2",
+          "key": "contract.special_condition.",
+          "ok": true,
+          "pageOk": true,
+          "got": "The Buyer accepts that no building regulations completion certificate is availab"
+        }
+      ],
+      "pages": {
+        "expected": 1,
+        "right": 1
+      },
+      "register": {
+        "rows": 33,
+        "verified": 29,
+        "quoted": 31,
+        "quotedVerified": 29
+      }
+    },
+    {
+      "file": "04-mortgage-offer",
+      "expectedRole": "mortgage_offer",
+      "role": "mortgage_offer",
+      "roleOk": true,
+      "seconds": 11,
+      "error": null,
+      "facts": {
+        "expected": 5,
+        "found": 5
+      },
+      "checks": [
+        {
+          "why": "lender",
+          "key": "offer.lender",
+          "ok": true,
+          "pageOk": null,
+          "got": "Halden Mutual Bank plc"
+        },
+        {
+          "why": "loan £340,000",
+          "key": "offer.amount_pennies",
+          "ok": true,
+          "pageOk": null,
+          "got": "34000000"
+        },
+        {
+          "why": "offer expiry",
+          "key": "offer.expiry_date",
+          "ok": true,
+          "pageOk": null,
+          "got": "2027-03-02"
+        },
+        {
+          "why": "building regs special condition, page 2",
+          "key": "offer.condition.",
+          "ok": true,
+          "pageOk": true,
+          "got": "Prior to completion your conveyancer must confirm that a building regulations co"
+        },
+        {
+          "why": "no letting without consent",
+          "key": "offer.condition.",
+          "ok": true,
+          "pageOk": null,
+          "got": "Prior to completion your conveyancer must confirm that a building regulations co"
+        }
+      ],
+      "pages": {
+        "expected": 1,
+        "right": 1
+      },
+      "register": {
+        "rows": 11,
+        "verified": 10,
+        "quoted": 10,
+        "quotedVerified": 10
+      }
+    },
+    {
+      "file": "05-con29",
+      "expectedRole": "search",
+      "role": "search",
+      "roleOk": true,
+      "seconds": 16,
+      "error": null,
+      "facts": {
+        "expected": 2,
+        "found": 2
+      },
+      "checks": [
+        {
+          "why": "property searched",
+          "key": "search.address",
+          "ok": true,
+          "pageOk": null,
+          "got": "14 Oak Street, Leeds LS1 2AB"
+        },
+        {
+          "why": "the enforcement notice, page 2",
+          "key": "search.flag:",
+          "ok": true,
+          "pageOk": true,
+          "got": "An enforcement notice was served on 3 February 2025 under section 172 of the Tow"
+        }
+      ],
+      "pages": {
+        "expected": 1,
+        "right": 1
+      },
+      "register": {
+        "rows": 16,
+        "verified": 8,
+        "quoted": 11,
+        "quotedVerified": 8
+      }
+    },
+    {
+      "file": "06-ta6",
+      "expectedRole": "property_forms",
+      "role": "property_forms",
+      "roleOk": true,
+      "seconds": 18,
+      "error": null,
+      "facts": {
+        "expected": 7,
+        "found": 7
+      },
+      "checks": [
+        {
+          "why": "the dispute about the front wall",
+          "key": "forms.disputes",
+          "ok": true,
+          "pageOk": null,
+          "got": "In 2023 the owner of number 12 complained about the height of our front wall. Th"
+        },
+        {
+          "why": "the enforcement notice",
+          "key": "forms.notices",
+          "ok": true,
+          "pageOk": null,
+          "got": "The enforcement notice from Leeds City Council dated 3 February 2025 about the f"
+        },
+        {
+          "why": "the rear extension",
+          "key": "forms.alterations",
+          "ok": true,
+          "pageOk": null,
+          "got": "Single storey rear kitchen extension (2011); replacement windows installed 2016 "
+        },
+        {
+          "why": "the completion certificate is not known: consents are not all held",
+          "key": "forms.alterations_consented",
+          "ok": true,
+          "pageOk": null,
+          "got": "no"
+        },
+        {
+          "why": "no flooding",
+          "key": "forms.flooded",
+          "ok": true,
+          "pageOk": null,
+          "got": "no"
+        },
+        {
+          "why": "no knotweed",
+          "key": "forms.japanese_knotweed",
+          "ok": true,
+          "pageOk": null,
+          "got": "no"
+        },
+        {
+          "why": "EPC C",
+          "key": "forms.epc_rating",
+          "ok": true,
+          "pageOk": null,
+          "got": "C"
+        }
+      ],
+      "pages": {
+        "expected": 0,
+        "right": 0
+      },
+      "register": {
+        "rows": 19,
+        "verified": 5,
+        "quoted": 5,
+        "quotedVerified": 5
+      }
+    },
+    {
+      "file": "07-management-pack",
+      "expectedRole": "management_pack",
+      "role": "management_pack",
+      "roleOk": true,
+      "seconds": 19,
+      "error": null,
+      "facts": {
+        "expected": 8,
+        "found": 8
+      },
+      "checks": [
+        {
+          "why": "service charge £1,840",
+          "key": "pack.service_charge_pennies_pa",
+          "ok": true,
+          "pageOk": null,
+          "got": "184000"
+        },
+        {
+          "why": "ground rent £250",
+          "key": "pack.ground_rent_pennies_pa",
+          "ok": true,
+          "pageOk": null,
+          "got": "25000"
+        },
+        {
+          "why": "arrears £420",
+          "key": "pack.arrears_pennies",
+          "ok": true,
+          "pageOk": null,
+          "got": "42000"
+        },
+        {
+          "why": "reserve fund £18,600",
+          "key": "pack.reserve_fund_pennies",
+          "ok": true,
+          "pageOk": null,
+          "got": "1860000"
+        },
+        {
+          "why": "roof replacement planned",
+          "key": "pack.major_works_planned",
+          "ok": true,
+          "pageOk": null,
+          "got": "yes"
+        },
+        {
+          "why": "section 20 notice served",
+          "key": "pack.section_20_notice",
+          "ok": true,
+          "pageOk": null,
+          "got": "yes"
+        },
+        {
+          "why": "insurer",
+          "key": "pack.insurer",
+          "ok": true,
+          "pageOk": null,
+          "got": "Aviva Insurance Limited"
+        },
+        {
+          "why": "notice of assignment £90",
+          "key": "pack.fee.notice_of_assignment_pennies",
+          "ok": true,
+          "pageOk": null,
+          "got": "9000"
+        }
+      ],
+      "pages": {
+        "expected": 0,
+        "right": 0
+      },
+      "register": {
+        "rows": 30,
+        "verified": 22,
+        "quoted": 22,
+        "quotedVerified": 22
+      }
+    },
+    {
+      "file": "08-indemnity",
+      "expectedRole": "supporting_document",
+      "role": "supporting_document",
+      "roleOk": true,
+      "seconds": 5,
+      "error": null,
+      "facts": {
+        "expected": 5,
+        "found": 5
+      },
+      "checks": [
+        {
+          "why": "insurer",
+          "key": "support.issued_by",
+          "ok": true,
+          "pageOk": null,
+          "got": "Stewart Title Limited"
+        },
+        {
+          "why": "policy number",
+          "key": "support.reference",
+          "ok": true,
+          "pageOk": null,
+          "got": "ST-448812"
+        },
+        {
+          "why": "limit £425,000",
+          "key": "support.limit_pennies",
+          "ok": true,
+          "pageOk": null,
+          "got": "42500000"
+        },
+        {
+          "why": "passes to successors and mortgagees",
+          "key": "support.benefit_passes",
+          "ok": true,
+          "pageOk": null,
+          "got": "yes"
+        },
+        {
+          "why": "what it covers",
+          "key": "support.covers",
+          "ok": true,
+          "pageOk": null,
+          "got": "The absence of a building regulations completion certificate for the single stor"
+        }
+      ],
+      "pages": {
+        "expected": 0,
+        "right": 0
+      },
+      "register": {
+        "rows": 12,
+        "verified": 6,
+        "quoted": 6,
+        "quotedVerified": 6
+      }
+    },
+    {
+      "file": "09-survey",
+      "expectedRole": "survey",
+      "role": "survey",
+      "roleOk": true,
+      "seconds": 6,
+      "error": null,
+      "facts": {
+        "expected": 6,
+        "found": 6
+      },
+      "checks": [
+        {
+          "why": "Level 3",
+          "key": "survey.type",
+          "ok": true,
+          "pageOk": null,
+          "got": "level3"
+        },
+        {
+          "why": "market value £420,000",
+          "key": "survey.market_value_pennies",
+          "ok": true,
+          "pageOk": null,
+          "got": "42000000"
+        },
+        {
+          "why": "reinstatement £285,000",
+          "key": "survey.reinstatement_cost_pennies",
+          "ok": true,
+          "pageOk": null,
+          "got": "28500000"
+        },
+        {
+          "why": "damp investigation",
+          "key": "survey.recommendation.",
+          "ok": true,
+          "pageOk": null,
+          "got": "High damp meter readings to the base of the rear wall of the kitchen extension. "
+        },
+        {
+          "why": "roof repair",
+          "key": "survey.recommendation.",
+          "ok": true,
+          "pageOk": null,
+          "got": "Slipped and missing slates to the rear slope; water staining in the loft. A roof"
+        },
+        {
+          "why": "the building regulations point for the lawyer",
+          "key": "survey.legal.",
+          "ok": true,
+          "pageOk": null,
+          "got": "No completion certificate has been seen for the rear extension built around 2011"
+        }
+      ],
+      "pages": {
+        "expected": 0,
+        "right": 0
+      },
+      "register": {
+        "rows": 8,
+        "verified": 5,
+        "quoted": 5,
+        "quotedVerified": 5
+      }
+    },
+    {
+      "file": "10-id-check",
+      "expectedRole": "id_check",
+      "role": "id_check",
+      "roleOk": true,
+      "seconds": 7,
+      "error": null,
+      "facts": {
+        "expected": 3,
+        "found": 3
+      },
+      "checks": [
+        {
+          "why": "provider",
+          "key": "id.provider",
+          "ok": true,
+          "pageOk": null,
+          "got": "Thirdfort Limited"
+        },
+        {
+          "why": "result",
+          "key": "id.outcome",
+          "ok": true,
+          "pageOk": null,
+          "got": "clear"
+        },
+        {
+          "why": "who was checked",
+          "key": "id.subject.",
+          "ok": true,
+          "pageOk": null,
+          "got": "Eleanor Grace Whitfield"
+        }
+      ],
+      "pages": {
+        "expected": 0,
+        "right": 0
+      },
+      "register": {
+        "rows": 7,
+        "verified": 5,
+        "quoted": 6,
+        "quotedVerified": 5
+      }
+    }
+  ],
+  "questions": [
+    {
+      "q": "What is the ground rent and does it go up?",
+      "why": "lease rent clause",
+      "found": true,
+      "answered": true,
+      "notOnFile": false,
+      "unsupported": [],
+      "answer": "The current ground rent is £250 a year, payable yearly in advance on 1 January. Yes, it increases: it doubles every 25 years from the start of the term, rising to £500 from 1 January 2030, then £1,000 in 2055, £2,000 in 2080, and £4,000 from 1 January 2105. Once it reaches £500 from 2030, this exceeds the £250 a year threshold outside Greater London relevant to whether the lease could be treated a",
+      "sources": [
+        "F1 02-lease.pdf p.3",
+        "F2 02-lease.pdf p.1",
+        "F3 02-lease.pdf p.1",
+        "F4 02-lease.pdf p.1",
+        "F5 07-management-pack.pdf p.1",
+        "F6 07-management-pack.pdf p.1",
+        "F7 02-lease.pdf",
+        "F8 02-lease.pdf",
+        "F9 02-lease.pdf p.3",
+        "F10 02-lease.pdf p.1",
+        "F11 02-lease.pdf p.2",
+        "P1 07-management-pack.pdf p.1",
+        "P2 02-lease.pdf p.1"
+      ],
+      "seconds": 4
+    },
+    {
+      "q": "Is there an enforcement notice on the property?",
+      "why": "CON29 3.9",
+      "found": true,
+      "answered": true,
+      "notOnFile": false,
+      "unsupported": [],
+      "answer": "Yes, Leeds City Council served an enforcement notice dated 3 February 2025 under section 172 of the Town and Country Planning Act 1990 regarding a front boundary wall exceeding 1 metre adjoining a highway. The compliance period was 6 months and the council has no record that the notice has been complied with. This arose from a 2023 dispute with the neighbour at number 12 over the wall's height, as",
+      "sources": [
+        "F1 06-ta6.pdf p.1",
+        "F2 06-ta6.pdf p.1",
+        "F3 06-ta6.pdf p.1",
+        "F4 02-lease.pdf p.2",
+        "F5 05-con29.pdf",
+        "F6 05-con29.pdf p.2",
+        "F7 03-contract.pdf p.2",
+        "F8 03-contract.pdf p.2",
+        "F9 03-contract.pdf p.2",
+        "F10 03-contract.pdf p.2",
+        "F11 03-contract.pdf p.2",
+        "F12 03-contract.pdf p.2",
+        "P1 05-con29.pdf p.2",
+        "P2 06-ta6.pdf p.1"
+      ],
+      "seconds": 3
+    },
+    {
+      "q": "Who repairs the roof of the building at Wharf Road?",
+      "why": "lease 4.1",
+      "found": true,
+      "answered": true,
+      "notOnFile": false,
+      "unsupported": [],
+      "answer": "Under the lease, the Management Company — Wharf Road (Leeds) Management Company Limited — is responsible for keeping the roof, foundations, main structure and exterior of the Building, and the Common Parts, in good and substantial repair and condition.",
+      "sources": [
+        "F1 02-lease.pdf p.1",
+        "F2 02-lease.pdf p.1",
+        "F3 02-lease.pdf p.3",
+        "F4 02-lease.pdf",
+        "F5 02-lease.pdf",
+        "F6 02-lease.pdf p.1",
+        "F7 07-management-pack.pdf p.1",
+        "F8 07-management-pack.pdf p.1",
+        "F9 07-management-pack.pdf p.1",
+        "F10 07-management-pack.pdf",
+        "F11 03-contract.pdf p.2",
+        "F12 03-contract.pdf p.2",
+        "P1 02-lease.pdf p.3",
+        "P2 07-management-pack.pdf p.1"
+      ],
+      "seconds": 3
+    },
+    {
+      "q": "How much is the deposit?",
+      "why": "contract front page",
+      "found": true,
+      "answered": true,
+      "notOnFile": false,
+      "unsupported": [],
+      "answer": "The deposit is £42,500. It is to be held by the Seller's conveyancer as stakeholder.",
+      "sources": [
+        "F1 03-contract.pdf p.2",
+        "F2 03-contract.pdf p.1",
+        "F3 03-contract.pdf p.2",
+        "F4 02-lease.pdf p.1",
+        "F5 01-official-copy.pdf p.1",
+        "F6 01-official-copy.pdf p.1",
+        "F7 02-lease.pdf",
+        "P1 03-contract.pdf p.1"
+      ],
+      "seconds": 2
+    },
+    {
+      "q": "When does the mortgage offer expire?",
+      "why": "offer validity",
+      "found": true,
+      "answered": true,
+      "notOnFile": false,
+      "unsupported": [],
+      "answer": "The mortgage offer is valid until 2 March 2027.",
+      "sources": [
+        "F1 04-mortgage-offer.pdf p.1",
+        "F2 04-mortgage-offer.pdf p.1",
+        "F3 04-mortgage-offer.pdf p.1",
+        "F4 04-mortgage-offer.pdf p.1",
+        "F5 04-mortgage-offer.pdf p.1",
+        "F6 04-mortgage-offer.pdf p.2",
+        "F7 04-mortgage-offer.pdf p.2",
+        "F8 04-mortgage-offer.pdf p.2",
+        "F9 04-mortgage-offer.pdf p.2",
+        "F10 04-mortgage-offer.pdf p.1",
+        "F11 02-lease.pdf",
+        "F12 04-mortgage-offer.pdf",
+        "P1 04-mortgage-offer.pdf p.1"
+      ],
+      "seconds": 2
+    },
+    {
+      "q": "Who insures the building at Wharf Road and when does the policy renew?",
+      "why": "LPE1 insurance",
+      "found": true,
+      "answered": true,
+      "notOnFile": false,
+      "unsupported": [],
+      "answer": "Buildings insurance is placed with Aviva Insurance Limited, policy number AV-77812. The policy renews on 24 June 2027, with a sum insured of £2,950,000. Under the lease, it is the Landlord who covenants to insure the Building for its full reinstatement value, with the Tenant paying a fair proportion of the premium via the Service Charge.",
+      "sources": [
+        "F1 02-lease.pdf p.1",
+        "F2 02-lease.pdf p.1",
+        "F3 07-management-pack.pdf p.2",
+        "F4 02-lease.pdf",
+        "F5 03-contract.pdf p.2",
+        "F6 03-contract.pdf p.2",
+        "F7 03-contract.pdf p.2",
+        "F8 02-lease.pdf p.1",
+        "F9 04-mortgage-offer.pdf p.2",
+        "F10 07-management-pack.pdf p.1",
+        "F11 07-management-pack.pdf p.1",
+        "F12 02-lease.pdf",
+        "P1 07-management-pack.pdf p.2",
+        "P2 02-lease.pdf p.3"
+      ],
+      "seconds": 3
+    },
+    {
+      "q": "Can the tenant of the flat keep a dog?",
+      "why": "lease 3.5",
+      "found": true,
+      "answered": true,
+      "notOnFile": false,
+      "unsupported": [],
+      "answer": "No, not as a matter of right: the lease prohibits keeping any animal other than a domestic cat or caged bird without the Landlord's written consent. A dog could only be kept if the Landlord gives written consent, as the clause states \"shall not keep any animal (other than a domestic cat or caged bird) without the written consent of the Landlord.\"",
+      "sources": [
+        "F1 02-lease.pdf p.2",
+        "F2 02-lease.pdf p.2",
+        "F3 02-lease.pdf",
+        "F4 03-contract.pdf p.2",
+        "F5 06-ta6.pdf p.2",
+        "F6 02-lease.pdf p.2",
+        "F7 02-lease.pdf p.2",
+        "F8 02-lease.pdf p.3",
+        "F9 02-lease.pdf p.3",
+        "F10 02-lease.pdf p.2",
+        "F11 02-lease.pdf p.1",
+        "F12 02-lease.pdf p.1",
+        "P1 02-lease.pdf p.2"
+      ],
+      "seconds": 3
+    },
+    {
+      "q": "What did the surveyor say about damp?",
+      "why": "survey E4 and R2",
+      "found": true,
+      "answered": true,
+      "notOnFile": false,
+      "unsupported": [],
+      "answer": "The surveyor, Hannah Briggs MRICS, found high damp meter readings at the base of the rear wall of the kitchen extension, rated condition 3 ('High damp meter readings to the base of the rear wall of the kitchen extension (dampness)'). She recommended that a damp and timber specialist who is a member of the PCA should investigate the rear wall of the extension before exchange of contracts.",
+      "sources": [
+        "F1 09-survey.pdf p.1",
+        "F2 09-survey.pdf p.1",
+        "P1 09-survey.pdf p.2",
+        "P2 09-survey.pdf p.1"
+      ],
+      "seconds": 3
+    },
+    {
+      "q": "Is there a building regulations completion certificate for the rear extension?",
+      "why": "search, TA6, survey and the indemnity all speak to it",
+      "found": null,
+      "answered": true,
+      "notOnFile": false,
+      "unsupported": [],
+      "answer": "No, there is no building regulations completion certificate for the 2011 rear kitchen extension; the seller states in the TA6 they \"cannot find one\" and the CON29 confirms no approval or completion certificate has been issued. Instead, the contract provides for a seller-funded lack of building regulation consent indemnity policy, and such a policy (Stewart Title, policy ST-448812, issued 6 October",
+      "sources": [
+        "F1 03-contract.pdf p.2",
+        "F2 03-contract.pdf p.2",
+        "F3 03-contract.pdf p.2",
+        "F4 06-ta6.pdf p.2",
+        "F5 04-mortgage-offer.pdf p.2",
+        "F6 08-indemnity.pdf p.1",
+        "F7 05-con29.pdf p.2",
+        "F8 05-con29.pdf",
+        "F9 09-survey.pdf p.2",
+        "F10 06-ta6.pdf p.2",
+        "F11 06-ta6.pdf p.2",
+        "F12 07-management-pack.pdf p.1",
+        "P1 05-con29.pdf p.2",
+        "P2 06-ta6.pdf p.2",
+        "P3 08-indemnity.pdf p.1",
+        "P4 04-mortgage-offer.pdf p.2"
+      ],
+      "seconds": 4
+    },
+    {
+      "q": "Does the property have a swimming pool?",
+      "why": "nothing on the file: the answer must say the file does not say",
+      "found": null,
+      "answered": true,
+      "notOnFile": true,
+      "unsupported": [],
+      "answer": "",
+      "sources": [
+        "F1 03-contract.pdf p.2",
+        "F2 03-contract.pdf p.2",
+        "F3 03-contract.pdf p.2",
+        "F4 03-contract.pdf p.2",
+        "F5 03-contract.pdf p.2",
+        "F6 03-contract.pdf p.2",
+        "F7 02-lease.pdf p.2",
+        "F8 02-lease.pdf p.2",
+        "F9 02-lease.pdf p.3",
+        "F10 02-lease.pdf p.2",
+        "F11 02-lease.pdf p.2",
+        "F12 02-lease.pdf p.2"
+      ],
+      "seconds": 2
+    }
+  ]
+}

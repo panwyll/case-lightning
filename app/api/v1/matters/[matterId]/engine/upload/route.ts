@@ -11,7 +11,7 @@ import { UploadRoutingSchema, createUploadDocument, routeUpload } from '@/lib/se
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 300; // a long document is read in sections (sections.ts): room for it on Vercel Pro
 
 /**
  * File a document straight into the engine, the bytes in the request (small files; a large one

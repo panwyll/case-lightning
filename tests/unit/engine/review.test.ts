@@ -50,3 +50,15 @@ test('a re-read is diffed against the previous register by key', () => {
   assert.deepEqual(d, { added: [{ key: 'offer.rate', value: '4.25' }], removed: [{ key: 'offer.expiry_date', value: '2026-12-31' }], changed: [{ key: 'offer.price_pennies', from: '38500000', to: '38000000' }] });
   assert.equal(diffLine(d), 'Since the last read: 1 changed, 1 added, 1 gone.');
 });
+
+test('a quote that leaves words out, or whose words a table cell has put out of order, is still found; an invented one is not', () => {
+  const t = { textLayer: true, pages: ['Contents price (included in the | £2,500\npurchase price)\nBalance | £382,500', '3.9 An enforcement notice was served on 3 February 2025 under section 172. Compliance period: 6 months. The council has no record that the notice has been complied with.'] };
+  const cut = verifyQuote('An enforcement notice was served on 3 February 2025 ... the council has no record that the notice has been complied with', 2, t);
+  assert.equal(cut.verified, true);
+  assert.match(cut.note!, /in parts/);
+  const table = verifyQuote('Contents price (included in the purchase price) £2,500', 1, t);
+  assert.equal(table.verified, true);
+  assert.match(table.note!, /not in that order/);
+  assert.equal(verifyQuote('Contents price (excluded from the purchase price) £2,500', 1, t).verified, false, 'a changed word is not found');
+  assert.equal(verifyQuote('notice was served on 3 March 2025 ... complied with', 2, t).verified, false, 'a changed date in a cut quote is not found');
+});

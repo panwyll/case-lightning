@@ -22,6 +22,14 @@ How a document on a case becomes facts the engine acts on and passages anyone ca
 - **Scans are read to a time budget, not a page cap**: pages without text are OCR'd two at a time for up to 90 seconds (up to 300 pages). A page not reached is read later (`ocrCatchUp`): after a question on the case is answered, and in the background while the Tasks list is open, one document at a time; its other pages come back from the index, its quotes are checked again and it is indexed again. A page that still fails is marked tried (0%) and not tried again.
 - **Tables stay tables**: PDF text is laid out from positions, a line per baseline, a wide gap between items (a column) written " | ", so a statement row reads "02/09/2026 | Salary | 2,450.00"; justified text is not split. A Word table's rows come through as cells joined by " | ".
 
+## Measured (`npm run eval:docs`)
+
+Ten documents a conveyancer sees on a leasehold and a freehold purchase (`tests/eval/fixtures`: official copy, lease, contract, mortgage offer, CON29 and LLC1, TA6, LPE1, indemnity, Level 3 survey, ID report), printed to PDF and read by the real pipeline and models, scored against hand-written answers (`tests/eval/expected.ts`): the kind, 61 facts, the pages key facts are cited to, and ten questions to Ask The File (one with no answer on the file). Run it after any change to a prompt, a schema, the register or search; results are kept in `tests/eval/results`.
+
+Baseline (4 Oct 2026; no embeddings, as production): 10/10 kinds, 61/61 facts, 5/5 citation pages, quotes verified on 96–100% of quoted facts, 10/10 questions found the right document and were answered, no unsupported sentence. The run found and fixed: a fee read with VAT added, the answer check treating a house number as a claim, quotes from wrapped table cells and quotes with words left out marked unverified.
+
+The documents are clean, typed PDFs written for the eval: real files (scans, poor copies, handwriting, odd layouts) are harder, and a set of real, anonymised files is the next measure.
+
 ## Not yet
 
 - An embeddings provider on production (search runs on words and the relevance pass until one is set; the provider's data processing terms are an open go-live item).

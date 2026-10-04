@@ -9,7 +9,7 @@ import { devPortalUploads, isDevPortal } from '@/lib/server/dev-portal';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 300; // a long document is read in sections (sections.ts): room for it on Vercel Pro
 
 /** What the client said the file is (the task they uploaded it against), when that tells the engine where it goes. */
 const ROLES = new Set<DocumentClassification['role']>(['property_forms', 'mortgage_offer', 'survey']);

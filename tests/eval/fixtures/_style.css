@@ -1,0 +1,10 @@
+body { font: 11pt "Times New Roman", serif; margin: 0; color: #000; }
+.page { padding: 18mm 20mm; page-break-after: always; }
+.page:last-child { page-break-after: auto; }
+h1 { font-size: 15pt; text-align: center; margin: 0 0 8pt; }
+h2 { font-size: 12pt; margin: 14pt 0 6pt; }
+p, li { line-height: 1.35; margin: 0 0 6pt; text-align: justify; }
+table { border-collapse: collapse; width: 100%; margin: 6pt 0; }
+td, th { border: 1px solid #444; padding: 4pt 6pt; font-size: 10pt; vertical-align: top; text-align: left; }
+.small { font-size: 9pt; color: #333; }
+.box { border: 1px solid #000; padding: 8pt; margin: 8pt 0; }

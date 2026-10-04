@@ -43,8 +43,10 @@ export function sourcesFor(facts: FactHit[], passages: Passage[]): AnswerSource[
 }
 
 const digits = (s: string) => s.toLowerCase().replace(/(\d),(\d)/g, '$1$2').replace(/\s+/g, ' ');
+/** A house number in an address ("22 Wharf Road") and a postcode ("LS10 1PS") name a place; they are not claims to check. */
+const PLACES = /\b\d+[a-z]?,?\s+(?:[A-Z][a-z]+\s+){1,3}(?:Road|Street|Lane|Avenue|Close|Court|Drive|Way|Place|Square|Terrace|Gardens|Crescent|Grove|Row|Walk|Hill|Park|Mews|Quays?|Wharf)\b|\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/g;
 /** The figures a sentence states: amounts, years, percentages, references (two digits or more). */
-export const figuresIn = (s: string): string[] => [...new Set((digits(s).match(/\d+(?:\.\d+)?/g) ?? []).map((n) => n.replace(/\.0+$/, '')).filter((n) => n.replace('.', '').length >= 2))];
+export const figuresIn = (s: string): string[] => [...new Set((digits(s.replace(PLACES, ' ')).match(/\d+(?:\.\d+)?/g) ?? []).map((n) => n.replace(/\.0+$/, '')).filter((n) => n.replace('.', '').length >= 2))];
 
 /** Every sentence cites what it rests on, and every figure in it is in what it cites. */
 export function checkAnswer(sentences: Array<{ text: string; sources: string[] }>, sources: AnswerSource[]): AnswerSentence[] {

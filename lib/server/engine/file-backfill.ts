@@ -134,3 +134,36 @@ async function ocrCatchUpOnce(
   await deps.writeReview(doc, buildReview({ role: stored._pipeline.role, facts: stored.facts, ledger, texts }), 'ocr-catch-up', texts);
   return { documentId: doc.id, pages: read.size };
 }
+
+/**
+ * The sweep's share of keeping the file index whole, across every firm (the engine tick): cases with
+ * documents not yet indexed or registered are caught up, then long scans' unread pages are OCR'd, until
+ * `budgetMs` has gone.
+ */
+export async function catchUpAll(deps: { forTenant: (tenantId: string) => Parameters<typeof catchUpFileIndex>[2] }, budgetMs = 120_000): Promise<{ cases: number; registered: number; indexed: number; ocrDocuments: number }> {
+  const until = Date.now() + budgetMs;
+  const out = { cases: 0, registered: 0, indexed: 0, ocrDocuments: 0 };
+  const behind = await query<{ tenant_id: string; matter_id: string }>(
+    `select distinct d.tenant_id, d.matter_id from document d
+      where d.superseded_at is null and d.matter_id is not null and coalesce(d.doc_type, '') <> all($1::text[])
+        and coalesce((d.extracted_facts->>'locked')::boolean, false) = false
+        and (not exists (select 1 from kb_chunk k where k.source_kind = 'DOCUMENT_PAGE' and k.source_id = d.id)
+             or (split_part(d.extracted_facts->'_pipeline'->>'role', ':', 1) = any($2::text[]) and not exists (select 1 from document_fact f where f.document_id = d.id)))
+      limit 40`,
+    [[...UNSEARCHED, 'FILE_NOTE'], REGISTERED_LATER]
+  ).catch(() => []);
+  for (const c of behind) {
+    if (Date.now() > until) break;
+    const r = await catchUpFileIndex(c.tenant_id, c.matter_id, deps.forTenant(c.tenant_id)).catch(() => ({ registered: 0, indexed: 0 }));
+    out.cases += 1; out.registered += r.registered; out.indexed += r.indexed;
+  }
+  const scans = await query<{ tenant_id: string }>(`select distinct tenant_id from document_page where text_chars <= 20 and ocr_confidence is null limit 20`).catch(() => []);
+  for (const { tenant_id } of scans) {
+    while (Date.now() < until - 5_000) {
+      const r = await ocrCatchUp(tenant_id, null, deps.forTenant(tenant_id), Math.min(60_000, until - Date.now() - 5_000)).catch(() => null);
+      if (!r) break;
+      out.ocrDocuments += 1;
+    }
+  }
+  return out;
+}

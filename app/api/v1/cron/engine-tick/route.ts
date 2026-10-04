@@ -6,10 +6,12 @@ import { runAsAutomation } from '@/lib/server/db';
 import { readSubmission, unreadSubmissions } from '@/lib/server/engine/pof-store';
 import { moveBlobsToStorage } from '@/lib/server/blob-store';
 import { recheckLockedDocuments } from '@/lib/server/document-unlock';
+import { catchUpAll } from '@/lib/server/engine/file-backfill';
+import { documentBytesLoader, PgDocumentFactsWriter, PgDocumentRepository } from '@/lib/server/engine/adapters';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300;
+export const maxDuration = 600; // the sweep, then the file catch-up (Vercel Pro)
 
 /**
  * The engine's timer sweep (spec 2.6): for every active matter, send the chases that
@@ -33,7 +35,11 @@ export async function GET(req: NextRequest) {
     await moveBlobsToStorage(200).catch((e) => console.warn('[cron] storage move failed', (e as Error).message));
     // Files wrongly flagged as password-protected are cleared and read.
     await recheckLockedDocuments(null, 50).catch((e) => console.warn('[cron] locked-file re-check failed', (e as Error).message));
-    return ok({ ...result, proofOfFundsReread: reread, heldMailReleased: released });
+    // Every document searchable and registered, and long scans' unread pages OCR'd (docs/spec/documents.md).
+    const repo = new PgDocumentRepository();
+    const writer = new PgDocumentFactsWriter();
+    const files = await runAsAutomation(() => catchUpAll({ forTenant: (tenantId) => ({ get: (id) => repo.get(tenantId, id), load: (doc) => documentBytesLoader().load(doc), writeReview: writer.writeReview.bind(writer) }) }, 120_000)).catch((e) => { console.warn('[cron] file catch-up failed', (e as Error).message); return null; });
+    return ok({ ...result, proofOfFundsReread: reread, heldMailReleased: released, files });
   } catch (error) {
     return fail(error);
   }
