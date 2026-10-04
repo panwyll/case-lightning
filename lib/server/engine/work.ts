@@ -303,7 +303,8 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
     const to = typeof det.recipientRole === 'string' ? det.recipientRole.replace(/_/g, ' ') : det.kind === 'id_check_request' || det.kind === 'proof_of_funds_request' ? 'the client' : pr.action === 'client_update' ? 'the client' : 'the other side';
     const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
     // Every task is the action it approves, in words: "Send the client the ID check", "Ask the lender for a redemption statement".
-    const whom = (role: unknown) => (role === 'seller_solicitor' ? "the seller's solicitor" : role === 'buyer_solicitor' ? "the buyer's solicitor" : role === 'search_provider' ? 'the search provider' : role === 'lender' ? 'the lender' : role === 'estate_agent' ? 'the estate agent' : role === 'hmlr' ? 'HM Land Registry' : role === 'client' ? 'the client' : 'the other side');
+    // The engine's 'seller_solicitor' is the other side's solicitor: acting for the seller, the buyer's.
+    const whom = (raw: unknown) => { const role = roleOnSide(raw, profileOf(s.transactionType).side); return (role === 'seller_solicitor' ? "the seller's solicitor" : role === 'buyer_solicitor' ? "the buyer's solicitor" : role === 'search_provider' ? 'the search provider' : role === 'lender' ? 'the lender' : role === 'estate_agent' ? 'the estate agent' : role === 'hmlr' ? 'HM Land Registry' : role === 'client' ? 'the client' : 'the other side'); };
     const low = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
     switch (pr.action) {
       case 'acknowledgement': { const p = partyOf(roleOnSide(det.recipientRole ?? 'client', profileOf(s.transactionType).side)).the; return `Acknowledge receipt of ${p}'s ${ackThing(det.what)}`.replace("solicitor's's", "solicitor's"); }

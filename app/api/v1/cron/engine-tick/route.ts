@@ -11,7 +11,7 @@ import { documentBytesLoader, PgDocumentFactsWriter, PgDocumentRepository } from
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 600; // the sweep, then the file catch-up (Vercel Pro)
+export const maxDuration = 300;
 
 /**
  * The engine's timer sweep (spec 2.6): for every active matter, send the chases that
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     // Every document searchable and registered, and long scans' unread pages OCR'd (docs/spec/documents.md).
     const repo = new PgDocumentRepository();
     const writer = new PgDocumentFactsWriter();
-    const files = await runAsAutomation(() => catchUpAll({ forTenant: (tenantId) => ({ get: (id) => repo.get(tenantId, id), load: (doc) => documentBytesLoader().load(doc), writeReview: writer.writeReview.bind(writer) }) }, 120_000)).catch((e) => { console.warn('[cron] file catch-up failed', (e as Error).message); return null; });
+    const files = await runAsAutomation(() => catchUpAll({ forTenant: (tenantId) => ({ get: (id) => repo.get(tenantId, id), load: (doc) => documentBytesLoader().load(doc), writeReview: writer.writeReview.bind(writer) }) }, 60_000)).catch((e) => { console.warn('[cron] file catch-up failed', (e as Error).message); return null; });
     return ok({ ...result, proofOfFundsReread: reread, heldMailReleased: released, files });
   } catch (error) {
     return fail(error);

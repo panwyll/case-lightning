@@ -174,7 +174,7 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
     add({ key: 'completion', lane: 'completion', title: 'Confirm completion', dueDate: completionDate });
 
   // The tax answers the basis is worked out from (sdlt-facts.ts): the buyers' before exchange, the seller's two CGT questions.
-  if ((buyer || toe) && !s.sdltFacts && !exchanged && !completed) add({ key: 'sdlt_facts', lane: 'exchange', title: "Record the buyers' SDLT answers" });
+  if ((buyer || toe) && !s.sdltFacts && !exchanged && !completed) add({ key: 'sdlt_facts', lane: 'exchange', title: toe ? 'Record the SDLT answers for the share being transferred' : s.parties > 1 ? "Record the buyers' SDLT answers" : "Record the buyer's SDLT answers" });
   if (seller && !s.cgtFacts && !exchanged) add({ key: 'cgt_facts', lane: 'exchange', title: "Record the client's CGT answers (main home throughout? UK resident?)" });
   // A new build's contract carries a long-stop date: on the case, so its clock is watched (dates.ts).
   if (buyer && s.shapes?.includes('new_build') && !s.longStopDate && !completed && ['contract_review', 'pre_exchange', 'exchanged', 'pre_completion'].includes(s.stage)) add({ key: 'longstop_date', lane: 'exchange', title: 'Record the long-stop date from the new-build contract' });
