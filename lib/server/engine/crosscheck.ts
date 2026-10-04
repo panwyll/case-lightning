@@ -10,6 +10,8 @@
 export interface RegisterRow { documentId: string; documentLabel: string; key: string; value: string; page: number | null }
 export interface CaseRecord {
   propertyAddress: string | null;
+  /** Our reference, for the subject of what we send. */
+  matterRef?: string | null;
   purchasePricePennies: number | null;
   buyerNames: string[];
   sellerNames: string[];

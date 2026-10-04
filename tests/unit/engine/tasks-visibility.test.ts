@@ -91,3 +91,18 @@ test("a linked sale and purchase wait on each other, not on a third party: no ch
   assert.equal(w!.chip, 'Linked Sale');
   assert.deepEqual(w!.ref, { type: 'linked', id: '00000000-0000-4000-8000-0000000000aa' });
 });
+
+test("on a sale, the other side is the buyer's solicitor: the at-risk enquiry says so and asks about their purchase", async () => {
+  const { harness } = await import('./helpers');
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, transactionType: 'freehold_sale', hasLender: false, requiredSearches: [] } as never);
+  await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'transaction_at_risk', title: 'The agent says the buyer may be pulling out' } as never);
+  const s = await h.svc.getState(TENANT, MATTER);
+  const p = Object.values(s.proposals).find((x) => x.action === 'enquiry_draft')!;
+  assert.ok(p, 'the enquiry is proposed');
+  assert.match(String((p.detail as { subject: string }).subject), /proceeding with the purchase/);
+  assert.doesNotMatch(String((p.detail as { subject: string }).subject), /agent says/, 'our own note is not sent to the other side');
+  const row = matterWork(s, NOW).items.find((t) => t.ref.type === 'decision' && s.proposals[t.ref.id]?.action === 'enquiry_draft');
+  assert.match(row!.what, /buyer's solicitor/);
+  assert.equal(row!.chip, 'Other Side Enquiries');
+});

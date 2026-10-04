@@ -643,7 +643,10 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
   const [inbound, setInbound] = useState('');
   const [replySel, setReplySel] = useState<Record<string, boolean>>({});
   const [completionDate, setCompletionDate] = useState('');
-  const [bd, setBd] = useState({ payeeKind: 'seller_solicitor', payeeRef: '', accountName: '', sortCode: '', accountNumber: '', firmName: '', sourceChannel: 'email' });
+  // Who we would pay: the seller's solicitor on a purchase; on a sale the lender (the redemption) or the client (the proceeds).
+  const ourSide = view.profile?.side ?? 'buyer';
+  const payees = (ourSide === 'seller' ? [] : [['seller_solicitor', "Seller's Solicitor"]]).concat([['firm_client_account', 'Our Client Account'], ['client', 'Client'], ['lender', 'Lender'], ['estate_agent', 'Estate Agent'], ['hmrc', 'HMRC (Stamp Duty)'], ['other', 'Other']]) as Array<[string, string]>;
+  const [bd, setBd] = useState({ payeeKind: ourSide === 'seller' ? (view.state.hasExistingMortgage ? 'lender' : 'client') : ourSide === 'owner' ? 'lender' : 'seller_solicitor', payeeRef: '', accountName: '', sortCode: '', accountNumber: '', firmName: '', sourceChannel: 'email' });
   const [payFrom, setPayFrom] = useState<Record<string, string>>({});
   const [openLane, setOpenLane] = useState<string | null | undefined>(undefined);
   // The lane whose button was last pressed: the outcome of that press is shown there, not
@@ -1446,7 +1449,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
         </div>
       )}
       <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} onDismissed={() => { setDisTick((n) => n + 1); onChanged?.(); }} reloadKey={restoreTick} hideWhenEmpty={(view.due?.length ?? 0) > 0} />
-      <div style={{ margin: '14px 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} onChanged={onChanged} err={err} /></div>
+      <div style={{ margin: '14px 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} onChanged={onChanged} err={err} raiseButton={false} /></div>
       <DismissedTasks api={api} matterId={matterId} reloadKey={disTick} onRestored={() => { setGoneSteps(new Set()); setRestoreTick((n) => n + 1); onChanged?.(); }} />
 
       {openWaits.length > 0 && (
@@ -1497,7 +1500,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
         ))}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
           <select className="ep-input" value={bd.payeeKind} onChange={(e) => setBd({ ...bd, payeeKind: e.target.value })}>
-            {([['seller_solicitor', "Seller's Solicitor"], ['firm_client_account', 'Our Client Account'], ['client', 'Client'], ['lender', 'Lender'], ['estate_agent', 'Estate Agent'], ['hmrc', 'HMRC (Stamp Duty)'], ['other', 'Other']] as const).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            {payees.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
           <input className="ep-input" placeholder="Who (Firm / Contact)" value={bd.payeeRef} onChange={(e) => setBd({ ...bd, payeeRef: e.target.value })} style={{ width: 150 }} />
           <input className="ep-input" placeholder="Account Name" value={bd.accountName} onChange={(e) => setBd({ ...bd, accountName: e.target.value })} style={{ width: 160 }} />

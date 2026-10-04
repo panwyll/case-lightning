@@ -1102,7 +1102,12 @@ export class EngineService {
     const property = rec?.propertyAddress ?? null;
     const clientName = (side === 'seller' ? rec?.sellerNames : rec?.buyerNames)?.[0] ?? state.partyNames?.[0] ?? null;
     const firstName = clientName?.trim().split(/\s+/)[0] || null;
-    const subject = property ?? "Our client's transaction";
+    // As every letter we send is headed: the property, what it is about, our reference (the other side files by it).
+    const ref = rec?.matterRef ? ` (our ref ${rec.matterRef})` : '';
+    const topic = ISSUE_KIND_SPEC[issue.kind]?.label ?? 'a point on the transaction';
+    const subject = step.to === 'client'
+      ? `${property ? `Your ${side === 'seller' ? 'sale' : side === 'buyer' ? 'purchase' : 'property'}: ${property}` : 'Your transaction'} — an update${ref}`
+      : `${property ?? 'Our client\'s transaction'} — ${topic.charAt(0).toUpperCase()}${topic.slice(1)}${ref}`;
     const about = `THE ISSUE ON THE CASE (DATA): ${issue.title}${issue.detail ? `\n${issue.detail}` : ''}`;
     const drafted = this.ports.replyDrafter ? await this.ports.replyDrafter.draft({ tenantId, matterId, email: about, subject, from: null, firstName, lines: [], facts: step.to === 'seller_solicitor' || step.to === 'estate_agent' ? renderCounterpartyFacts(state, now, step.to) : replyFacts(state, now), now: now.toISOString(), to: step.to, purposes: [step.purpose], weActFor: weActFor(state) }).catch(() => null) : null;
     if (drafted?.body) return { to: step.to, subject, body: drafted.body, drafter: this.ports.replyDrafter!.name };
@@ -1342,11 +1347,11 @@ export class EngineService {
     }
   }
 
-  private async caseRecord(tenantId: string, matterId: string): Promise<{ propertyAddress: string | null; purchasePricePennies: number | null; buyerNames: string[]; sellerNames: string[] } | null> {
+  private async caseRecord(tenantId: string, matterId: string): Promise<{ matterRef: string | null; propertyAddress: string | null; purchasePricePennies: number | null; buyerNames: string[]; sellerNames: string[] } | null> {
     try {
       const { loadCaseRecord } = await import('./crosscheck-run');
       const r = await loadCaseRecord(tenantId, matterId);
-      return r ? { propertyAddress: r.propertyAddress, purchasePricePennies: r.purchasePricePennies, buyerNames: r.buyerNames, sellerNames: r.sellerNames } : null;
+      return r ? { matterRef: r.matterRef ?? null, propertyAddress: r.propertyAddress, purchasePricePennies: r.purchasePricePennies, buyerNames: r.buyerNames, sellerNames: r.sellerNames } : null;
     } catch { return null; }
   }
 
@@ -1841,9 +1846,11 @@ export class EngineService {
             }
           }
           if (p.kind === 'transaction_at_risk') {
-            const subject = `We have been told that your client may not be proceeding with the sale (${p.title.slice(0, 160)}). Please confirm by return whether your client intends to proceed and, if so, on what timetable; our client is incurring costs in reliance on the transaction.`;
+            // Their client's side of the deal: they buy what we sell, and sell what we buy. Our own note of what we were told stays ours.
+            const theirs = profileOf(state.transactionType).side === 'seller' ? 'purchase' : 'sale';
+            const subject = `We have been told that your client may not be proceeding with the ${theirs}. Please confirm by return whether your client intends to proceed and, if so, on what timetable; our client is incurring costs in reliance on the transaction.`;
             const detail = { subject, issueId: p.issueId };
-            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'chain', `enquiry_draft:at_risk:${p.issueId}`, detail, `ENQUIRY — IS THE SALE PROCEEDING?\n\nTo: the seller's solicitor\nFor: ${p.title}\n\n${subject}`))) {
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'chain', `enquiry_draft:at_risk:${p.issueId}`, detail, `ENQUIRY — IS THE ${profileOf(state.transactionType).side === 'seller' ? 'PURCHASE' : 'SALE'} PROCEEDING?\n\nTo: the other side's solicitor\nFor: ${p.title}\n\n${subject}`))) {
               try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('proceeding enquiry could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
             }
           }

@@ -136,7 +136,7 @@ const FORM: Record<SmallMode, { field: string; button: string; done: string; req
   fatal: { field: 'Why The Transaction Cannot Go On', button: 'Abandon The Case', done: 'Abandoned', required: true },
 };
 
-export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, err = null, raiseOnly = false }: {
+export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, err = null, raiseOnly = false, raiseButton = true }: {
   api: Api; state: EngineState; busy: boolean; cmd: (body: Record<string, unknown>) => Promise<unknown>; onChanged?: () => void;
   /** The case's last command error: shown on the form whose command it was. */
   err?: string | null;
@@ -144,6 +144,8 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   only?: string; onCancel?: () => void;
   /** Just the Raise Issue dialog, open (a task's header opens it); `onCancel` when it closes. */
   raiseOnly?: boolean;
+  /** Its own Raise Issue button: off where the case's header already has the one Raise Issue menu. */
+  raiseButton?: boolean;
 }) {
   const [cat, setCat] = useState<IssueCatalogue | null>(catalogueCache);
   const [menu, setMenu] = useState<string | null>(null);
@@ -686,7 +688,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
       <div className="is-h">
         <h3>Issues</h3>
         <span className="n">{open.length ? [`${open.length} open`, holding ? `${holding} stopping ${exchanged ? 'completion' : 'exchange'}` : '', late ? `${late} overdue` : ''].filter(Boolean).join(' · ') : 'None open'}</span>
-        {!done && <button className="ep-btn sp" style={{ margin: '0 0 0 auto' }} disabled={busy} onClick={() => { setRaising(true); setFormErr(null); pickKind(draft.kind); }}>Raise Issue</button>}
+        {!done && raiseButton && <button className="ep-btn sp" style={{ margin: '0 0 0 auto' }} disabled={busy} onClick={() => { setRaising(true); setFormErr(null); pickKind(draft.kind); }}>Raise Issue</button>}
       </div>
       {outcome && <div className={`is-out${outcome.ok ? '' : ' warn'}`} role="status">{outcome.text}</div>}
       <div className="is-list">{open.length ? open.map((i) => row(i, false)) : <div className="is-empty">Nothing is wrong on this case.</div>}</div>

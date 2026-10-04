@@ -12,12 +12,12 @@ import { SYSTEM } from './types';
 const ISSUE_TAG = (check: string) => `[crosscheck:${check}]`;
 
 export async function loadCaseRecord(tenantId: string, matterId: string): Promise<CaseRecord | null> {
-  const m = await queryOne<{ property_address: string | null; purchase_price: string | null; buyer_names: string[] | null; seller_names: string[] | null; lender: string | null; completion_target_date: string | null }>(
-    `select property_address, purchase_price::text, buyer_names, seller_names, lender, completion_target_date::text from matter where id = $1 and tenant_id = $2`,
+  const m = await queryOne<{ matter_ref: string | null; property_address: string | null; purchase_price: string | null; buyer_names: string[] | null; seller_names: string[] | null; lender: string | null; completion_target_date: string | null }>(
+    `select matter_ref, property_address, purchase_price::text, buyer_names, seller_names, lender, completion_target_date::text from matter where id = $1 and tenant_id = $2`,
     [matterId, tenantId]
   );
   if (!m) return null;
-  return { propertyAddress: m.property_address, purchasePricePennies: m.purchase_price ? parsePennies(m.purchase_price) : null, buyerNames: m.buyer_names ?? [], sellerNames: m.seller_names ?? [], lender: m.lender, completionDate: null };
+  return { matterRef: m.matter_ref, propertyAddress: m.property_address, purchasePricePennies: m.purchase_price ? parsePennies(m.purchase_price) : null, buyerNames: m.buyer_names ?? [], sellerNames: m.seller_names ?? [], lender: m.lender, completionDate: null };
 }
 
 export async function loadRegister(tenantId: string, matterId: string): Promise<RegisterRow[]> {

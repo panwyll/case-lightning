@@ -221,7 +221,7 @@ export function proposalChip(action: string, det: Record<string, unknown>): stri
   const who = partyOf(det.recipientRole ?? (action === 'client_update' ? 'client' : null)).chip;
   if (action === 'acknowledgement') return `${who} Acknowledgement`;
   if (action === 'search_order') return 'Search Order';
-  if (action === 'enquiry_draft') return "Seller's Solicitor Enquiries";
+  if (action === 'enquiry_draft') return 'Other Side Enquiries';
   // A letter written for an event (a death): a letter, not a routine update or a chase.
   if (det.letter) return `Letter To ${action === 'counterparty_update' ? (det.to === 'estate_agent' ? 'The Agent' : 'The Other Side') : action === 'client_update' ? 'The Client' : partyOf(det.recipientRole).the.replace(/\b\w/g, (c) => c.toUpperCase()).replace("'S", "'s")}`;
   if (action === 'counterparty_update') return det.to === 'estate_agent' ? 'Agent Update' : 'Other Side Update';
@@ -290,7 +290,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
           const t = String(det.template ?? '');
           if (t === 'exchanged_agent') return 'Tell the estate agent contracts are exchanged';
           if (t === 'completed_agent') return 'Tell the estate agent completion has happened';
-          if (t === 'enquiries_to_seller_solicitor') return "Send our enquiries to the seller's solicitor";
+          if (t === 'enquiries_to_seller_solicitor') return `Send our enquiries to ${profileOf(s.transactionType).side === 'seller' ? "the buyer's solicitor" : "the seller's solicitor"}`;
           return `Ask ${whom(det.recipientRole)} for ${low(REQUEST_TITLE[t] ?? t.replace(/^request_/, '').replace(/_/g, ' '))}`;
         }
         const key = typeof det.waitKey === 'string' ? det.waitKey : '';
@@ -307,7 +307,8 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
           : k.startsWith('enquiry_draft:evidence') ? 'evidence from the seller'
           : k.startsWith('enquiry_draft:client:') ? "on the client's instruction"
           : typeof det.question === 'string' && det.question ? "from the seller's forms" : '';
-        return `Send enquiries to the seller's solicitor${about ? `: ${low(about)}` : ''}`;
+        // The other side: the seller's solicitor when we act for the buyer, the buyer's when we act for the seller.
+        return `Send enquiries to ${profileOf(s.transactionType).side === 'seller' ? "the buyer's solicitor" : "the seller's solicitor"}${about ? `: ${low(about)}` : ''}`;
       }
       case 'client_update': {
         if (det.kind === 'id_check_request') { const l = typeof det.label === 'string' ? det.label : ''; return `Send ${!l || /^the client$/i.test(l) ? 'the client' : l} the ID check`; }
