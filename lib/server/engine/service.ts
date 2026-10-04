@@ -244,6 +244,8 @@ export class EngineService {
       const rule = ACKNOWLEDGE[e.type];
       if (!rule) continue;
       if ((e.payload as { reread?: boolean }).reread) continue; // the same report read again is not a new arrival
+      // No other side on a remortgage or a transfer of equity: nobody to thank for replies to enquiries.
+      if (rule.recipient === 'seller_solicitor' && profileOf(state.transactionType).side === 'owner') continue;
       try {
         const current = await this.getState(tenantId, matterId);
         if (current.acknowledgements.some((a) => a.forEventId === e.id)) continue;

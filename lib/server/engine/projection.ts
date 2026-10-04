@@ -981,12 +981,14 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     case 'issue_raised': {
       const p = e.payload as Payloads['issue_raised'];
       // An investigation (re)opened on the survey puts the survey back to waiting on it.
+      // A case with no exchange (a remortgage, a transfer of equity): what would hold exchange holds completion, or it holds nothing at all.
+      const gate = p.gate === 'exchange' && !profileOf(s.transactionType).hasExchange ? 'completion' : p.gate;
       s.issues[p.issueId] = {
         id: p.issueId,
         kind: p.kind,
         title: p.title,
         detail: p.detail,
-        gate: p.gate,
+        gate,
         status: 'open',
         raisedAt: e.createdAt,
         raisedBy: e.actor,
@@ -1008,7 +1010,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
         resolveBy: p.resolveBy ?? defaultResolveBy(s, p.kind, p.gate, e.createdAt),
         // Raised from an email whose approved reply went to the client: they were told in that reply.
         clientToldAt: p.sourceDocumentId && Object.values(s.notes).some((n) => n.documentId === p.sourceDocumentId && (n.messagesSentTo ?? []).includes('client')) ? e.createdAt : null,
-        history: [{ at: e.createdAt, by: e.actor, what: `raised (${p.kind.replace(/_/g, ' ')}, ${p.severity ?? 'warning'}, holds ${p.gate === 'none' ? 'nothing' : p.gate}${p.party ? `, re ${p.party}` : ''}${p.causedBy ? `, discovered while dealing with ${p.causedBy}` : ''})` }],
+        history: [{ at: e.createdAt, by: e.actor, what: `raised (${p.kind.replace(/_/g, ' ')}, ${p.severity ?? 'warning'}, holds ${gate === 'none' ? 'nothing' : gate}${p.party ? `, re ${p.party}` : ''}${p.causedBy ? `, discovered while dealing with ${p.causedBy}` : ''})` }],
       };
       break;
     }
@@ -1017,7 +1019,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       const i = s.issues[p.issueId];
       if (!i) break;
       i.status = p.status;
-      if (p.gate) i.gate = p.gate;
+      if (p.gate) i.gate = p.gate === 'exchange' && !profileOf(s.transactionType).hasExchange ? 'completion' : p.gate;
       if (p.party !== undefined) i.party = p.party;
       if (p.resolveBy) i.resolveBy = p.resolveBy;
       if (p.referredTo) i.referredTo = p.referredTo;

@@ -12,7 +12,7 @@ import { certificateOfTitleUnmet } from './machine';
 import { stageBlockers } from './machine';
 import { profileOf } from './transactions';
 import { SHAPE_SPEC } from './shapes';
-import { isResolved, type MatterState } from './types';
+import { isResolved, SIGNED_DOCUMENT_LABEL, type MatterState } from './types';
 import { moneyOf, position, pounds, ROLE_LABEL } from './money';
 import { allDischarged, anythingCharged } from './charges';
 import { subtractWorkingDays, addWorkingDays, workingDaysBetween, EW_CALENDAR } from './working-days';
@@ -31,12 +31,12 @@ const day = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Messages the case cannot move without: the step each one is part of. */
 const ESSENTIAL_UPDATES = new Set(['deposit_request', 'property_forms_request', 'exchange_authority_request', 'balance_request', 'ownership_basis_request', 'buildings_insurance_request']);
-const RESEND_TITLE: Record<string, (d: { searchType?: string }) => string> = {
+const RESEND_TITLE: Record<string, (d: { searchType?: string; documents?: string[] }) => string> = {
   search_order: (d) => `Order the ${d.searchType ?? ''} search`.replace('  ', ' '),
   id_check_request: () => 'Send the client the ID check',
   proof_of_funds_request: () => 'Send the client the proof-of-funds form',
   proof_of_funds_followup: () => 'Ask the client for proof of funds again',
-  signing_pack: () => 'Send the client the signing pack',
+  signing_pack: (d) => { const docs = ((d as { documents?: string[] }).documents ?? []).map((x) => (SIGNED_DOCUMENT_LABEL as Record<string, string>)[x]?.toLowerCase()).filter(Boolean); return `Send the client the signing pack${docs.length ? ` (${docs.join(', ')})` : ''}`; },
   deposit_request: () => 'Ask the client for the deposit',
   property_forms_request: () => 'Send the client the property forms',
   exchange_authority_request: () => "Ask the client for authority to exchange",
@@ -92,6 +92,8 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
     if (!still) continue;
     // Asked again since (pending or approved): that one is the task.
     if (Object.values(s.proposals).some((q) => q.eventId !== pr.eventId && q.status !== 'rejected' && q.proposedAt > pr.proposedAt && q.action === pr.action && JSON.stringify(q.detail.kind ?? q.detail.template ?? q.detail.searchType) === JSON.stringify(d.kind ?? d.template ?? d.searchType))) continue;
+    // A newer signing pack waiting to go: one pack at a time on the list (what this one held comes back once that goes, if still unsent).
+    if (what === 'signing_pack' && Object.values(s.proposals).some((q) => q.status === 'pending' && (q.detail as { kind?: string }).kind === 'signing_pack')) continue;
     add({ key: `resend:${pr.eventId}`, lane: RESEND_LANE[what] ?? 'case', title: RESEND_TITLE[what] ? RESEND_TITLE[what](d) : 'Send what was held back' });
   }
 

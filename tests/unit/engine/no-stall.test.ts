@@ -59,6 +59,39 @@ function movers(s: MatterState, now: Date) {
   };
 }
 
+/**
+ * The Tasks list must read right at every step (the walk-through, automated): no internal keys, ids or
+ * template leftovers; the other side named as the other side (on a sale we are the seller's solicitor);
+ * no exchange on a case that has none; nothing listed twice; chips in Title Case.
+ */
+/** Every due step the drives meet, and a case it came up on (each must have its action on the Tasks list). */
+const DUE_KEYS = new Map<string, string>();
+const SNAKE = /\b[a-z]+(?:_[a-z0-9]+)+\b/;
+function lintTasks(s: MatterState, now: Date, c: Case): string[] {
+  const out: string[] = [];
+  const prof = profileOf(c.tt);
+  const items = matterWork(s, now, { matterRef: 'TEST-001', propertyAddress: '1 Test Street, Testtown TE1 1ST' }).items;
+  const seen = new Map<string, string[]>();
+  for (const i of items) {
+    const texts = [i.what, i.chip ?? '', i.unblocks ?? ''];
+    for (const x of texts) {
+      if (/undefined|\bnull\b|NaN|\[object|\{\{|\}\}/.test(x)) out.push(`"${x}" has a leftover (${i.id})`);
+      if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(x)) out.push(`"${x}" shows an id (${i.id})`);
+      const k = SNAKE.exec(x.replace(/\[[^\]]*\]/g, ''));
+      if (k) out.push(`"${x}" shows the key "${k[0]}" (${i.id})`);
+      if (prof.side === 'seller' && /seller's solicitor/i.test(x)) out.push(`on a sale "${x}" names the seller's solicitor (that is us) (${i.id})`);
+      if (prof.side === 'buyer' && /buyer's solicitor/i.test(x) && !/chain|linked|onward|related/i.test(x)) out.push(`on a purchase "${x}" names the buyer's solicitor (that is us) (${i.id})`);
+      if (prof.side === 'owner' && /(buyer|seller)'s solicitor/i.test(x) && c.tt !== 'transfer_of_equity') out.push(`a ${c.tt.replace(/_/g, ' ')} has no other side, but "${x}" (${i.id})`);
+      if (!prof.hasExchange && /\bexchang/i.test(x)) out.push(`a ${c.tt.replace(/_/g, ' ')} has no exchange, but "${x}" (${i.id})`);
+    }
+    if (i.chip && i.chip.split(/\s+/).some((w) => /^[a-z]/.test(w) && !['and', 'or', 'of', 'to', 'the', 'a', 'on', 'in', 'for', 'by', 'with'].includes(w))) out.push(`chip "${i.chip}" is not Title Case (${i.id})`);
+    const key = `${i.bucket}|${i.what.toLowerCase()}`;
+    seen.set(key, [...(seen.get(key) ?? []), i.id]);
+  }
+  for (const [k, ids] of seen) if (ids.length > 1) out.push(`listed ${ids.length} times: ${k} (${ids.join(', ')})`);
+  return out;
+}
+
 /** How the conveyancer answers a decision the first time it sees it: the default approves; an alternative is taken once, where offered, then approved when it comes back. */
 type Policy = 'approve' | 'request_further' | 'reject' | 'escalate' | 'refer_to_client' | 'indemnity';
 
@@ -236,10 +269,13 @@ async function drive(c: Case, policy: Policy = 'approve') {
     return null;
   };
 
+  const lint = new Set<string>();
   for (let i = 0; i < 300; i++) {
     const s = await state();
-    if (s.closedAt) return { closed: true, log };
+    if (s.closedAt) return { closed: true, log, lint: [...lint] };
     const now = ports.now();
+    for (const l of lintTasks(s, now, c)) lint.add(`${s.stage}: ${l}`);
+    for (const d of dueSteps(s, now)) DUE_KEYS.set(d.key, c.id);
     let did: string | null;
     try { did = await act(s, now); }
     catch (err) { return { closed: false, log, stall: `at ${s.stage}: ${(err as Error).message}`, blockers: stageBlockers(s) }; }
@@ -261,5 +297,21 @@ for (const c of CASES) for (const policy of ['approve', 'request_further', 'reje
     const r = await drive(c, policy);
     if (!r.closed && process.env.STALL_LOG) console.log(r.log.join('\n'));
     assert.ok(r.closed, `${c.id} stalled ${r.stall}\n  blockers: ${(r.blockers ?? []).join('; ') || '(none)'}\n  last: ${r.log.slice(-6).join(' | ')}`);
+    if (process.env.LINT_OUT) (await import('node:fs')).appendFileSync(process.env.LINT_OUT, ((r as { lint?: string[] }).lint ?? []).map((l) => `${c.id} [${policy}] ${l}\n`).join(''));
+    assert.deepEqual((r as { lint?: string[] }).lint ?? [], [], `the Tasks list reads wrong on a ${c.id}`);
   });
 }
+
+test('every step the drives meet has its action on the Tasks list (an upload, a one-click step, or a form in the task), never "Open Case"', async () => {
+  const fs = await import('node:fs');
+  const { STEP_UPLOADS, directStep } = await import('../../../app/shared/engine/stepUploads');
+  const src = fs.readFileSync(new URL('../../../app/shared/engine/WorkPanel.tsx', import.meta.url), 'utf8');
+  const start = src.indexOf('const dueAction = (key: string)');
+  const body = src.slice(start, src.indexOf('\n  };\n', start));
+  const cases = new Set([...body.matchAll(/case '([a-z_:]+)'/g)].map((m) => m[1]));
+  const exact = new Set([...body.matchAll(/key === '([a-z_:]+)'/g)].map((m) => m[1]));
+  const prefixes = [...body.matchAll(/startsWith\('([a-z_:]+)'\)/g)].map((m) => m[1]);
+  const missing = [...DUE_KEYS].filter(([k]) => !STEP_UPLOADS[k] && !STEP_UPLOADS[k.split(':')[0]] && !directStep(k) && !cases.has(k) && !cases.has(k.split(':')[0]) && !exact.has(k) && !exact.has(k.split(':')[0]) && !prefixes.some((p) => k.startsWith(p)));
+  assert.ok(DUE_KEYS.size > 20, `the drives met ${DUE_KEYS.size} step kinds`);
+  assert.deepEqual(missing.map(([k, c]) => `${k} (on a ${c})`), []);
+});

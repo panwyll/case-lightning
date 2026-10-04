@@ -21,7 +21,7 @@
  *   responsibilityOwner — the fee-earner accountable for it happening. Never null.
  */
 import { noteDecisionGroups } from './note-topics';
-import { isUserActor } from './types';
+import { isUserActor, SIGNED_DOCUMENT_LABEL } from './types';
 import { amlHoldActive } from './people';
 import { acknowledgementTitle, emailChip, noteTaskTitle, nothingToActTitle, replyTitle } from './notes';
 import { profileOf } from './transactions';
@@ -129,7 +129,7 @@ const DECISION_LABEL: Record<string, string> = {
 const SEARCH_NAME: Record<string, string> = { LLC1: 'LLC1', CON29: 'CON29', DRAINAGE_WATER: 'drainage and water', ENVIRONMENTAL: 'environmental', CHANCEL: 'chancel', MINING: 'coal mining', FLOOD: 'flood risk', HIGHWAYS: 'highways', PLANNING: 'planning history' };
 const WAIT_ACTION: Record<string, (subject: string) => string> = {
   search: (sub) => `return the ${sub ? `${SEARCH_NAME[sub] ?? sub.toLowerCase().replace(/_/g, ' ')} ` : ''}search`, enquiry: (sub) => `reply to ${sub ? `enquiry ${sub}` : 'our enquiries'}`, id_check: () => 'return the ID / AML result',
-  funds: () => 'release the completion funds', registration: () => 'complete the registration', proof_of_funds: () => 'complete the proof of funds form',
+  funds: (sub) => ({ client: 'send the balance of the completion money', lender: 'release the mortgage advance', isa_provider: 'pay the ISA money', buyer_solicitor: 'send the completion money' } as Record<string, string>)[sub] ?? 'send the completion money', registration: () => 'complete the registration', proof_of_funds: () => 'complete the proof of funds form',
   management_pack: () => 'send the management pack', property_forms: () => 'return the property forms', redemption: () => 'send the redemption statement',
   lender_consent: () => 'confirm consent', discharge: () => 'confirm the discharge', contract_pack: () => 'send the draft contract pack and official copies',
   // What the client owes us, in words (never the wait's own key).
@@ -238,8 +238,10 @@ export const DUE_CHIP: Record<string, string> = {
 const ackThing = (what: unknown): string => String(what ?? 'what they sent').replace(/^(your|the|their|our)\s+/i, '').replace(/\bproof of funds\b/i, 'proof-of-funds');
 
 /** The chip for a proposal: "<who> <kind>" — Client Acknowledgement, Seller's Solicitor Chaser, Lender Request, Client Update. */
-export function proposalChip(action: string, det: Record<string, unknown>): string {
-  const who = partyOf(det.recipientRole ?? (action === 'client_update' ? 'client' : null)).chip;
+/** The engine names the other side's solicitor 'seller_solicitor' whichever side we act for: acting for the seller, that is the buyer's. */
+const roleOnSide = (role: unknown, side: string | null | undefined): unknown => (side === 'seller' && role === 'seller_solicitor' ? 'buyer_solicitor' : role);
+export function proposalChip(action: string, det: Record<string, unknown>, side?: string | null): string {
+  const who = partyOf(roleOnSide(det.recipientRole ?? (action === 'client_update' ? 'client' : null), side)).chip;
   if (action === 'acknowledgement') return `${who} Acknowledgement`;
   if (action === 'search_order') return 'Search Order';
   if (action === 'enquiry_draft') return 'Other Side Enquiries';
@@ -266,7 +268,7 @@ export function decisionTask(s: MatterState, d: DecisionState): { kind: string; 
     const det = (pr?.detail ?? {}) as Record<string, unknown>;
     const sub = pr?.action === 'client_update' && typeof det.kind === 'string' ? det.kind : pr?.action ?? 'proposal';
     // The chip is who and what kind ("Client Acknowledgement", "Lender Request"); the title says exactly what.
-    const chip = proposalChip(pr?.action ?? 'proposal', det);
+    const chip = proposalChip(pr?.action ?? 'proposal', det, profileOf(s.transactionType).side);
     // Proposed only because the case is in manual handling (it would otherwise have gone on its own): the chip says so.
     return { kind: `proposal:${sub}`, chip: det.manualMode ? `Manual Mode · ${chip}` : chip };
   }
@@ -304,7 +306,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
     const whom = (role: unknown) => (role === 'seller_solicitor' ? "the seller's solicitor" : role === 'buyer_solicitor' ? "the buyer's solicitor" : role === 'search_provider' ? 'the search provider' : role === 'lender' ? 'the lender' : role === 'estate_agent' ? 'the estate agent' : role === 'hmlr' ? 'HM Land Registry' : role === 'client' ? 'the client' : 'the other side');
     const low = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
     switch (pr.action) {
-      case 'acknowledgement': { const p = partyOf(det.recipientRole ?? 'client').the; return `Acknowledge receipt of ${p}'s ${ackThing(det.what)}`.replace("solicitor's's", "solicitor's"); }
+      case 'acknowledgement': { const p = partyOf(roleOnSide(det.recipientRole ?? 'client', profileOf(s.transactionType).side)).the; return `Acknowledge receipt of ${p}'s ${ackThing(det.what)}`.replace("solicitor's's", "solicitor's"); }
       case 'chase': {
         if (det.letter && typeof det.title === 'string') return det.title;
         if (det.kind === 'request') {
@@ -334,7 +336,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
       case 'client_update': {
         if (det.kind === 'id_check_request') { const l = typeof det.label === 'string' ? det.label : ''; return `Send ${!l || /^the client$/i.test(l) ? 'the client' : l} the ID check`; }
         if (det.kind === 'proof_of_funds_request') return det.followUpOf ? 'Ask the client for more proof of funds' : 'Send the client the proof-of-funds form';
-        if (det.kind === 'signing_pack') return 'Send the client the signing pack';
+        if (det.kind === 'signing_pack') { const docs = Array.isArray(det.documents) ? (det.documents as string[]).map((x) => (SIGNED_DOCUMENT_LABEL as Record<string, string>)[x]?.toLowerCase()).filter(Boolean) : []; return `Send the client the signing pack${docs.length ? ` (${docs.join(', ')})` : ''}`; }
         if (det.kind === 'survey_advice') return 'Send the client your advice on the survey';
         const tpl = typeof det.template === 'string' ? det.template : '';
         const ctx = (det.context ?? {}) as Record<string, unknown>;
@@ -356,7 +358,16 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
   }
   return (
     d.kind === 'bank_details' ? `Confirm ${BANK_WHOSE[bankPayee(s, d.subject ?? cleanSubject)] ?? 'the new'} bank details by phone, on a number you find yourself (no payment until you do)`
-    : d.kind === 'escalation' ? escalationLine(firstLine || 'Deal with an escalation')
+    : d.kind === 'escalation' ? (() => {
+      // A person's escalation says what was escalated, not only the note they wrote ("Escalated by handler: …").
+      const orig = /Original decision \(([a-z_]+)(?: ([^)]*))?\)/.exec(d.summary ?? '');
+      const mine = /^Escalated (by handler|again)(?::\s*(.+?))?\.?$/.exec(firstLine);
+      if (orig && mine) {
+        const what = orig[1] === 'search' && orig[2] ? `the ${SEARCH_NAME[orig[2]] ?? orig[2].toLowerCase()} search result` : DECISION_LABEL[orig[1]] ?? orig[1].replace(/_/g, ' ');
+        return `Decide on ${what} (escalated${mine[1] === 'again' ? ' again' : ''}${mine[2] ? `: ${mine[2].replace(/\.$/, '')}` : ''})`;
+      }
+      return escalationLine(firstLine || 'Deal with an escalation');
+    })()
     : d.kind === 'auto_clear' ? `Confirm the rules' clear of ${cleanSubject ? cleanSubject.replace(/^ID\/AML check(?: — (.*?))?(?: \([^)]*\))?$/, (_m, who: string | undefined) => `the ID / AML check${who ? ` for ${who}` : ''}`) : 'the document'}`
     : d.kind === 'proposal' ? proposalLine()
     : d.kind === 'id_check' ? `ID / AML result for ${d.subject && s.partyChecks[d.subject] ? s.partyChecks[d.subject].label : 'the client'}`
@@ -479,7 +490,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       bucket: 'do',
       kind: 'step',
       // A step's chip is whose and what kind; a held-back send keeps its own ("Client Request").
-      chip: d.key.startsWith('resend:') ? (() => { const pr = s.proposals[d.key.slice('resend:'.length)]; return pr ? proposalChip(pr.action, pr.detail as Record<string, unknown>) : 'Held Back'; })() : DUE_CHIP[d.key] ?? DUE_CHIP[d.key.split(':')[0]] ?? undefined,
+      chip: d.key.startsWith('resend:') ? (() => { const pr = s.proposals[d.key.slice('resend:'.length)]; return pr ? proposalChip(pr.action, pr.detail as Record<string, unknown>, profileOf(s.transactionType).side) : 'Held Back'; })() : DUE_CHIP[d.key] ?? DUE_CHIP[d.key.split(':')[0]] ?? undefined,
       what: d.title,
       // A step is its own title; the line under it is only ever something to know before doing it.
       unblocks: null,
