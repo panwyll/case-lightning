@@ -14,6 +14,7 @@ import { describeIdDocument, idDay, ID_DOCUMENT_TYPE } from './id-document';
 import { whyNot, gate, type GateId } from './graph';
 import { ISSUE_KIND_SPEC } from './issues';
 import { leaseFlags } from './rules';
+import { proposalBrief, enquiryRef, enquiryName } from './proposal-words';
 import { openIssues, openWaits, pendingDecisions, type DecisionState, type EngineEvent, type Flag, type EnquiryReplyFacts, type IdCheckFacts, type LeaseFacts, type MatterState, type Payloads, type SearchType } from './types';
 
 export interface TaskContext {
@@ -98,7 +99,7 @@ function clearedWhat(subFlow: string | undefined, subject: string | undefined): 
   switch (subFlow) {
     case 'id_check': return 'The ID and AML check';
     case 'search': return `The ${tail ? `${(SEARCH_LABEL as Record<string, string>)[tail] ?? tail.replace(/_/g, ' ').toLowerCase()} ` : ''}search`;
-    case 'enquiry': return `The reply to enquiry ${tail.replace(/^ISS-\d+-/, '')}`.trim();
+    case 'enquiry': return `The reply to ${enquiryName(tail)}`;
     case 'mortgage': return 'The mortgage offer';
     case 'title': return 'The official copies';
     case 'proof_of_funds': return 'Proof of funds';
@@ -268,8 +269,8 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       const rf = replyEv ? (replyEv.payload as Payloads['enquiry_reply_received']).facts : null;
       const origin = raisedEv ? (raisedEv.payload as Payloads['enquiry_raised']).origin : null;
       const flags = raised?.type === 'enquiry_reply_flagged' ? (rp as Payloads['enquiry_reply_flagged']).flags : [];
-      headline = q ? `Reply to enquiry ${q.enquiryId.replace(/^ISS-\d+-/, '')}, ${q.subject}: ${rf?.status === 'partial' ? 'answers part of it' : rf?.status === 'refused' ? 'declines to answer' : rf?.status === 'unclear' ? 'is unclear' : rf?.status === 'answered' ? 'answers it' : 'needs reading'}.` : `Reply to enquiry ${subjectKey ?? ''}.`;
-      addT('Enquiry', q ? `${q.enquiryId.replace(/^ISS-\d+-/, '')} · ${q.subject}` : subjectKey);
+      headline = q ? `Reply to enquiry ${enquiryRef(q.enquiryId)}, ${q.subject}: ${rf?.status === 'partial' ? 'answers part of it' : rf?.status === 'refused' ? 'declines to answer' : rf?.status === 'unclear' ? 'is unclear' : rf?.status === 'answered' ? 'answers it' : 'needs reading'}.` : `Reply to enquiry ${subjectKey ?? ''}.`;
+      addT('Enquiry', q ? `${enquiryRef(q.enquiryId)} · ${q.subject}` : subjectKey);
       addT('Reply', rf?.replyText ? `“${rf.replyText}”` : null);
       addT('Raised', raisedEv ? `${day(raisedEv.createdAt)}${raisedEv.actor === 'system' ? ' by the rules' : ' by hand'}${origin?.issueId ? ` from issue ${origin.issueId}` : origin?.followUpOf ? ` as a follow-up to ${origin.followUpOf}` : ''}` : null);
       addT('Reply received', day(replyEv?.createdAt ?? q?.repliedAt));
@@ -369,17 +370,10 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       const pr = s.proposals[d.eventId] ?? Object.values(s.proposals).find((x) => x.eventId === d.eventId) ?? null;
       const det = (pr?.detail ?? (rp as { detail?: Record<string, unknown> }).detail ?? {}) as Record<string, unknown>;
       const action = pr?.action ?? (rp as { action?: string }).action ?? d.subject ?? '';
-      const to = (det.recipientRole as string) ?? (det.kind === 'proof_of_funds_request' || det.kind === 'id_check_request' ? 'client' : action === 'client_update' ? 'client' : null);
-      const hasDetail = Object.keys(det).length > 0;
-      headline = hasDetail
-        ? `Proposed: ${action === 'chase' ? `chase ${pretty(String(to ?? 'the party'))}` : action === 'acknowledgement' ? `acknowledge to ${pretty(String(to ?? 'the sender'))}` : action === 'search_order' ? `order the ${det.searchType ?? ''} search` : action === 'client_update' ? 'update the client' : pretty(action)}.`
-        : `Proposed ${pretty(action)}: ${d.summary.split('\n')[0].slice(0, 160)}`;
-      if (hasDetail) addT('Would send', action === 'chase' ? `chase for ${pretty(String(det.waitKey ?? ''))}${det.subject ? ` ${det.subject}` : ''}${det.template ? ` (${det.template})` : ''}` : action === 'acknowledgement' ? `acknowledgement of ${det.what ?? 'a delivery'}` : action === 'client_update' ? `client update: ${pretty(String(det.template ?? det.kind ?? ''))}` : action === 'search_order' ? `order for ${det.searchType} from ${det.provider ?? 'the provider'}` : pretty(action));
-      addT('To', to ? pretty(String(to)) : null);
-      if (action === 'chase') {
-        const w = openWaits(s).find((x) => x.key === det.waitKey && (!det.subject || x.subject === det.subject));
-        if (w) addT('Outstanding since', `${day(w.openedAt)}${w.chasesSentAt.length ? ` · chased ${w.chasesSentAt.length}× (last ${day(w.chasesSentAt[w.chasesSentAt.length - 1])})` : ' · not chased yet'}`);
-      }
+      const side = p.side;
+      const brief = proposalBrief({ s, action, detail: det, events, summary: d.summary ?? '', names: { counterpartySolicitor: m.counterpartySolicitor, lender: m.lender, agent: m.counterpartyAgent, clients: ((side === 'seller' ? m.sellerNames : m.buyerNames) ?? []).filter(Boolean) as string[] } });
+      headline = brief.headline;
+      for (const [k, v, warn] of brief.rows) addT(k, v, !!warn);
       addT('Proposed', day(pr?.proposedAt ?? raised?.createdAt));
       checks = KIND_CHECKS.proposal;
     } else if (d.kind === 'auto_clear') {
@@ -530,7 +524,7 @@ function sourceFile(s: MatterState, d: DecisionState, raised: EngineEvent | null
   }
   if (d.kind === 'enquiry') {
     const f = rp.facts as { enquiryId?: string; status?: string; issues?: Flag[] } | undefined;
-    return [{ documentId: docId, title, summary: [`Reply to ${f?.enquiryId ? `enquiry ${f.enquiryId.replace(/^ISS-\d+-/, '')}` : 'the enquiry'}`, f?.status ? (f.status === 'answered' ? 'answers it' : f.status === 'partial' ? 'answers part of it' : f.status === 'refused' ? 'declines to answer' : 'unclear') : null, read].filter(Boolean).join(', '), lines: flagLines(f?.issues), warn: f?.status !== 'answered' }];
+    return [{ documentId: docId, title, summary: [`Reply to ${f?.enquiryId ? `enquiry ${enquiryRef(f.enquiryId)}` : 'the enquiry'}`, f?.status ? (f.status === 'answered' ? 'answers it' : f.status === 'partial' ? 'answers part of it' : f.status === 'refused' ? 'declines to answer' : 'unclear') : null, read].filter(Boolean).join(', '), lines: flagLines(f?.issues), warn: f?.status !== 'answered' }];
   }
   if (d.kind === 'mortgage') {
     const f = s.mortgage.facts;
@@ -590,7 +584,7 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
     const f = rp.facts as EnquiryReplyFacts | undefined;
     const q = f?.enquiryId ? s.enquiries[f.enquiryId] : null;
     const status = f?.status ?? 'unclear';
-    const ref = (f?.enquiryId ?? '').replace(/^ISS-\d+-/, '');
+    const ref = enquiryRef(f?.enquiryId ?? '');
     const out: ChecklistItem[] = [
       item('The reply answers the question actually asked', status === 'answered' ? 'ok' : 'flag', [
         { text: `Asked${ref ? ` (${ref})` : ''}: ${q?.subject ?? d.subject ?? 'the enquiry'}` },

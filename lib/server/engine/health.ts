@@ -304,7 +304,7 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
       d.kind === 'mortgage_offer_expiry' ? (passed ? 'Mortgage offer has expired' : `Mortgage offer expires in ${plural(d.workingDaysLeft, 'working day')}`)
       : d.kind === 'sdlt_filing' ? (passed ? 'SDLT return is late' : `SDLT return due in ${plural(d.workingDaysLeft, 'working day')}`)
       : d.kind === 'notice_to_complete' ? (passed ? 'Notice to complete has expired' : `Notice to complete expires in ${plural(d.workingDaysLeft, 'working day')}`)
-      : passed ? 'HMLR requisition is overdue' : `HMLR requisition due in ${plural(d.workingDaysLeft, 'working day')}`;
+      : passed ? 'HMLR requisition is overdue' : (d.workingDaysLeft <= 0 ? 'HMLR requisition due today' : `HMLR requisition due in ${plural(d.workingDaysLeft, 'working day')}`);
     reasons.push({
       code: passed ? 'deadline_passed' : 'deadline_near',
       band: passed || near ? 'critical' : 'attention',

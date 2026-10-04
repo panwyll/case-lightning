@@ -123,9 +123,33 @@ export const FIRST_REQUESTS: Partial<Record<EventType, FirstRequest>> = {
 };
 
 /** Phase junctions the client hears about (a progress update), by the stage the case moves into. The flowchart shows the same. */
-export const PHASE_DONE: Record<string, { done: string; line: string }> = {
+export const PHASE_DONE: Record<string, Partial<Record<'buyer' | 'seller' | 'owner', { done: string; line: string }>>> = {
   // Entering pre-contract already tells them (searches ordered), as does the report going out: only this junction is news on its own.
-  contract_review: { done: 'investigations complete', line: 'The searches are back and our enquiries of the seller\'s solicitor are answered: the investigation of the property is complete.' },
+  contract_review: {
+    buyer: { done: 'investigations complete', line: 'The searches are back and our enquiries of the seller\'s solicitor are answered: the investigation of the property is complete.' },
+    seller: { done: "the buyer's enquiries answered", line: "The buyer's solicitor's enquiries on the property are answered: their side of the paperwork is settled." },
+    owner: { done: 'checks on the property complete', line: 'The title and the searches are back and checked: the investigation of the property is complete.' },
+  },
+};
+/** What happens next, by the stage the case is in and whose side we act for: one sentence in the client's update. */
+const STAGE_NEXT: Record<'buyer' | 'seller' | 'owner', Record<string, string>> = {
+  buyer: {
+    instruction: 'Once your checks are through we get the contract papers and the searches under way.',
+    pre_contract: 'Once the contract papers and the search results are in, we raise our enquiries with the seller\'s solicitor and report to you before exchange.',
+    contract_review: 'Once the replies to our enquiries are in and the report on title is with you, we can look at exchanging.',
+    pre_exchange: 'When you have read the report and are ready, and the deposit is with us, we can exchange.',
+  },
+  seller: {
+    instruction: "Once your checks are through and your property forms are back, we send the contract papers to the buyer's solicitor.",
+    pre_contract: "The buyer's solicitor now does their searches and sends us their enquiries; we answer them, with your help where we need it.",
+    contract_review: "Once the buyer's solicitor is happy with the replies and you have signed the contract, we can look at exchanging.",
+    pre_exchange: 'When you have signed the contract and the buyer is ready, we can exchange.',
+  },
+  owner: {
+    instruction: 'Once your checks are through we get the title and the searches the lender needs.',
+    pre_contract: 'Once the title and the searches are in and checked, we report to the lender and send you the mortgage deed to sign.',
+    contract_review: 'Next we report to the lender and send you the mortgage deed to sign.',
+  },
 };
 
 export const CLIENT_UPDATE_TEMPLATES: Partial<Record<EventType, string>> = {
@@ -800,12 +824,12 @@ export class EngineService {
     if ((e.type === 'matter_created' || e.type === 'clients_updated') && (side === 'buyer' || tt === 'transfer_of_equity') && s.parties > 1 && !s.clientDecisions.ownership_basis && !asked('ownership_basis_request')) await askClient('ownership_basis_request');
     if (to === 'pre_contract' && tt === 'leasehold_purchase' && s.managementPack.status === 'not_started') await safe('management pack request', () => this.run(tenantId, matterId, { type: 'management_pack_requested', actor: SYSTEM, from: "the seller's solicitor" }));
     if (to === 'pre_exchange' && s.requireExchangeAuthority && s.clientDecisions.exchange_authority?.decision !== 'authorised' && !asked('exchange_authority_request')) {
-      await askClient('exchange_authority_request', { completionLine: s.targetCompletionDate ? `, with completion on ${s.targetCompletionDate} or the date we agree with you` : '' });
+      await askClient('exchange_authority_request', { completionLine: s.targetCompletionDate ? `, with completion on ${prettyDate(s.targetCompletionDate)} or the date we agree with you` : '' });
     }
     // An answer that lapsed (the price, the date or the clients changed) is asked for again, with what changed.
     if (e.type === 'client_decision_lapsed') {
       const p = e.payload as { subject: string; reason: string };
-      if (p.subject === 'exchange_authority' && s.requireExchangeAuthority && !s.exchange.exchangedAt) await askClient('exchange_authority_request', { completionLine: s.targetCompletionDate ? `, with completion on ${s.targetCompletionDate} or the date we agree with you` : '', noteToClient: `We are asking again because ${p.reason}.` });
+      if (p.subject === 'exchange_authority' && s.requireExchangeAuthority && !s.exchange.exchangedAt) await askClient('exchange_authority_request', { completionLine: s.targetCompletionDate ? `, with completion on ${prettyDate(s.targetCompletionDate)} or the date we agree with you` : '', noteToClient: `We are asking again because ${p.reason}.` });
       if (p.subject === 'ownership_basis' && s.parties > 1) await askClient('ownership_basis_request', { noteToClient: `We are asking again because ${p.reason}.` });
     }
     // Approved is the check: the report goes to the client as soon as it is signed off.
@@ -898,7 +922,7 @@ export class EngineService {
     const terms = f ? [
       f.pricePennies != null ? `Price: ${gbpOf(f.pricePennies)}` : null,
       f.depositPennies != null ? `Deposit: ${gbpOf(f.depositPennies)}${f.depositHolder ? ` (held as ${f.depositHolder})` : ''}` : null,
-      f.completionDate ? `Completion date: ${f.completionDate}` : null,
+      f.completionDate ? `Completion date: ${prettyDate(f.completionDate)}` : null,
       f.titleNumber ? `Title: ${f.titleNumber}` : null,
       f.sellers.length ? `Sellers: ${f.sellers.join(', ')}` : null,
       f.buyers.length ? `Buyers: ${f.buyers.join(', ')}` : null,
@@ -1252,8 +1276,8 @@ export class EngineService {
       'NOTICE TO COMPLETE (DRAFT — check, sign and serve)',
       '',
       `Property: ${record?.propertyAddress ?? '[PROPERTY]'}`,
-      `Contract dated: ${s.exchange.exchangedAt.slice(0, 10)}`,
-      `Contractual completion date: ${s.exchange.completionDate}`,
+      `Contract dated: ${prettyDate(s.exchange.exchangedAt.slice(0, 10))}`,
+      `Contractual completion date: ${s.exchange.completionDate ? prettyDate(s.exchange.completionDate) : 'not set'}`,
       '',
       `To the ${other} and their solicitors.`,
       '',
@@ -1978,7 +2002,8 @@ export class EngineService {
           }
         }
         // A phase of the case is complete (the junctions on the flowchart): the client hears where it stands too.
-        const phaseDone = e.type === 'stage_advanced' ? PHASE_DONE[(e.payload as { to: string }).to] : undefined;
+        const phaseSide = profileOf(state.transactionType).side;
+        const phaseDone = e.type === 'stage_advanced' ? PHASE_DONE[(e.payload as { to: string }).to]?.[phaseSide] : undefined;
         if (phaseDone || (e.type === 'proof_of_funds_reviewed' && (e.payload as { option: string }).option === 'approve') || e.type === 'title_reviewed' && (e.payload as { option: string }).option === 'approve') {
           const fresh = await this.getState(tenantId, matterId);
           const brief = caseBrief(fresh, this.ports.now());
@@ -1987,12 +2012,7 @@ export class EngineService {
           // What comes next, once: one sentence for the stage, the target date if there is one. Outstanding items are the "where things stand" tail every client update carries.
           const target = brief.milestones.targetExchangeDate;
           const targetNote = target ? ` We are working towards exchange around ${new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}.` : '';
-          const stageNext: Record<string, string> = {
-            instruction: 'Once your checks are through we get the contract papers and the searches under way.',
-            pre_contract: 'Once the contract papers and the search results are in, we raise our enquiries with the seller\'s solicitor and report to you before exchange.',
-            contract_review: 'Once the replies to our enquiries are in and the report on title is with you, we can look at exchanging.',
-            pre_exchange: 'When you have read the report and are ready, and the deposit is with us, we can exchange.',
-          };
+          const stageNext = STAGE_NEXT[phaseSide];
           const nextStep = `${stageNext[fresh.stage] ?? 'We will be in touch as the next piece comes in.'}${targetNote}`;
           const context = { eventType: e.type, payload: e.payload, done, doneLine, nextStep, transaction: brief.side === 'seller' ? 'sale' : 'purchase' };
           const detail = { template: 'progress_update', context, triggeredByEventId: e.id };

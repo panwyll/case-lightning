@@ -164,7 +164,7 @@ test('indemnity as a decision option: choosing it on a flagged search on a lende
   const li = openIssues(s).filter((i) => !i.finding);
   assert.equal(li.length, 1, 'besides the enforcement entry itself (its own issue, findings.ts)');
   assert.equal(li[0].kind, 'lender_approval');
-  assert.match(li[0].title, /indemnity policy proposed for search CON29/);
+  assert.match(li[0].title, /indemnity policy proposed for the CON29 search/);
   assert.equal(li[0].sourceDocumentId, d.sourceDocumentId, 'the lender issue cites the search the policy covers');
 });
 

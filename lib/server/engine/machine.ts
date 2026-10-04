@@ -22,7 +22,7 @@ import { addWorkingDays, workingDaysBetween } from './working-days';
 import { applyEvent } from './projection';
 import { assertCompletion, CompletionError, type Completion } from './completion';
 import type { DeadlineKind } from './sla';
-import { validateNoteActions, summariseNoteActions, nothingToActSummary, acknowledgementSummary, replyOnlySummary, type NoteActionDraft } from './notes';
+import { prettyDate, validateNoteActions, summariseNoteActions, nothingToActSummary, acknowledgementSummary, replyOnlySummary, type NoteActionDraft } from './notes';
 import { investigationGroups, investigationTitle } from './survey-review';
 import { duplicateIssue, ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, RESOLUTION_FIELDS, RESOLUTION_TITLE, FORMLESS_KINDS, type IssueGate, type IssueKind, type IssueResolution, type ReferTo } from './issues';
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -38,7 +38,7 @@ import { amlHoldActive, damlNoticeEnds, damlMoratoriumEnds, partyEventConsequenc
 import { cgtFlags, chargeableConsideration, deriveSdltBasis, type CgtFacts, type SdltFacts } from './sdlt-facts';
 import { completionDateProblem, staleAtCompletion } from './dates';
 import { allDischarged, anythingCharged, chargesToAdd, isFinancialCharge, negativeEquity, openCharges } from './charges';
-import { CLIENT_INTEREST, heldOnAbandon, interestDue, moneyOf, payersExpected, position, pounds, refundsDue, ROLE_LABEL } from './money';
+import { CLIENT_INTEREST, heldOnAbandon, interestDue, moneyOf, payersExpected, position, pounds, poundsShort, refundsDue, ROLE_LABEL } from './money';
 import {
   EngineError,
   isResolved,
@@ -1911,11 +1911,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const red = s.redemption;
       if (red.status === 'received' && red.redemptionPennies != null && red.dailyInterestPennies && (red.figureDate ?? s.exchange.completionDate)) {
         const days = Math.round((Date.parse(cmd.completionDate) - Date.parse((red.figureDate ?? s.exchange.completionDate)!)) / 86_400_000);
-        if (days) moved.push({ type: 'redemption_figure_adjusted', actor: SYSTEM, payload: { redemptionPennies: red.redemptionPennies + days * red.dailyInterestPennies, days, reason: `completion moved to ${cmd.completionDate}: ${days} day${Math.abs(days) === 1 ? '' : 's'} at ${pounds(red.dailyInterestPennies)} a day` } });
-        if (red.validUntil && cmd.completionDate > red.validUntil) moved.push(issue(s, next(), 'redemption_statement_expired', `Redemption statement: valid until ${red.validUntil}, completion now ${cmd.completionDate}`, 'Ask the lender for a statement to the new completion date; the payment authorised to the lender must match it.', 'completion'));
+        if (days) moved.push({ type: 'redemption_figure_adjusted', actor: SYSTEM, payload: { redemptionPennies: red.redemptionPennies + days * red.dailyInterestPennies, days, reason: `completion moved to ${prettyDate(cmd.completionDate)}: ${days} day${Math.abs(days) === 1 ? '' : 's'} at ${pounds(red.dailyInterestPennies)} a day` } });
+        if (red.validUntil && cmd.completionDate > red.validUntil) moved.push(issue(s, next(), 'redemption_statement_expired', `Redemption statement: valid until ${prettyDate(red.validUntil)}, completion now ${prettyDate(cmd.completionDate)}`, 'Ask the lender for a statement to the new completion date; the payment authorised to the lender must match it.', 'completion'));
       }
-      if (s.completion.statementGeneratedAt) moved.push(issue(s, next(), 'completion_funds_shortfall', `Completion statement: re-issue for ${cmd.completionDate}`, 'Apportionments, the redemption figure\'s daily interest and any interest on the deposit were worked to the old date. Re-issue the statement and tell the client if the balance changed.', 'completion'));
-      if (s.deeds.certificateOfTitleAt) moved.push(issue(s, next(), 'lender_funds_delayed', `Tell the lender: completion moved to ${cmd.completionDate}`, (s.completion.receivedFrom ?? []).includes('lender') ? 'The advance is already with us for the old date. Most lenders want it returned if completion slips beyond their Part 2 period (often one to five working days), or interest is charged: check the lender\'s instructions and return it or get consent to hold it.' : 'The certificate of title named the old date: send the lender the new date so the advance is released for it.', 'completion'));
+      if (s.completion.statementGeneratedAt) moved.push(issue(s, next(), 'completion_funds_shortfall', `Completion statement: re-issue for ${prettyDate(cmd.completionDate)}`, 'Apportionments, the redemption figure\'s daily interest and any interest on the deposit were worked to the old date. Re-issue the statement and tell the client if the balance changed.', 'completion'));
+      if (s.deeds.certificateOfTitleAt) moved.push(issue(s, next(), 'lender_funds_delayed', `Tell the lender: completion moved to ${prettyDate(cmd.completionDate)}`, (s.completion.receivedFrom ?? []).includes('lender') ? 'The advance is already with us for the old date. Most lenders want it returned if completion slips beyond their Part 2 period (often one to five working days), or interest is charged: check the lender\'s instructions and return it or get consent to hold it.' : 'The certificate of title named the old date: send the lender the new date so the advance is released for it.', 'completion'));
       // The priority period no longer covers the new date: a fresh OS1 now, not two days before (completion.md 1.4).
       if (s.preCompletion.prioritySearchExpiresAt && cmd.completionDate.slice(0, 10) >= s.preCompletion.prioritySearchExpiresAt.slice(0, 10)) moved.push(issue(s, next(), 'title_defect', `Priority search ends ${s.preCompletion.prioritySearchExpiresAt.slice(0, 10)}, before the new completion date`, `Make a fresh OS1 now, so the priority period runs past ${cmd.completionDate} with time to lodge the AP1.`, 'completion'));
       if (s.relatedMatter) moved.push(issue(s, next(), 'chain_dependency', `Linked case: move its completion date to ${cmd.completionDate} too`, 'The client\'s sale and purchase complete on the same day: the other case\'s date must move with this one, with its other side\'s agreement.', 'completion'));
@@ -2227,7 +2227,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       }
       // The buyer makes up a gap with new money: it needs its own proof of funds (money.md 5.9).
       if (cmd.resolution === 'buyer_covers_shortfall' && profile(s).side === 'buyer' && s.requireProofOfFunds && !openOf(s, 'source_of_funds', 'Extra money from the client')) {
-        out.push(issue(s, issueIds(s, out)(), 'source_of_funds', `Extra money from the client: ${i.title.slice(0, 80)}`, 'The client is making up the difference with money of their own: it is new money, so it needs its own proof of funds (where it comes from, the evidence), and the lender is told the deposit changed.', s.exchange.exchangedAt ? 'completion' : 'exchange'));
+        out.push(issue(s, issueIds(s, out)(), 'source_of_funds', 'Extra money from the client: where it comes from, with proof', `${i.title}: the client is making up the difference with money of their own. It is new money, so it needs its own proof of funds (where it comes from, the evidence), and the lender is told the deposit changed.`, s.exchange.exchangedAt ? 'completion' : 'exchange'));
       }
       if (REOPENS_OFFER.has(cmd.resolution) && s.hasLender && !s.exchange.exchangedAt && s.mortgage.status !== 'awaiting' && s.mortgage.status !== 'not_required') {
         out.push({ type: 'mortgage_offer_withdrawn', actor: cmd.actor, payload: { reason: `${spec.label} resolved by a new lender / fresh valuation: the current offer no longer applies`, lender: s.mortgage.facts?.lender ?? null } });
@@ -2960,7 +2960,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const ls: NewEvent[] = [{ type: 'longstop_date_recorded', actor: cmd.actor, payload: { date: cmd.date } }];
       // The offer must outlast the long-stop, or the build can finish after the money has gone (property.md 8.1).
       const expiry = s.mortgage.facts?.expiryDate;
-      if (s.hasLender && expiry && expiry.slice(0, 10) < cmd.date && !openOf(s, 'lender_approval', 'The mortgage offer expires before the long-stop')) ls.push(issue(s, issueIds(s)(), 'lender_approval', `The mortgage offer expires before the long-stop date (${expiry.slice(0, 10)}, long-stop ${cmd.date})`, 'If the developer finishes late the offer will have lapsed and the client is bound to complete without it. Ask the lender for an extension to cover the long-stop (most new-build offers can be extended), and advise the client in writing before exchange.', s.exchange.exchangedAt ? 'completion' : 'exchange'));
+      if (s.hasLender && expiry && expiry.slice(0, 10) < cmd.date && !openOf(s, 'lender_approval', 'The mortgage offer expires before the long-stop')) ls.push(issue(s, issueIds(s)(), 'lender_approval', `The mortgage offer expires before the long-stop date (offer ends ${prettyDate(expiry.slice(0, 10))}, long-stop ${prettyDate(cmd.date)})`, 'If the developer finishes late the offer will have lapsed and the client is bound to complete without it. Ask the lender for an extension to cover the long-stop (most new-build offers can be extended), and advise the client in writing before exchange.', s.exchange.exchangedAt ? 'completion' : 'exchange'));
       return ls;
     }
     case 'record_other_charge': {
@@ -3432,7 +3432,7 @@ function moneyConsequences(s: MatterState, received: Partial<Record<FundsRole, n
   const open = openList(s, 'completion_funds_shortfall', SHORT_PREFIX);
   const lines = pos.lines.filter((l) => l.receivedPennies !== l.expectedPennies).map((l, n) => `${n === 0 ? ROLE_LABEL[l.role].replace(/^t/, 'T') : ROLE_LABEL[l.role]} sent ${pounds(l.receivedPennies)} of ${pounds(l.expectedPennies)}${l.role === 'lender' && moneyOf(s).requested.lender == null ? ' (the offer)' : ''}`);
   if (pos.shortfallPennies > 0) {
-    if (!open.length) out.push(issue(s, nextId(), 'completion_funds_shortfall', `${SHORT_PREFIX}: ${pounds(pos.shortfallPennies)} still to come`, `${lines.join('; ')}. ${profile(s).side === 'seller' ? "Do not release the keys until the buyer's solicitor sends the rest." : 'Ask the client for the difference (a lender that deducted its fees, or a retention, leaves the client to make it up). Completion cannot go ahead short.'}`, 'completion'));
+    if (!open.length) out.push(issue(s, nextId(), 'completion_funds_shortfall', `${SHORT_PREFIX}: ${poundsShort(pos.shortfallPennies)} still to come`, `${lines.join('; ')}. ${profile(s).side === 'seller' ? "Do not release the keys until the buyer's solicitor sends the rest." : 'Ask the client for the difference (a lender that deducted its fees, or a retention, leaves the client to make it up). Completion cannot go ahead short.'}`, 'completion'));
   } else for (const i of open) out.push(resolvedBy(i.id, 'The money in now matches what was asked for.'));
   const owed = moneyOf(s).refunds.filter((r) => r.reason.startsWith('Overpaid')).reduce((a, r) => a + (r.amountPennies ?? 0), 0);
   if (pos.surplusPennies > owed) out.push({ type: 'refund_due', actor: SYSTEM, payload: { refundId: `RF-${moneyOf(s).refunds.length + 1}`, toRole: pos.surplusTo ?? 'client', to: remitter, amountPennies: pos.surplusPennies - owed, reason: `Overpaid: ${lines.join('; ')}. Return the surplus to the account it came from, or hold it against completion with the client's written agreement.` } });
@@ -3713,12 +3713,13 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
 
   // "Request further search/enquiry" raises the follow-up enquiry so the wait is tracked.
   if (option === 'request_further' && (d.kind === 'search' || d.kind === 'enquiry' || d.kind === 'title' || d.kind === 'mortgage')) {
-    const enquiryId = nextEnquiryId(s, d.kind === 'enquiry' ? subject : d.kind.toUpperCase());
+    // A follow-up on a search is keyed by the search (CON29-F1), so it reads as "our enquiry on the CON29 search".
+    const enquiryId = nextEnquiryId(s, d.kind === 'enquiry' ? subject : d.kind === 'search' && subject ? subject.toUpperCase() : d.kind.toUpperCase());
     out.push({ type: 'enquiry_raised', actor: userId, payload: { enquiryId, subject: `Further enquiry following ${d.kind}${subject ? ` ${subject}` : ''} review${note ? `: ${note}` : ''}`, origin: { decisionEventId: d.eventId, followUpOf: d.kind === 'enquiry' ? subject : undefined }, counterpartyType: s.counterpartyType } });
   }
   // An indemnity policy on a lender-funded purchase needs the lender's approval before exchange (docs/engine-issues.md).
   if (option === 'indemnity' && s.hasLender && !s.exchange.exchangedAt && (d.kind === 'search' || d.kind === 'title' || d.kind === 'enquiry')) {
-    out.push(lenderApprovalIssue(s, `${d.kind}:${subject || d.eventId}:indemnity:lender`, `Tell the lender: indemnity policy proposed for ${d.kind}${subject ? ` ${subject}` : ''}${note ? ` (${note})` : ''}`, d.sourceDocumentId, null));
+    out.push(lenderApprovalIssue(s, `${d.kind}:${subject || d.eventId}:indemnity:lender`, `Tell the lender: indemnity policy proposed for ${d.kind === 'search' ? `the ${subject ? `${subject} ` : ''}search` : d.kind === 'title' ? 'the title' : d.kind === 'enquiry' ? `the reply to enquiry ${subject.replace(/^ISS-\d+-/, '')}` : d.kind}`, d.sourceDocumentId, null));
   }
   // Proof of funds (docs/proof-of-funds.md): sign-off closes the source-of-funds issues it answers; a gift on a
   // lender-funded purchase must be declared to the lender; rejection is a hard stop like a failed ID check.

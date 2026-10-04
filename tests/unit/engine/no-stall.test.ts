@@ -20,7 +20,8 @@ import { stageBlockers } from '../../../lib/server/engine/machine';
 import { ISSUE_KIND_SPEC, RESOLUTION_FIELDS } from '../../../lib/server/engine/issues';
 import { SHAPE_SPEC } from '../../../lib/server/engine/shapes';
 import { profileOf } from '../../../lib/server/engine/transactions';
-import { openIssues, openWaits, surfacedDecisions, type MatterState, type TransactionType } from '../../../lib/server/engine/types';
+import { taskContext } from '../../../lib/server/engine/context';
+import { openIssues, openWaits, pendingDecisions, surfacedDecisions, type MatterState, type TransactionType } from '../../../lib/server/engine/types';
 import * as F from '../../../lib/server/engine/scenarios/fixtures';
 import { TENANT, MATTER, USER, SENIOR } from './helpers';
 import { contractClear } from './helpers';
@@ -89,6 +90,29 @@ function lintTasks(s: MatterState, now: Date, c: Case): string[] {
     seen.set(key, [...(seen.get(key) ?? []), i.id]);
   }
   for (const [k, ids] of seen) if (ids.length > 1) out.push(`listed ${ids.length} times: ${k} (${ids.join(', ')})`);
+  for (const i of items) if (/\b[a-z][A-Z]+\b/.test(i.what)) out.push(`"${i.what}" has broken capitals (${i.id})`);
+  for (const i of items) {
+    if (/\b\d{4}-\d{2}-\d{2}\b/.test(i.what)) out.push(`"${i.what}" shows a raw date (${i.id})`);
+    if (/\b(?:ISS-\d+-)?[A-Z0-9_]+-F\d+\b|\bISS-\d+-E\d+/.test(i.what)) out.push(`"${i.what}" shows an enquiry key (${i.id})`);
+    if (/\b0 working days\b/.test(i.what)) out.push(`"${i.what}" counts nothing (${i.id})`);
+    if (/: [^:]+: [A-Z][^:]+: /.test(i.what)) out.push(`"${i.what}" nests one title in another (${i.id})`);
+  }
+  if (process.env.TITLE_OUT) (require('node:fs') as typeof import('node:fs')).appendFileSync(process.env.TITLE_OUT, items.map((i) => `${c.tt}\t${i.bucket}\t${i.chip ?? ''}\t${i.what}\n`).join(''));
+  // An opened proposal's brief: what it does, in words, with nothing of the machinery showing.
+  for (const d of pendingDecisions(s).filter((x) => x.kind === 'proposal')) {
+    const ctx = taskContext({ state: s, matter: { matterRef: 'TEST-001', propertyAddress: '1 Test Street, Testtown TE1 1ST' }, events: [], target: { kind: 'decision', decision: d } });
+    if (process.env.BRIEF_OUT) { const w = items.find((i) => i.ref?.id === d.eventId); (require('node:fs') as typeof import('node:fs')).appendFileSync(process.env.BRIEF_OUT, `${c.id}\t${w?.chip ?? ''}\t${w?.what ?? ''}\t${ctx.headline}\t${ctx.task.filter((t) => t.k !== 'Proposed').map((t) => `${t.k}: ${t.v}`).join(' | ')}\n`); }
+    for (const x of [ctx.headline, ...ctx.task.map((t) => `${t.k}: ${t.v}`)]) {
+      if (/undefined|\bnull\b|NaN|\[object|\{\{|\}\}/.test(x)) out.push(`brief "${x}" has a leftover`);
+      if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(x)) out.push(`brief "${x}" shows an id`);
+      const k = SNAKE.exec(x);
+      if (k) out.push(`brief "${x}" shows the key "${k[0]}"`);
+      if (/^Proposed:|Would send/.test(x) && x === ctx.headline) out.push(`brief "${x}" says nothing`);
+      if (/\b[a-z][A-Z]+\b/.test(x)) out.push(`brief "${x}" has broken capitals`);
+      if (prof.side === 'seller' && /seller's solicitor/i.test(x)) out.push(`on a sale the brief "${x}" names the seller's solicitor (that is us)`);
+      if (/enquir/i.test(x) && /^\d+ enquir.* to the client/.test(x)) out.push(`brief "${x}" sends enquiries to the client`);
+    }
+  }
   return out;
 }
 

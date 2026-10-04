@@ -49,7 +49,7 @@ test("the client's balance short of what was asked for holds completion, and the
   const [short] = open(state, 'completion_funds_shortfall');
   assert.ok(short, 'a shortfall issue');
   assert.equal(short.gate, 'completion');
-  assert.match(short.title, /£5,000\.00 still to come/);
+  assert.match(short.title, /£5,000 still to come/);
   // The wait closed with the first receipt; the rest is sent against the same request.
   ({ state } = run(state, { type: 'funds_received', fromRole: 'client', amountPennies: 500_000, remitter: null }));
   assert.equal(open(state, 'completion_funds_shortfall').length, 0, 'made up: resolved');
@@ -61,7 +61,7 @@ test("a lender that deducts its fee from the advance leaves the client to make u
   assert.equal(open(state, 'completion_funds_shortfall').length, 0);
   ({ state } = run(state, { type: 'funds_received', fromRole: 'lender', amountPennies: 22_500_000 - 99_900, remitter: null }));
   const [short] = open(state, 'completion_funds_shortfall');
-  assert.match(short.title, /£999\.00/);
+  assert.match(short.title, /£999 /);
   assert.match(short.detail ?? "", /The lender sent £224,001\.00 of £225,000\.00 \(the offer\)/);
 });
 
@@ -115,7 +115,7 @@ test("a sale expects the price less the deposit from the buyer's solicitor; shor
   const s = purchase({ transactionType: 'freehold_sale' as never, hasLender: false, waits: [], money: { requested: {}, received: {}, uncleared: [], statementBalancePennies: null, refunds: [] } });
   const { state } = run(s, { type: 'funds_received', fromRole: 'buyer_solicitor', amountPennies: 26_000_000, remitter: null, contractPricePennies: 30_000_000, contractDepositPennies: 3_000_000 });
   const [short] = open(state, 'completion_funds_shortfall');
-  assert.match(short.title, /£10,000\.00/);
+  assert.match(short.title, /£10,000 /);
   assert.match(short.detail ?? "", /keys/);
 });
 

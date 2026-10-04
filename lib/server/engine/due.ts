@@ -13,7 +13,7 @@ import { stageBlockers } from './machine';
 import { profileOf } from './transactions';
 import { SHAPE_SPEC } from './shapes';
 import { isResolved, SIGNED_DOCUMENT_LABEL, type MatterState } from './types';
-import { moneyOf, position, pounds, ROLE_LABEL } from './money';
+import { moneyOf, position, pounds, poundsShort, ROLE_LABEL } from './money';
 import { allDischarged, anythingCharged } from './charges';
 import { subtractWorkingDays, addWorkingDays, workingDaysBetween, EW_CALENDAR } from './working-days';
 
@@ -36,13 +36,13 @@ const RESEND_TITLE: Record<string, (d: { searchType?: string; documents?: string
   id_check_request: () => 'Send the client the ID check',
   proof_of_funds_request: () => 'Send the client the proof-of-funds form',
   proof_of_funds_followup: () => 'Ask the client for proof of funds again',
-  signing_pack: (d) => { const docs = ((d as { documents?: string[] }).documents ?? []).map((x) => (SIGNED_DOCUMENT_LABEL as Record<string, string>)[x]?.toLowerCase()).filter(Boolean); return `Send the client the signing pack${docs.length ? ` (${docs.join(', ')})` : ''}`; },
+  signing_pack: (d) => { const docs = ((d as { documents?: string[] }).documents ?? []).map((x) => (SIGNED_DOCUMENT_LABEL as Record<string, string>)[x]?.replace(/^./, (ch) => ch.toLowerCase())).filter(Boolean); return `Send the client the signing pack${docs.length ? ` (${docs.join(', ')})` : ''}`; },
   deposit_request: () => 'Ask the client for the deposit',
   property_forms_request: () => 'Send the client the property forms',
   exchange_authority_request: () => "Ask the client for authority to exchange",
   balance_request: () => 'Ask the client for the balance of the completion money',
   ownership_basis_request: () => 'Ask the clients how they will own the property',
-  buildings_insurance_request: () => 'Ask the client for their buildings insurance',
+  buildings_insurance_request: () => 'Ask the client for their buildings insurance schedule',
 };
 const RESEND_LANE: Record<string, string> = { search_order: 'searches', id_check_request: 'id_aml', proof_of_funds_request: 'source_of_funds', proof_of_funds_followup: 'source_of_funds', signing_pack: 'signing', deposit_request: 'exchange', property_forms_request: 'property_forms', exchange_authority_request: 'exchange', balance_request: 'completion', ownership_basis_request: 'co_ownership', buildings_insurance_request: 'pre_completion_checks' };
 
@@ -50,7 +50,7 @@ const RESEND_LANE: Record<string, string> = { search_order: 'searches', id_check
 function moneySteps(s: MatterState): DueStep[] {
   const m = moneyOf(s);
   return [
-    ...m.uncleared.map((u) => ({ key: `funds_cleared:${u.id}`, lane: 'completion', title: `Confirm ${u.amountPennies != null ? pounds(u.amountPennies) : 'the money'} from ${ROLE_LABEL[u.fromRole]} has cleared`, detail: 'It cannot be paid out until it has.' })),
+    ...m.uncleared.map((u) => ({ key: `funds_cleared:${u.id}`, lane: 'completion', title: `Confirm ${u.amountPennies != null ? poundsShort(u.amountPennies) : 'the money'} from ${ROLE_LABEL[u.fromRole]} has cleared`, detail: 'It cannot be paid out until it has.' })),
     ...m.refunds.filter((r) => !r.paidAt).map((r) => ({ key: `refund:${r.id}`, lane: 'completion', title: `Return ${r.amountPennies != null ? pounds(r.amountPennies) : 'the money held'} to ${ROLE_LABEL[r.toRole]}${r.to ? ` (${r.to})` : ''}`, detail: r.reason })),
   ];
 }
@@ -71,7 +71,7 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   // Money short of what was asked for: ask the client for the difference (a lender's deduction is theirs to make up too).
   const short = (buyer || remo) && !completed ? position(s).shortfallPennies : 0;
   if (short > 0 && !s.waits.some((w) => w.key === 'funds' && w.subject === 'client' && w.closedAt === null))
-    add({ key: `shortfall_request:${short}`, lane: 'completion', title: `Ask the client for the ${pounds(short)} still to come`, dueDate: completionDate });
+    add({ key: `shortfall_request:${short}`, lane: 'completion', title: `Ask the client for the ${poundsShort(short)} still to come`, dueDate: completionDate });
   // A step is offered only once the machine accepts it (a sale acts on the pack and the management pack once the ID check has cleared).
   const STAGE_ORDER = ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion', 'completed', 'post_completion'];
   const atLeast = (st: string) => STAGE_ORDER.indexOf(s.stage) >= STAGE_ORDER.indexOf(st);
@@ -115,7 +115,7 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   // Signed off, then something new about the money (a gift or loan mentioned later): the sign-off no longer covers it (money.md 1.1).
   const fundsQuestion = Object.values(s.issues).find((i) => i.kind === 'source_of_funds' && (i.status === 'open' || i.status === 'negotiating') && !/^Money still to arrive/.test(i.title));
   if (buyer && s.proofOfFunds.status === 'reviewed' && s.proofOfFunds.resolution === 'approve' && fundsQuestion && !exchanged && !completed && !everProposed('proof_of_funds_request'))
-    add({ key: 'proof_of_funds_followup', lane: 'proof_of_funds', title: `Ask the client for proof of funds again: ${fundsQuestion.title.slice(0, 80)}` });
+    add({ key: 'proof_of_funds_followup', lane: 'proof_of_funds', title: /^Extra money from the client/.test(fundsQuestion.title) ? 'Ask the client where the extra money comes from, with proof' : `Ask the client for proof of funds again (${fundsQuestion.title.charAt(0).toLowerCase()}${fundsQuestion.title.slice(1, 80)})` });
   if (!completed && (seller || remo || toe) && s.title.status === 'awaiting')
     add({ key: 'official_copies', lane: 'title', title: 'Get the official copies from HM Land Registry and file them' });
   if (seller && p.hasExchange && atLeast('pre_contract') && !s.contractPack.sentAt && s.propertyForms.status === 'received' && s.title.status !== 'awaiting')

@@ -61,7 +61,7 @@ test('the completion date moves after exchange: the statement, the lender (with 
   const moving = { ...s, stage: 'pre_completion' as const, exchange: { ...s.exchange, exchangedAt: '2026-09-20T10:00:00Z', completionDate: '2026-10-20' }, completion: { ...s.completion, statementGeneratedAt: '2026-09-21T10:00:00Z', receivedFrom: ['lender' as const] }, deeds: { ...s.deeds, certificateOfTitleAt: '2026-10-13T10:00:00Z' }, relatedMatter: { matterId: 'other', role: 'sale' } as never };
   const { events } = decide(moving, { type: 'change_completion_date', actor: USER, completionDate: '2026-10-27', reason: 'Seller cannot vacate' }, { now: new Date('2026-10-14T10:00:00Z') });
   const titles = events.filter((e) => e.type === 'issue_raised').map((e) => (e.payload as { title: string }).title);
-  assert.ok(titles.some((t) => /Completion statement: re-issue for 2026-10-27/.test(t)));
+  assert.ok(titles.some((t) => /Completion statement: re-issue for Tuesday, 27 October 2026/.test(t)));
   assert.ok(titles.some((t) => /Tell the lender: completion moved/.test(t)));
   assert.ok(titles.some((t) => /Linked case: move its completion date/.test(t)));
   const lender = events.find((e) => (e.payload as { title?: string }).title?.startsWith('Tell the lender'))!.payload as { detail: string };

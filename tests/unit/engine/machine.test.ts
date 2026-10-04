@@ -114,7 +114,7 @@ test('request_further raises a tracked follow-up enquiry that gates the stage', 
   const after = decide(opened, { type: 'resolve_decision', userId: USER, decisionEventId: d.eventId, option: 'request_further', note: 'Need the LA enforcement file before advising' }, { now });
   assert.deepEqual(after.events.map((e) => e.type), ['search_reviewed', 'enquiry_raised']);
   assert.equal(after.state.stage, 'pre_contract');
-  assert.match(stageBlockers(after.state)[0], /enquiry SEARCH-F1 raised/);
+  assert.match(stageBlockers(after.state)[0], /enquiry CON29-F1 raised/);
 });
 
 test('escalate hands the same source to a senior; resolving the escalation resolves the original', () => {

@@ -16,6 +16,8 @@ export const EMPTY_MONEY: ClientMoney = { requested: {}, received: {}, uncleared
 export const moneyOf = (s: MatterState): ClientMoney => ({ ...EMPTY_MONEY, ...(s.money ?? {}) });
 
 export const pounds = (p: number) => `£${(Math.abs(p) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** For a task's title: £10,000 for whole pounds, £10,000.50 otherwise. */
+export const poundsShort = (p: number) => `£${(Math.abs(p) / 100).toLocaleString('en-GB', { minimumFractionDigits: Math.abs(p) % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
 
 export interface Position {
   /** What should have come in from the payers who have sent something (null: nothing to compare against). */

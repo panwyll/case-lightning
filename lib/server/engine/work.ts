@@ -32,6 +32,7 @@ import { caseHealth, summariseHealth, type HealthBand, type HealthSummary } from
 import { dueSteps } from './due';
 import { ENGINE_ACTION_LABEL, ENGINE_ACTION_SUBJECTS, openIssues, openWaits, pendingDecisions, unaskedWaits, waitUnasked, surfacedDecisions, type MatterState, type LevelConfig, type DecisionState } from './types';
 import { EW_CALENDAR, addWorkingDays, workingDaysBetween, type WorkingCalendar } from './working-days';
+import { chaseTitle, clearedThing, enquiryName } from './proposal-words';
 
 export type Bucket = 'do' | 'waiting' | 'escalate';
 export type ActionOwner = 'conveyancer' | 'client' | 'seller_side' | 'lender' | 'third_party' | 'mlro' | 'hmlr' | 'search_provider' | 'id_provider' | 'linked_case';
@@ -123,20 +124,22 @@ export const OWNER_LABEL: Record<ActionOwner, string> = {
 const DECISION_LABEL: Record<string, string> = {
   id_check: 'the ID / AML result', search: 'the search result', enquiry: 'the reply to our enquiry', mortgage: 'the mortgage offer',
   title: 'the title', report_on_title: 'the report on title', contract: 'the contract', escalation: 'the escalation', requisition: "HM Land Registry's requisition",
-  proof_of_funds: 'the source of funds', management_pack: 'the management pack',
+  proof_of_funds: 'the source of funds', management_pack: 'the management pack', auto_clear: "the rules' clear", note_actions: 'what to record from a note', bank_details: 'the bank details', lease: 'the lease', proposal: 'a message',
 };
 /** What we are waiting for them to do, as the second half of "waiting on X to …". */
 const SEARCH_NAME: Record<string, string> = { LLC1: 'LLC1', CON29: 'CON29', DRAINAGE_WATER: 'drainage and water', ENVIRONMENTAL: 'environmental', CHANCEL: 'chancel', MINING: 'coal mining', FLOOD: 'flood risk', HIGHWAYS: 'highways', PLANNING: 'planning history' };
 const WAIT_ACTION: Record<string, (subject: string) => string> = {
-  search: (sub) => `return the ${sub ? `${SEARCH_NAME[sub] ?? sub.toLowerCase().replace(/_/g, ' ')} ` : ''}search`, enquiry: (sub) => `reply to ${sub ? `enquiry ${sub.replace(/^ISS-\d+-/, '')}` : 'our enquiries'}`, id_check: () => 'return the ID / AML result',
-  funds: (sub) => ({ client: 'send the balance of the completion money', lender: 'release the mortgage advance', isa_provider: 'pay the ISA money', buyer_solicitor: 'send the completion money' } as Record<string, string>)[sub] ?? 'send the completion money', registration: () => 'complete the registration', proof_of_funds: () => 'complete the proof of funds form',
+  search: (sub) => `return the ${sub ? `${SEARCH_NAME[sub] ?? sub.toLowerCase().replace(/_/g, ' ')} ` : ''}search`, enquiry: (sub) => `reply to ${sub ? enquiryName(sub) : 'our enquiries'}`, id_check: () => 'return the ID / AML result',
+  funds: (sub) => ({ client: 'send the balance of the completion money', lender: 'release the mortgage advance', isa_provider: 'pay the ISA money', buyer_solicitor: 'send the completion money' } as Record<string, string>)[sub] ?? 'send the completion money', registration: () => 'complete the registration', proof_of_funds: () => 'complete the proof-of-funds form',
   management_pack: () => 'send the management pack', property_forms: () => 'return the property forms', redemption: () => 'send the redemption statement',
-  lender_consent: () => 'confirm consent', discharge: () => 'confirm the discharge', contract_pack: () => 'send the draft contract pack and official copies',
+  lender_consent: () => 'give their consent', discharge: () => 'confirm the mortgage is discharged', seller_discharge: () => "send the discharge of the seller's mortgage (DS1)", transfer_deed: () => 'send the signed transfer (TR1)', retention_release: () => 'release the retention', contract_pack: () => 'send the draft contract pack and official copies',
   // What the client owes us, in words (never the wait's own key).
   deposit: () => 'send the deposit', insurance: () => 'send the buildings insurance schedule', signed_documents: () => 'return the signed documents',
   mortgage_offer: () => 'tell us when the mortgage offer is issued', survey: () => 'say whether they are having a survey', balance: () => 'send the balance of the completion money',
   client_decision: (sub) => CLIENT_DECISION_WAIT[sub] ?? `give their instruction${sub ? ` on ${sub.replace(/_/g, ' ')}` : ''}`,
 };
+/** What the client owes, by the graph's blocker id, as the second half of "waiting on the client to …". */
+const CLIENT_OWES: Record<string, string> = { balance: 'send the balance of the completion money', ownership_basis: 'say how they will own the property', exchange_authority: 'authorise exchange', deposit: 'send the deposit' };
 const CLIENT_DECISION_WAIT: Record<string, string> = {
   exchange_authority: 'authorise exchange', physical_condition: 'say how they want to go ahead after the survey', further_investigation: 'decide on the further investigation',
   accept_risk: 'say whether they accept the risk', accept_terms: 'accept the terms', completion_date: 'agree the completion date', ownership_basis: 'say how they will own the property',
@@ -199,15 +202,13 @@ const wd = (iso: string, now: Date, cal: WorkingCalendar) => workingDaysBetween(
 const subjectLabel = (action: string, subject: string): string => ENGINE_ACTION_SUBJECTS[action as keyof typeof ENGINE_ACTION_SUBJECTS]?.find((s) => s.key === subject)?.label ?? subject.replace(/_/g, ' ');
 
 /** What a first request asks for, as its task says it. */
-/** What each wait is for, as a chase's task says it. */
-const WAIT_LABEL: Record<string, string> = { mortgage_offer: 'News of the mortgage offer', survey: 'Whether the client is having a survey', contract_pack: "The draft contract pack", id_check: 'ID documents from the client', search: 'The search result', enquiry: 'Replies to our enquiries', funds: 'Completion funds', registration: 'Registration at HM Land Registry', proof_of_funds: 'The proof-of-funds form', management_pack: 'The management pack', property_forms: 'The property forms', redemption: 'The redemption statement', lender_consent: "The lender's consent", discharge: 'Discharge of the old mortgage', signed_documents: 'The signed documents', deposit: 'The deposit', client_decision: "The client's answer", insurance: 'Buildings insurance' };
 const REQUEST_TITLE: Record<string, string> = {
   request_contract_pack: 'The draft contract pack', request_management_pack: 'The leasehold management pack', request_redemption_statement: 'A redemption statement',
-  request_lender_consent: "The lender's consent", request_discharge: 'Discharge of the old mortgage', exchanged_agent: 'Exchanged: tell the agent', completed_agent: 'Completed: tell the agent',
+  request_lender_consent: 'Their consent', request_signed_transfer: 'The signed transfer (TR1)', request_discharge: 'Discharge of the old mortgage', exchanged_agent: 'Exchanged: tell the agent', completed_agent: 'Completed: tell the agent',
   enquiries_to_seller_solicitor: 'Our enquiries',
 };
 /** What a standard client update is about, in the words of its subject line. */
-const UPDATE_TITLE: Record<string, string> = { searches_ordered: 'Searches ordered', searches_all_back: 'Searches all back', search_back_all_clear: 'Search back, all clear', search_back_under_review: 'Search back, under review', enquiries_raised: 'Enquiries raised', mortgage_offer_checked: 'Mortgage offer checked', report_on_title_sent: 'Report on title sent', exchanged: 'Contracts exchanged', completed: 'Completed', registration_complete: 'Registration complete', chase_update: 'We chased today', access_conditions: 'Access for the specialist: the seller\'s conditions', file_password: 'Password for a file we sent' };
+const UPDATE_TITLE: Record<string, string> = { searches_ordered: 'Searches ordered', searches_all_back: 'Searches all back', search_back_all_clear: 'Search back, all clear', search_back_under_review: 'Search back, under review', enquiries_raised: 'Enquiries raised', mortgage_offer_checked: 'Mortgage offer checked', report_on_title_sent: 'Report on title sent', exchanged: 'Contracts exchanged', completed: 'Completion has happened', registration_complete: 'Registration complete', chase_update: 'We chased today', access_conditions: 'Access for the specialist: the seller\'s conditions', file_password: 'Password for a file we sent' };
 /** A review's chip is the kind of work it is (the title says which document): signing off a document, verifying details, answering a requisition. */
 const DECISION_CHIP: Record<string, string> = { search: 'Document Sign-Off', enquiry: 'Document Sign-Off', mortgage: 'Document Sign-Off', title: 'Document Sign-Off', id_check: 'Document Sign-Off', proof_of_funds: 'Document Sign-Off', report_on_title: 'Document Sign-Off', contract: 'Document Sign-Off', management_pack: 'Document Sign-Off', lease: 'Document Sign-Off', bank_details: 'Verify Details', requisition: 'Answer Requisition', escalation: 'Escalation', auto_clear: 'Confirm Check', note_actions: 'Apply Note' };
 
@@ -304,8 +305,8 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
     const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
     // Every task is the action it approves, in words: "Send the client the ID check", "Ask the lender for a redemption statement".
     // The engine's 'seller_solicitor' is the other side's solicitor: acting for the seller, the buyer's.
-    const whom = (raw: unknown) => { const role = roleOnSide(raw, profileOf(s.transactionType).side); return (role === 'seller_solicitor' ? "the seller's solicitor" : role === 'buyer_solicitor' ? "the buyer's solicitor" : role === 'search_provider' ? 'the search provider' : role === 'lender' ? 'the lender' : role === 'estate_agent' ? 'the estate agent' : role === 'hmlr' ? 'HM Land Registry' : role === 'client' ? 'the client' : 'the other side'); };
-    const low = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
+    const whom = (raw: unknown) => { const role = roleOnSide(raw, profileOf(s.transactionType).side); return (role === 'seller_solicitor' ? "the seller's solicitor" : role === 'buyer_solicitor' ? "the buyer's solicitor" : role === 'search_provider' ? 'the search provider' : role === 'lender' ? 'the lender' : role === 'estate_agent' ? 'the estate agent' : role === 'hmlr' ? 'HM Land Registry' : role === 'client' ? 'the client' : partyOf(role).the); };
+    const low = (t: string) => (/^[A-Z]{2}/.test(t) ? t : t.charAt(0).toLowerCase() + t.slice(1));
     switch (pr.action) {
       case 'acknowledgement': { const p = partyOf(roleOnSide(det.recipientRole ?? 'client', profileOf(s.transactionType).side)).the; return `Acknowledge receipt of ${p}'s ${ackThing(det.what)}`.replace("solicitor's's", "solicitor's"); }
       case 'chase': {
@@ -317,9 +318,8 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
           if (t === 'enquiries_to_seller_solicitor') return `Send our enquiries to ${profileOf(s.transactionType).side === 'seller' ? "the buyer's solicitor" : "the seller's solicitor"}`;
           return `Ask ${whom(det.recipientRole)} for ${low(REQUEST_TITLE[t] ?? t.replace(/^request_/, '').replace(/_/g, ' '))}`;
         }
-        const key = typeof det.waitKey === 'string' ? det.waitKey : '';
-        const subj = typeof det.subject === 'string' && det.subject && !/^[0-9a-f-]{20,}$/i.test(det.subject) ? ` (${SEARCH_NAME[det.subject] ?? det.subject.replace(/_/g, ' ')})` : '';
-        return `Chase ${whom(det.recipientRole)} for ${low(WAIT_LABEL[key] ?? 'what they owe')}${subj}`;
+        if (det.kind === 'party_message') return `Write to ${whom(det.recipientRole)}`;
+        return chaseTitle(typeof det.waitKey === 'string' ? det.waitKey : '', det.recipientRole, typeof det.subject === 'string' ? det.subject : null, s);
       }
       case 'counterparty_update': if (det.letter && typeof det.title === 'string') return det.title; return `Tell ${whom(det.to)} ${String(det.title ?? 'where our side stands').replace(/^./, (x) => x.toLowerCase())}`;
       case 'search_order': { const n = SEARCH_NAME[cleanSubject ?? String(det.searchType ?? '')] ?? cleanSubject ?? String(det.searchType ?? ''); return `Order the ${n}${/search/i.test(n) ? '' : ' search'}`; }
@@ -337,13 +337,13 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
       case 'client_update': {
         if (det.kind === 'id_check_request') { const l = typeof det.label === 'string' ? det.label : ''; return `Send ${!l || /^the client$/i.test(l) ? 'the client' : l} the ID check`; }
         if (det.kind === 'proof_of_funds_request') return det.followUpOf ? 'Ask the client for more proof of funds' : 'Send the client the proof-of-funds form';
-        if (det.kind === 'signing_pack') { const docs = Array.isArray(det.documents) ? (det.documents as string[]).map((x) => (SIGNED_DOCUMENT_LABEL as Record<string, string>)[x]?.toLowerCase()).filter(Boolean) : []; return `Send the client the signing pack${docs.length ? ` (${docs.join(', ')})` : ''}`; }
+        if (det.kind === 'signing_pack') { const docs = Array.isArray(det.documents) ? (det.documents as string[]).map((x) => (SIGNED_DOCUMENT_LABEL as Record<string, string>)[x]?.replace(/^./, (ch) => ch.toLowerCase())).filter(Boolean) : []; return `Send the client the signing pack${docs.length ? ` (${docs.join(', ')})` : ''}`; }
         if (det.kind === 'survey_advice') return 'Send the client your advice on the survey';
         const tpl = typeof det.template === 'string' ? det.template : '';
         const ctx = (det.context ?? {}) as Record<string, unknown>;
         if (tpl === 'progress_update' && typeof ctx.done === 'string') return `Update the client: ${low(ctx.done)}`;
         if (tpl === 'file_copy') return `Send the client a copy of ${typeof ctx.what === 'string' ? ctx.what : 'the file'}`;
-        const asks: Record<string, string> = { property_forms_request: 'Send the client the property forms', deposit_request: 'Ask the client for the deposit', exchange_authority_request: 'Ask the client for authority to exchange', balance_request: 'Ask the client for the balance of the completion money', ownership_basis_request: 'Ask the clients how they will own the property', buildings_insurance_request: s.transactionType === 'remortgage' ? 'Ask the client for their buildings insurance schedule' : 'Ask the client for buildings insurance from exchange', request_survey_report: 'Ask the client for the survey report', mortgage_change_query: 'Ask the client what changed with the mortgage', completion_statement: 'Send the client the completion statement' };
+        const asks: Record<string, string> = { property_forms_request: 'Send the client the property forms', deposit_request: 'Ask the client for the deposit', exchange_authority_request: 'Ask the client for authority to exchange', balance_request: 'Ask the client for the balance of the completion money', ownership_basis_request: 'Ask the clients how they will own the property', buildings_insurance_request: 'Ask the client for their buildings insurance schedule', request_survey_report: 'Ask the client for the survey report', mortgage_change_query: 'Ask the client what changed with the mortgage', completion_statement: 'Send the client the completion statement' };
         if (asks[tpl]) return asks[tpl];
         return `Update the client: ${low(UPDATE_TITLE[tpl] ?? tpl.replace(/_/g, ' '))}`;
       }
@@ -367,18 +367,21 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
         const what = orig[1] === 'search' && orig[2] ? `the ${SEARCH_NAME[orig[2]] ?? orig[2].toLowerCase()} search result` : DECISION_LABEL[orig[1]] ?? orig[1].replace(/_/g, ' ');
         return `Decide on ${what} (escalated${mine[1] === 'again' ? ' again' : ''}${mine[2] ? `: ${mine[2].replace(/\.$/, '')}` : ''})`;
       }
+      if (mine) return `Decide on an escalated review (escalated${mine[1] === 'again' ? ' again' : ''}${mine[2] ? `: ${mine[2].replace(/\.$/, '')}` : ''})`;
       return escalationLine(firstLine || 'Deal with an escalation');
     })()
-    : d.kind === 'auto_clear' ? `Confirm the rules' clear of ${!cleanSubject ? 'the document' : /^(?:ISS-\d+-)?E\d+$/.test(cleanSubject) ? `the reply to enquiry ${cleanSubject.replace(/^ISS-\d+-/, '')}` : SEARCH_NAME[cleanSubject] ? `the ${SEARCH_NAME[cleanSubject]} search` : cleanSubject.replace(/^ID\/AML check(?: — (.*?))?(?: \([^)]*\))?$/, (_m, who: string | undefined) => `the ID / AML check${who ? ` for ${who}` : ''}`)}`
+    : d.kind === 'auto_clear' ? `Confirm the rules' clear of ${clearedThing(cleanSubject)}`
     : d.kind === 'proposal' ? proposalLine()
-    : d.kind === 'id_check' ? `ID / AML result for ${d.subject && s.partyChecks[d.subject] ? s.partyChecks[d.subject].label : 'the client'}`
-    : d.kind === 'search' ? `${SEARCH_NAME[cleanSubject ?? ''] ? `${SEARCH_NAME[cleanSubject ?? '']} search result` : 'Search result'}${points(flagsOf(), 'point')}`
-    : d.kind === 'enquiry' ? `Reply to enquiry ${cleanSubject ?? ''}`.trim()
-    : d.kind === 'mortgage' ? `Mortgage offer${s.mortgage.facts?.lender ? ` from ${s.mortgage.facts.lender}` : ''}${points(flagsOf(), 'special condition')}`
-    : d.kind === 'title' ? `Official copies${s.title.facts?.titleNumber ? ` of ${s.title.facts.titleNumber}` : ''}${points(flagsOf(), 'entry')}`
+    : d.kind === 'id_check' ? `Review the ID / AML result for ${d.subject && s.partyChecks[d.subject] ? s.partyChecks[d.subject].label : 'the client'}`
+    : d.kind === 'search' ? `Review the ${SEARCH_NAME[cleanSubject ?? ''] ? `${SEARCH_NAME[cleanSubject ?? '']} ` : ''}search result${points(flagsOf(), 'point')}`
+    : d.kind === 'enquiry' ? `Review the reply to ${cleanSubject ? enquiryName(cleanSubject) : 'our enquiry'}${points(flagsOf(), 'point')}`
+    : d.kind === 'mortgage' ? `Review the mortgage offer${s.mortgage.facts?.lender ? ` from ${s.mortgage.facts.lender}` : ''}${points(flagsOf(), 'special condition')}`
+    : d.kind === 'title' && s.title.lease && d.sourceDocumentId && d.sourceDocumentId === s.title.leaseDocumentId ? `Review the lease${points(flagsOf(), 'point')}`
+    : d.kind === 'title' ? `Review the official copies${s.title.facts?.titleNumber ? ` of ${s.title.facts.titleNumber}` : ''}${points(flagsOf(), 'entry')}`
     : d.kind === 'proof_of_funds' ? 'Sign off the source of funds'
     : d.kind === 'report_on_title' ? 'Approve the report on title'
-    : d.kind === 'management_pack' ? 'Management pack (LPE1)'
+    : d.kind === 'management_pack' ? `Review the management pack (LPE1)${points(flagsOf(), 'point')}`
+    : d.kind === 'contract' ? `Review the draft contract${points(flagsOf(), 'point')}`
     : d.kind === 'requisition' ? "Answer HM Land Registry's requisition"
     : `${(DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')).replace(/^the /, '').replace(/^\w/, (c) => c.toUpperCase())}${cleanSubject ? ` — ${cleanSubject}` : ''}`
   );
@@ -585,13 +588,13 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   const ASKED_BY: Record<string, string> = { buildings_insurance_request: 'insurance', deposit_request: 'deposit', exchange_authority_request: 'exchange_authority' };
   const unsent = Object.values(s.proposals).filter((p) => p.status === 'pending' && p.action === 'client_update').map((p) => ASKED_BY[String((p.detail as { template?: unknown }).template ?? '')]).filter(Boolean);
   const waitedOn = new Set([...openWaits(s).flatMap((w) => [w.key, w.key === 'client_decision' ? w.subject : '']), ...unsent].filter(Boolean));
-  const sameAsWait = (id: string, what: string) => waitedOn.has(id) || (waitedOn.has('exchange_authority') && /instruction to exchange|authorise exchange/i.test(what)) || (waitedOn.has('insurance') && /insurance|policy schedule/i.test(what));
+  const sameAsWait = (id: string, what: string) => waitedOn.has(id) || (id === 'balance' && openWaits(s).some((w) => w.key === 'funds' && w.subject === 'client')) || (waitedOn.has('exchange_authority') && /instruction to exchange|authorise exchange/i.test(what)) || (waitedOn.has('insurance') && /insurance|policy schedule/i.test(what));
   for (const a of nextActions(s, now).filter((x) => x.who === 'client' && x.ref.type === 'client' && askable(x.ref.id) && !sameAsWait(x.ref.id, x.what))) {
     out.push({
       ...base,
       id: `waiting:client:${a.ref.id}`,
       bucket: 'waiting',
-      what: clientAction(a.what),
+      what: CLIENT_OWES[a.ref.id] ?? clientAction(a.what),
       unblocks: a.unblocks,
       actionOwner: 'client',
       urgency: a.urgency === 'critical' ? 'critical' : 'normal',
