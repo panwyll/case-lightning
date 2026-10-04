@@ -1365,13 +1365,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'draft_report_on_title': {
       requireEnrolled(s);
       requireSide(s, ['buyer'], 'A report on title');
-      // Once the title is resolved it can be written: in pre-contract it is an interim report (searches, enquiries or the
-      // offer still to come) and a supplementary one follows before exchange; in contract review it is the full report.
-      if (s.stage !== 'pre_contract' && s.stage !== 'contract_review' && !(s.stage === 'pre_exchange' && s.reportOnTitle.interimSentAt)) reject(`The report on title is written in pre-contract or contract review; this case is at ${s.stage.replace(/_/g, ' ')}.`);
-      if (!isResolved(s.title.status)) reject(`Title is ${s.title.status}; resolve it before drafting the report.`);
-      if (s.reportOnTitle.status === 'drafted') reject('A draft is already awaiting approval.');
-      if (s.reportOnTitle.status === 'approved') reject('An approved draft is awaiting sending.');
-      if (s.reportOnTitle.status === 'sent') reject('The report on title has already been sent.');
+      { const why = reportDraftProblem(s); if (why) reject(why); }
       const decision: DecisionSpec = {
         kind: 'report_on_title',
         summary: cmd.summary,
@@ -3839,6 +3833,20 @@ function nextEnquiryId(s: MatterState, base: string): string {
 }
 
 /** The "no AI content reaches a client without a logged human approval" invariant. */
+/**
+ * Why a report on title cannot be drafted now, or null. Once the title is resolved it can be written: in pre-contract
+ * it is an interim report (searches, enquiries or the offer still to come) and a supplementary one follows before
+ * exchange; in contract review it is the full report. Asked by the drafter before it writes anything.
+ */
+export function reportDraftProblem(s: MatterState): string | null {
+  if (s.stage !== 'pre_contract' && s.stage !== 'contract_review' && !(s.stage === 'pre_exchange' && s.reportOnTitle.interimSentAt)) return `The report on title is written in pre-contract or contract review; this case is at ${s.stage.replace(/_/g, ' ')}.`;
+  if (!isResolved(s.title.status)) return `Title is ${s.title.status}; resolve it before drafting the report.`;
+  if (s.reportOnTitle.status === 'drafted') return 'A draft is already awaiting approval.';
+  if (s.reportOnTitle.status === 'approved') return 'An approved draft is awaiting sending.';
+  if (s.reportOnTitle.status === 'sent') return 'The report on title has already been sent.';
+  return null;
+}
+
 export function assertCanSendReport(s: MatterState, draftId: string): void {
   requireEnrolled(s);
   const r = s.reportOnTitle;

@@ -815,6 +815,28 @@ export const EXPECTATION_KEYS = ['mortgage_offer', 'survey'] as const;
 export type ExpectationKey = (typeof EXPECTATION_KEYS)[number];
 export type WaitKey = (typeof WAIT_KEYS)[number];
 
+/** The request that asks for what a wait is waiting for (its template), by wait key (or key:subject). */
+const REQUEST_FOR_WAIT: Record<string, string> = {
+  request_contract_pack: 'contract_pack', request_signed_transfer: 'transfer_deed', request_management_pack: 'management_pack', request_redemption_statement: 'redemption',
+  request_lender_consent: 'lender_consent', property_forms_request: 'property_forms', deposit_request: 'deposit', buildings_insurance_request: 'insurance',
+  exchange_authority_request: 'client_decision:exchange_authority', balance_request: 'funds:client', request_discharge: 'discharge', id_check_request: 'id_check', proof_of_funds_request: 'proof_of_funds',
+};
+/**
+ * Waits whose own request has not gone yet (it is a proposal waiting for a person): they are not chased,
+ * escalated or listed as waiting; the request is the task. Keys and key:subject.
+ */
+export function unaskedWaits(s: MatterState): Set<string> {
+  const out = new Set<string>();
+  for (const p of Object.values(s.proposals)) {
+    if (p.status !== 'pending') continue;
+    const d = p.detail as { template?: string; kind?: string };
+    const k = REQUEST_FOR_WAIT[d.template ?? ''] ?? REQUEST_FOR_WAIT[d.kind ?? ''];
+    if (k) out.add(k);
+  }
+  return out;
+}
+export const waitUnasked = (s: MatterState, w: { key: string; subject: string }, unasked = unaskedWaits(s)): boolean => unasked.has(w.key) || unasked.has(`${w.key}:${w.subject}`);
+
 export interface WaitState {
   key: WaitKey;
   /** search type / enquiry id / '' */

@@ -34,7 +34,7 @@ import { workingDaysBetween } from './working-days';
 import { checkDraft, draftCheckLine, pointsNotInReport, renderChecked, type DraftCheck } from './draft-check';
 import { buildCompletionStatement } from './completion-statement';
 import { caseBrief } from './brief';
-import { decide, assertCanSendReport, reportReady, type Command } from './machine';
+import { decide, assertCanSendReport, reportReady, reportDraftProblem, type Command } from './machine';
 import { profileOf } from './transactions';
 import { SHAPE_SPEC } from './shapes';
 import { applyEvent, project } from './projection';
@@ -67,7 +67,7 @@ import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateLe
 import { describeIdDocument, reviewIdDocument } from './id-document';
 import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission, type StatementFacts } from './proof-of-funds';
 import type { Flag as PofFlag } from './types';
-import { isResolved, openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedsReadyToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
+import { isUserActor, isResolved, openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedsReadyToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, documentRequests, attachmentPreference, WAIT_LABEL, type NoteActionDraft } from './notes';
@@ -294,7 +294,13 @@ export class EngineService {
       fileName: readableName(proposalTitle(action, subject, detail, summary), this.ports.now()),
       content: summary,
     });
-    await this.run(tenantId, matterId, { type: 'propose_action', action, subject, detail, dedupKey, summary, sourceDocumentId: doc.id });
+    try {
+      await this.run(tenantId, matterId, { type: 'propose_action', action, subject, detail, dedupKey, summary, sourceDocumentId: doc.id });
+    } catch (err) {
+      // Two effects proposing the same thing at once: the other got there first, and it is proposed. Not a failed send.
+      if ((err as { status?: number }).status === 409 && /already proposed/i.test((err as Error).message)) return true;
+      throw err;
+    }
     return true;
   }
 
@@ -351,6 +357,9 @@ export class EngineService {
       await this.sendSigningPack(tenantId, matterId, (detail as { documents?: SignedDocument[] }).documents ?? null);
     } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'proof_of_funds_request') {
       const d = detail as { followUpOf?: string | null; noteToClient?: string | null; requestedBy?: string | null };
+      // Overtaken: the form is already with the client, or back for sign-off. Approving the old request is not a failed send.
+      const pof = (await this.getState(tenantId, matterId)).proofOfFunds;
+      if (!d.followUpOf && (pof.status === 'requested' || pof.status === 'submitted')) return;
       await this.requestProofOfFunds(tenantId, matterId, d.requestedBy ?? SYSTEM, { followUpOf: d.followUpOf ?? null, noteToClient: d.noteToClient ?? null });
     } else if (action === 'client_update') {
       const d = detail as { template: string; context: Record<string, unknown>; triggeredByEventId: string; agentTemplate?: string | null };
@@ -800,7 +809,9 @@ export class EngineService {
       if (p.subject === 'ownership_basis' && s.parties > 1) await askClient('ownership_basis_request', { noteToClient: `We are asking again because ${p.reason}.` });
     }
     // Approved is the check: the report goes to the client as soon as it is signed off.
-    if (e.type === 'report_on_title_approved' && s.reportOnTitle.status === 'approved') await safe('report on title send', () => this.sendReportOnTitle(tenantId, matterId, e.actor));
+    // The report goes because a person approved it: sent and recorded as them. Effects run on the automation role,
+    // which the database will not let write a report_on_title_sent (migration 071), so the approver's send leaves it.
+    if (e.type === 'report_on_title_approved' && s.reportOnTitle.status === 'approved' && isUserActor(e.actor)) await safe('report on title send', () => (this.ports.asApprover ?? ((f) => f()))(() => this.sendReportOnTitle(tenantId, matterId, e.actor)));
     if (e.type === 'contracts_exchanged') {
       // Every buyer of a freehold is asked to insure from exchange; with a lender it is also a completion gate (exchange.md 4.9).
       if (side === 'buyer' && (s.hasLender || !isLeasehold(s)) && !s.preCompletion.insuranceConfirmedAt && !asked('buildings_insurance_request')) await askClient('buildings_insurance_request');
@@ -1194,6 +1205,9 @@ export class EngineService {
     const state = await this.getState(tenantId, matterId);
     // Already drafted (the engine drafts it once title, searches and enquiries are resolved): nothing more to do.
     if (state.reportOnTitle.status === 'drafted') return { state, events: [] };
+    // Would the engine take a draft now? Asked before anything is written (and before the drafter is paid for):
+    // a refused draft used to leave its document behind, one per try.
+    { const why = reportDraftProblem(state); if (why) throw Object.assign(new Error(why), { status: 409 }); }
     const docIds = new Set<string>();
     for (const sr of Object.values(state.searches)) if (sr.documentId) docIds.add(sr.documentId);
     for (const q of Object.values(state.enquiries)) if (q.documentId) docIds.add(q.documentId);

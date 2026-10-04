@@ -186,6 +186,7 @@ export function productionPorts(): EnginePorts {
     // the conclusion sink; the engine is the same either way.
     const be = backend();
     _ports = sandboxGuard({
+      asApprover: runOutsideAutomation,
       linked: new PgLinkedMatterNotifier(),
       lenderDirectory: new PgLenderDirectory(),
       documents: be.documents,

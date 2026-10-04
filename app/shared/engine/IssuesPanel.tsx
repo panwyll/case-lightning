@@ -34,6 +34,8 @@ export function loadIssueCatalogue(api: Api): Promise<IssueCatalogue | null> {
     .catch(() => { cataloguePromise = null; return null; });
   return cataloguePromise;
 }
+/** What the firm itself wrote (proposals, notes, dossiers, its own emails): never someone's evidence. */
+const OWN_PAPERS = new Set(['PROPOSAL', 'FILE_NOTE', 'ESCALATION_DOSSIER', 'DEADLINE_DOSSIER', 'BANK_DETAILS_NOTE', 'SANDBOX_EMAIL', 'REPORT_ON_TITLE', 'COMPLETION_STATEMENT', 'SIGNING_PACK', 'CLIENT_UPDATE']);
 const gbp = (p: number) => `£${(p / 100).toLocaleString('en-GB')}`;
 const pennies = (v: string) => Math.round(Number(v.replace(/[^0-9.]/g, '')) * 100);
 const clean = (s: string | null | undefined) => (s ?? '').replace(/\n?\[(proposal|retry):[^\]]*\]/g, '').replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim();
@@ -342,7 +344,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
       case 'document': return (
         // A div, not a label: a label would pass the drop zone's click on to its own controls (or swallow the file input's).
         <div key={f.key} className="is-field" style={{ gridColumn: '1 / -1' }}>{label}
-          <FilePick docs={docs} value={v} onChange={set} since={form ? (state.issues as Record<string, IssueRow>)[form.id]?.raisedAt ?? null : null} upload={async (file) => {
+          <FilePick docs={docs ? docs.filter((d) => !OWN_PAPERS.has((d.docType ?? '').toUpperCase())) : docs} value={v} onChange={set} since={form ? (state.issues as Record<string, IssueRow>)[form.id]?.raisedAt ?? null : null} upload={async (file) => {
             const r = await uploadCaseFile<{ documentId: string }>(api, state.matterId, file, { role: 'evidence' });
             return { id: r.documentId, fileName: file.name, docType: null, webUrl: null, createdAt: new Date().toISOString() };
           }} />
@@ -400,6 +402,20 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
     onChanged?.();
     return true;
   };
+  /** Only steps the case can take now: no ID check once it is done, no proof-of-funds form while one is out, no enquiry after exchange. */
+  const stepPossible = (x: IssueStepView, i: IssueRow): boolean => {
+    if (x.kind !== 'action') return true;
+    const resolved = (st: string | undefined) => !!st && /^(clear|cleared|passed|approved|reviewed|accepted|resolved)$/.test(st);
+    if (x.command === 'request_id_check') {
+      const pc = i.party ? state.partyChecks?.[i.party] : undefined;
+      const st = pc ? pc.status : state.idCheck?.status;
+      return st !== 'requested' && !resolved(st);
+    }
+    if (x.command === 'request_proof_of_funds') { const st = state.proofOfFunds?.status ?? 'not_started'; return st === 'not_started' || (st === 'reviewed' && state.proofOfFunds?.resolution !== 'approve'); }
+    if (x.command === 'raise_enquiry') return !state.exchange?.exchangedAt;
+    if (x.command === 'request_redemption_statement') return !!state.hasExistingMortgage;
+    return true;
+  };
   /** An action step: its command, with the issue's id and party and what the form asked for. */
   const runAction = async (i: IssueRow, x: Extract<IssueStepView, { kind: 'action' }>): Promise<boolean> => {
     const fill = (v: unknown): unknown => (v === '$issue' ? i.id : v === '$party' ? (i.party ?? null) : v === '$partyCheck' ? (i.party && state.partyChecks?.[i.party] ? i.party : null) : v === '$status' ? (i.status === 'negotiating' ? 'negotiating' : 'open') : v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).map(([k, w]) => [k, fill(w)])) : v);
@@ -423,7 +439,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
   const actionReady = (x: Extract<IssueStepView, { kind: 'action' }>) => (x.fields ?? []).every((f) => !f.required || !!(vals[`act:${f.key}`] ?? '').trim());
   /** What to do about it: write to someone (drafted from the case), agree new dates, mark it negotiating, or say it has fallen through. */
   const nextSteps = (i: IssueRow) => {
-    const all = ((i.event && cat?.eventSteps?.[i.event]) || (/_sale$/.test(state.transactionType ?? '') && cat?.sellerSteps?.[i.kind]) || cat?.steps?.[i.kind] || []).filter((x) => !(x.kind === 'negotiating' && i.status === 'negotiating'));
+    const all = ((i.event && cat?.eventSteps?.[i.event]) || (/_sale$/.test(state.transactionType ?? '') && cat?.sellerSteps?.[i.kind]) || cat?.steps?.[i.kind] || []).filter((x) => !(x.kind === 'negotiating' && i.status === 'negotiating') && stepPossible(x, i));
     if (!all.length) return null;
     const log = (i.history ?? []).slice(1).slice(-4);
     return (

@@ -847,6 +847,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
       case 'management_pack_sale': return act('leasehold', 'management_pack_requested', 'Record Requested', {}, { primary: true });
       case 'contract_approved_sale': return act('exchange', 'contract_approved', 'Record Approved', {}, { primary: true });
       case 'report_on_title_redraft': return <BusyButton busyLabel="Drafting…" doneLabel="Drafted" disabled={busy} onClick={() => cmd({ type: 'draft_report_on_title' })}>Draft Again</BusyButton>;
+      case 'report_on_title_send': return <BusyButton busyLabel="Sending…" doneLabel="Sent" disabled={busy} onClick={() => cmd({ type: 'send_report_on_title' })}>Send To Client</BusyButton>;
       case 'proof_of_funds_followup':
       case 'proof_of_funds_request': return <BusyButton busyLabel="Sending…" doneLabel="Sent" disabled={busy} onClick={() => cmd({ type: 'request_proof_of_funds' })}>Send The Form</BusyButton>;
       case 'contract_approve': return act('exchange', 'contract_approved', 'Approve Contract', {}, { primary: true });

@@ -240,6 +240,8 @@ export interface SigningPort {
 }
 
 export interface EnginePorts {
+  /** Runs a write a person's own decision causes (the approved report going out) on the app role, outside an automation block; identity where there is no database. */
+  asApprover?: <T>(fn: () => Promise<T>) => Promise<T>;
   /** Enrolment fires the ID / AML check and the proof-of-funds form unasked (subject to trust levels). Default on; flow fixtures turn it off to drive each step by hand. */
   autoStartOnEnrol?: boolean;
   /** Optional; only used when a matter's counterparty is internal. */

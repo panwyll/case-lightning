@@ -14,7 +14,7 @@ import { chargeableConsideration } from './sdlt-facts';
 import type { MatterState, WaitKey, WaitState } from './types';
 import { auctionCompletionDue, firstRegistrationDue, isaReceivedAt, lisaWindowEnds } from './dates';
 import { profileOf } from './transactions';
-import { openIssues, openWaits } from './types';
+import { openIssues, openWaits, unaskedWaits, waitUnasked } from './types';
 import { duplicateIssue, ISSUE_KIND_SPEC, MORTGAGE_EXPIRY_CRITICAL_DAYS, MORTGAGE_EXPIRY_WARNING_DAYS, type IssueKind, type IssueSeverity } from './issues';
 import { openIssues as openIssuesOf } from './types';
 import { isWorkingDay, workingDaysBetween, type WorkingCalendar, EW_CALENDAR, addWorkingDays, subtractWorkingDays } from './working-days';
@@ -85,9 +85,12 @@ export interface DueAction {
  */
 export function dueActions(state: MatterState, now: Date, sla: SlaConfig = DEFAULT_SLA, cal: WorkingCalendar = EW_CALENDAR): DueAction[] {
   const out: DueAction[] = [];
+  const unasked = unaskedWaits(state);
   for (const wait of openWaits(state)) {
     const base = sla[wait.key];
     if (!base) continue;
+    // Not asked yet (the request is waiting for a person): nothing to chase them about.
+    if (waitUnasked(state, wait, unasked)) continue;
     // One wait key, several things owed: the client's balance is chased with the client, not the lender; each decision in its own words.
     const rule: SlaRule = wait.key === 'funds' && wait.subject !== 'lender' ? { ...base, recipientRole: 'client', template: 'chase_client_funds' }
       : wait.key === 'client_decision' ? { ...base, template: wait.subject === 'exchange_authority' ? 'chase_exchange_authority' : 'chase_ownership_basis' }

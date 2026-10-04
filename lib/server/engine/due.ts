@@ -101,6 +101,9 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   // A report a person sent back is written again (their note says what to change); the case cannot move until it goes.
   if (buyer && s.reportOnTitle.status === 'rejected' && !exchanged)
     add({ key: 'report_on_title_redraft', lane: 'report_on_title', title: 'Draft the report on title again' });
+  // Approved and not gone (the send failed, or it was approved where nothing sends on its own): a person sends it.
+  if (buyer && s.reportOnTitle.status === 'approved' && !exchanged)
+    add({ key: 'report_on_title_send', lane: 'report_on_title', title: 'Send the approved report on title to the client' });
   // Our sole client died before exchange on a purchase: the case closes (the notices are drafted on their own tasks).
   const died = (s.partyEvents ?? []).find((p) => p.event === 'died' && deathCase(s, p.party, buyer ? 'buyer' : seller ? 'seller' : 'owner') === 'close');
   if (died && !s.abandoned && !completed) add({ key: 'death_close', lane: 'id_aml', title: `Close the case: ${died.party} has died` });

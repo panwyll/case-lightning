@@ -106,3 +106,18 @@ test("on a sale, the other side is the buyer's solicitor: the at-risk enquiry sa
   assert.match(row!.what, /buyer's solicitor/);
   assert.equal(row!.chip, 'Other Side Enquiries');
 });
+
+test('a wait whose request has not gone is not chased or listed as waiting: the request is the task', async () => {
+  const { dueActions } = await import('../../../lib/server/engine/sla');
+  const base = initialState(TENANT, MATTER);
+  const opened = '2026-09-01T09:00:00Z';
+  const wait = { key: 'contract_pack', subject: '', openedAt: opened, openedBy: 'system', chasesSentAt: [], escalations: [], closedAt: null } as unknown as MatterState['waits'][number];
+  const proposal = { eventId: 'evt-p1', action: 'chase', status: 'pending', dedupKey: 'first:request_contract_pack:evt-1', proposedAt: opened, detail: { kind: 'request', recipientRole: 'seller_solicitor', template: 'request_contract_pack' } } as unknown as MatterState['proposals'][string];
+  const s: MatterState = { ...base, enrolled: true, transactionType: 'freehold_purchase', stage: 'pre_contract', waits: [wait], proposals: { 'evt-p1': proposal } };
+  const later = new Date('2026-10-01T09:00:00Z');
+  assert.ok(!dueActions(s, later).some((a) => a.wait.key === 'contract_pack'), 'not chased a month on while the request sits unsent');
+  assert.ok(!matterWork(s, later).items.some((i) => i.id.includes('contract_pack')), 'not on the list as waiting');
+  // Once the request has gone, the wait is chased as usual.
+  const sent: MatterState = { ...s, proposals: { 'evt-p1': { ...proposal, status: 'approved' } as MatterState['proposals'][string] } };
+  assert.ok(dueActions(sent, later).some((a) => a.wait.key === 'contract_pack'), 'chased once asked');
+});

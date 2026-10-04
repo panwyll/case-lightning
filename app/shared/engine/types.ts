@@ -400,12 +400,19 @@ export interface PaymentRow { eventId: string; payeeKind: string; bankDetailsId:
 /** Kind-specific wording where the generic label would mislead. */
 export const OPTION_LABEL_BY_KIND: Record<string, Record<string, string>> = {
   proposal: { approve: 'Approve', reject: 'Decline' },
-  proof_of_funds: { approve: 'Sign off — source of funds verified', request_further: 'Query the client (re-opens the form with the queries)' },
-  management_pack: { request_further: 'Request further information from the managing agent' },
-  contract: { approve: 'Approve the contract', request_further: "Send points to the seller's solicitor" },
+  proof_of_funds: { approve: 'Sign Off — Source Of Funds Verified', request_further: 'Query The Client (Re-Opens The Form With The Queries)' },
+  management_pack: { request_further: 'Ask The Managing Agent For More' },
+  contract: { approve: 'Approve The Contract', request_further: 'Send Points To The Other Side' },
+  // What "ask for more" means on each kind of review.
+  id_check: { request_further: 'Ask The Client For More ID' },
+  search: { request_further: 'Raise An Enquiry Or Further Search' },
+  mortgage: { request_further: 'Ask The Lender' },
+  title: { request_further: 'Raise An Enquiry On The Title' },
+  enquiry: { request_further: 'Raise A Further Enquiry' },
+  lease: { request_further: 'Raise An Enquiry On The Lease' },
   // Nothing on a decision is "rejected": a draft goes back for redraft, a bank-details check fails, a note's reading is discarded.
-  report_on_title: { approve: 'Approve — send to the client', reject: 'Send back for redraft' },
-  bank_details: { reject: 'Could not verify' },
+  report_on_title: { approve: 'Approve — Send To The Client', reject: 'Send Back For Redraft' },
+  bank_details: { reject: 'Could Not Verify' },
   note_actions: { approve: 'Approve', reject: 'Decline' },
 };
 /** What each option does, for the button tooltip. */
