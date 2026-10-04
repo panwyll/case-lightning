@@ -72,12 +72,12 @@ export const WORK_CSS = `
 
 const OWNER: Record<string, string> = {
   conveyancer: 'us', client: 'the client', seller_side: "the other side's solicitor", lender: 'the lender',
-  third_party: 'a third party', mlro: 'the MLRO', hmlr: 'HM Land Registry', search_provider: 'the search provider', id_provider: 'the ID provider',
+  third_party: 'a third party', mlro: 'the MLRO', hmlr: 'HM Land Registry', search_provider: 'the search provider', id_provider: 'the ID provider', linked_case: 'our linked case',
 };
 const day = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '');
 const WHO_SHORT: Record<string, string> = {
   conveyancer: 'Us', client: 'Client', seller_side: 'Other Side', lender: 'Lender', third_party: 'Third Party',
-  mlro: 'MLRO', hmlr: 'Land Registry', search_provider: 'Search Provider', id_provider: 'ID Provider',
+  mlro: 'MLRO', hmlr: 'Land Registry', search_provider: 'Search Provider', id_provider: 'ID Provider', linked_case: 'Linked Case',
 };
 
 /** Days until the date a reply is due: negative once it has passed. */
@@ -214,7 +214,9 @@ export function Waiting({ items: all, total, onChanged }: { items: WorkItem[]; /
         const waitKind = wait ? (at < 0 ? wait : wait.slice(0, at)) : null;
         const subject = wait && at >= 0 ? wait.slice(at + 1) : '';
         const wa = waitKind ? WAIT_ACTIONS[waitKind] : undefined;
-        const chasing = i.chaseDue ? <span className="over">Chasing {who} on the next sweep</span>
+        // Our own other file (a linked sale or purchase): nobody to chase; its tasks are on the list, and this clears when it can exchange.
+        const linked = i.ref.type === 'linked';
+        const chasing = linked ? <span>Clears When It Can Exchange</span> : i.chaseDue ? <span className="over">Chasing {who} on the next sweep</span>
           : i.chaseInWorkingDays != null ? <span>Chasing {who} in {i.chaseInWorkingDays} working day{i.chaseInWorkingDays === 1 ? '' : 's'}</span>
           : <span>No further chase scheduled</span>;
         return (
@@ -234,7 +236,8 @@ export function Waiting({ items: all, total, onChanged }: { items: WorkItem[]; /
                   catch (e: unknown) { setWaitMsg((m) => ({ ...m, [wkey]: { ok: false, text: e instanceof Error ? e.message : 'The upload failed.' } })); return false; }
                 }} />}
                 {wa && !wa.upload && <button type="button" className={`wk-send go${openWait === wkey ? ' on' : ''}`} onClick={() => setOpenWait(openWait === wkey ? null : wkey)}>{openWait === wkey ? 'Close' : wa.label}</button>}
-                <BusyButton className="wk-send" busyLabel="Sending…" doneLabel="Sent" onClick={() => sendNow(i)}>Chase Now</BusyButton>
+                {linked ? <a className="wk-send go" href={paths.matter(i.ref.id)} style={{ textDecoration: 'none' }}>Open The Linked Case</a>
+                  : <BusyButton className="wk-send" busyLabel="Sending…" doneLabel="Sent" onClick={() => sendNow(i)}>Chase Now</BusyButton>}
               </div>
               {sendErr?.id === i.id && <div className="over" style={{ marginTop: 2 }}>{sendErr.text}</div>}
               {waitMsg[wkey] && <div className={`wk-msg${waitMsg[wkey].ok ? ' ok' : ''}`}>{waitMsg[wkey].text}</div>}

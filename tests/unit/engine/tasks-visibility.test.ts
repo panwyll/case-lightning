@@ -75,3 +75,19 @@ test('a sole client dies before exchange: Close The Case, and the letters drafte
   const after = await h.svc.getState(TENANT, MATTER);
   assert.ok(!Object.values(after.proposals).some((p) => p.dedupKey?.startsWith('cp:withdrawn')));
 });
+
+test("a linked sale and purchase wait on each other, not on a third party: no chase, the other file's tasks do the work", () => {
+  const s0: MatterState = { ...initialState(TENANT, MATTER), enrolled: true, transactionType: 'freehold_purchase', stage: 'pre_exchange', partyNames: ['Asha Patel'], parties: 1 };
+  const { events } = decide(s0, { type: 'link_related_matter', actor: USER, relatedMatterId: '00000000-0000-4000-8000-0000000000aa', relation: 'sale' } as unknown as Command, { now: NOW });
+  const s = events.map((e, n) => ({ ...e, id: `e${n}`, seq: n + 1, tenantId: TENANT, matterId: MATTER, createdAt: NOW.toISOString(), sourceDocumentId: null } as unknown as EngineEvent)).reduce(applyEvent, s0);
+  const issue = Object.values(s.issues).find((i) => i.kind === 'chain_dependency')!;
+  assert.ok(issue, 'the link holds exchange');
+  assert.doesNotMatch(issue.detail ?? '', /[0-9a-f]{8}-[0-9a-f]{4}/, 'no case id in the text');
+  const items = matterWork(s, NOW).items;
+  assert.ok(!items.some((t) => t.id === `do:issue:${issue.id}`), 'not a task to chase');
+  const w = items.find((t) => t.id === `waiting:linked:${issue.id}`);
+  assert.ok(w, 'it waits on the linked file');
+  assert.equal(w!.actionOwner, 'linked_case');
+  assert.equal(w!.chip, 'Linked Sale');
+  assert.deepEqual(w!.ref, { type: 'linked', id: '00000000-0000-4000-8000-0000000000aa' });
+});

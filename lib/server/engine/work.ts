@@ -34,7 +34,7 @@ import { ENGINE_ACTION_LABEL, ENGINE_ACTION_SUBJECTS, openIssues, openWaits, pen
 import { EW_CALENDAR, addWorkingDays, workingDaysBetween, type WorkingCalendar } from './working-days';
 
 export type Bucket = 'do' | 'waiting' | 'escalate';
-export type ActionOwner = 'conveyancer' | 'client' | 'seller_side' | 'lender' | 'third_party' | 'mlro' | 'hmlr' | 'search_provider' | 'id_provider';
+export type ActionOwner = 'conveyancer' | 'client' | 'seller_side' | 'lender' | 'third_party' | 'mlro' | 'hmlr' | 'search_provider' | 'id_provider' | 'linked_case';
 
 /** Who a failed send was for, as the case's contacts record them (from the task's title). */
 function addressFor(title: string): { role: string; who: string } | null {
@@ -101,7 +101,7 @@ export interface WorkItem {
   /** An issue's severity: colours its chip red / amber / green and sets its urgency. */
   severity?: 'info' | 'warning' | 'critical';
   /** Where to go: the decision, the issue, the wait or just the case. */
-  ref: { type: 'decision' | 'issue' | 'wait' | 'requirement' | 'step' | 'client' | 'case'; id: string };
+  ref: { type: 'decision' | 'issue' | 'wait' | 'requirement' | 'step' | 'client' | 'case' | 'linked'; id: string };
 }
 
 export interface MatterWork {
@@ -118,7 +118,7 @@ const PARTY: Record<string, ActionOwner> = {
 };
 export const OWNER_LABEL: Record<ActionOwner, string> = {
   conveyancer: 'Us', client: 'The client', seller_side: "The other side's solicitor", lender: 'The lender',
-  third_party: 'A third party', mlro: 'The MLRO', hmlr: 'HM Land Registry', search_provider: 'The search provider', id_provider: 'The ID provider',
+  third_party: 'A third party', mlro: 'The MLRO', hmlr: 'HM Land Registry', search_provider: 'The search provider', id_provider: 'The ID provider', linked_case: 'Our linked case',
 };
 const DECISION_LABEL: Record<string, string> = {
   id_check: 'the ID / AML result', search: 'the search result', enquiry: 'the reply to our enquiry', mortgage: 'the mortgage offer',
@@ -395,6 +395,27 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   for (const i of openIssues(s)) {
     const spec = ISSUE_KIND_SPEC[i.kind];
     if (spec.context) continue; // context: on the file and in status answers, not a task
+    // Our client's own sale and purchase exchange together: nothing to chase, nobody to ask. It waits on our
+    // other file, whose own tasks are on the list, and clears itself when that file can exchange.
+    if (i.kind === 'chain_dependency' && s.relatedMatter && /^Linked (sale|purchase):/.test(i.title)) {
+      const rel = s.relatedMatter.relation;
+      out.push({
+        ...base,
+        id: `waiting:linked:${i.id}`,
+        bucket: 'waiting',
+        kind: 'linked_case',
+        chip: `Linked ${rel === 'sale' ? 'Sale' : 'Purchase'}`,
+        what: `Exchanges together with our client's ${rel}`,
+        unblocks: 'Exchange',
+        actionOwner: 'linked_case',
+        urgency: 'normal',
+        workstream: null,
+        since: i.raisedAt, sinceWorkingDays: null, slaWorkingDays: null, chaseInWorkingDays: null,
+        chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: null, chaseDue: false,
+        ref: { type: 'linked', id: s.relatedMatter.matterId },
+      });
+      continue;
+    }
     // The catalogue speaks from the buyer's side: on a sale, what the seller's side owes is ours to do.
     // Every open issue is a task: one that waits on someone else is ours to chase, never off the list (a hidden issue holding a gate is a silent stall).
     // What a person recorded (Something Happened, Raise Issue) is theirs to drive, whatever the kind's usual owner.

@@ -7,6 +7,7 @@ import { caseHealth } from './health';
 import { engine } from './adapters';
 import { visibleMatterIds } from '../access';
 import { matterWork, type WorkItem } from './work';
+import { profileOf } from './transactions';
 import type { SessionUser } from '../types';
 import { after } from 'next/server';
 import { query } from '../db';
@@ -41,6 +42,17 @@ export async function workItems(user: SessionUser, opts: { all?: boolean; who?: 
     seen.push({ matterId: state.matterId, items: full, ownerOf: (i) => (i.ref.type === 'decision' ? state.decisions[i.ref.id]?.assignedTo : null) ?? meta.assignedTo ?? null, finished: !!(state.postCompletion.ap1ConfirmedAt ?? state.abandoned?.at) });
     const list = full.filter((i) => all || theirs(i));
     items.push(...list.map((i) => ({ ...i, caseBand })));
+  }
+  // A case waiting on our own linked file says which file and how far it has got (its own tasks are on this list).
+  const byId = new Map(states.map((x) => [x.state.matterId, x]));
+  for (const i of items) {
+    if (i.ref.type !== 'linked') continue;
+    const other = byId.get(i.ref.id);
+    if (!other) continue;
+    const where = other.meta.propertyAddress ?? other.meta.matterRef ?? 'the linked case';
+    const ready = other.state.stage === 'pre_exchange' && other.state.exchange.conditionsMet;
+    const at = profileOf(other.state.transactionType).stageLabels[other.state.stage] ?? other.state.stage.replace(/_/g, ' ');
+    i.what = `${i.what} (${where}): ${ready ? 'it is ready to exchange' : `it is at ${at.toLowerCase()}`}`;
   }
   // Tasks that come and go with the clock (a deadline, a chase falling due) are caught here.
   // At most every five minutes per firm (the badge reads this list too), after the response.
