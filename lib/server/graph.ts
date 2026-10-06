@@ -149,6 +149,56 @@ export async function listMailSince(
 }
 
 /**
+ * One page of a folder (Sent Items or the Inbox) between two times, for the workload baseline
+ * (docs/workload-baseline.md). `uniqueBody` is only the part each message added, so a quoted
+ * thread below a reply is never counted as written; it is read for classifying and not kept.
+ * `createdDateTime` on a sent message is when its draft was started.
+ */
+export async function listFolderWindow(
+  userId: string,
+  folder: 'sentitems' | 'inbox',
+  sinceIso: string,
+  untilIso: string,
+  nextLink?: string | null,
+  top = 50
+): Promise<{ messages: any[]; nextLink: string | null }> {
+  const client = await graphClientForUser(userId);
+  try {
+    const result: any = nextLink
+      ? await client.api(nextLink).header('Prefer', 'outlook.body-content-type="text"').get()
+      : await client
+          .api(`/me/mailFolders('${folder}')/messages`)
+          .header('Prefer', 'outlook.body-content-type="text"')
+          .select('id,subject,from,toRecipients,ccRecipients,conversationId,createdDateTime,sentDateTime,receivedDateTime,hasAttachments,isDraft,uniqueBody')
+          .filter(`receivedDateTime ge ${new Date(sinceIso).toISOString()} and receivedDateTime lt ${new Date(untilIso).toISOString()}`)
+          .orderby('receivedDateTime desc')
+          .top(top)
+          .get();
+    return { messages: result.value ?? [], nextLink: result['@odata.nextLink'] ?? null };
+  } catch (error) {
+    throw new Error(describeGraphError(error));
+  }
+}
+
+/** One message as its writer sees it, for checking its category: who, when, what this message added, and a link to open it in Outlook. */
+export async function getMessageForCheck(userId: string, messageId: string): Promise<{ subject: string; people: string; sentAt: string | null; text: string; webLink: string | null } | null> {
+  const client = await graphClientForUser(userId);
+  try {
+    const m: any = await client
+      .api(`/me/messages/${encodeURIComponent(messageId)}`)
+      .header('Prefer', 'outlook.body-content-type="text"')
+      .select('subject,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,uniqueBody,webLink')
+      .get();
+    const who = (xs: any[] | undefined) => (xs ?? []).map((r) => r.emailAddress?.name || r.emailAddress?.address).filter(Boolean).join(', ');
+    return { subject: m.subject ?? '', people: who([...(m.toRecipients ?? []), ...(m.ccRecipients ?? [])]) || who([m.from]), sentAt: m.sentDateTime ?? m.receivedDateTime ?? null, text: (m.uniqueBody?.content ?? '').trim(), webLink: m.webLink ?? null };
+  } catch (error) {
+    const msg = describeGraphError(error);
+    if (/not ?found|ErrorItemNotFound|404/i.test(msg)) return null;
+    throw new Error(msg);
+  }
+}
+
+/**
  * One page of the user's INBOX, newest first — the web portal's mail list.
  *
  * Deliberately a light projection (no bodies): the list renders from cached assist

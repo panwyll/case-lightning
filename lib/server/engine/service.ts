@@ -365,7 +365,9 @@ export class EngineService {
       // A first request to another party (not a chase): the template, to the role, once.
       const d = detail as { recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; template: string; context: Record<string, unknown> };
       if (!this.ports.chaser.sendRequest) throw new Error('Requests to other parties are not configured on this deployment.');
-      await this.ports.chaser.sendRequest({ tenantId, matterId, recipientRole: d.recipientRole, template: d.template, context: d.context });
+      const sent = await this.ports.chaser.sendRequest({ tenantId, matterId, recipientRole: d.recipientRole, template: d.template, context: d.context });
+      // Recorded once sent, like every message: the case's history, and the workload baseline's count of what CONVEYi sent.
+      await this.run(tenantId, matterId, { type: 'record_request_sent', request: { recipientRole: d.recipientRole, template: d.template, channel: String((sent as { channel?: string } | undefined)?.channel ?? 'email'), messageId: (sent as { messageId?: string | null } | undefined)?.messageId ?? null } }).catch((err) => this.ports.log('request could not be recorded', err));
     } else if (action === 'chase') {
       const d = detail as { waitKey: string; subject: string; recipientRole: string; template: string; context: Record<string, unknown>; alsoSubjects?: string[] };
       const edited = (detail as { edited?: MessageOverride }).edited ?? null;

@@ -91,6 +91,7 @@ function activityLine(e: EngineEvent): string | null {
     case 'lender_consent_received': return "Lender's consent received";
     case 'chase_sent': return `Chased ${pretty(s('recipientRole') || 'the other side')}`;
     case 'acknowledgement_sent': return `Acknowledged ${s('what')} to ${pretty(s('recipientRole'))}`;
+    case 'request_sent': return `Asked ${pretty(s('recipientRole'))} for ${pretty(s('template').replace(/^request_/, ''))}`;
     case 'escalation_raised': return `Escalated: ${s('reason') || pretty(s('waitKey'))}`;
     case 'issue_raised': return `Issue raised — ${s('title')}`;
     case 'issue_resolved': return `Issue resolved — ${pretty(s('resolution'))}`;

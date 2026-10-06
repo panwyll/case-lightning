@@ -18,6 +18,8 @@ export const paths = {
   tasks: `${APP_BASE}/admin?tab=mywork`,
   integrations: `${APP_BASE}/integrations`,
   analytics: `${APP_BASE}/analytics`,
+  /** The workload baseline: where the week goes, from the conveyancer's own mailbox (docs/workload-baseline.md). */
+  baseline: `${APP_BASE}/baseline`,
   email: `${APP_BASE}/email`,
   decision: (eventId: string) => `${APP_BASE}/decisions/${eventId}`,
   /** Every open case as a list, to pick one from. */

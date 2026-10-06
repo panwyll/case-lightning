@@ -76,7 +76,7 @@ function chipOf(e: EngineEvent, state: EngineState): string | null {
     return n?.kind === 'email' ? 'Email' : n?.kind === 'call' ? 'Call' : 'Note';
   }
   if (t === 'chase_sent') return 'Chase';
-  if (/^(client_update_sent|acknowledgement_sent|signing_pack_sent|party_notice_sent)$/.test(t)) return 'Sent';
+  if (/^(client_update_sent|acknowledgement_sent|request_sent|signing_pack_sent|party_notice_sent)$/.test(t)) return 'Sent';
   if (t.startsWith('issue_')) return 'Issue';
   if (t === 'stage_advanced' || t === 'stage_changed') return 'Stage';
   if (/^action_|^decision_|_reviewed$|^proposal/.test(t)) return 'Task';
@@ -161,5 +161,5 @@ const TIMELINE_FILTERS = (state: EngineState): Filter<EngineEvent>[] => [
   { key: 'docs', label: 'Documents', match: (e) => !!e.sourceDocumentId && /_(received|returned|extracted|submitted)$|^survey|^title|^search|^mortgage_offer|^lease|^management_pack/.test(e.type) || e.type === 'log:DOC_RECEIVED' },
   { key: 'decisions', label: 'Decisions & Tasks', match: (e) => !!state.decisions[e.id] || /^action_|^decision_|_reviewed$|resolved_decision/.test(e.type) },
   { key: 'issues', label: 'Issues', match: (e) => e.type.startsWith('issue_') },
-  { key: 'sent', label: 'Messages Sent', match: (e) => /^(client_update_sent|chase_sent|acknowledgement_sent|signing_pack_sent)$/.test(e.type) },
+  { key: 'sent', label: 'Messages Sent', match: (e) => /^(client_update_sent|chase_sent|acknowledgement_sent|request_sent|signing_pack_sent)$/.test(e.type) },
 ];

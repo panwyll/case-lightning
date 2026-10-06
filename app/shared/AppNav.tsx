@@ -5,7 +5,7 @@ import Tour, { type TourStep } from '@/app/shared/assist/Tour';
 import { Suspense, useEffect, useState } from 'react';
 import { paths, APP_BASE } from '@/lib/paths';
 import type { ComponentType } from 'react';
-import { Mail, ClipboardList, Home, MailPlus, FileText, Users, Building, Scale, Wrench, CreditCard, LifeBuoy, BarChart } from '@/app/shared/icons';
+import { Mail, ClipboardList, Home, MailPlus, FileText, Users, Building, Scale, Wrench, CreditCard, LifeBuoy, BarChart, Clock } from '@/app/shared/icons';
 
 /**
  * The CONVEYi app shell: a top bar and a full-height sidebar, one piece, on every page.
@@ -46,6 +46,7 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
     items: [
       { key: 'matters', label: 'Case View', icon: Home, href: paths.matters, match: (p) => p.startsWith(paths.matters) || /\/engine\/[0-9a-f-]{36}/i.test(p) },
       { key: 'analytics', label: 'Analytics', icon: BarChart, href: paths.analytics, match: (p) => p.startsWith(paths.analytics) },
+      { key: 'baseline', label: 'Baseline', icon: Clock, href: paths.baseline, match: (p) => p.startsWith(paths.baseline) },
     ],
   },
   {

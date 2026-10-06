@@ -287,6 +287,7 @@ type CommandBody =
   | { type: 'ap1_confirmed'; actor: Actor; titleNumber?: string | null }
   | { type: 'record_chase'; chase: ChaseSpec }
   | { type: 'record_acknowledgement'; ack: AcknowledgementSpec }
+  | { type: 'record_request_sent'; request: { recipientRole: string; template: string; channel: string; messageId?: string | null } }
   | { type: 'raise_escalation'; waitKey: WaitKey; subject: string; reason: string; sourceDocumentId: string; summary?: SummaryOverride | null }
   | { type: 'record_client_update'; update: ClientUpdateSpec }
   /** PROPOSE level: the service asks before acting. `sourceDocumentId` is the generated dossier the person reads. */
@@ -3280,6 +3281,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       if (s.acknowledgements.some((a) => a.forEventId === cmd.ack.forEventId)) reject('That item has already been acknowledged.');
       return [{ type: 'acknowledgement_sent', actor: SYSTEM, payload: cmd.ack }];
+    }
+    case 'record_request_sent': {
+      requireEnrolled(s);
+      return [{ type: 'request_sent', actor: SYSTEM, payload: cmd.request }];
     }
     case 'raise_escalation': {
       requireEnrolled(s);

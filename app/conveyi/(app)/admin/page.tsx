@@ -119,6 +119,7 @@ function describeEngine(type: string, p: Record<string, any>): string {
     case 'search_ordered': return `Ordered the ${p.searchType} search from ${p.provider ?? 'the provider'}`;
     case 'chase_sent': return `Chased ${nice(p.chase?.recipientRole ?? p.recipientRole)} for ${nice(p.chase?.waitKey ?? p.waitKey)}${p.chase?.subject ? ` ${p.chase.subject}` : ''}`;
     case 'acknowledgement_sent': return `Acknowledged ${p.ack?.what ?? 'a delivery'} to ${nice(p.ack?.recipientRole)}`;
+    case 'request_sent': return `Asked ${nice(p.recipientRole)} for ${String(p.template ?? '').replace(/^request_/, '').replace(/_/g, ' ')}`;
     case 'client_update_sent': return `Sent the client an update: ${nice(p.update?.template ?? p.template)}`;
     case 'escalation_raised': return `Escalated ${nice(p.waitKey ?? p.kind)}${p.subject ? ` ${p.subject}` : ''} — ${firstLine(p.reason ?? p.summary)}`;
     case 'escalation_resolved': return `Escalation resolved${p.note ? ` — ${p.note}` : ''}`;

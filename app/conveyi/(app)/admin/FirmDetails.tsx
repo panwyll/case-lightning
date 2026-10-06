@@ -86,12 +86,20 @@ export function MySignature() {
   );
 }
 
-type Baseline = { weeksPurchase: number | null; weeksSale: number | null; casesPerConveyancer: number | null; hoursPerCase: number | null; recordedAt?: string; recordedBy?: string | null };
-const BASELINE: Array<[keyof Baseline, string, string]> = [
-  ['weeksPurchase', 'Weeks To Complete A Purchase', 'e.g. 16'],
-  ['weeksSale', 'Weeks To Complete A Sale', 'e.g. 14'],
-  ['casesPerConveyancer', 'Open Cases Per Conveyancer', 'e.g. 60'],
-  ['hoursPerCase', 'Hours Per Case', 'e.g. 12'],
+type Baseline = { weeksPurchase: number | null; weeksSale: number | null; casesPerConveyancer: number | null; hoursPerCase: number | null; feePerCompletion: number | null; payPerCompletion: number | null; contractedHours: number | null; typingWpm: number | null; workdayStart: string | null; workdayEnd: string | null; recordedAt?: string; recordedBy?: string | null };
+type FieldKey = Exclude<keyof Baseline, 'recordedAt' | 'recordedBy'>;
+// The workload baseline turns hours into money and weeks with these (docs/workload-baseline.md §5–6).
+const BASELINE: Array<[FieldKey, string, string, 'number' | 'money' | 'time']> = [
+  ['weeksPurchase', 'Weeks To Complete A Purchase', 'e.g. 16', 'number'],
+  ['weeksSale', 'Weeks To Complete A Sale', 'e.g. 14', 'number'],
+  ['casesPerConveyancer', 'Open Cases Per Conveyancer', 'e.g. 60', 'number'],
+  ['hoursPerCase', 'Hours Per Completion', 'e.g. 12', 'number'],
+  ['feePerCompletion', 'Fee Per Completion (£, Ex VAT)', 'e.g. 950', 'money'],
+  ['payPerCompletion', "Conveyancer's Pay Per Completion (£)", 'e.g. 120', 'money'],
+  ['contractedHours', 'Contracted Hours A Week', '37.5', 'number'],
+  ['typingWpm', 'Typing Speed (Words A Minute)', '40', 'number'],
+  ['workdayStart', 'Working Day Starts', '09:00', 'time'],
+  ['workdayEnd', 'Working Day Ends', '17:30', 'time'],
 ];
 
 /** The firm's own figures from before CONVEYi: the "before" in any "faster than before" (docs/analytics.md). */
@@ -104,8 +112,9 @@ export function BaselineCard({ canEdit }: { canEdit: boolean }) {
   if (!b) return null;
   const save = async () => {
     setErr(null);
-    const body = Object.fromEntries(BASELINE.map(([k]) => { const v = b[k].trim(); return [k, v === '' ? null : Number(v)]; }));
-    if (Object.values(body).some((v) => v != null && (!Number.isFinite(v) || v <= 0))) { setErr('Figures must be positive numbers.'); return false; }
+    const body = Object.fromEntries(BASELINE.map(([k, , , kind]) => { const v = b[k].trim().replace(/[£,\s]/g, kind === 'time' ? '' : ''); return [k, v === '' ? null : kind === 'time' ? v : Number(v)]; }));
+    if (BASELINE.some(([k, , , kind]) => kind !== 'time' && body[k] != null && (!Number.isFinite(body[k] as number) || (body[k] as number) <= 0))) { setErr('Figures must be positive numbers.'); return false; }
+    if (BASELINE.some(([k, , , kind]) => kind === 'time' && body[k] != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body[k])))) { setErr('Times are HH:MM, e.g. 09:00.'); return false; }
     try { fill((await api<{ baseline: Baseline }>('/admin/baseline', { method: 'PUT', body: JSON.stringify(body) })).baseline); return true; }
     catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not save.'); return false; }
   };
@@ -114,8 +123,8 @@ export function BaselineCard({ canEdit }: { canEdit: boolean }) {
       <style>{CSS}</style>
       <div className="fd-h">Before CONVEYi</div>
       <div className="fd-grid">
-        {BASELINE.map(([k, label, ph]) => (
-          <label key={k} className="fd-row"><span>{label}</span><input className="fd-in" inputMode="decimal" value={b[k]} onChange={(e) => setB({ ...b, [k]: e.target.value })} disabled={!canEdit} placeholder={ph} style={{ maxWidth: 140 }} /></label>
+        {BASELINE.map(([k, label, ph, kind]) => (
+          <label key={k} className="fd-row"><span>{label}</span><input className="fd-in" type={kind === 'time' ? 'time' : 'text'} inputMode={kind === 'time' ? undefined : 'decimal'} value={b[k]} onChange={(e) => setB({ ...b, [k]: e.target.value })} disabled={!canEdit} placeholder={ph} style={{ maxWidth: 140 }} /></label>
         ))}
       </div>
       <div className="fd-a">

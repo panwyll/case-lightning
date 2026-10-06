@@ -42,7 +42,9 @@ export type UsageFeature =
   | 'FILE_ASK'
   // The engine counted the case: its ID / AML check came back resolved (billing-reaction.ts)
   | 'ID_AML_RESOLVED'
-  | 'COMPLETION_BACKSTOP';
+  | 'COMPLETION_BACKSTOP'
+  // The workload baseline: what each scanned email was for (docs/workload-baseline.md)
+  | 'WORKLOAD_CLASSIFY';
 
 export interface UsageContext {
   tenantId: string;

@@ -124,6 +124,8 @@ export const EVENT_TYPES = [
   'client_update_sent',
   'chase_sent',
   'acknowledgement_sent',
+  // a first request to another party (the contract pack, a redemption statement): sent, not a chase
+  'request_sent',
   // notes and call transcripts (docs/intake.md)
   'note_recorded',
   'note_extracted',
@@ -1065,6 +1067,7 @@ export interface Payloads {
   client_update_sent: ClientUpdateSpec;
   chase_sent: ChaseSpec;
   acknowledgement_sent: AcknowledgementSpec;
+  request_sent: { recipientRole: string; template: string; channel: string; messageId?: string | null };
   note_recorded: { noteId: string; kind: NoteKind; text: string; durationSeconds: number | null; documentId: string | null; from?: NoteSender | null };
   note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec; /** Read as a pure acknowledgement (both checks): no reply needed. */ acknowledgement?: boolean; reply?: NoteReply | null; messages?: NoteMessage[] };
   wait_progress_reported: { waitKey: WaitKey; subject: string; claim: string; until: string; noteId: string | null };

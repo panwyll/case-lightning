@@ -25,6 +25,7 @@ const LINES: Record<string, (p: Record<string, unknown>) => string> = {
   id_check_requested: (p) => `ID/AML check requested via ${p.provider}`,
   chase_sent: (p) => `Chase sent to ${String(p.recipientRole).replace(/_/g, ' ')} re ${p.waitKey}${p.subject ? ` ${p.subject}` : ''}`,
   acknowledgement_sent: (p) => `Acknowledged ${p.what} to ${String(p.recipientRole).replace(/_/g, ' ')}`,
+  request_sent: (p) => `Asked ${String(p.recipientRole).replace(/_/g, ' ')} for ${String(p.template).replace(/^request_/, '').replace(/_/g, ' ')}`,
   client_update_sent: (p) => `Client status update sent: ${p.template}`,
   report_on_title_sent: () => 'Report on title sent to the client (after human approval)',
   enquiry_raised: (p) => `Enquiry ${p.enquiryId} raised: ${p.subject}`,

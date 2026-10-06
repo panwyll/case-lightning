@@ -37,8 +37,9 @@ test('tampering is detected: altered content, removed event, reordered events, s
   assert.match(verifyChain(altered).reason ?? '', /altered/);
 
   const actorSwap = clone();
-  actorSwap[2].actor = 'system'; // "the system did it, not me"
-  assert.equal(verifyChain(actorSwap).brokenAtSeq, 3);
+  const byPerson = actorSwap.findIndex((e, i) => i > 0 && e.actor !== 'system');
+  actorSwap[byPerson].actor = 'system'; // "the system did it, not me"
+  assert.equal(verifyChain(actorSwap).brokenAtSeq, byPerson + 1);
 
   const removed = clone().filter((e) => e.seq !== 3).map((e, i) => ({ ...e, seq: i + 1 }));
   assert.equal(verifyChain(removed).ok, false);

@@ -50,6 +50,10 @@ Targets are set under Firm → Targets And Reviews: completions a month for the 
 
 Both shown reference figures live in `INDUSTRY` in `kpis.ts`.
 
+## Workload baseline
+
+Where a conveyancer's week goes, from their own mailbox, and what CONVEYi has taken since: `/conveyi/baseline`, method in [workload-baseline.md](workload-baseline.md). It replaces the flat "8 minutes a reply" estimate as the basis for time saved.
+
 ## Not yet measured
 
 - **A fee agreed for one case** that differs from the scale (a discount, a quote). The scale is used for every case.

@@ -51,6 +51,7 @@ export interface WritebackDeps {
 const EMAIL_TYPES: Record<string, (p: Record<string, unknown>) => { messageId: string | null; channel: string | null; template: string | null; to: string | null }> = {
   client_update_sent: (p) => ({ messageId: (p.messageId as string) ?? null, channel: (p.channel as string) ?? null, template: (p.template as string) ?? null, to: (p.recipientRole as string) ?? 'client' }),
   chase_sent: (p) => ({ messageId: (p.messageId as string) ?? null, channel: (p.channel as string) ?? null, template: (p.template as string) ?? null, to: (p.recipientRole as string) ?? null }),
+  request_sent: (p) => ({ messageId: (p.messageId as string) ?? null, channel: (p.channel as string) ?? null, template: String(p.template ?? 'request'), to: (p.recipientRole as string) ?? null }),
   acknowledgement_sent: (p) => ({ messageId: (p.messageId as string) ?? null, channel: (p.channel as string) ?? null, template: 'acknowledgement', to: (p.recipientRole as string) ?? null }),
 };
 

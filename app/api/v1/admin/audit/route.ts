@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
                   left join matter m on m.id = a.matter_id`;
     // The engine's own log joins the audit: what it proposed, what people approved or declined,
     // what moved, and every money or bank-details step. Read-only view; the event log stays canonical.
-    const engineTypes = `('action_proposed','action_approved','action_rejected','action_failed','action_suppressed','auto_clear_proposed','auto_clear_review_raised','auto_clear_confirmed','stage_advanced','manual_handling_required','search_ordered','chase_sent','acknowledgement_sent','client_update_sent','escalation_raised','escalation_resolved','bank_details_recorded','bank_details_change_flagged','bank_details_verified','bank_details_verification_failed','payment_authorised')`;
+    const engineTypes = `('action_proposed','action_approved','action_rejected','action_failed','action_suppressed','auto_clear_proposed','auto_clear_review_raised','auto_clear_confirmed','stage_advanced','manual_handling_required','search_ordered','chase_sent','acknowledgement_sent','request_sent','client_update_sent','escalation_raised','escalation_resolved','bank_details_recorded','bank_details_change_flagged','bank_details_verified','bank_details_verification_failed','payment_authorised')`;
     const ecols = `e.id, e.created_at, 'ENGINE_' || upper(e.type) as action_type,
                    case e.type when 'action_failed' then 'FAILED' when 'action_rejected' then 'BLOCKED' when 'action_suppressed' then 'BLOCKED' when 'bank_details_verification_failed' then 'FAILED' else 'SUCCESS' end as action_status,
                    e.payload, e.matter_id, null::text as request_id, null::text as trace_id,
