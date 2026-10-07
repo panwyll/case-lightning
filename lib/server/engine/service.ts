@@ -44,7 +44,7 @@ import { deferral, outsideDeferral } from './defer';
 const foldOnto = (state: MatterState, events: EngineEvent[]): MatterState => events.reduce((s, e) => applyEvent(s, e), state);
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type NoteMessage, type MessageParty, type MessageAttachment, type ManualChannel, MANUAL_CHANNELS, type IdCheckFacts, actsUnasked, levelFor, pendingProposal , isLeasehold } from './types';
+import { INTOUCH_PROVIDER, EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type NoteMessage, type MessageParty, type MessageAttachment, type ManualChannel, MANUAL_CHANNELS, type IdCheckFacts, actsUnasked, levelFor, pendingProposal , isLeasehold } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -1719,10 +1719,27 @@ export class EngineService {
   // ───────────── effects ─────────────
 
   /** Post-commit reactions. Best-effort; each becomes its own command so the log records only what really happened. */
+  /** Whether this case's searches and ID check are ordered in the firm's InTouch (EnginePorts.orderedIn); doubt is "no". */
+  private async orderedInInTouch(tenantId: string, matterId: string): Promise<{ searches: boolean; idChecks: boolean }> {
+    const r = this.ports.orderedIn ? await this.ports.orderedIn(tenantId, matterId).catch(() => null) : null;
+    return { searches: !!r?.searches, idChecks: !!r?.idChecks };
+  }
+
+  /**
+   * The ID check is ordered on the firm's InTouch matter (Thirdfort through InTouch), not by us: recorded as
+   * coming from InTouch, with no task, no request to a provider and no email to the client (they hear from
+   * InTouch). The report is read when it lands in the matter's folder.
+   */
+  private async recordIdFromInTouch(tenantId: string, matterId: string, party: string | null): Promise<void> {
+    await this.run(tenantId, matterId, { type: 'request_id_check', actor: SYSTEM, provider: INTOUCH_PROVIDER, reference: null, party, link: null });
+  }
+
   /** At the start of a case: the client's ID / AML check and (firm policy) proof of funds, proposed or sent as the trust level says. */
   private async startClientChecks(tenantId: string, matterId: string, subflows: LevelConfig, key: string): Promise<void> {
     const state = await this.getState(tenantId, matterId);
-    if (state.idCheck.status === 'not_started') {
+    if (state.idCheck.status === 'not_started' && (await this.orderedInInTouch(tenantId, matterId)).idChecks) {
+      await this.recordIdFromInTouch(tenantId, matterId, null).catch((err) => this.ports.log('ID check from InTouch not recorded', err));
+    } else if (state.idCheck.status === 'not_started') {
       const detail = { kind: 'id_check_request', provider: this.ports.idCheckProvider.name };
       if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'id_check_request', `id_check_request:${key}`, detail, `ID / AML CHECK\n\nTo: the client, via ${this.ports.idCheckProvider.name}\nWhy: every instruction starts with identity and AML.\n\nThe check costs the firm a fee.`))) {
         try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('ID check could not be requested on enrolment', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
@@ -1739,8 +1756,15 @@ export class EngineService {
   /** The case has reached pre-contract: every required search not yet ordered is ordered (or proposed). */
   private async orderMissingSearches(tenantId: string, matterId: string, subflows: LevelConfig): Promise<void> {
     const state = await this.getState(tenantId, matterId);
+    // Ordered on the firm's InTouch matter (InfoTrack through InTouch): recorded as coming from InTouch, with no
+    // task, no order of our own and no stand-in result. Each result is read when it lands in the matter's folder.
+    const inTouch = (await this.orderedInInTouch(tenantId, matterId)).searches;
     for (const searchType of state.requiredSearches) {
       if (state.searches[searchType]) continue;
+      if (inTouch) {
+        await this.run(tenantId, matterId, { type: 'record_search_ordered', actor: SYSTEM, searchType, provider: INTOUCH_PROVIDER, reference: null }).catch((err) => this.ports.log(`${searchType} search from InTouch not recorded`, err));
+        continue;
+      }
       const detail = { searchType, provider: this.ports.searchProvider.name };
       if (await this.proposeUnless(tenantId, matterId, subflows, 'search_order', searchType, searchType, detail, `SEARCH ORDER\n\nSearch: ${searchType}\nProvider: ${this.ports.searchProvider.name}\nWhy: the case has entered pre-contract and this search is on its list.\n\nOrdering costs the firm a fee.`)) continue;
       try {
@@ -1969,7 +1993,10 @@ export class EngineService {
         // person is asked first.
         if (e.type === 'matter_created' && this.ports.autoStartOnEnrol !== false) await this.startClientChecks(tenantId, matterId, subflows, e.id);
         // Another person to identify (a co-client named at enrolment, a gift donor declared on the form): their own check, proposed or sent as the trust level says.
-        if (e.type === 'id_party_added') {
+        if (e.type === 'id_party_added' && (await this.orderedInInTouch(tenantId, matterId)).idChecks) {
+          const p = e.payload as { party: string };
+          await this.recordIdFromInTouch(tenantId, matterId, p.party).catch((err) => this.ports.log('ID check from InTouch not recorded', err));
+        } else if (e.type === 'id_party_added') {
           const p = e.payload as { party: string; label: string; role: string };
           const detail = { kind: 'id_check_request', provider: this.ports.idCheckProvider.name, party: p.party, label: p.label };
           const why = p.role === 'donor' ? 'a gift donor is a source of funds: identity and AML are checked as for the client' : 'every client on the matter is identified in their own right';

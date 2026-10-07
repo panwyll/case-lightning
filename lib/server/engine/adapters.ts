@@ -208,6 +208,8 @@ export function productionPorts(): EnginePorts {
       reportDrafter,
       searchProvider,
       idCheckProvider,
+      // Loaded when asked: the InTouch adapters import the engine.
+      orderedIn: async (tenantId: string, matterId: string) => (await import('../integrations/intouch/adapters')).inTouchOrdering(tenantId, matterId),
       clientComms,
       clientReminderHours: (tenantId: string) => getPolicy(tenantId, 'clientReminderHours'),
       chaser,

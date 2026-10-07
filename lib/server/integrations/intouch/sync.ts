@@ -296,7 +296,9 @@ async function mirrorDocument(deps: InTouchSyncDeps, tenantId: string, ref: InTo
 export function hintFor(d: InTouchDocument): DocumentClassification | null {
   const c = `${d.category ?? ''} ${d.fileName}`.toLowerCase();
   const base = { searchType: null, enquiryReferences: [], titleNumber: null, lender: null, confidence: 0.75, reason: `InTouch category "${d.category ?? 'none'}", file "${d.fileName}"` };
-  if (/id[\s_-]?report|identity|aml|kyc/.test(c)) return { ...base, role: 'id_check' };
+  // A Thirdfort source-of-funds report is not the ID check: it is filed for the proof-of-funds review, never routed as one.
+  if (/source[\s_-]?of[\s_-]?(funds|wealth)|\bsof\b|\bsow\b/.test(c)) return null;
+  if (/id[\s_-]?report|identity|aml|kyc|thirdfort/.test(c)) return { ...base, role: 'id_check' };
   // A completed property information form, filed as a PDF in the matter's folder.
   if (/\bta[\s_-]?(6|7|10)\b|property[\s_-]?information|leasehold[\s_-]?information|fittings[\s_-]?(and|&)?[\s_-]?contents/.test(c)) return { ...base, role: 'property_forms' };
   if (/mortgage[\s_-]?offer|offer[\s_-]?of[\s_-]?loan/.test(c)) return { ...base, role: 'mortgage_offer' };

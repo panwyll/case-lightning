@@ -28,7 +28,7 @@ person could have typed. There is no side entrance.
 ## The shape
 
 ```
-InTouch matter (not a quote, not closed)  ──► mirror matter row ──► a person enrols it
+InTouch matter (not a quote, not closed)  ──► mirror matter row ──► enrolled at once (no second step)
 its primary client                        ──► a matter_contact row
 each file in its folder                   ──► document row ──► the ordinary ingest path
   (ID report, completed forms, uploads; email, note and call records are InTouch's own history)
@@ -40,6 +40,18 @@ with a watermark (we ask what changed; InTouch has no "changed since" filter, so
 cover three events and their payload does not reliably say which case they are about.
 Both are idempotent: every fact is keyed on InTouch's own id in `intouch_applied`, so a
 fact lands exactly once however many times a webhook fires or a sync re-reads the case.
+
+## Nothing done twice
+
+Anything a firm does in InTouch is never asked for again in CONVEYi.
+
+- **Onboarding:** a matter that comes across is enrolled at once. Nobody enrols it again here.
+- **Searches and the ID check:** InTouch's API cannot order either, so the conveyancer orders them on the InTouch matter, as they do today. For a case mirrored from InTouch (when the firm's own InfoTrack is not connected to CONVEYi), the engine records each as ordered in InTouch (`EnginePorts.orderedIn`, provider `InTouch`):
+  - there is no "Order the search" or "Send the client the ID check" task;
+  - there is no order or client email of ours, and no stand-in search result;
+  - nothing is chased, because there is nobody for us to chase (`WaitState.via`). An overdue search or ID check is put to a person instead.
+  - The Thirdfort report and each search result are read when they land in the matter's folder. A Thirdfort source-of-funds report is filed, never read as the ID check.
+- **A firm with its own InfoTrack connected here:** CONVEYi orders, and the conveyancer orders nothing in InTouch.
 
 ## What InTouch documents
 

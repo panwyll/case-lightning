@@ -240,6 +240,13 @@ export interface SigningPort {
 }
 
 export interface EnginePorts {
+  /**
+   * Whether this case's searches and ID check are ordered in the firm's own InTouch (a case mirrored from
+   * InTouch, at a firm whose own InfoTrack is not connected here). InTouch's API cannot place either order,
+   * so the conveyancer orders them on the InTouch matter and we wait for the results in its folder: we never
+   * order or ask the client a second time. Absent or null: we order as usual.
+   */
+  orderedIn?: (tenantId: string, matterId: string) => Promise<{ searches: boolean; idChecks: boolean } | null>;
   /** Runs a write a person's own decision causes (the approved report going out) on the app role, outside an automation block; identity where there is no database. */
   asApprover?: <T>(fn: () => Promise<T>) => Promise<T>;
   /** Enrolment fires the ID / AML check and the proof-of-funds form unasked (subject to trust levels). Default on; flow fixtures turn it off to drive each step by hand. */

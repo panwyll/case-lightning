@@ -218,6 +218,8 @@ test('a milestone is the InTouch task that says it, by its words; "exchange" nev
 test('a document hint is only offered where the name is unambiguous: the ID report and completed forms included', () => {
   const doc = (fileName: string, category: string | null = null): InTouchDocument => ({ id: 'd', caseId: 'c', fileName, mimeType: null, sizeBytes: null, category, uploadedBy: 'client', createdAt: null });
   assert.equal(hintFor(doc('Identity report - Priya Okafor.pdf'))?.role, 'id_check');
+  assert.equal(hintFor(doc('Thirdfort report - Priya Okafor.pdf'))?.role, 'id_check');
+  assert.equal(hintFor(doc('Thirdfort Source of Funds report.pdf')), null, 'source of funds is not the ID check');
   assert.equal(hintFor(doc('TA6 Property Information Form.pdf'))?.role, 'property_forms');
   assert.equal(hintFor(doc('ta10.pdf', 'Forms'))?.role, 'property_forms');
   assert.equal(hintFor(doc('Mortgage offer.pdf'))?.role, 'mortgage_offer');

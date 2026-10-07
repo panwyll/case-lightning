@@ -113,6 +113,23 @@ export async function inTouchClient(tenantId: string): Promise<InTouchApi & InTo
   return new InTouchHttpClient(inTouchClientConfig(creds), tenantId);
 }
 
+/**
+ * Whether a case's searches and ID check are ordered in the firm's InTouch (EnginePorts.orderedIn): a case
+ * mirrored from InTouch, InTouch connected, and the firm's own InfoTrack not connected here (with it, we order
+ * and the conveyancer orders nothing in InTouch). Any doubt is "no": we then order as usual, never nothing.
+ */
+export async function inTouchOrdering(tenantId: string, matterId: string): Promise<{ searches: boolean; idChecks: boolean } | null> {
+  const r = await runAsSystem(() => queryOne<{ mirrored: boolean; connected: boolean; infotrack: boolean }>(
+    `select (m.intouch_case_id is not null) as mirrored,
+            coalesce((select c.status = 'CONNECTED' from intouch_connection c where c.tenant_id = m.tenant_id), false) as connected,
+            coalesce((select i.status = 'CONNECTED' from infotrack_connection i where i.tenant_id = m.tenant_id), false) as infotrack
+       from matter m where m.id = $1 and m.tenant_id = $2`,
+    [matterId, tenantId]
+  )).catch(() => null);
+  if (!r?.mirrored || !r.connected || r.infotrack) return null;
+  return { searches: true, idChecks: true };
+}
+
 export async function inTouchConnection(tenantId: string): Promise<InTouchConnectionRow | null> {
   type Row = { tenant_id: string; account_id: string | null; account_name: string | null; status: InTouchConnectionRow['status']; status_detail: string | null; last_sync_at: Date | null; last_sync_detail: InTouchSyncSummary | null; connected_at: Date | null; milestones_enabled: boolean; documents_writeback?: boolean; notes_writeback?: boolean };
   const cols = 'tenant_id, account_id, account_name, status, status_detail, last_sync_at, last_sync_detail, connected_at, milestones_enabled';

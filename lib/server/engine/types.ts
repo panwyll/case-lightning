@@ -857,7 +857,16 @@ export interface WaitState {
   escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }>;
   /** The owing party says it is done or on its way: no chase before `until`. */
   reported?: { claim: string; at: string; until: string } | null;
+  /**
+   * Ordered in the firm's own system, not by us (an InTouch firm's searches and ID checks, ordered on the
+   * InTouch matter): nobody for us to chase, so it is put to a person once overdue. The result is read when
+   * it lands in the matter's folder.
+   */
+  via?: 'intouch' | null;
 }
+
+/** The provider name an order placed in the firm's InTouch carries (search_ordered / id_check_requested). */
+export const INTOUCH_PROVIDER = 'InTouch';
 
 // ───────────────────────────── Payment verification (addendum 2) ─────────────────────────────
 

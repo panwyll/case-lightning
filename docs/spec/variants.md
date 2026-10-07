@@ -18,6 +18,7 @@ The core flow (code) is the product. A firm changes it only through **declared v
 | Policy switches | Require proof of funds, exchange authority, protect files, signing provider | `tenant_policy` / enrol defaults | Low — each switch is declared in code with its gate and its task |
 | Added rules | "When X, do Y": a task, an email, a document, a wait, optionally holding a gate | Firm > Rules (signal → action, approve/propose) | Medium — must satisfy the contract below |
 | Replaced providers | ID check, searches, signing, case system (LEAP/InTouch) | Ports/adapters chosen per firm | Low if the port contract holds |
+| Ordered in the firm's system | An InTouch firm's searches and ID check on a case mirrored from InTouch (when its own InfoTrack is not connected here): recorded as ordered in InTouch, no task, no order or client email of ours, never chased, put to a person when overdue; results read from the matter's folder | `EnginePorts.orderedIn`, `WaitState.via` | Low: the wait still escalates, and any doubt orders as usual |
 | Removed steps | Only by a declared switch (a gate "not required by policy") | `tenant_policy` | Medium — never an ad-hoc deletion |
 
 ## The contract a variant must meet

@@ -102,7 +102,8 @@ export function dueActions(state: MatterState, now: Date, sla: SlaConfig = DEFAU
       // They told us it is done or on its way: not chased before it has had time to arrive.
       || (!!wait.reported && wait.reported.until >= now.toISOString().slice(0, 10));
     // Chase: first at chaseAfter, then every chaseEvery working days since the last chase.
-    if (age >= rule.chaseAfter && !booked) {
+    // Ordered in the firm's InTouch: InTouch's suppliers deal with the client, and there is nobody for us to chase.
+    if (age >= rule.chaseAfter && !booked && wait.via !== 'intouch') {
       const last = wait.chasesSentAt[wait.chasesSentAt.length - 1];
       if (!last) out.push({ kind: 'chase', wait, rule, ageWorkingDays: age });
       else if (rule.chaseEvery !== null && workingDaysBetween(new Date(last), now, cal) >= rule.chaseEvery) out.push({ kind: 'chase', wait, rule, ageWorkingDays: age });

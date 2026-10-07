@@ -15,7 +15,7 @@ import { profileOf } from './transactions';
  * Keep the reducer dumb: it records what happened. Deciding what happens NEXT is the
  * machine's job (machine.ts).
  */
-import { deedSigned, isResolved, partyId, type SearchType } from './types';
+import { INTOUCH_PROVIDER, deedSigned, isResolved, partyId, type SearchType } from './types';
 import {
   DECISION_EVENT_TYPES,
   initialState,
@@ -50,7 +50,9 @@ const resolvedStatus = (option: DecisionOption): DecisionState['status'] => (opt
 function openWait(state: MatterState, key: WaitKey, subject: string, e: EngineEvent): void {
   // Re-opening the same wait (e.g. a re-ordered search) closes the stale one first.
   for (const w of state.waits) if (w.key === key && w.subject === subject && w.closedAt === null) w.closedAt = e.createdAt;
-  state.waits.push({ key, subject, openedAt: e.createdAt, openedBySeq: e.seq, openedBy: e.actor, closedAt: null, chasesSentAt: [], escalations: [] });
+  // Ordered on the firm's InTouch matter, not by us: there is nobody for us to chase.
+  const via = (e.payload as { provider?: unknown }).provider === INTOUCH_PROVIDER ? 'intouch' as const : undefined;
+  state.waits.push({ key, subject, openedAt: e.createdAt, openedBySeq: e.seq, openedBy: e.actor, closedAt: null, chasesSentAt: [], escalations: [], ...(via ? { via } : {}) });
 }
 
 function closeWait(state: MatterState, key: WaitKey, subject: string | null, e: EngineEvent): void {
