@@ -2,15 +2,16 @@
  * The mapping seam: InTouch's raw JSON → our normalised shapes (types.ts), our domain →
  * what we send back, and the engine's lifecycle → the milestone a client understands.
  *
- * Field names are read defensively (several candidate keys, case-insensitive) because the
- * reference could not be read from the build environment: when a real payload disagrees,
- * fix the candidate list here and nothing else moves.
+ * Field names follow InTouch's Public Customer Matter API reference (Matter, MatterTask,
+ * MatterFolderItemPublicModel, the response envelope). They are still read case-insensitively,
+ * with the older candidate names behind them, because InTouch asks clients to parse
+ * permissively; when a live payload disagrees, the fix is here and nothing else moves.
  *
  * Everything here is pure and unit-tested against fixtures.
  */
 import crypto from 'node:crypto';
-import { INTOUCH_FORM_CODES, normaliseInTouchEvent, type InTouchMilestone } from './endpoints';
-import type { InTouchAccount, InTouchCase, InTouchCaseStatus, InTouchDocument, InTouchForm, InTouchIdentityCheck, InTouchIdOutcome, InTouchParty, InTouchPartyRole, InTouchTransactionSide, InTouchWebhookEvent } from './types';
+import { normaliseInTouchEvent, type InTouchMilestone } from './endpoints';
+import { InTouchError, type InTouchCase, type InTouchCaseStatus, type InTouchDocument, type InTouchParty, type InTouchPartyRole, type InTouchTask, type InTouchTransactionSide, type InTouchWebhookEvent } from './types';
 
 type Raw = Record<string, unknown>;
 
@@ -67,12 +68,18 @@ export function toPennies(v: unknown): number | null {
   return Math.round(s.includes('.') ? n * 100 : n * 100);
 }
 
-export function toAccount(raw: unknown): InTouchAccount {
-  return {
-    id: str(pick(raw, ['id', 'accountId', 'organisationId', 'firmId'])) ?? '',
-    name: str(pick(raw, ['name', 'accountName', 'organisationName', 'firmName'])) ?? 'InTouch account',
-    reference: str(pick(raw, ['reference', 'ref', 'code'])),
-  };
+/**
+ * InTouch's response envelope { success, message, errors, additionalData, data } → data.
+ * success:false is InTouch refusing, with its own words; a body without the envelope is passed through.
+ */
+export function unwrap(body: unknown): unknown {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || !('success' in (body as Raw))) return body;
+  const b = body as { success?: unknown; message?: unknown; errors?: unknown; data?: unknown };
+  if (b.success === false) {
+    const why = [str(b.message), ...(Array.isArray(b.errors) ? b.errors.map(String) : [])].filter(Boolean).join('; ');
+    throw new InTouchError(`InTouch refused the request${why ? `: ${why}` : ''}.`, 422, false);
+  }
+  return b.data ?? null;
 }
 
 const CASE_STATUS: Record<string, InTouchCaseStatus> = {
@@ -90,28 +97,82 @@ const SIDE: Record<string, InTouchTransactionSide> = {
   transfer: 'transfer', transfer_of_equity: 'transfer', toe: 'transfer',
 };
 
+/**
+ * A matter's state → ours. InTouch's state values are firm-configurable words, so they are
+ * read by what they say: a quote is not a case, a cancelled or finished one is not live, and
+ * any other named state is a live instruction.
+ */
+export function caseStatus(v: unknown): InTouchCaseStatus {
+  const s = norm(v);
+  if (!s) return 'unknown';
+  if (CASE_STATUS[s]) return CASE_STATUS[s];
+  if (/quote|lead|enquir|prospect|estimate/.test(s)) return 'quote';
+  if (/cancel|abort|withdr|lost|declin|abandon|fall/.test(s)) return 'cancelled';
+  if (/complet|archiv|closed|finish|registered/.test(s)) return 'completed';
+  if (/instruct|onboard|new|welcome/.test(s)) return 'instructed';
+  return 'active';
+}
+
+/** Purchase, sale, remortgage or transfer, from the matter's template name ("Freehold Purchase", "Sale & Purchase"…). */
+export function sideFrom(v: unknown): InTouchTransactionSide {
+  const s = norm(v);
+  if (SIDE[s]) return SIDE[s];
+  if (/transfer|equity|toe\b/.test(s)) return 'transfer';
+  if (/remortgage|re_mortgage|refinanc/.test(s)) return 'remortgage';
+  // "Sale & Purchase" is two cases for us; InTouch holds it as one matter. It mirrors as the purchase,
+  // and the conveyancer links the sale (Case View → Chain).
+  if (/purchas|buy/.test(s)) return 'purchase';
+  if (/sale|sell|vendor/.test(s)) return 'sale';
+  return 'unknown';
+}
+
 export function toCase(raw: unknown): InTouchCase {
-  const known = new Set(['id', 'caseid', 'reference', 'ref', 'status', 'state', 'type', 'casetype', 'transactiontype', 'side', 'tenure', 'address', 'propertyaddress', 'postcode', 'price', 'purchaseprice', 'saleprice', 'feeearner', 'assignedto', 'firmreference', 'matterreference', 'createdat', 'created', 'updatedat', 'updated']);
+  const known = new Set(['id', 'guid', 'caseid', 'reference', 'ref', 'status', 'state', 'type', 'templatename', 'templateguid', 'casetype', 'transactiontype', 'side', 'tenure', 'address', 'propertyaddress', 'addressline1', 'addressline2', 'addressline3', 'addressline4', 'postcode', 'price', 'purchaseprice', 'saleprice', 'feeearner', 'feeearnerfullname', 'feeearnerteamname', 'assignedto', 'firmreference', 'matterreference', 'createdat', 'createdon', 'created', 'updatedat', 'lastupdated', 'updated', 'primaryclientforename', 'primaryclientmiddlename', 'primaryclientsurname', 'primaryclientorganisation', 'primaryclientemail', 'primaryclientphone']);
   const fields: Raw = {};
   if (raw && typeof raw === 'object') for (const [k, v] of Object.entries(raw as Raw)) if (!known.has(k.toLowerCase())) fields[k] = v;
+  const template = pick(raw, ['templateName', 'type', 'caseType', 'transactionType', 'matterType', 'side']);
+  const lines = ['addressLine1', 'addressLine2', 'addressLine3', 'addressLine4'].map((k) => str(pick(raw, [k]))?.trim()).filter(Boolean) as string[];
+  const postcode = str(pick(raw, ['postcode', 'property.postcode', 'postCode']));
+  const address = lines.length ? [...lines, postcode].filter(Boolean).join(', ') : str(pick(raw, ['propertyAddress', 'address', 'property.address', 'property.addressLine']));
+  const feName = str(pick(raw, ['feeEarnerFullName']));
   const fe = pick(raw, ['feeEarner', 'assignedTo', 'handler', 'conveyancer']);
+  const tenure = norm(pick(raw, ['tenure', 'propertyTenure'])) || norm(template);
   return {
-    id: str(pick(raw, ['id', 'caseId', 'caseID'])) ?? '',
-    reference: str(pick(raw, ['reference', 'ref', 'caseReference', 'caseRef'])) ?? '',
-    status: CASE_STATUS[norm(pick(raw, ['status', 'state', 'caseStatus']))] ?? 'unknown',
-    side: SIDE[norm(pick(raw, ['side', 'type', 'caseType', 'transactionType', 'matterType']))] ?? 'unknown',
-    tenure: ((): 'freehold' | 'leasehold' | 'unknown' => {
-      const t = norm(pick(raw, ['tenure', 'propertyTenure']));
-      return t === 'freehold' || t === 'leasehold' ? t : 'unknown';
-    })(),
-    propertyAddress: str(pick(raw, ['propertyAddress', 'address', 'property.address', 'property.addressLine'])),
-    postcode: str(pick(raw, ['postcode', 'property.postcode', 'postCode'])),
+    id: str(pick(raw, ['guid', 'matterGuid', 'id', 'caseId'])) ?? '',
+    reference: str(pick(raw, ['reference', 'ref', 'caseReference', 'itrCode'])) ?? '',
+    status: caseStatus(pick(raw, ['state', 'status', 'caseStatus'])),
+    side: sideFrom(template),
+    tenure: /leasehold/.test(tenure) ? 'leasehold' : /freehold/.test(tenure) ? 'freehold' : 'unknown',
+    propertyAddress: address,
+    postcode,
     pricePennies: toPennies(pick(raw, ['pricePennies', 'price', 'purchasePrice', 'salePrice', 'property.price', 'consideration'])),
-    feeEarner: fe ? { id: str(pick(fe, ['id', 'staffId', 'userId'])), name: str(pick(fe, ['name', 'displayName', 'fullName'])), email: str(pick(fe, ['email', 'emailAddress'])) } : null,
+    feeEarner: feName ? { id: null, name: feName, email: null } : fe ? { id: str(pick(fe, ['id', 'staffId', 'userId'])), name: str(pick(fe, ['name', 'displayName', 'fullName'])), email: str(pick(fe, ['email', 'emailAddress'])) } : null,
     firmReference: str(pick(raw, ['firmReference', 'matterReference', 'externalReference', 'yourRef'])),
-    createdAt: iso(pick(raw, ['createdAt', 'created', 'createdDate'])),
-    updatedAt: iso(pick(raw, ['updatedAt', 'updated', 'modifiedAt', 'lastModified'])),
+    createdAt: iso(pick(raw, ['createdOn', 'createdAt', 'created', 'createdDate'])),
+    updatedAt: iso(pick(raw, ['lastUpdated', 'updatedAt', 'updated', 'modifiedAt', 'lastModified'])),
     fields,
+  };
+}
+
+/** The matter's primary client (the one person the API carries) as a party, or null when it has none. */
+export function primaryClient(raw: unknown, caseId: string): InTouchParty | null {
+  const first = str(pick(raw, ['primaryClientForename']))?.trim() || null;
+  const middle = str(pick(raw, ['primaryClientMiddleName']))?.trim() || null;
+  const last = str(pick(raw, ['primaryClientSurname']))?.trim() || null;
+  const company = str(pick(raw, ['primaryClientOrganisation']))?.trim() || null;
+  const email = str(pick(raw, ['primaryClientEmail']))?.trim() || null;
+  if (!first && !last && !company && !email) return null;
+  return {
+    id: `${caseId}:primary`,
+    caseId,
+    role: 'client',
+    name: [first, middle, last].filter(Boolean).join(' ') || company || email || 'Client',
+    firstName: first,
+    lastName: last,
+    email,
+    phone: str(pick(raw, ['primaryClientPhone']))?.trim() || null,
+    company,
+    isCompany: !first && !last && !!company,
   };
 }
 
@@ -143,70 +204,62 @@ export function toParty(raw: unknown, caseId: string): InTouchParty {
   };
 }
 
-const OUTCOME: Record<string, InTouchIdOutcome> = {
-  clear: 'clear', pass: 'clear', passed: 'clear', verified: 'clear', success: 'clear', ok: 'clear',
-  refer: 'refer', referred: 'refer', review: 'refer', manual_review: 'refer', caution: 'refer',
-  fail: 'fail', failed: 'fail', rejected: 'fail', declined: 'fail',
-  pending: 'pending', in_progress: 'pending', awaiting: 'pending', requested: 'pending', sent: 'pending',
-};
+/** Folder items that are records, not files: they are InTouch's own history, never mirrored as documents. */
+const NOT_A_FILE = /^(email|note|phone_?call|call|sms|text|letter_?record)s?$/;
 
-const SEVERITY = (v: unknown): 'info' | 'low' | 'medium' | 'high' => {
-  const s = norm(v);
-  return s === 'high' || s === 'critical' || s === 'severe' ? 'high' : s === 'medium' || s === 'moderate' ? 'medium' : s === 'low' ? 'low' : 'info';
-};
-
-export function toIdentityCheck(raw: unknown, caseId: string): InTouchIdentityCheck {
-  const rawFlags = pick(raw, ['flags', 'alerts', 'warnings', 'matches', 'issues']);
-  const flags = Array.isArray(rawFlags)
-    ? rawFlags.map((f) => ({
-        code: (str(pick(f, ['code', 'type', 'id'])) ?? 'FLAG').toUpperCase().replace(/[^A-Z0-9_]+/g, '_'),
-        severity: SEVERITY(pick(f, ['severity', 'level', 'risk'])),
-        description: str(pick(f, ['description', 'message', 'detail', 'text'])) ?? 'Flagged by the identity check',
-      }))
-    : [];
-  const party = pick(raw, ['party', 'subject', 'person']);
+/**
+ * A folder item (MatterFolderItemPublicModel) → our document, or null when it is not a file (an
+ * email, note or phone-call record). Its name is the description, or a file name among its fields.
+ */
+export function toDocument(raw: unknown, caseId: string): InTouchDocument | null {
+  const type = norm(pick(raw, ['type', 'itemType', 'kind']));
+  if (type && NOT_A_FILE.test(type)) return null;
+  const f = (pick(raw, ['fields']) as Raw | undefined) ?? {};
+  const name = str(pick(f, ['fileName', 'filename', 'name', 'title'])) ?? str(pick(raw, ['fileName', 'name', 'description', 'title'])) ?? 'document';
+  const by = norm(pick(f, ['uploadedBy', 'source', 'createdBy', 'origin']) ?? pick(raw, ['uploadedBy', 'source', 'origin', 'createdBy']));
   return {
-    id: str(pick(raw, ['id', 'checkId', 'identityCheckId'])) ?? '',
+    id: str(pick(raw, ['guid', 'id', 'documentId'])) ?? '',
     caseId,
-    partyId: str(pick(raw, ['partyId', 'subjectId'])) ?? str(pick(party, ['id'])),
-    partyName: str(pick(raw, ['partyName', 'subjectName'])) ?? str(pick(party, ['name', 'fullName'])),
-    outcome: OUTCOME[norm(pick(raw, ['outcome', 'result', 'status', 'decision']))] ?? 'unknown',
-    provider: str(pick(raw, ['provider', 'bureau', 'source', 'vendor'])),
-    completedAt: iso(pick(raw, ['completedAt', 'completed', 'finishedAt', 'updatedAt'])),
-    flags,
-    documentId: str(pick(raw, ['documentId', 'reportDocumentId', 'report.id'])),
-    raw: (raw && typeof raw === 'object' ? (raw as Raw) : {}),
+    fileName: name,
+    mimeType: str(pick(f, ['mimeType', 'contentType']) ?? pick(raw, ['mimeType', 'contentType', 'mime'])),
+    sizeBytes: Number(pick(f, ['size', 'sizeBytes']) ?? pick(raw, ['sizeBytes', 'size', 'length']) ?? 0) || null,
+    // The folder's own words for it (a label, the item type), the hint for what the reading should try.
+    category: str(pick(f, ['label', 'label1', 'category', 'folder']) ?? pick(raw, ['category', 'documentType', 'folder'])) ?? (type || null),
+    uploadedBy: by.includes('client') || by.includes('customer') ? 'client' : by.includes('firm') || by.includes('staff') || by.includes('user') ? 'firm' : by.includes('intouch') || by.includes('system') ? 'intouch' : 'unknown',
+    createdAt: iso(pick(raw, ['createdOn', 'createdAt', 'uploadedAt', 'created'])),
   };
 }
 
-export function toForm(raw: unknown, caseId: string): InTouchForm {
-  const slug = norm(pick(raw, ['code', 'type', 'formType', 'formCode', 'name']));
-  const status = norm(pick(raw, ['status', 'state']));
+export function toTask(raw: unknown): InTouchTask {
   return {
-    id: str(pick(raw, ['id', 'formId'])) ?? '',
-    caseId,
-    // InTouch's slug is translated to the engine's form code, or passed through in upper
-    // case so an unrecognised form is still visible rather than silently dropped.
-    code: INTOUCH_FORM_CODES[slug] ?? slug.toUpperCase().replace(/[^A-Z0-9]+/g, ''),
-    status: status === 'completed' || status === 'complete' || status === 'submitted' ? 'completed' : status === 'in_progress' || status === 'started' || status === 'partial' ? 'in_progress' : status === 'requested' || status === 'sent' || status === 'pending' ? 'requested' : 'unknown',
-    completedAt: iso(pick(raw, ['completedAt', 'submittedAt', 'completed'])),
-    documentId: str(pick(raw, ['documentId', 'pdfDocumentId', 'document.id'])),
-    answers: (pick(raw, ['answers', 'responses', 'data', 'fields']) as Raw) ?? {},
+    id: str(pick(raw, ['guid', 'id'])) ?? '',
+    name: str(pick(raw, ['name', 'title'])) ?? '',
+    completed: bool(pick(raw, ['isCompleted', 'completed'])) || /^complete/i.test(str(pick(raw, ['state'])) ?? ''),
   };
 }
 
-export function toDocument(raw: unknown, caseId: string): InTouchDocument {
-  const by = norm(pick(raw, ['uploadedBy', 'source', 'origin', 'createdBy']));
-  return {
-    id: str(pick(raw, ['id', 'documentId'])) ?? '',
-    caseId,
-    fileName: str(pick(raw, ['fileName', 'name', 'filename', 'title'])) ?? 'document',
-    mimeType: str(pick(raw, ['mimeType', 'contentType', 'mime'])),
-    sizeBytes: Number(pick(raw, ['sizeBytes', 'size', 'length']) ?? 0) || null,
-    category: str(pick(raw, ['category', 'type', 'documentType', 'folder'])),
-    uploadedBy: by.includes('client') || by.includes('customer') ? 'client' : by.includes('firm') || by.includes('staff') ? 'firm' : by.includes('intouch') || by.includes('system') ? 'intouch' : 'unknown',
-    createdAt: iso(pick(raw, ['createdAt', 'uploadedAt', 'created'])),
-  };
+/**
+ * The InTouch task that IS this milestone on the client portal: the first not-yet-completed task
+ * whose name says it ("Searches ordered", "Exchange of contracts"…). A firm's task names vary, so
+ * this reads words, never ids; and "exchange" never matches a "ready to exchange" task.
+ */
+const TASK_WORDS: Record<InTouchMilestone, RegExp> = {
+  instructed: /\b(instruct|onboard|welcome|client care|engage)/i,
+  searches_ordered: /\bsearch(es)?\b.*\b(order|appl|submit|request)|\b(order|appl)\w*\b.*\bsearch/i,
+  enquiries_raised: /\benquir(y|ies)\b.*\b(raise|sent|issue)|\b(raise|sent)\w*\b.*\benquir/i,
+  report_sent: /\breport\b.*\b(title|sent|client)|\btitle report\b/i,
+  ready_to_exchange: /\bready\b.*\bexchang|\bexchang\w*\b.*\bready\b/i,
+  exchanged: /\bexchang(e|ed)\b(?!.*\bready\b)/i,
+  completed: /\bcomplet(ed|ion)\b(?!.*\b(information|statement|date)\b)/i,
+};
+export function taskForMilestone(m: InTouchMilestone, tasks: InTouchTask[]): InTouchTask | null {
+  const re = TASK_WORDS[m];
+  return tasks.find((t) => !t.completed && re.test(t.name) && !(m === 'exchanged' && TASK_WORDS.ready_to_exchange.test(t.name))) ?? null;
+}
+
+/** Plain text → the HTML InTouch's notes and emails take: escaped, line breaks kept. */
+export function toHtml(text: string): string {
+  return text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string).replace(/\r?\n/g, '<br>');
 }
 
 /**
@@ -225,17 +278,17 @@ export function toWebhookEvent(raw: unknown, rawBody?: string): InTouchWebhookEv
   const body = rawBody ?? JSON.stringify(raw ?? null);
   const data = pick(raw, ['data', 'payload']);
   const type = normaliseInTouchEvent(pick(raw, ['event', 'type', 'eventType']));
-  const caseKeys = ['matterId', 'matter.id', 'matter_id', 'caseId', 'case.id', 'case_id'];
+  const caseKeys = ['matterGuid', 'matter.guid', 'matter.matterGuid', 'matterId', 'matter.id', 'matter_id', 'caseId', 'case.id', 'case_id'];
   const caseId =
     str(pick(data, caseKeys)) ??
     str(pick(raw, caseKeys)) ??
     // A matter event's own `id` is the matter.
-    (type === 'matter_state_change' ? str(pick(data, ['id'])) : null);
+    (type === 'matter_state_change' ? str(pick(data, ['guid', 'id'])) : null);
   return {
     id: crypto.createHash('sha256').update(body, 'utf8').digest('hex'),
     type,
     caseId,
-    resourceId: str(pick(data, ['taskId', 'task.id', 'formId', 'form.id', 'documentId', 'id'])),
+    resourceId: str(pick(data, ['matterTaskGuid', 'taskGuid', 'taskId', 'task.id', 'formGuid', 'formId', 'form.id', 'documentId', 'guid', 'id'])),
     triggeredByEmail: str(pick(raw, ['triggered.by.email', 'triggeredBy.email', 'triggered_by_email', 'triggeredByEmail']))?.trim().toLowerCase() || null,
     occurredAt: iso(pick(raw, ['timestamp', 'occurredAt'])),
     receivedAt: new Date().toISOString(),
@@ -275,9 +328,4 @@ export function milestoneFor(lifecycle: string): InTouchMilestone | null {
     default:
       return null;
   }
-}
-
-/** The request body for pushing a milestone. Kept here so the shape changes in one place. */
-export function milestoneBody(m: InTouchMilestone, note?: string | null, at?: string | null): Record<string, unknown> {
-  return { milestone: m, note: note ?? undefined, occurredAt: at ?? new Date().toISOString() };
 }

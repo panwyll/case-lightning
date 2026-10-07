@@ -23,13 +23,13 @@ interface Status {
     accountId: string | null;
     webhookUrl: string | null;
     lastSyncAt: string | null;
-    lastSyncDetail: { cases: number; created: number; parties: number; identityChecks: number; forms: number; documents: number; milestones: number; documentsOut?: number; notesOut?: number; skipped: number; errors: string[] } | null;
+    lastSyncDetail: { cases: number; created: number; parties: number; documents: number; milestones: number; documentsOut?: number; notesOut?: number; skipped: number; errors: string[] } | null;
     connectedAt: string | null;
     milestonesEnabled: boolean;
     documentsWriteback?: boolean;
     notesWriteback?: boolean;
   } | null;
-  counts: { cases: number; identityChecks: number; forms: number; documents: number };
+  counts: { cases: number; documents: number; milestones: number };
 }
 
 const CSS = `
@@ -49,7 +49,7 @@ interface Form { apiBaseUrl: string; apiToken: string }
 /** The firm's InTouch API address and the API key it generated in InTouch. A saved key stays unless retyped. */
 function ConnectForm({ s, busy, onConnect }: { s: Status; busy: boolean; onConnect: (f: Form) => void }) {
   const cr = s.credentials;
-  const [f, setF] = useState<Form>({ apiBaseUrl: cr?.apiBaseUrl ?? '', apiToken: '' });
+  const [f, setF] = useState<Form>({ apiBaseUrl: cr?.apiBaseUrl ?? 'https://go.intouchapp.co.uk', apiToken: '' });
   const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
   const ready = !!f.apiBaseUrl.trim() && (!!f.apiToken.trim() || !!cr?.hasApiToken);
   return (
@@ -195,7 +195,7 @@ export default function InTouchPage() {
               <div className="eg-card" style={{ padding: 14 }}>
                 <b>What Has Come Across</b>
                 <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', marginTop: 10 }}>
-                  {([['Cases', s.counts.cases], ['Identity Checks', s.counts.identityChecks], ['Forms', s.counts.forms], ['Documents', s.counts.documents]] as const).map(([label, n]) => (
+                  {([['Cases', s.counts.cases], ['Files', s.counts.documents], ['Cases With Progress Shown', s.counts.milestones]] as const).map(([label, n]) => (
                     <div key={label}>
                       <div style={{ fontSize: 22, fontWeight: 800 }}>{n}</div>
                       <div className="eg-sub">{label}</div>
@@ -204,8 +204,8 @@ export default function InTouchPage() {
                 </div>
                 {d && (
                   <div className="eg-sub" style={{ marginTop: 12 }}>
-                    Last sync: {d.cases} case{d.cases === 1 ? '' : 's'} ({d.created} new), {d.identityChecks} identity check{d.identityChecks === 1 ? '' : 's'}, {d.forms} form{d.forms === 1 ? '' : 's'},{' '}
-                    {d.documents} document{d.documents === 1 ? '' : 's'}, {d.milestones} milestone{d.milestones === 1 ? '' : 's'} pushed
+                    Last sync: {d.cases} case{d.cases === 1 ? '' : 's'} ({d.created} new),{' '}
+                    {d.documents} file{d.documents === 1 ? '' : 's'}, {d.milestones} milestone{d.milestones === 1 ? '' : 's'} shown on the portal
                     {d.documentsOut ? `, ${d.documentsOut} document${d.documentsOut === 1 ? '' : 's'} sent to InTouch` : ''}{d.notesOut ? `, ${d.notesOut} case note${d.notesOut === 1 ? '' : 's'} added` : ''}
                     {d.skipped ? `, ${d.skipped} skipped` : ''}.
                   </div>

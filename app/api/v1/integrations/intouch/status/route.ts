@@ -18,21 +18,20 @@ export async function GET() {
     const row = await inTouchConnection(user.tenantId);
     // The webhook URL carries the key that authenticates InTouch's deliveries: admins only.
     const connection = row && user.role !== 'ADMIN' ? { ...row, webhookUrl: null } : row;
-    const [counts] = await query<{ cases: string; identity_checks: string; forms: string; documents: string }>(
+    const [counts] = await query<{ cases: string; documents: string; milestones: string }>(
       `select
          (select count(*) from matter where tenant_id = $1 and intouch_case_id is not null)::text as cases,
-         (select count(*) from intouch_applied where tenant_id = $1 and kind = 'identity_check')::text as identity_checks,
-         (select count(*) from intouch_applied where tenant_id = $1 and kind = 'form')::text as forms,
-         (select count(*) from intouch_applied where tenant_id = $1 and kind = 'document')::text as documents`,
+         (select count(*) from intouch_applied where tenant_id = $1 and kind = 'document')::text as documents,
+         (select count(*) from matter where tenant_id = $1 and intouch_case_id is not null and intouch_milestone is not null)::text as milestones`,
       [user.tenantId]
-    ).catch(() => [{ cases: '0', identity_checks: '0', forms: '0', documents: '0' }]);
+    ).catch(() => [{ cases: '0', documents: '0', milestones: '0' }]);
     const creds = await inTouchCredentials(user.tenantId);
     return ok({
       configured: !!creds,
       canManage: user.role === 'ADMIN',
       credentials: creds ? { source: creds.source, apiBaseUrl: creds.apiBaseUrl, hasApiToken: !!creds.apiToken } : null,
       connection,
-      counts: { cases: Number(counts.cases), identityChecks: Number(counts.identity_checks), forms: Number(counts.forms), documents: Number(counts.documents) },
+      counts: { cases: Number(counts.cases), documents: Number(counts.documents), milestones: Number(counts.milestones) },
     });
   } catch (error) {
     return fail(error);

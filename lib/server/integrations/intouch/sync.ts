@@ -6,11 +6,11 @@
  * MockInTouch:
  *
  *   InTouch case (instructed / active)  ──► mirror matter row ──► enrol in the engine
- *   parties on the case                 ──► matter_contact rows, roles normalised
- *   a completed identity check          ──► typed ID facts ──► the engine's id_check flow
- *   a completed TA6/TA7/TA10/TA13       ──► document + property_forms_received
- *   anything else the client uploaded   ──► document row ──► the ordinary ingest path
- *   the engine's lifecycle              ──► a milestone on the client portal
+ *   the matter's primary client         ──► a matter_contact row
+ *   each file in the matter's folder    ──► document row ──► the ordinary ingest path
+ *     (the ID report and completed TA6/TA7/TA10 arrive this way: InTouch's API has no
+ *      identity-check or form-answer resource, so they are read like any document)
+ *   the engine's lifecycle              ──► the matching InTouch task completed (the client portal)
  *
  * Two triggers feed the same functions — webhooks (InTouch tells us: Form Completion,
  * Matter State Change, Task State Change) and polling with a watermark (we ask what
@@ -27,9 +27,8 @@ import type { EngineService } from '../../engine/service';
 import { routeClassification, runAction } from '../../engine/ingest';
 import type { InTouchApi } from './client';
 import type { DocumentClassification } from '../../engine/ports';
-import type { InTouchCase, InTouchDocument, InTouchForm, InTouchIdentityCheck, InTouchParty, InTouchSyncSummary, InTouchWebhookEvent } from './types';
+import type { InTouchCase, InTouchDocument, InTouchParty, InTouchSyncSummary, InTouchWebhookEvent } from './types';
 import { milestoneFor } from './mapping';
-import { EXTERNAL, type Flag, type IdCheckFacts } from '../../engine/types';
 import type { InTouchMilestone } from './endpoints';
 
 export interface InTouchMirrorRef {
@@ -87,32 +86,11 @@ function notApplicable(err: unknown): boolean {
   return /does not apply|is only valid at|not enrolled|manual handling/i.test(m);
 }
 
-const empty = (): InTouchSyncSummary => ({ cases: 0, created: 0, parties: 0, identityChecks: 0, forms: 0, documents: 0, milestones: 0, skipped: 0, errors: [] });
+const empty = (): InTouchSyncSummary => ({ cases: 0, created: 0, parties: 0, documents: 0, milestones: 0, skipped: 0, errors: [] });
 
 /** A case worth mirroring: the client has actually instructed the firm. A quote has not. */
 export function isEnrollableCase(c: InTouchCase): boolean {
   return c.status === 'instructed' || c.status === 'active';
-}
-
-/**
- * InTouch's outcome → the engine's typed ID facts.
- *
- * Confidence is 1 for a result InTouch states plainly, because there is nothing to read:
- * it is not an extraction from a PDF, it is a structured answer from the system that ran
- * the check. 'unknown' is the exception — an outcome we do not recognise must never look
- * like a pass, so it becomes a refer at zero confidence and a person picks it up.
- */
-export function idFactsFrom(check: InTouchIdentityCheck): IdCheckFacts {
-  const flags: Flag[] = check.flags.map((f) => ({ code: f.code, severity: f.severity, description: f.description }));
-  if (check.outcome === 'clear') return { provider: check.provider ?? 'InTouch', outcome: 'clear', flags, confidence: 1 };
-  if (check.outcome === 'fail') return { provider: check.provider ?? 'InTouch', outcome: 'fail', flags, confidence: 1 };
-  if (check.outcome === 'refer') return { provider: check.provider ?? 'InTouch', outcome: 'refer', flags, confidence: 1 };
-  return {
-    provider: check.provider ?? 'InTouch',
-    outcome: 'refer',
-    flags: [...flags, { code: 'UNRECOGNISED_OUTCOME', severity: 'medium', description: `InTouch reported an outcome this system does not recognise ("${check.outcome}"). Read the report before relying on it.` }],
-    confidence: 0,
-  };
 }
 
 /** One full sync pass for a firm. Safe to run on a schedule and after a webhook. */
@@ -165,77 +143,19 @@ export async function syncInTouch(deps: InTouchSyncDeps, tenantId: string, opts:
   return out;
 }
 
-/** Identity checks, forms and documents for one mirrored case. Idempotent per InTouch id. */
+/** Every file in the matter's folder, mirrored and read. Idempotent per InTouch id. */
 export async function applyCaseFacts(deps: InTouchSyncDeps, tenantId: string, ref: InTouchMirrorRef, out: InTouchSyncSummary): Promise<void> {
-  // ── identity checks ──
-  for (const check of await deps.api.identityChecks(ref.intouchCaseId)) {
-    if (check.outcome === 'pending') continue; // nothing to record until it finishes
-    if (await deps.store.seen(tenantId, 'identity_check', check.id)) continue;
-    try {
-      // A decision must cite something a person can open. InTouch's report is that thing;
-      // without one the check is still recorded, against the case itself.
-      const documentId = check.documentId ? await mirrorDocument(deps, tenantId, ref, check.documentId) : null;
-      if (!documentId) {
-        out.errors.push(`identity check ${check.id}: no report document to cite`);
-        continue;
-      }
-      // The firm ordered this check from InTouch, not from here, so the engine has no
-      // request open for it. Record the request first, as external, with InTouch named as
-      // the provider: a result for a check nobody asked for would be a hole in the log.
-      const state = await deps.engine.getState(tenantId, ref.matterId);
-      if (state.idCheck.status === 'not_started') {
-        await deps.engine.run(tenantId, ref.matterId, { type: 'request_id_check', actor: EXTERNAL, provider: check.provider ?? 'InTouch', reference: check.id });
-      } else if (state.idCheck.status !== 'requested') {
-        // Already resolved here: a second result is filed as evidence, never replayed
-        // over a conclusion a person has already reached.
-        await deps.store.markSeen(tenantId, ref.matterId, 'identity_check', check.id, `${check.outcome} (filed; the engine's ID check was already ${state.idCheck.status})`);
-        continue;
-      }
-      await deps.engine.run(tenantId, ref.matterId, { type: 'id_check_result', actor: EXTERNAL, documentId, facts: idFactsFrom(check) });
-      await deps.store.markSeen(tenantId, ref.matterId, 'identity_check', check.id, check.outcome);
-      out.identityChecks += 1;
-    } catch (err) {
-      out.errors.push(`identity check ${check.id}: ${(err as Error).message}`);
-    }
-  }
-
-  // ── completed property forms ──
-  const completed = (await deps.api.forms(ref.intouchCaseId)).filter((f) => f.status === 'completed' && f.code);
-  for (const form of completed) {
-    if (await deps.store.seen(tenantId, 'form', form.id)) continue;
-    try {
-      const documentId = form.documentId ? await mirrorDocument(deps, tenantId, ref, form.documentId) : null;
-      await deps.engine.run(tenantId, ref.matterId, {
-        type: 'property_forms_received',
-        actor: EXTERNAL,
-        forms: [form.code],
-        documentId,
-        facts: { forms: [form.code], disclosures: disclosuresFrom(form), confidence: 1 },
-      });
-      await deps.store.markSeen(tenantId, ref.matterId, 'form', form.id, form.code);
-      out.forms += 1;
-    } catch (err) {
-      // A TA6 on a purchase is not a fault — property forms are the seller's side, and
-      // the machine is right to refuse it. Count it, say why once, and leave it unseen so
-      // it lands by itself if the matter is later enrolled as the transaction it is.
-      if (notApplicable(err)) {
-        out.skipped += 1;
-        deps.log(`form ${form.id} (${form.code}) does not apply to this matter`, (err as Error).message);
-      } else {
-        out.errors.push(`form ${form.id}: ${(err as Error).message}`);
-      }
-    }
-  }
-
-  // ── anything else the client uploaded ──
+  // ── every file in the matter's folder: the ID report, completed forms, the client's uploads ──
   let cursor: string | null = null;
   do {
     const page = await deps.api.listDocuments(ref.intouchCaseId, { cursor, limit: 100 });
     cursor = page.next;
     for (const d of page.items) {
       if (await deps.store.seen(tenantId, 'document', d.id)) continue;
+      // What we filed there ourselves (write-back labels it CONVEYi) is never mirrored back.
+      if ((d.category ?? '').toLowerCase() === 'conveyi') continue;
       try {
-        const documentId = await mirrorDocument(deps, tenantId, ref, d.id, d);
+        const documentId = await mirrorDocument(deps, tenantId, ref, d);
         if (!documentId) continue;
         // The ordinary ingest path decides what the document is; InTouch's category is a
         // hint, never an instruction, and the engine's own state still vetoes it.
@@ -277,7 +197,7 @@ export async function pushMilestone(deps: InTouchSyncDeps, tenantId: string, ref
   if (!m) return;
   if (ref.lastMilestone === m) return;
   if (!isForward(ref.lastMilestone, m)) return;
-  await deps.api.pushMilestone(ref.intouchCaseId, m, null, null);
+  await deps.api.pushMilestone(ref.intouchCaseId, m);
   await deps.store.setMilestone(tenantId, ref.matterId, m);
   out.milestones += 1;
 }
@@ -363,10 +283,8 @@ async function pushWriteback(deps: InTouchSyncDeps, tenantId: string, ref: InTou
 
 // ───────────────────────────── helpers ─────────────────────────────
 
-async function mirrorDocument(deps: InTouchSyncDeps, tenantId: string, ref: InTouchMirrorRef, documentId: string, known?: InTouchDocument): Promise<string | null> {
-  const d = known ?? (await deps.api.getDocument(documentId));
-  if (!d) return null;
-  const { documentId: id } = await deps.store.upsertDocument(tenantId, ref.matterId, { ...d, caseId: ref.intouchCaseId }, () => deps.api.downloadDocument(documentId));
+async function mirrorDocument(deps: InTouchSyncDeps, tenantId: string, ref: InTouchMirrorRef, d: InTouchDocument): Promise<string | null> {
+  const { documentId: id } = await deps.store.upsertDocument(tenantId, ref.matterId, { ...d, caseId: ref.intouchCaseId }, () => deps.api.downloadDocument(d.id, ref.intouchCaseId));
   return id;
 }
 
@@ -378,7 +296,9 @@ async function mirrorDocument(deps: InTouchSyncDeps, tenantId: string, ref: InTo
 export function hintFor(d: InTouchDocument): DocumentClassification | null {
   const c = `${d.category ?? ''} ${d.fileName}`.toLowerCase();
   const base = { searchType: null, enquiryReferences: [], titleNumber: null, lender: null, confidence: 0.75, reason: `InTouch category "${d.category ?? 'none'}", file "${d.fileName}"` };
-  if (/id[\s_-]?report|identity|aml/.test(c)) return { ...base, role: 'id_check' };
+  if (/id[\s_-]?report|identity|aml|kyc/.test(c)) return { ...base, role: 'id_check' };
+  // A completed property information form, filed as a PDF in the matter's folder.
+  if (/\bta[\s_-]?(6|7|10)\b|property[\s_-]?information|leasehold[\s_-]?information|fittings[\s_-]?(and|&)?[\s_-]?contents/.test(c)) return { ...base, role: 'property_forms' };
   if (/mortgage[\s_-]?offer|offer[\s_-]?of[\s_-]?loan/.test(c)) return { ...base, role: 'mortgage_offer' };
   if (/con29/.test(c)) return { ...base, role: 'search', searchType: 'CON29' };
   if (/llc1|local[\s_-]?authority/.test(c)) return { ...base, role: 'search', searchType: 'LLC1' };
@@ -390,38 +310,4 @@ export function hintFor(d: InTouchDocument): DocumentClassification | null {
   // A bank statement is proof-of-funds evidence, which has its own reviewed flow — it is
   // filed here and never routed as though the engine had asked for it.
   return null;
-}
-
-/**
- * A completed form's answers → disclosures worth flagging.
- *
- * Deliberately narrow: this is a client's own words on a web form, not a surveyor's
- * report. It raises what the form plainly says "yes" to, so the engine can hold it for a
- * person; it never interprets, and it never silently drops an answer it cannot read.
- */
-export function disclosuresFrom(form: InTouchForm): Flag[] {
-  const out: Flag[] = [];
-  const yes = (v: unknown) => /^(yes|true|y)$/i.test(String(v ?? '').trim());
-  const WATCH: Array<[RegExp, string, Flag['severity']]> = [
-    [/dispute|complaint/i, 'DISPUTE_DISCLOSED', 'high'],
-    [/japanese[\s_-]?knotweed|knotweed/i, 'KNOTWEED_DISCLOSED', 'high'],
-    [/flood/i, 'FLOODING_DISCLOSED', 'high'],
-    [/alteration|extension|conversion/i, 'ALTERATIONS_DISCLOSED', 'medium'],
-    [/boundar/i, 'BOUNDARY_DISCLOSED', 'medium'],
-    [/guarantee|warrant/i, 'GUARANTEE_DISCLOSED', 'low'],
-    [/right[\s_-]?of[\s_-]?way|easement/i, 'RIGHTS_DISCLOSED', 'medium'],
-  ];
-  for (const [key, value] of Object.entries(form.answers ?? {})) {
-    const hit = WATCH.find(([re]) => re.test(key));
-    if (!hit) continue;
-    const text = String(value ?? '').trim();
-    if (!text || /^(no|false|n|none|n\/a)$/i.test(text)) continue;
-    out.push({
-      code: hit[1],
-      severity: hit[2],
-      description: `${form.code}: the client answered "${key}" with "${text.slice(0, 200)}"${yes(text) ? '' : ''}`,
-      locator: { section: key, quote: text.slice(0, 200) },
-    });
-  }
-  return out;
 }

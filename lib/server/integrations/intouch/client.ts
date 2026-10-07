@@ -1,8 +1,8 @@
 /**
  * The InTouch API as the rest of the product sees it (InTouchApi), and the HTTP client
- * that implements it.
+ * that implements it against InTouch's Public Customer Matter API (endpoints.ts).
  *
- * Auth (documented): a static API key the firm generates in InTouch under Settings > API,
+ * Auth (documented): a static API key the firm generates in InTouch API Management > Keys,
  * sent in `x-intouch-o-token` on every request, over HTTPS. There is no OAuth, no token
  * to refresh and nothing to store but the key. A 401/403 means InTouch did not accept the
  * key: that is a non-retryable InTouchError, so the sync marks the connection as needing
@@ -10,50 +10,51 @@
  *
  * InTouch gives no uptime guarantee, so transient failures (network, 429, 5xx) are retried
  * with backoff. Every URL comes from endpoints.ts; every payload goes through mapping.ts
- * (which parses permissively, as InTouch asks). This file knows about retries, pagination
- * and downloads, and nothing about field names.
+ * (which unwraps InTouch's envelope and parses permissively, as InTouch asks). This file
+ * knows about retries, pagination and downloads, and nothing about field names.
  */
-import { INTOUCH_API_TOKEN_HEADER, INTOUCH_ENDPOINTS, type InTouchMilestone } from './endpoints';
-import { milestoneBody, pick, toAccount, toCase, toDocument, toForm, toIdentityCheck, toParty, toWebhookEvent } from './mapping';
-import { InTouchError, type InTouchAccount, type InTouchCase, type InTouchDocument, type InTouchForm, type InTouchIdentityCheck, type InTouchListOptions, type InTouchPage, type InTouchParty, type InTouchWebhookEvent } from './types';
+import { INTOUCH_API_TOKEN_HEADER, INTOUCH_ENDPOINTS, MILESTONE_WORDS, type InTouchMilestone } from './endpoints';
+import { pick, primaryClient, taskForMilestone, toCase, toDocument, toHtml, toTask, toWebhookEvent, unwrap } from './mapping';
+import { InTouchError, type InTouchAccount, type InTouchCase, type InTouchDocument, type InTouchListOptions, type InTouchPage, type InTouchParty, type InTouchTask, type InTouchWebhookEvent } from './types';
 
 /**
  * Everything CONVEYi asks of InTouch. mock.ts implements it over HTTP. Webhooks are not
- * here: InTouch has no API to subscribe — the firm adds our URL in the InTouch UI.
+ * here: InTouch has no API to subscribe — the firm adds our URL in InTouch.
  */
 export interface InTouchApi {
   readonly name: string;
+  /** Proves the key: reads one matter. InTouch has no "who am I". */
   account(): Promise<InTouchAccount>;
   listCases(opts?: InTouchListOptions): Promise<InTouchPage<InTouchCase>>;
   getCase(id: string): Promise<InTouchCase | null>;
+  /** The matter's primary client: the one person InTouch's API carries. */
   caseParties(caseId: string): Promise<InTouchParty[]>;
-  identityChecks(caseId: string): Promise<InTouchIdentityCheck[]>;
-  getIdentityCheck(id: string): Promise<InTouchIdentityCheck | null>;
-  forms(caseId: string): Promise<InTouchForm[]>;
-  getForm(id: string): Promise<InTouchForm | null>;
   listDocuments(caseId: string, opts?: InTouchListOptions): Promise<InTouchPage<InTouchDocument>>;
-  getDocument(id: string): Promise<InTouchDocument | null>;
-  downloadDocument(id: string): Promise<{ bytes: Buffer; mimeType: string | null; fileName: string | null }>;
-  /** Tell the client portal where the case has got to. One way: the engine is the truth. */
-  pushMilestone(caseId: string, milestone: InTouchMilestone, note?: string | null, at?: string | null): Promise<void>;
-  /** Ask InTouch to run an identity check on a party (when the firm drives it from here). */
-  requestIdentityCheck(caseId: string, partyId: string): Promise<{ id: string }>;
-  /** Ask InTouch to send the client a form to fill in. */
-  requestForm(caseId: string, code: string): Promise<{ id: string }>;
-  /** File a document on the case (write-back). Returns InTouch's id for it, so it is never mirrored back. */
+  downloadDocument(id: string, caseId: string): Promise<{ bytes: Buffer; mimeType: string | null; fileName: string | null }>;
+  tasks(caseId: string): Promise<InTouchTask[]>;
+  /**
+   * Tell the client portal where the case has got to, one way: the engine is the truth. Done by
+   * completing the matter's task for that milestone; where the firm's workflow has none, a note.
+   */
+  pushMilestone(caseId: string, milestone: InTouchMilestone, note?: string | null): Promise<'task' | 'note'>;
+  /** File a document on the matter (write-back). Returns InTouch's id for it when it can be found, so it is never mirrored back. */
   uploadDocument(caseId: string, file: { fileName: string; mimeType: string; bytes: Buffer; category?: string }): Promise<{ id: string }>;
-  /** Add a line to the case's notes (write-back). */
+  /** Add a note to the matter's folder (write-back). */
   addNote(caseId: string, text: string): Promise<void>;
+  /** File a record of an email we sent on the matter (it does not send anything). */
+  fileEmail(caseId: string, email: { at: string; subject: string; text: string; from?: { email: string; name?: string | null } | null; to?: Array<{ email: string; name?: string | null }> }): Promise<{ id: string | null }>;
 }
 
 export interface InTouchClientConfig {
-  /** The firm's InTouch API address (assumed; the reference is inside the firm's account). */
+  /** InTouch's API address (https://go.intouchapp.co.uk unless the firm's differs). */
   apiBaseUrl: string;
-  /** The API key the firm generated in InTouch (Settings > API > Keys). */
+  /** The API key the firm generated in InTouch (API Management > Keys). */
   apiToken: string;
   maxRetries?: number;
   backoffMs?: number;
   pageSize?: number;
+  /** Most pages a single listing reads (a firm with 10,000 matters is not read in one sync). */
+  maxPages?: number;
 }
 
 export interface HttpResponse {
@@ -72,9 +73,14 @@ export const fetchTransport: HttpTransport = async (url, init) => {
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+type Query = Record<string, string | number | boolean | Array<string> | undefined | null>;
 
 export class InTouchHttpClient implements InTouchApi {
   readonly name = 'intouch';
+  /** Matters as last read from the list: the API has no read-one, so a matter's primary client and header come from here. */
+  private matters = new Map<string, { c: InTouchCase; raw: unknown }>();
+  /** Whether InTouch takes ordering by last update (unknown until asked; a refusal falls back to unordered). */
+  private ordered: boolean | null = null;
 
   constructor(
     private cfg: InTouchClientConfig,
@@ -85,11 +91,20 @@ export class InTouchHttpClient implements InTouchApi {
 
   // ───────────── transport ─────────────
 
-  private async request<T>(method: string, path: string, body?: unknown, opts: { raw?: boolean; query?: Record<string, string | number | undefined | null> } = {}): Promise<T> {
+  private url(path: string, query?: Query): string {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(query ?? {})) {
+      if (v === undefined || v === null || v === '') continue;
+      for (const x of Array.isArray(v) ? v : [v]) qs.append(k, String(x));
+    }
+    const q = qs.toString();
+    return `${this.cfg.apiBaseUrl.replace(/\/+$/, '')}${path}${q ? `?${q}` : ''}`;
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown, opts: { query?: Query; multipart?: { boundary: string; bytes: Buffer } } = {}): Promise<T> {
     const max = this.cfg.maxRetries ?? 3;
     const backoff = this.cfg.backoffMs ?? 500;
-    const qs = opts.query ? Object.entries(opts.query).filter(([, v]) => v !== undefined && v !== null && v !== '') : [];
-    const url = `${this.cfg.apiBaseUrl.replace(/\/+$/, '')}${path}${qs.length ? `?${new URLSearchParams(qs.map(([k, v]) => [k, String(v)]))}` : ''}`;
+    const url = this.url(path, opts.query);
     if (!this.cfg.apiToken) throw new InTouchError('InTouch is not connected for this firm — connect it from the integrations page.', 503, false);
     for (let attempt = 0; ; attempt++) {
       let res: HttpResponse;
@@ -98,10 +113,10 @@ export class InTouchHttpClient implements InTouchApi {
           method,
           headers: {
             [INTOUCH_API_TOKEN_HEADER]: this.cfg.apiToken,
-            accept: opts.raw ? '*/*' : 'application/json',
-            ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+            accept: 'application/json',
+            ...(opts.multipart ? { 'content-type': `multipart/form-data; boundary=${opts.multipart.boundary}` } : body !== undefined ? { 'content-type': 'application/json; charset=utf-8' } : {}),
           },
-          body: body !== undefined ? JSON.stringify(body) : undefined,
+          body: opts.multipart ? opts.multipart.bytes : body !== undefined ? JSON.stringify(body) : undefined,
         });
       } catch (err) {
         if (err instanceof InTouchError) throw err;
@@ -117,122 +132,161 @@ export class InTouchHttpClient implements InTouchApi {
         await sleep(Number.isFinite(ra) && ra > 0 ? ra * 1000 : backoff * 2 ** attempt);
         continue;
       }
-      if (res.status >= 400) throw new InTouchError(`InTouch rejected the request (${res.status}): ${(await res.text()).slice(0, 300)}`, res.status, false);
-      if (opts.raw) return { bytes: Buffer.from(await res.arrayBuffer()), headers: res.headers } as unknown as T;
       const text = await res.text();
-      return (text ? JSON.parse(text) : null) as T;
+      if (res.status >= 400) {
+        let why = text.slice(0, 300);
+        try { const j = JSON.parse(text) as { message?: string; errors?: string[] }; why = [j.message, ...(j.errors ?? [])].filter(Boolean).join('; ') || why; } catch { /* not JSON */ }
+        throw new InTouchError(`InTouch rejected the request (${res.status}): ${why}`, res.status, false);
+      }
+      return unwrap(text ? JSON.parse(text) : null) as T;
     }
   }
 
-  /** List responses: an array, or { items | data | results | cases | documents, next | cursor }. */
-  private page<T>(body: unknown, map: (raw: unknown) => T, requested: number, cursor: string | null): InTouchPage<T> {
-    const arr = Array.isArray(body) ? body : ((pick(body, ['items', 'data', 'results', 'cases', 'documents', 'records']) as unknown[] | undefined) ?? []);
-    const explicit = pick(body, ['next', 'nextCursor', 'nextPageToken', 'nextLink', 'continuationToken']);
-    let next: string | null = explicit ? String(explicit) : null;
-    if (!next && !Array.isArray(body)) {
-      const total = Number(pick(body, ['total', 'totalCount', 'count']) ?? NaN);
-      const offset = Number(cursor ?? 0);
-      if (Number.isFinite(total) && offset + arr.length < total) next = String(offset + arr.length);
-    }
-    // An offset-paged API with no envelope: a full page implies there may be more.
-    if (!next && Array.isArray(body) && arr.length >= requested) next = String(Number(cursor ?? 0) + arr.length);
-    return { items: arr.map(map), next };
-  }
-
-  private listQuery(opts?: InTouchListOptions) {
-    const limit = opts?.limit ?? this.cfg.pageSize ?? 100;
-    return { limit, cursor: opts?.cursor ?? undefined, offset: opts?.cursor ?? undefined, updatedSince: opts?.updatedSince ?? undefined };
+  private pageSize(opts?: InTouchListOptions) {
+    return opts?.limit ?? this.cfg.pageSize ?? 100;
   }
 
   // ───────────── resources ─────────────
 
   async account(): Promise<InTouchAccount> {
-    const body = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.account);
+    const data = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.matters, undefined, { query: { page: 1, pageSize: 1 } });
     // Everywhere else a 404 is "no such thing"; here it means the address is wrong.
-    if (!body) throw new InTouchError('InTouch did not recognise that address.', 404, false);
-    return toAccount(body);
+    if (data === null) throw new InTouchError('InTouch did not recognise that address.', 404, false);
+    const first = ((pick(data, ['matters']) as unknown[] | undefined) ?? [])[0];
+    const team = first ? (pick(first, ['feeEarnerTeamName']) as string | undefined) : undefined;
+    return { id: '', name: team ? `InTouch · ${team}` : 'InTouch', reference: null };
   }
 
+  /**
+   * One page of matters, newest change first where InTouch will order them. With `updatedSince`,
+   * the page stops at the first matter older than it and says there is nothing after: InTouch has
+   * no "changed since" filter, so this is how an incremental sync stays short.
+   */
   async listCases(opts?: InTouchListOptions): Promise<InTouchPage<InTouchCase>> {
-    const q = this.listQuery(opts);
-    const body = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.cases, undefined, { query: q });
-    return this.page(body, toCase, q.limit, opts?.cursor ?? null);
+    const pageSize = this.pageSize(opts);
+    const page = Number(opts?.cursor ?? 1) || 1;
+    const read = async (ordered: boolean) => this.request<unknown>('GET', INTOUCH_ENDPOINTS.matters, undefined, { query: { page, pageSize, ...(ordered ? { orderBy: 'lastUpdated', orderByDirection: 'desc' } : {}) } });
+    let data: unknown;
+    if (this.ordered !== false) {
+      try { data = await read(true); this.ordered = true; } catch (err) {
+        if (!(err instanceof InTouchError) || err.status !== 400) throw err;
+        this.ordered = false;
+        data = await read(false);
+      }
+    } else data = await read(false);
+    const raws = (pick(data, ['matters', 'items']) as unknown[] | undefined) ?? (Array.isArray(data) ? data : []);
+    const items: InTouchCase[] = [];
+    let older = false;
+    for (const raw of raws) {
+      const c = toCase(raw);
+      if (!c.id) continue;
+      this.matters.set(c.id, { c, raw });
+      if (opts?.updatedSince && this.ordered && c.updatedAt && c.updatedAt < opts.updatedSince) { older = true; break; }
+      if (opts?.updatedSince && c.updatedAt && c.updatedAt < opts.updatedSince) continue;
+      items.push(c);
+    }
+    const more = !older && raws.length >= pageSize && page < (this.cfg.maxPages ?? 50);
+    return { items, next: more ? String(page + 1) : null };
   }
 
+  /** A matter by its guid: from what the list showed, else the newest pages of the list (a webhook's matter has just changed, so it is near the top). */
   async getCase(id: string): Promise<InTouchCase | null> {
-    const body = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.case(id));
-    return body ? toCase(body) : null;
+    const hit = this.matters.get(id);
+    if (hit) return hit.c;
+    let cursor: string | null = '1';
+    for (let n = 0; cursor && n < 5; n++) {
+      const page: InTouchPage<InTouchCase> = await this.listCases({ cursor, limit: 100 });
+      const found = page.items.find((c) => c.id === id);
+      if (found) return found;
+      cursor = page.next;
+    }
+    return null;
   }
 
   async caseParties(caseId: string): Promise<InTouchParty[]> {
-    const body = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.caseParties(caseId));
-    const arr = Array.isArray(body) ? body : ((pick(body, ['items', 'data', 'parties', 'results']) as unknown[] | undefined) ?? []);
-    return arr.map((r) => toParty(r, caseId));
-  }
-
-  async identityChecks(caseId: string): Promise<InTouchIdentityCheck[]> {
-    const body = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.caseIdentityChecks(caseId));
-    const arr = Array.isArray(body) ? body : ((pick(body, ['items', 'data', 'checks', 'identityChecks', 'results']) as unknown[] | undefined) ?? []);
-    return arr.map((r) => toIdentityCheck(r, caseId));
-  }
-
-  async getIdentityCheck(id: string): Promise<InTouchIdentityCheck | null> {
-    const body = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.identityCheck(id));
-    return body ? toIdentityCheck(body, String(pick(body, ['caseId', 'case.id']) ?? '')) : null;
-  }
-
-  async forms(caseId: string): Promise<InTouchForm[]> {
-    const body = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.caseForms(caseId));
-    const arr = Array.isArray(body) ? body : ((pick(body, ['items', 'data', 'forms', 'results']) as unknown[] | undefined) ?? []);
-    return arr.map((r) => toForm(r, caseId));
-  }
-
-  async getForm(id: string): Promise<InTouchForm | null> {
-    const body = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.form(id));
-    return body ? toForm(body, String(pick(body, ['caseId', 'case.id']) ?? '')) : null;
+    if (!this.matters.has(caseId)) await this.getCase(caseId);
+    const raw = this.matters.get(caseId)?.raw;
+    const p = raw ? primaryClient(raw, caseId) : null;
+    return p ? [p] : [];
   }
 
   async listDocuments(caseId: string, opts?: InTouchListOptions): Promise<InTouchPage<InTouchDocument>> {
-    const q = this.listQuery(opts);
-    const body = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.caseDocuments(caseId), undefined, { query: q });
-    return this.page(body, (r) => toDocument(r, caseId), q.limit, opts?.cursor ?? null);
+    const pageSize = this.pageSize(opts);
+    const page = Number(opts?.cursor ?? 1) || 1;
+    const data = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.folder(caseId), undefined, { query: { page, pageSize } });
+    const raws = (pick(data, ['items']) as unknown[] | undefined) ?? (Array.isArray(data) ? data : []);
+    const items = raws.map((r) => toDocument(r, caseId)).filter((d): d is InTouchDocument => !!d && !!d.id);
+    return { items, next: raws.length >= pageSize && page < (this.cfg.maxPages ?? 50) ? String(page + 1) : null };
   }
 
-  async getDocument(id: string): Promise<InTouchDocument | null> {
-    const body = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.document(id));
-    return body ? toDocument(body, String(pick(body, ['caseId', 'case.id']) ?? '')) : null;
-  }
-
-  async downloadDocument(id: string): Promise<{ bytes: Buffer; mimeType: string | null; fileName: string | null }> {
-    const res = await this.request<{ bytes: Buffer; headers: Record<string, string> }>('GET', INTOUCH_ENDPOINTS.documentDownload(id), undefined, { raw: true });
+  /**
+   * The file's bytes: InTouch hands out a download URL, which is fetched as it is. The firm's API
+   * key is never sent to it — it is a link to stored content, not InTouch's API.
+   */
+  async downloadDocument(id: string, caseId: string): Promise<{ bytes: Buffer; mimeType: string | null; fileName: string | null }> {
+    const data = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.downloadUrl(caseId, id));
+    const link = pick(data, ['downloadUrl', 'url']);
+    if (typeof link !== 'string' || !/^https:\/\//i.test(link)) throw new InTouchError('InTouch did not give a download link for that file.', 502, false);
+    const res = await this.transport(link, { method: 'GET', headers: { accept: '*/*' } });
+    if (res.status >= 400) throw new InTouchError(`The file could not be downloaded (${res.status}).`, res.status, res.status >= 500);
     const disposition = res.headers['content-disposition'] ?? '';
     const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
-    return { bytes: res.bytes, mimeType: res.headers['content-type'] ?? null, fileName: m ? decodeURIComponent(m[1]) : null };
+    return { bytes: Buffer.from(await res.arrayBuffer()), mimeType: res.headers['content-type'] ?? null, fileName: m ? decodeURIComponent(m[1]) : null };
   }
 
-  async pushMilestone(caseId: string, milestone: InTouchMilestone, note?: string | null, at?: string | null): Promise<void> {
-    await this.request<unknown>('POST', INTOUCH_ENDPOINTS.caseMilestones(caseId), milestoneBody(milestone, note, at));
+  async tasks(caseId: string): Promise<InTouchTask[]> {
+    const out: InTouchTask[] = [];
+    for (let page = 1; page <= 10; page++) {
+      const data = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.tasks(caseId), undefined, { query: { page } });
+      const raws = (pick(data, ['tasks', 'items']) as unknown[] | undefined) ?? [];
+      out.push(...raws.map(toTask).filter((t) => t.id));
+      // The task list's page size is InTouch's own; a short or empty page is the last.
+      if (raws.length < 20) break;
+    }
+    return out;
   }
 
-  async requestIdentityCheck(caseId: string, partyId: string): Promise<{ id: string }> {
-    const body = await this.request<unknown>('POST', INTOUCH_ENDPOINTS.requestIdentityCheck(caseId), { partyId });
-    return { id: String(pick(body, ['id', 'checkId', 'identityCheckId']) ?? '') };
+  async pushMilestone(caseId: string, milestone: InTouchMilestone, note?: string | null): Promise<'task' | 'note'> {
+    const task = taskForMilestone(milestone, await this.tasks(caseId));
+    if (task) {
+      await this.request<unknown>('POST', INTOUCH_ENDPOINTS.completeTask(task.id));
+      return 'task';
+    }
+    await this.addNote(caseId, `CONVEYi · ${MILESTONE_WORDS[milestone]}${note ? `: ${note}` : ''}`);
+    return 'note';
   }
 
+  /** The upload's body format is not in InTouch's definition: multipart form data with the file under "file". */
   async uploadDocument(caseId: string, file: { fileName: string; mimeType: string; bytes: Buffer; category?: string }): Promise<{ id: string }> {
-    const body = await this.request<unknown>('POST', INTOUCH_ENDPOINTS.uploadDocument(caseId), { fileName: file.fileName, mimeType: file.mimeType, category: file.category ?? 'conveyi', content: file.bytes.toString('base64') });
-    const id = (body as { id?: unknown; document?: { id?: unknown } } | null)?.id ?? (body as { document?: { id?: unknown } } | null)?.document?.id;
-    if (typeof id !== 'string' && typeof id !== 'number') throw new InTouchError('InTouch did not return an id for the uploaded document.', 502);
-    return { id: String(id) };
+    const boundary = `----conveyi${this.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+    const safe = file.fileName.replace(/["\r\n]/g, '_');
+    const bytes = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safe}"\r\nContent-Type: ${file.mimeType || 'application/octet-stream'}\r\n\r\n`),
+      file.bytes,
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+    await this.request<unknown>('POST', INTOUCH_ENDPOINTS.uploadFile(caseId), undefined, { query: { overwrite: false, feeEarnerReview: false, label: [file.category ?? 'CONVEYi'] }, multipart: { boundary, bytes } });
+    // The upload returns nothing: InTouch's id for the file is read back from the folder, so the next sync knows it is ours.
+    const page = await this.listDocuments(caseId, { limit: 50 });
+    const mine = page.items.filter((d) => d.fileName === file.fileName || d.fileName === safe).sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))[0];
+    return { id: mine?.id ?? `name:${file.fileName}` };
   }
 
   async addNote(caseId: string, text: string): Promise<void> {
-    await this.request<unknown>('POST', INTOUCH_ENDPOINTS.caseNotes(caseId), { text, source: 'CONVEYi' });
+    await this.request<unknown>('POST', INTOUCH_ENDPOINTS.fileNote(caseId), { htmlContent: toHtml(text).slice(0, 100_000), label1: 'CONVEYi' });
   }
 
-  async requestForm(caseId: string, code: string): Promise<{ id: string }> {
-    const body = await this.request<unknown>('POST', INTOUCH_ENDPOINTS.requestForm(caseId), { code });
-    return { id: String(pick(body, ['id', 'formId']) ?? '') };
+  async fileEmail(caseId: string, email: { at: string; subject: string; text: string; from?: { email: string; name?: string | null } | null; to?: Array<{ email: string; name?: string | null }> }): Promise<{ id: string | null }> {
+    const addr = (a: { email: string; name?: string | null }) => ({ email: a.email.slice(0, 120), ...(a.name ? { displayName: a.name.slice(0, 200) } : {}) });
+    const data = await this.request<unknown>('POST', INTOUCH_ENDPOINTS.fileEmail(caseId), {
+      emailDateTime: new Date(email.at).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      htmlContent: toHtml(email.text),
+      subject: email.subject.slice(0, 1000),
+      ...(email.from ? { from: addr(email.from) } : {}),
+      ...(email.to?.length ? { to: email.to.map(addr) } : {}),
+    });
+    const id = pick(data, ['matterEmailGuid']);
+    return { id: typeof id === 'string' ? id : null };
   }
 }
 

@@ -46,11 +46,13 @@ test('documents go into the InTouch case, never drafts or raw bank data, and are
   store.opts.notes = false;
   const r = await writeBackToInTouch(api, store, TENANT, { matterId: MATTER, intouchCaseId: caseId }, live, () => {});
   assert.equal(r.documents, 1);
-  const sent = itouch.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/documents'));
+  const sent = itouch.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/files'));
   assert.equal(sent.length, 1);
-  assert.equal((sent[0].body as { fileName: string }).fileName, 'Report on title.docx');
-  assert.equal(Buffer.from((sent[0].body as { content: string }).content, 'base64').toString(), 'bytes of d1');
-  assert.ok(store.docs[0].sentAs, 'stamped with InTouch\'s id');
+  const multipart = (sent[0].body as Buffer).toString('latin1');
+  assert.match(multipart, /name="file"; filename="Report on title\.docx"/);
+  assert.match(multipart, /bytes of d1/);
+  assert.deepEqual(sent[0].query.label, ['conveyi']);
+  assert.ok(store.docs[0].sentAs && !store.docs[0].sentAs.startsWith('name:'), 'stamped with InTouch\'s own id, read back from the folder');
   assert.equal(store.docs[1].sentAs, null, 'a draft stays here');
   assert.equal(store.docs[2].sentAs, null, 'raw bank data stays here');
   const again = await writeBackToInTouch(api, store, TENANT, { matterId: MATTER, intouchCaseId: caseId }, live, () => {});

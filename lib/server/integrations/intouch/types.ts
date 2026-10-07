@@ -64,37 +64,11 @@ export interface InTouchParty {
   isCompany: boolean;
 }
 
-/** An identity / AML check InTouch ran on a party. */
-export type InTouchIdOutcome = 'clear' | 'refer' | 'fail' | 'pending' | 'unknown';
-
-export interface InTouchIdentityCheck {
+/** A task on an InTouch matter. Completing the right one is how the client portal moves. */
+export interface InTouchTask {
   id: string;
-  caseId: string;
-  partyId: string | null;
-  partyName: string | null;
-  outcome: InTouchIdOutcome;
-  /** InTouch's own provider name, where it exposes one (it resells a bureau check). */
-  provider: string | null;
-  completedAt: string | null;
-  /** Everything the check flagged, already normalised to the engine's flag shape. */
-  flags: Array<{ code: string; severity: 'info' | 'low' | 'medium' | 'high'; description: string }>;
-  /** The PDF/report, when InTouch exposes one as a document. */
-  documentId: string | null;
-  raw: Record<string, unknown>;
-}
-
-/** A form the client completed online (TA6, TA7, TA10, TA13, LPE1). */
-export interface InTouchForm {
-  id: string;
-  caseId: string;
-  /** Normalised to the engine's code (TA6…), never InTouch's own slug. */
-  code: string;
-  status: 'requested' | 'in_progress' | 'completed' | 'unknown';
-  completedAt: string | null;
-  /** The generated PDF of the completed form, when there is one. */
-  documentId: string | null;
-  /** The answers, as given. Kept verbatim: the engine quotes them, never guesses. */
-  answers: Record<string, unknown>;
+  name: string;
+  completed: boolean;
 }
 
 export interface InTouchDocument {
@@ -117,9 +91,11 @@ export interface InTouchMilestoneUpdate {
 }
 
 export interface InTouchListOptions {
+  /** The page to read (InTouch pages from 1), as a string so it rides the sync's cursor. */
   cursor?: string | null;
   limit?: number;
-  /** Only things changed since this ISO timestamp — the incremental sync's watermark. */
+  /** Only things changed since this ISO timestamp — the incremental sync's watermark. InTouch has no
+   *  such filter: the list is read newest-changed first and stops at the first older matter. */
   updatedSince?: string | null;
 }
 
@@ -153,7 +129,7 @@ export interface InTouchConnectionRow {
   accountName: string | null;
   status: InTouchConnectionStatus;
   statusDetail: string | null;
-  /** The per-firm URL the admin pastes into InTouch (Settings > API > Webhooks). Null until credentials are saved. */
+  /** The per-firm URL the admin pastes into InTouch (API Management > Webhooks). Null until credentials are saved. */
   webhookUrl: string | null;
   lastSyncAt: string | null;
   lastSyncDetail: InTouchSyncSummary | null;
@@ -169,8 +145,6 @@ export interface InTouchSyncSummary {
   cases: number;
   created: number;
   parties: number;
-  identityChecks: number;
-  forms: number;
   documents: number;
   milestones: number;
   /** Written back to InTouch (when the firm has it on). */

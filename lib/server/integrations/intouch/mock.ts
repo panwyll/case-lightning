@@ -1,58 +1,59 @@
 /**
- * An in-memory InTouch that serves exactly the endpoint map in endpoints.ts.
+ * An in-memory InTouch that serves the Public Customer Matter API as endpoints.ts maps it:
+ * the { success, message, errors, data } envelope, the paged matters list, tasks and their
+ * completion, the matter folder with its download links, file upload (multipart), notes and
+ * filed emails.
  *
- * This is not a convenience: it is how the connector is exercised end to end while the
- * real reference is inside the firm's InTouch account. The tests drive the SAME HTTP
- * client against this transport, so the API-key header, retries, pagination and the
- * mapping seam are all real. When the reference opens, the same tests re-run against
- * InTouch and any disagreement shows up as a mapping fix, not a rewrite.
+ * The tests drive the SAME HTTP client against this transport, so the API-key header,
+ * retries, paging, the envelope and the mapping seam are all real. A download link is served
+ * from a separate host, as InTouch's are, so the tests also prove the firm's key is never sent
+ * to it.
  */
 import { INTOUCH_API_TOKEN_HEADER, INTOUCH_ENDPOINTS } from './endpoints';
 import type { HttpResponse, HttpTransport } from './client';
 
 export interface MockCaseSeed {
-  id?: string;
+  guid?: string;
   reference?: string;
-  status?: string;
-  type?: string;
-  tenure?: string;
-  propertyAddress?: string;
+  state?: string;
+  templateName?: string;
+  addressLine1?: string;
+  addressLine2?: string;
   postcode?: string;
-  price?: string | number;
-  feeEarner?: { id?: string; name?: string; email?: string };
-  firmReference?: string;
-  parties?: Array<Record<string, unknown>>;
-  identityChecks?: Array<Record<string, unknown>>;
-  forms?: Array<Record<string, unknown>>;
-  documents?: Array<Record<string, unknown>>;
-  updatedAt?: string;
+  primaryClientForename?: string;
+  primaryClientSurname?: string;
+  primaryClientEmail?: string;
+  feeEarnerFullName?: string;
+  feeEarnerTeamName?: string;
+  lastUpdated?: string;
+  tasks?: string[];
 }
 
 interface Stored {
   raw: Record<string, unknown>;
-  parties: Array<Record<string, unknown>>;
-  identityChecks: Array<Record<string, unknown>>;
-  forms: Array<Record<string, unknown>>;
-  documents: Array<Record<string, unknown>>;
-  milestones: Array<Record<string, unknown>>;
-  notes?: Array<{ text: string }>;
+  tasks: Array<{ guid: string; name: string; state: string; isCompleted: boolean; completedOn: string | null }>;
+  folder: Array<Record<string, unknown>>;
+  notes: Array<{ htmlContent: string; label1?: string }>;
+  emails: Array<Record<string, unknown>>;
 }
 
-const json = (status: number, body: unknown): HttpResponse => ({
-  status,
-  headers: { 'content-type': 'application/json' },
-  text: async () => JSON.stringify(body),
-  arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(body)).buffer as ArrayBuffer,
-});
+const DOWNLOAD_HOST = 'https://files.mock-intouch.test';
+
+const envelope = (status: number, data: unknown, message = ''): HttpResponse => {
+  const body = { success: status < 400, message, errors: status < 400 ? [] : [message || 'error'], additionalData: {}, ...(data === undefined ? {} : { data }) };
+  return { status, headers: { 'content-type': 'application/json' }, text: async () => JSON.stringify(body), arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(body)).buffer as ArrayBuffer };
+};
 
 export class MockInTouch {
   readonly cases = new Map<string, Stored>();
   readonly bytes = new Map<string, Buffer>();
   /** Every request the client made — tests assert on paths, not on internals. */
-  readonly calls: Array<{ method: string; path: string; body?: unknown }> = [];
+  readonly calls: Array<{ method: string; path: string; query: Record<string, string[]>; body?: unknown; headers: Record<string, string> }> = [];
   /** Flip to make the next N requests fail, to exercise retry and backoff. */
   failNext = 0;
   failStatus = 500;
+  /** Make the list refuse orderBy (InTouch's allowed values are not documented). */
+  rejectOrderBy = false;
   private seq = 0;
 
   /** `apiToken`: the only key this InTouch accepts in `x-intouch-o-token`. */
@@ -60,78 +61,59 @@ export class MockInTouch {
 
   private id(prefix: string): string {
     this.seq += 1;
-    return `${prefix}-${String(this.seq).padStart(4, '0')}`;
+    return `${prefix}-0000-4000-8000-${String(this.seq).padStart(12, '0')}`;
   }
 
   seed(seed: MockCaseSeed = {}): string {
-    const id = seed.id ?? this.id('case');
+    const guid = seed.guid ?? this.id('aaaaaaaa');
     const raw: Record<string, unknown> = {
-      id,
-      reference: seed.reference ?? `IT-${id.toUpperCase()}`,
-      status: seed.status ?? 'active',
-      type: seed.type ?? 'purchase',
-      tenure: seed.tenure ?? 'freehold',
-      propertyAddress: seed.propertyAddress ?? '12 Example Street, Reading',
+      guid,
+      reference: seed.reference ?? `IT${this.seq}`,
+      itrCode: `ITR${this.seq}`,
+      state: seed.state ?? 'Live',
+      templateGuid: this.id('bbbbbbbb'),
+      templateName: seed.templateName ?? 'Freehold Purchase',
+      addressLine1: seed.addressLine1 ?? '12 Example Street',
+      addressLine2: seed.addressLine2 ?? 'Reading',
+      addressLine3: '',
+      addressLine4: '',
       postcode: seed.postcode ?? 'RG1 1AA',
-      price: seed.price ?? '£425,000',
-      feeEarner: seed.feeEarner ?? { id: 'staff-1', name: 'Alice Okafor', email: 'alice@demo-conveyancing.co.uk' },
-      firmReference: seed.firmReference ?? null,
-      createdAt: '2026-09-01T09:00:00.000Z',
-      updatedAt: seed.updatedAt ?? '2026-09-20T09:00:00.000Z',
+      primaryClientForename: seed.primaryClientForename ?? 'Priya',
+      primaryClientMiddleName: '',
+      primaryClientSurname: seed.primaryClientSurname ?? 'Okafor',
+      primaryClientOrganisation: '',
+      primaryClientEmail: seed.primaryClientEmail ?? 'priya@example.com',
+      primaryClientPhone: '07700 900123',
+      feeEarnerFullName: seed.feeEarnerFullName ?? 'Alice Okafor',
+      feeEarnerTeamName: seed.feeEarnerTeamName ?? 'Residential',
+      createdOn: '2026-09-01T09:00:00Z',
+      lastUpdated: seed.lastUpdated ?? '2026-09-20T09:00:00Z',
     };
-    this.cases.set(id, {
-      raw,
-      parties: seed.parties ?? [{ id: this.id('party'), role: 'client', firstName: 'Priya', lastName: 'Okafor', email: 'priya@example.com' }],
-      identityChecks: seed.identityChecks ?? [],
-      forms: seed.forms ?? [],
-      documents: seed.documents ?? [],
-      milestones: [],
-    });
-    return id;
+    const tasks = (seed.tasks ?? ['Client onboarding', 'Searches ordered', 'Enquiries raised', 'Report on title sent', 'Ready to exchange', 'Exchange of contracts', 'Completion']).map((name) => ({ guid: this.id('cccccccc'), name, state: 'Open', isCompleted: false, completedOn: null }));
+    this.cases.set(guid, { raw, tasks, folder: [], notes: [], emails: [] });
+    return guid;
   }
 
-  /** Add a completed identity check to a case (as InTouch would after the client finishes). */
-  addIdentityCheck(caseId: string, input: { outcome?: string; partyId?: string; partyName?: string; flags?: Array<Record<string, unknown>>; withReport?: boolean } = {}): string {
-    const c = this.cases.get(caseId)!;
-    const id = this.id('idcheck');
-    let documentId: string | null = null;
-    if (input.withReport !== false) documentId = this.addDocument(caseId, { fileName: 'Identity report.pdf', category: 'id_report', uploadedBy: 'intouch' });
-    c.identityChecks.push({
-      id,
-      outcome: input.outcome ?? 'clear',
-      partyId: input.partyId ?? (c.parties[0]?.id as string | undefined) ?? null,
-      partyName: input.partyName ?? 'Priya Okafor',
-      provider: 'InTouch Verify',
-      completedAt: '2026-09-20T10:00:00.000Z',
-      flags: input.flags ?? [],
-      documentId,
-    });
-    return id;
+  /** A file in the matter's folder (the ID report, a completed TA6, a client's upload). */
+  addFile(caseGuid: string, input: { name?: string; label?: string; type?: string; content?: string; createdOn?: string } = {}): string {
+    const c = this.cases.get(caseGuid)!;
+    const guid = this.id('dddddddd');
+    const name = input.name ?? 'Client upload.pdf';
+    c.folder.push({ guid, type: input.type ?? 'File', description: name, fields: { fileName: name, ...(input.label ? { label: input.label } : {}) }, getDownloadUrl: `${INTOUCH_ENDPOINTS.downloadUrl(caseGuid, guid)}`, createdOn: input.createdOn ?? '2026-09-20T11:05:00Z', lastUpdated: input.createdOn ?? '2026-09-20T11:05:00Z' });
+    this.bytes.set(guid, Buffer.from(input.content ?? `%PDF-1.4 mock ${guid}`));
+    return guid;
   }
 
-  addForm(caseId: string, input: { code?: string; status?: string; answers?: Record<string, unknown>; withPdf?: boolean } = {}): string {
-    const c = this.cases.get(caseId)!;
-    const id = this.id('form');
-    const code = input.code ?? 'ta6';
-    const documentId = input.withPdf === false ? null : this.addDocument(caseId, { fileName: `${code.toUpperCase()} completed.pdf`, category: 'form', uploadedBy: 'client' });
-    c.forms.push({ id, code, status: input.status ?? 'completed', completedAt: '2026-09-20T11:00:00.000Z', documentId, answers: input.answers ?? { disputes: 'No', alterations: 'Conservatory 2019, building regs certificate held' } });
-    return id;
+  touch(caseGuid: string, at: string): void {
+    this.cases.get(caseGuid)!.raw.lastUpdated = at;
   }
 
-  addDocument(caseId: string, input: { fileName?: string; category?: string; uploadedBy?: string; content?: string } = {}): string {
-    const c = this.cases.get(caseId)!;
-    const id = this.id('doc');
-    c.documents.push({ id, fileName: input.fileName ?? 'Client upload.pdf', mimeType: 'application/pdf', size: 2048, category: input.category ?? 'client_upload', uploadedBy: input.uploadedBy ?? 'client', createdAt: '2026-09-20T11:05:00.000Z' });
-    this.bytes.set(id, Buffer.from(input.content ?? `%PDF-1.4 mock ${id}`));
-    return id;
+  notesFor(caseGuid: string): string[] {
+    return (this.cases.get(caseGuid)?.notes ?? []).map((n) => n.htmlContent);
   }
 
-  notesFor(caseId: string): string[] {
-    return (this.cases.get(caseId)?.notes ?? []).map((n) => n.text);
-  }
-
-  milestonesFor(caseId: string): Array<Record<string, unknown>> {
-    return this.cases.get(caseId)?.milestones ?? [];
+  completedTasks(caseGuid: string): string[] {
+    return (this.cases.get(caseGuid)?.tasks ?? []).filter((t) => t.isCompleted).map((t) => t.name);
   }
 
   /** A webhook body in InTouch's documented envelope (flat keys with literal dots). */
@@ -143,100 +125,77 @@ export class MockInTouch {
   transport: HttpTransport = async (url, init) => {
     const u = new URL(url);
     const path = u.pathname;
-    const body = init.body ? safeParse(String(init.body)) : undefined;
-    this.calls.push({ method: init.method, path, body });
+    const query: Record<string, string[]> = {};
+    u.searchParams.forEach((v, k) => (query[k] ??= []).push(v));
+    const isJson = (init.headers['content-type'] ?? '').startsWith('application/json');
+    const body = init.body && isJson ? JSON.parse(String(init.body)) : init.body;
+    this.calls.push({ method: init.method, path, query, body, headers: init.headers });
+
+    // A download link: another host, no API key wanted (and none should arrive).
+    if (`${u.protocol}//${u.host}` === DOWNLOAD_HOST) {
+      const bytes = this.bytes.get(path.slice(1));
+      if (!bytes) return { status: 404, headers: {}, text: async () => '', arrayBuffer: async () => new ArrayBuffer(0) };
+      return { status: 200, headers: { 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${path.slice(1)}.pdf"` }, text: async () => bytes.toString('utf8'), arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer };
+    }
 
     if (this.failNext > 0) {
       this.failNext -= 1;
-      return json(this.failStatus, { error: 'mock failure' });
+      return envelope(this.failStatus, undefined, 'mock failure');
     }
-
     // Every request needs the firm's API key.
-    if ((init.headers[INTOUCH_API_TOKEN_HEADER] ?? '') !== (this.opts.apiToken ?? 'mock-key')) return json(401, { error: 'unauthorised' });
+    if ((init.headers[INTOUCH_API_TOKEN_HEADER] ?? '') !== (this.opts.apiToken ?? 'mock-key')) return envelope(401, undefined, 'unauthorised');
 
-    if (path === INTOUCH_ENDPOINTS.account) return json(200, { id: 'acct-1', name: 'Demo Conveyancing LLP', reference: 'DEMO' });
-
-    if (path === INTOUCH_ENDPOINTS.cases && init.method === 'GET') {
-      const since = u.searchParams.get('updatedSince');
-      const limit = Number(u.searchParams.get('limit') ?? 100);
-      const offset = Number(u.searchParams.get('cursor') ?? u.searchParams.get('offset') ?? 0);
-      const all = [...this.cases.values()].map((c) => c.raw).filter((r) => !since || String(r.updatedAt ?? '') > since);
-      const slice = all.slice(offset, offset + limit);
-      return json(200, { items: slice, total: all.length });
+    if (path === INTOUCH_ENDPOINTS.matters && init.method === 'GET') {
+      if (this.rejectOrderBy && query.orderBy) return envelope(400, undefined, `Invalid orderBy ${query.orderBy[0]}`);
+      const page = Number(query.page?.[0] ?? 1);
+      const size = Number(query.pageSize?.[0] ?? 50);
+      let all = [...this.cases.values()].map((c) => c.raw);
+      if (query.orderBy?.[0] === 'lastUpdated') all = all.sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)) * (query.orderByDirection?.[0] === 'asc' ? -1 : 1));
+      return envelope(200, { matters: all.slice((page - 1) * size, page * size) });
     }
 
-    // ── per-case resources ──
-    const caseMatch = /^\/api\/v1\/cases\/([^/]+)(\/.*)?$/.exec(path);
-    if (caseMatch) {
-      const id = decodeURIComponent(caseMatch[1]);
-      const rest = caseMatch[2] ?? '';
-      const c = this.cases.get(id);
-      if (!c) return json(404, { error: 'not found' });
-      if (rest === '' && init.method === 'GET') return json(200, c.raw);
-      if (rest === '/parties') return json(200, { items: c.parties });
-      if (rest === '/identity-checks' && init.method === 'GET') return json(200, { items: c.identityChecks });
-      if (rest === '/identity-checks' && init.method === 'POST') {
-        const newId = this.addIdentityCheck(id, { outcome: 'pending', partyId: (body as { partyId?: string })?.partyId, withReport: false });
-        return json(200, { id: newId });
+    const tm = /^\/api\/v2\/public\/mattertasks\/([^/]+)\/complete$/.exec(path);
+    if (tm && init.method === 'POST') {
+      for (const c of this.cases.values()) {
+        const t = c.tasks.find((x) => x.guid === decodeURIComponent(tm[1]));
+        if (t) { t.isCompleted = true; t.state = 'Complete'; t.completedOn = '2026-09-21T09:00:00Z'; return envelope(200, undefined); }
       }
-      if (rest === '/forms' && init.method === 'GET') return json(200, { items: c.forms });
-      if (rest === '/forms' && init.method === 'POST') {
-        const newId = this.addForm(id, { code: (body as { code?: string })?.code, status: 'requested', withPdf: false });
-        return json(200, { id: newId });
-      }
-      if (rest === '/documents' && init.method === 'GET') return json(200, { items: c.documents, total: c.documents.length });
-      if (rest === '/documents' && init.method === 'POST') {
-        const b = body as { fileName?: string; content?: string; category?: string };
-        const newId = this.addDocument(id, { fileName: b?.fileName, category: b?.category ?? 'conveyi', uploadedBy: 'conveyi', content: Buffer.from(b?.content ?? '', 'base64').toString('utf8') });
-        return json(201, { id: newId });
-      }
-      if (rest === '/notes' && init.method === 'POST') {
-        (c.notes ??= []).push({ text: String((body as { text?: string })?.text ?? '') });
-        return json(201, { ok: true });
-      }
-      if (rest === '/milestones' && init.method === 'POST') {
-        c.milestones.push({ ...(body as Record<string, unknown>), receivedAt: new Date().toISOString() });
-        return json(202, { ok: true });
-      }
+      return envelope(404, undefined, 'no such task');
     }
 
-    // ── document / form / check by id ──
-    const docDl = /^\/api\/v1\/documents\/([^/]+)\/download$/.exec(path);
-    if (docDl) {
-      const bytes = this.bytes.get(decodeURIComponent(docDl[1]));
-      if (!bytes) return json(404, { error: 'not found' });
-      return {
-        status: 200,
-        headers: { 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${decodeURIComponent(docDl[1])}.pdf"` },
-        text: async () => bytes.toString('utf8'),
-        arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-      };
-    }
-    const one = (re: RegExp, get: (c: Stored, id: string) => Record<string, unknown> | undefined) => {
-      const m = re.exec(path);
-      if (!m) return null;
-      const wanted = decodeURIComponent(m[1]);
-      for (const [caseId, c] of this.cases) {
-        const found = get(c, wanted);
-        if (found) return json(200, { ...found, caseId });
+    const mm = /^\/api\/v2\/public\/matters\/([^/]+)(\/.*)?$/.exec(path);
+    if (mm) {
+      const guid = decodeURIComponent(mm[1]);
+      const rest = mm[2] ?? '';
+      const c = this.cases.get(guid);
+      if (!c) return envelope(404, undefined, 'no such matter');
+      if (rest === '/tasks' && init.method === 'GET') return envelope(200, { tasks: c.tasks });
+      if (rest === '/folder/list' && init.method === 'GET') {
+        const page = Number(query.page?.[0] ?? 1);
+        const size = Number(query.pageSize?.[0] ?? 50);
+        return envelope(200, { items: c.folder.slice((page - 1) * size, page * size) });
       }
-      return json(404, { error: 'not found' });
-    };
-    const doc = one(/^\/api\/v1\/documents\/([^/]+)$/, (c, id) => c.documents.find((d) => d.id === id));
-    if (doc) return doc;
-    const form = one(/^\/api\/v1\/forms\/([^/]+)$/, (c, id) => c.forms.find((f) => f.id === id));
-    if (form) return form;
-    const check = one(/^\/api\/v1\/identity-checks\/([^/]+)$/, (c, id) => c.identityChecks.find((x) => x.id === id));
-    if (check) return check;
-
-    return json(404, { error: `mock InTouch has no route for ${init.method} ${path}` });
+      const dl = /^\/folder\/([^/]+)\/download-url$/.exec(rest);
+      if (dl && init.method === 'GET') {
+        const id = decodeURIComponent(dl[1]);
+        return this.bytes.has(id) ? envelope(200, { guid: id, downloadUrl: `${DOWNLOAD_HOST}/${id}` }) : envelope(404, undefined, 'no such item');
+      }
+      if (rest === '/files' && init.method === 'POST') {
+        const raw = Buffer.isBuffer(init.body) ? init.body.toString('latin1') : String(init.body ?? '');
+        const name = /filename="([^"]+)"/.exec(raw)?.[1] ?? 'upload';
+        const content = raw.split('\r\n\r\n').slice(1).join('\r\n\r\n').replace(/\r\n--[^\r\n]+--\r\n$/, '');
+        this.addFile(guid, { name, label: query.label?.[0], content, createdOn: '2026-09-22T10:00:00Z' });
+        return envelope(200, undefined);
+      }
+      if (rest === '/folder/notes' && init.method === 'POST') {
+        c.notes.push(body as { htmlContent: string; label1?: string });
+        return envelope(200, { matterNoteGuid: this.id('eeeeeeee') });
+      }
+      if (rest === '/folder/emails' && init.method === 'POST') {
+        c.emails.push(body as Record<string, unknown>);
+        return envelope(200, { matterEmailGuid: this.id('ffffffff') });
+      }
+    }
+    return envelope(404, undefined, `mock InTouch has no route for ${init.method} ${path}`);
   };
-}
-
-function safeParse(s: string): unknown {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return s;
-  }
 }

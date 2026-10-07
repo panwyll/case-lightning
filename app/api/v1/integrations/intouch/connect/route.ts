@@ -6,6 +6,7 @@ import { ok, fail } from '@/lib/server/http';
 import { InTouchHttpClient } from '@/lib/server/integrations/intouch/client';
 import { inTouchClientConfig, inTouchCredentials, inTouchWebhookUrl, markInTouchConnected, markInTouchError, saveInTouchCredentials } from '@/lib/server/integrations/intouch/adapters';
 import { InTouchError } from '@/lib/server/integrations/intouch/types';
+import { INTOUCH_DEFAULT_BASE_URL } from '@/lib/server/integrations/intouch/endpoints';
 import { writeAudit } from '@/lib/server/audit';
 
 export const runtime = 'nodejs';
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     const body = Body.parse(await req.json().catch(() => ({})));
 
     const saved = await inTouchCredentials(user.tenantId);
-    const apiBaseUrl = blank(body.apiBaseUrl) ?? saved?.apiBaseUrl ?? null;
+    const apiBaseUrl = blank(body.apiBaseUrl) ?? saved?.apiBaseUrl ?? INTOUCH_DEFAULT_BASE_URL;
     const apiToken = blank(body.apiToken) ?? saved?.apiToken ?? null;
     if (!apiBaseUrl || !apiToken) throw Object.assign(new Error('Enter the InTouch API Address and API Key.'), { status: 400 });
     let url: URL;
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest) {
 function inTouchRefusal(error: Error): string {
   if (error instanceof TypeError) return 'Could not reach InTouch at that address. Check the API Address.';
   const status = (error as InTouchError).status;
-  if (status === 401 || status === 403) return 'InTouch did not accept this API key. Generate one in InTouch under Settings > API.';
+  if (status === 401 || status === 403) return 'InTouch did not accept this API key. Generate one in InTouch under API Management > Keys.';
   if (status === 0) return 'Could not reach InTouch at that address. Check the API Address.';
   if (status === 404) return 'InTouch did not recognise that address. Check the API Address.';
   return `InTouch could not be connected (${status}). Try again shortly.`;

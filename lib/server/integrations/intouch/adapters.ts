@@ -23,7 +23,7 @@ import { enrolIfUntracked } from '../../engine/enrol';
 
 /**
  * A firm's own InTouch credentials: which InTouch host it is on, the API key it generated
- * in InTouch (Settings > API > Keys), and the key WE generated that authenticates its
+ * in InTouch (API Management > Keys), and the key WE generated that authenticates its
  * webhooks — InTouch does not sign deliveries, so the per-firm URL carries a secret.
  * Entered by the firm's admin on the InTouch page and stored encrypted
  * (intouch_connection.credentials_enc); INTOUCH_API_BASE_URL + INTOUCH_API_TOKEN are only
@@ -310,10 +310,16 @@ export class PgInTouchMirrorStore implements InTouchMirrorStore {
     });
   }
 
+  /** By email where InTouch gives one; InTouch's matter list gives only the fee earner's full name, so by name, and only when exactly one person at the firm has it. */
   async feeEarnerToUser(tenantId: string, fe: InTouchCase['feeEarner']): Promise<string | null> {
-    if (!fe?.email) return null;
-    const r = await runAsSystem(() => queryOne<{ id: string }>(`select id from app_user where tenant_id = $1 and lower(email) = lower($2)`, [tenantId, fe.email!]));
-    return r?.id ?? null;
+    if (fe?.email) {
+      const r = await runAsSystem(() => queryOne<{ id: string }>(`select id from app_user where tenant_id = $1 and lower(email) = lower($2)`, [tenantId, fe.email!]));
+      if (r) return r.id;
+    }
+    const name = fe?.name?.trim().replace(/\s+/g, ' ');
+    if (!name) return null;
+    const rows = await runAsSystem(() => query<{ id: string }>(`select id from app_user where tenant_id = $1 and lower(regexp_replace(trim(display_name), '\\s+', ' ', 'g')) = lower($2) limit 2`, [tenantId, name]));
+    return rows.length === 1 ? rows[0].id : null;
   }
 
   async seen(tenantId: string, kind: 'identity_check' | 'form' | 'document' | 'milestone', externalId: string): Promise<boolean> {
@@ -373,7 +379,7 @@ export async function inTouchSyncDeps(tenantId: string): Promise<InTouchSyncDeps
 
 /**
  * Where this firm's InTouch sends webhooks — the admin pastes it into InTouch under
- * Settings > API > Webhooks. `firm` says whose; `key` proves it, since InTouch does not sign.
+ * API Management > Webhooks. `firm` says whose; `key` proves it, since InTouch does not sign.
  */
 export const inTouchWebhookUrl = (tenantId: string, key: string) =>
   `${config.appUrl}/api/v1/integrations/intouch/webhook?firm=${encodeURIComponent(tenantId)}&key=${encodeURIComponent(key)}`;
