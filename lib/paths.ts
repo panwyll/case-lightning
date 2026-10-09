@@ -20,6 +20,8 @@ export const paths = {
   analytics: `${APP_BASE}/analytics`,
   /** The workload baseline: where the week goes, from the conveyancer's own mailbox (docs/workload-baseline.md). */
   baseline: `${APP_BASE}/baseline`,
+  /** EPA: the share of a conveyancer's time on work only a conveyancer can do, and what to automate next (docs/epa.md). */
+  efficiency: `${APP_BASE}/efficiency`,
   email: `${APP_BASE}/email`,
   decision: (eventId: string) => `${APP_BASE}/decisions/${eventId}`,
   /** Every open case as a list, to pick one from. */

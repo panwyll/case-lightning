@@ -7,6 +7,8 @@ import { EmailThread, emailShownId } from './EmailThread';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { ENGINE_CSS } from './ui';
+import { useAttention } from '@/app/shared/epa/useAttention';
+import { fromTask } from '@/lib/server/epa/taxonomy';
 import { KIND_LABEL, OPTION_HELP, OPTION_LABEL, OPTION_LABEL_BY_KIND, STAGE_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Citation, type DecisionDetail, type Engagement, type SourceDoc } from './types';
 import { X, Check, ChevronRight, Paperclip, Lock } from '@/app/shared/icons';
 
@@ -287,6 +289,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   // A proposal or a held clear is the engine's own text: nothing to read first. A document-backed decision waits for a scroll or a few seconds on the source.
   const engaged = d?.kind === 'proposal' || d?.kind === 'auto_clear' || scrolled || dwell >= UI_DWELL_MS;
   const isBank = d?.kind === 'bank_details';
+  // EPA (docs/epa.md §2): a decision opened on its own page is time on it; one open in place is counted by the list that opened it.
+  useAttention(!inline && d && pending ? { item: `task:${d.matterId}:${eventId}`, matterId: d.matterId, ...fromTask({ kind: d.taskKind ?? (d.kind === 'proposal' ? `proposal:${d.subject ?? ''}` : d.kind), chip: d.chip }) } : null);
   const noteLines = detail?.noteActions ?? null;
   const openQueries = detail?.openQueries ?? 0;
   const needsReason = (o: string) => (o !== 'approve' && o !== 'verify') || (o === 'approve' && openQueries > 0);

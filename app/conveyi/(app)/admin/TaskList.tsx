@@ -12,6 +12,8 @@ import { AddressAndSend } from '@/app/shared/engine/AddressAndSend';
 import { stepActionLabel, STEP_UPLOADS, directStep, uploadForStep, type UploadOutcome } from '@/app/shared/engine/stepUploads';
 import { type WorkItem , KIND_LABEL , pretty , chipLabel , quickApprovable } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
+import { useAttention } from '@/app/shared/epa/useAttention';
+import { fromTask } from '@/lib/server/epa/taxonomy';
 import { SEVERITY_LABEL } from '@/app/shared/engine/severity';
 import { ChevronRight, CheckCircle, Search, X } from '@/app/shared/icons';
 import { Waiting, WORK_CSS } from './EngineWork';
@@ -158,6 +160,16 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
   /** Every word typed matches the case (address, reference, clients) or the task itself. */
   const matches = useCallback((i: WorkItem) => { const hay = `${i.propertyAddress ?? ''} ${i.matterRef ?? ''} ${(i.clients ?? []).join(' ')} ${i.what} ${i.chip ?? ''}`.toLowerCase(); return q.trim().toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w)); }, [q]);
   const [open, setOpen] = useState<string | null>(null);
+  // EPA (docs/epa.md §2): the task open in place is what this person's time is on while they work on it.
+  const openItem = useMemo(() => {
+    if (!open || !data) return null;
+    const base = open.endsWith(':email') ? open.slice(0, -':email'.length) : open;
+    const i = [...data.do, ...data.escalate, ...data.waiting].find((w) => `${w.matterId}:${w.id}` === base);
+    if (!i) return null;
+    const work = open.endsWith(':email') ? { kind: 'client_questions' as const } : fromTask({ kind: i.kind ?? 'step', chip: i.chip ?? chipLabel(i.kind ?? '') });
+    return { item: `task:${base}`, matterId: i.matterId, ...work };
+  }, [open, data]);
+  useAttention(openItem);
   // Cases folded away, remembered in this browser.
   const [folded, setFolded] = useState<Set<string>>(new Set());
   useEffect(() => { try { setFolded(new Set(JSON.parse(localStorage.getItem('tl-folded') ?? '[]') as string[])); } catch { /* storage blocked */ } }, []);

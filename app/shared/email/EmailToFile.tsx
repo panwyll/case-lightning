@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshButton } from '@/app/shared/RefreshButton';
 import { api } from '@/app/shared/engine/api';
 import { paths } from '@/lib/paths';
+import { useAttention } from '@/app/shared/epa/useAttention';
 import { Paperclip, Check, X, Mail, AlertTriangle, Home, Loader } from '@/app/shared/icons';
 
 /**
@@ -143,6 +144,8 @@ export default function EmailToFile() {
   const [noMailbox, setNoMailbox] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sel, setSel] = useState<string | null>(null);
+  // EPA (docs/epa.md §2): an email open here is being filed to its case: admin time.
+  useAttention(sel ? { item: `email:${sel}`, kind: 'admin' } : null);
   const [tab, setTab] = useState<'cases' | 'bulk'>('cases');
   const [totals, setTotals] = useState<{ toFile: number; bulk: number } | null>(null);
   const [mailboxes, setMailboxes] = useState<Array<{ userId: string; name: string; self: boolean }>>([]);
