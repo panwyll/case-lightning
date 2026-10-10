@@ -1,7 +1,7 @@
 /** The attention timeline (docs/epa.md §2): each minute of a person's day to at most one item, worked cases checked by hand. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { attribute, estimateSpan, measure, type Span } from '../../../lib/server/epa/ledger';
+import { attribute, completionSpans, DEFAULT_LUNCH, measure, type Completion, type Span } from '../../../lib/server/epa/ledger';
 import { fromBaselineCategory, fromChip, fromTask } from '../../../lib/server/epa/taxonomy';
 
 const T0 = Date.parse('2026-10-06T08:00:00Z'); // 09:00 BST, a Tuesday
@@ -28,7 +28,7 @@ test('stronger evidence wins: a draft open in Outlook behind a review in CONVEYi
   const sl = attribute([span('draft', 0, 30, 'chasing', 'compose'), span('review', 10, 25, 'legal_review', 'focus')]);
   assert.deepEqual(sl.map((s) => [s.span.item, (s.end - s.start) / 60_000]), [['draft', 10], ['review', 15], ['draft', 5]]);
   // An estimate never displaces anything measured; it only fills time nothing else covers.
-  const est = attribute([estimateSpan(at(30), 10, 'sent-1', 'status_updates'), span('review', 22, 28, 'legal_review')]);
+  const est = attribute([span('sent-1', 20, 30, 'status_updates', 'estimate'), span('review', 22, 28, 'legal_review')]);
   assert.deepEqual(est.map((s) => [s.span.item, (s.end - s.start) / 60_000]), [['sent-1', 2], ['review', 6], ['sent-1', 2]]);
   assert.equal(total(est), 10);
 });
@@ -85,16 +85,16 @@ test('kinds: a chaser is a chaser; a proposal is checking a draft of something; 
   assert.equal(fromBaselineCategory('legal_work'), 'legal_review');
 });
 
-import { baselineEfficiency, buildEpaReport, emailSpan, weekStart } from '../../../lib/server/epa/report';
+import { baselineEfficiency, buildEpaReport, emailEvidence, weekStart } from '../../../lib/server/epa/report';
 import { DEFAULT_LEVELS } from '../../../lib/server/engine/types';
 
-test('a sent email is evidence: its Outlook timing when there is one, else its kind\'s minutes ending at the send', () => {
-  const timed = emailSpan({ id: 'm1', category: 'chaser', draftedAt: '2026-10-06T09:00:00Z', sentAt: '2026-10-06T09:04:00Z', wordsWritten: 60 }, () => 3)!;
-  assert.equal(timed.source, 'compose');
-  assert.equal((timed.end - timed.start) / 60_000, 4);
-  const est = emailSpan({ id: 'm2', category: 'status_update', draftedAt: null, sentAt: '2026-10-06T10:00:00Z', wordsWritten: 80 }, () => 6)!;
-  assert.deepEqual([est.source, est.kind, (est.end - est.start) / 60_000], ['estimate', 'status_updates', 6]);
-  assert.equal(emailSpan({ id: 'm3', category: 'internal', draftedAt: null, sentAt: '2026-10-06T10:00:00Z', wordsWritten: 80 }, () => 6), null, 'colleagues are not counted');
+test('a sent email is a completion; when Outlook timed its draft, the writing is evidence too', () => {
+  const timed = emailEvidence({ id: 'm1', category: 'chaser', draftedAt: '2026-10-06T09:00:00Z', sentAt: '2026-10-06T09:04:00Z' })!;
+  assert.equal(timed.compose!.source, 'compose');
+  assert.equal((timed.compose!.end - timed.compose!.start) / 60_000, 4);
+  assert.deepEqual(timed.done, { at: Date.parse('2026-10-06T09:04:00Z'), item: 'email:m1', kind: 'chasing' });
+  assert.equal(emailEvidence({ id: 'm2', category: 'status_update', draftedAt: null, sentAt: '2026-10-06T10:00:00Z' })!.compose, null);
+  assert.equal(emailEvidence({ id: 'm3', category: 'internal', draftedAt: null, sentAt: '2026-10-06T10:00:00Z' }), null, 'colleagues are not counted');
 });
 
 test('the report: weeks cut at Monday so nothing counts twice, the Pareto biggest first with the action that takes each', () => {
@@ -123,4 +123,36 @@ test('the report: weeks cut at Monday so nothing counts twice, the Pareto bigges
 
 test('baseline efficiency from the mailbox scan\'s hours', () => {
   assert.equal(baselineEfficiency([{ category: 'chaser', hoursPerWeek: 3 }, { category: 'legal_work', hoursPerWeek: 1 }, { category: 'internal', hoursPerWeek: 5 }]), 0.25);
+});
+
+const RULES = { ...DAY, ...DEFAULT_LUNCH };
+const done = (item: string, min: number, kind: Completion['kind'] = 'chasing'): Completion => ({ at: at(min), item, kind });
+const mins = (sp: Span[]) => sp.map((s) => [s.item, (s.end - s.start) / 60_000]);
+
+test('completions: the in-tray of three, each given the time since the one before, from the start of the day', () => {
+  // Finished at 09:20, 09:40, 10:00.
+  assert.deepEqual(mins(completionSpans([done('a', 20), done('b', 40), done('c', 60)], RULES)), [['a', 20], ['b', 20], ['c', 20]]);
+});
+
+test('completions: routine work is capped at an hour, legal work at three; lunch is never work', () => {
+  // A chaser at 11:30 after nothing since 09:00: an hour, not two and a half.
+  assert.deepEqual(mins(completionSpans([done('c', 150)], RULES)), [['c', 60]]);
+  // A title review at 12:00 after 09:00: three hours.
+  assert.deepEqual(mins(completionSpans([done('t', 180, 'legal_review')], RULES)), [['t', 180]]);
+  // A review done 12:30 then one finished 14:30 (BST): 13:00–14:00 is lunch, so the second is 30 + 30 minutes.
+  const sp = completionSpans([done('a', 210, 'legal_review'), done('b', 330, 'legal_review')], RULES);
+  assert.deepEqual(mins(sp).filter(([i]) => i === 'b'), [['b', 30], ['b', 30]]);
+});
+
+test('completions: a run of approvals in one sitting shares the time before it', () => {
+  // Nothing since 10:00; five chasers approved 10:30:00–10:30:40.
+  const ev = [done('x', 60), ...[0, 10, 20, 30, 40].map((sec, n) => ({ at: at(90) + sec * 1000, item: `c${n}`, kind: 'chasing' as const }))];
+  const sp = completionSpans(ev, RULES).filter((s) => s.item.startsWith('c'));
+  assert.equal(sp.length, 5);
+  for (const s of sp) assert.ok(Math.abs((s.end - s.start) / 60_000 - 30.6667 / 5) < 0.01);
+});
+
+test('completions out of hours are kept (they count as after hours) and capped', () => {
+  // An email at 21:00 after the last thing at 17:00: an hour, not four.
+  assert.deepEqual(mins(completionSpans([done('a', 480, 'admin'), done('late', 720, 'status_updates')], RULES)).filter(([i]) => i === 'late'), [['late', 60]]);
 });

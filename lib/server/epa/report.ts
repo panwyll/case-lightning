@@ -4,7 +4,7 @@
  */
 import { actsUnasked, levelFor, ENGINE_ACTION_LABEL, type EngineAction, type LevelConfig, type TrustLevel } from '../engine/types';
 import { timedMinutes } from '../workload/model';
-import { attribute, estimateSpan, measure, type Span, type WeekMeasures } from './ledger';
+import { attribute, measure, type Completion, type Span, type WeekMeasures } from './ledger';
 import { EPA_KINDS, EPA_SPEC, fromBaselineCategory, type EpaKind } from './taxonomy';
 
 const WEEK_MS = 7 * 86_400_000;
@@ -15,16 +15,14 @@ export function weekStart(ms: number): number {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day);
 }
 
-/** A sent email from the mailbox scan as evidence: its draft-to-send when Outlook timed it, else its kind's minutes. */
-export interface SentEmail { id: string; category: string | null; draftedAt: string | null; sentAt: string; wordsWritten: number }
-export function emailSpan(e: SentEmail, minutesFor: (category: string, words: number) => number): Span | null {
+/** A sent email from the mailbox scan: a completion, and when Outlook timed its draft, the writing itself. */
+export interface SentEmail { id: string; category: string | null; draftedAt: string | null; sentAt: string }
+export function emailEvidence(e: SentEmail): { done: Completion; compose: Span | null } | null {
   const kind = fromBaselineCategory(e.category);
   if (EPA_SPEC[kind].rag === 'none') return null;
   const end = Date.parse(e.sentAt);
   const t = timedMinutes({ draftedAt: e.draftedAt, sentAt: e.sentAt });
-  if (t != null) return { start: end - t * 60_000, end, item: `email:${e.id}`, kind, source: 'compose' };
-  const m = minutesFor(e.category ?? '', e.wordsWritten);
-  return m > 0 ? estimateSpan(end, m, `email:${e.id}`, kind) : null;
+  return { done: { at: end, item: `email:${e.id}`, kind }, compose: t != null ? { start: end - t * 60_000, end, item: `email:${e.id}`, kind, source: 'compose' } : null };
 }
 
 /**

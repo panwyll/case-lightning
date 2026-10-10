@@ -5,6 +5,7 @@
  * look at, and each person against their own target and past (listed by name, not ranked).
  */
 import { useMemo, useState } from 'react';
+import type React from 'react';
 import type { AnalyticsReport, PersonRow, Stat, TeamMetric } from '@/lib/server/analytics/kpis';
 
 const CSS = `
@@ -265,6 +266,8 @@ export function AnalyticsView(props: {
   caseHref: (id: string) => string | null;
   /** Where an admin sets the firm's fees, while none are set. */
   feesHref?: string | null;
+  /** The Analytics tab switch, beside the title. */
+  tabs?: React.ReactNode;
 }) {
   const { report: r, person, side } = props;
   const p = r.pace;
@@ -274,8 +277,9 @@ export function AnalyticsView(props: {
     <div className="an">
       <style>{CSS}</style>
       <div className="an-top">
-        <h1>Analytics</h1>
-        <select className="an-sel" value={person} onChange={(e) => props.onScope(e.target.value, side)} aria-label="Whose figures">
+        <h1 style={props.tabs ? { margin: 0 } : undefined}>Analytics</h1>
+        {props.tabs}
+        <select className="an-sel" style={props.tabs ? { marginLeft: 'auto' } : undefined} value={person} onChange={(e) => props.onScope(e.target.value, side)} aria-label="Whose figures">
           <option value="">Whole Firm</option>
           {props.people.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>

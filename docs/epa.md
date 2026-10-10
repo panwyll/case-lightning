@@ -8,7 +8,7 @@ The loop, every week:
 3. **Action:** what to do about the top items, mostly a CONVEYi action switched from Propose to Send, and a template or rule fixed.
 4. **Monitor:** next week's figures against this week's and against the baseline.
 
-Page: `/conveyi/efficiency` (sidebar: Cases → Efficiency). Code: `lib/server/epa/`.
+Page: Analytics → Efficiency, the first tab of Analytics (`/conveyi/analytics`). Code: `lib/server/epa/`.
 
 ## 1. The kinds of work
 
@@ -51,16 +51,26 @@ So there are two different measures, and they are never mixed.
 
 **Touch time** is per person: the minutes they were actually working on something. It is measured as **one attention timeline per person**. At any moment a person is working on at most one thing, so each minute of their day is given to at most one item, and the total can never exceed the time that passed.
 
+### Completions: the time since the last thing finished
+
+The base of the timeline is what each person finished: a task closed by them, an email they sent. Each completion is given the time back to the one before it:
+- clipped to the start of the working day when it was finished in working hours;
+- less lunch (13:00 to 14:00 by default);
+- capped by its kind: an hour for red and amber work (in case the gap was lunch, a call or a meeting), three hours for green;
+- completions within a minute of each other are one sitting (a run of approvals), and the time before them is shared equally.
+
+Out-of-hours completions keep their gap (capped), so evening work shows as after hours. Three in-tray items finished at 09:20, 09:40 and 10:00 get 20 minutes each.
+
 ### Evidence
 
-The timeline is built from evidence spans, each with a source and a strength:
+Completions are one source among several. The timeline is built from evidence spans, each with a source and a strength:
 
 | Source | What it is | Strength |
 | --- | --- | --- |
 | **Focus** (measured) | An item open in CONVEYi, in view, with the person active: a task opened from the list, a review, an email read or replied to, a draft being edited. A span starts when it comes into view and ends when it is closed, hidden (another tab, the window minimised) or idle (no keyboard, pointer or scroll for 2 minutes). Only the item in the focused window counts. | 1 (highest) |
 | **Outlook compose** (observed) | A sent email's draft being written: Outlook's draft-created to sent (15 seconds to 45 minutes, as in the baseline). | 2 |
-| **Outlook reading** (observed) | An email selected in Outlook with the CONVEYi pane open, until the next selection or 2 minutes idle. | 3 |
-| **Estimate** (modelled) | A sent email with no timing (sent from a phone, or a draft started elsewhere): the baseline's minutes for its kind, placed so that it ends when it was sent. | 4 (lowest) |
+| **Completion** (inferred) | The time since the last thing finished, as above. | 3 |
+| **Outlook reading** (observed) | An email selected in Outlook with the CONVEYi pane open, until the next selection or 2 minutes idle. | 4 |
 
 ### Attribution: a sweep along the day
 
@@ -75,7 +85,7 @@ For the in-tray example: opening an item is not evidence of work, so the three i
 
 - **Hours per kind** are the slices given to each kind of work, in and out of working hours (the firm's working day, as in the baseline).
 - **Efficiency** = green ÷ (red + amber + green) attributed working time. Unattributed time is left out and reported beside it.
-- **Measured share** is the share of attributed time that came from Focus or Outlook compose, as opposed to estimates. The page says how much of the week is measured.
+- **Measured share** is the share of attributed time from evidence rather than estimates. The page says how much of the week is measured.
 
 ### Context switching
 
@@ -112,8 +122,8 @@ Each person sees their own figures, and the team's. An admin sees each person's.
 | Report: weeks cut at Monday, Pareto with the action and its level, queue | `lib/server/epa/report.ts` | Built |
 | Focus capture | `app/shared/epa/useAttention.ts`: a task open in place on the Tasks list, a decision on its own page, an email open in Email | Built |
 | Storage | `activity_span` (migration 125); `POST /api/v1/epa/spans` (batched: on hide, every 5 minutes of use, and before the Efficiency page loads) | Built |
-| Outlook compose and estimates | From the mailbox scan's sent emails (`workload_email`) | Built, for the weeks a scan covers |
+| Completions | Tasks closed by the person (`task_record`), and sent emails from the mailbox scan (`workload_email`, with Outlook compose when timed) | Built; sent email only for the weeks a scan covers |
 | Outlook reading | The add-in's item selection, as `reading` spans | Not yet |
 | Sent email after the baseline scan | Reading yesterday's Sent Items each day | Not yet: scheduled work, so it waits to be agreed (the Vercel cost cap) |
 
-A row Approve on the Tasks list takes seconds and opens nothing, so it adds no Focus time. The queue table uses `task_record`, whose older rows may have no kind; those are classified by their chip.
+A row Approve on the Tasks list is a completion, so it is given the time since the last one. The queue table uses `task_record`, whose older rows may have no kind; those are classified by their chip.

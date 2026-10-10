@@ -4,8 +4,8 @@ import { engine } from '../engine/adapters';
 import { DEFAULT_SETTINGS } from '../workload/model';
 import { baselineScan, estimatesOf, firmSettings, reportFor } from '../workload/scan';
 import type { SessionUser } from '../types';
-import type { Span } from './ledger';
-import { baselineEfficiency, buildEpaReport, emailSpan, weekStart, type EpaReport } from './report';
+import { completionSpans, DEFAULT_LUNCH, type Completion, type Span } from './ledger';
+import { baselineEfficiency, buildEpaReport, emailEvidence, weekStart, type EpaReport } from './report';
 import { EPA_KINDS, fromTask, type EpaKind } from './taxonomy';
 
 export interface SpanIn { start: string; end: string; source: 'focus' | 'reading'; item: string; matterId?: string | null; kind: string; of?: string | null; action?: string | null }
@@ -39,28 +39,37 @@ export async function epaReport(tenantId: string, userId: string, weeks: number)
   const [settings, estimates, base, levels] = await Promise.all([firmSettings(tenantId), estimatesOf(userId), baselineScan(userId), engine().eventStore.loadLevels(tenantId)]);
   const st = { ...DEFAULT_SETTINGS, ...Object.fromEntries(Object.entries(settings).filter(([, v]) => v != null)) };
   const baseline = base ? await reportFor(base, settings, estimates).catch(() => null) : null;
-  const perEmail = new Map((baseline?.lines ?? []).map((l) => [l.category as string, l.minutes]));
 
   const [focus, sent, tasks] = await Promise.all([
     query<{ started_at: Date; ended_at: Date; source: 'focus' | 'reading'; item: string; kind: EpaKind; draft_of: EpaKind | null; action: string | null }>(
       `select started_at, ended_at, source, item, kind, draft_of, action from activity_span where user_id = $1 and ended_at > $2 order by started_at`, [userId, since]
     ).catch(() => []),
     // The same message in two scans is one email.
-    query<{ id: string; category: string | null; drafted_at: Date | null; sent_at: Date; words_written: number }>(
-      `select distinct on (graph_message_id) graph_message_id as id, category, drafted_at, sent_at, words_written
+    query<{ id: string; category: string | null; drafted_at: Date | null; sent_at: Date }>(
+      `select distinct on (graph_message_id) graph_message_id as id, category, drafted_at, sent_at
          from workload_email where user_id = $1 and direction = 'out' and filtered is null and sent_at > $2 order by graph_message_id, created_at desc`, [userId, since]
     ).catch(() => []),
-    query<{ kind: string | null; chip: string | null; opened_at: Date; closed_at: Date }>(
-      `select kind, chip, opened_at, closed_at from task_record where tenant_id = $1 and closed_at > $2
+    query<{ id: string; kind: string | null; chip: string | null; opened_at: Date; closed_at: Date; closed_by: string | null; closed_how: string | null }>(
+      `select id, kind, chip, opened_at, closed_at, closed_by, closed_how from task_record where tenant_id = $1 and closed_at > $2
           and (closed_by = $3::text or (closed_by is null and assigned_to = $3::uuid))`, [tenantId, since, userId]
     ).catch(() => []),
   ]);
 
   const spans: Span[] = focus.map((f) => ({ start: f.started_at.getTime(), end: f.ended_at.getTime(), item: f.item, kind: f.kind, of: f.draft_of, action: f.action, source: f.source }));
-  for (const e of sent) {
-    const s = emailSpan({ id: e.id, category: e.category, draftedAt: e.drafted_at?.toISOString() ?? null, sentAt: e.sent_at.toISOString(), wordsWritten: e.words_written }, (c, words) => perEmail.get(c) ?? words / st.wpm);
-    if (s) spans.push(s);
+  // Completions (docs/epa.md §2): what this person finished, each given the time since the one before.
+  const done: Completion[] = [];
+  for (const t of tasks) {
+    if (t.closed_by !== userId || t.closed_how !== 'done') continue;
+    const w = fromTask({ kind: t.kind, chip: t.chip });
+    done.push({ at: t.closed_at.getTime(), item: `task:${t.id}`, kind: w.kind, of: w.of ?? null, action: w.action ?? null });
   }
+  for (const e of sent) {
+    const ev = emailEvidence({ id: e.id, category: e.category, draftedAt: e.drafted_at?.toISOString() ?? null, sentAt: e.sent_at.toISOString() });
+    if (!ev) continue;
+    done.push(ev.done);
+    if (ev.compose) spans.push(ev.compose);
+  }
+  spans.push(...completionSpans(done, { ...st, ...DEFAULT_LUNCH }));
   const report = buildEpaReport({
     spans, now, weeks, workday: st, levels,
     tasks: tasks.map((t) => ({ kind: fromTask({ kind: t.kind, chip: t.chip }).kind, openedAt: t.opened_at.getTime(), closedAt: t.closed_at.getTime() })),
