@@ -7,8 +7,8 @@ import { flushAttention } from '@/app/shared/epa/useAttention';
 import type { EpaReport, ParetoBar, RagSplit } from '@/lib/server/epa/report';
 
 /**
- * Analytics → Time and Analytics → Trend (docs/epa.md §3). Time is for action: this week's red / amber / green, the Pareto
- * of red and amber, and what to automate or delegate. Trend is how the weeks compare. The whole firm only, never one person.
+ * Analytics → Time (docs/epa.md §3), for action: this week's red / amber / green, the Pareto of red and amber, and what to
+ * automate or delegate. Week By Week sits at the foot of Analytics. The whole firm only, never one person.
  */
 const CSS = `
 .tv{max-width:1360px}
@@ -55,7 +55,6 @@ const CSS = `
 .tv-col > span:first-child{border-radius:5px 5px 0 0}
 .tv-col > span:last-child{border-radius:0 0 5px 5px}
 .tv-col.empty{background:#f1f5f9;border-radius:5px}
-.tv-col.before{opacity:.55}
 .tv-wklabels{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:14px;margin-top:8px;font-size:12px;color:#64748b;font-weight:700;text-align:center}
 .tv-keys{display:flex;gap:18px;font-size:12.5px;font-weight:700;color:#334155}
 .tv-keys i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
@@ -184,31 +183,25 @@ export function TimeView({ tabs }: { tabs: ReactNode }) {
   );
 }
 
-/** Analytics → Trend: each week's red / amber / green, after the same split before CONVEYi. */
-export function TrendView({ tabs }: { tabs: ReactNode }) {
-  const { r, err } = useReport();
-  const cols = r ? [
-    ...(r.baseline ? [{ key: 'before', label: 'Before CONVEYi', share: r.baseline as RagSplit | null, before: true }] : []),
-    ...r.weeks.map((w) => ({ key: w.start, label: day(w.start), share: w.share, before: false })),
-  ] : [];
+/** Week by week, red / amber / green: a card at the foot of Analytics. Comparing weeks is not the action page's job. */
+export function WeekByWeek() {
+  const { r } = useReport();
+  if (!r || !r.weeks.some((w) => w.share)) return null;
   return (
-    <Shell tabs={tabs} err={err} loading={!r}>
-      {r && (
-        <section className="tv-card" style={{ marginTop: 16 }}>
-          <div className="tv-cardhead">
-            <h2>Week By Week</h2>
-            <span className="r tv-keys">{RAG.map(([k, l]) => <span key={k}><i className={`tv-${k}`} />{l}</span>)}</span>
-          </div>
-          <div className="tv-weeks">
-            {cols.map((c) => (c.share
-              ? <div key={c.key} className={`tv-col${c.before ? ' before' : ''}`} title={`${c.label}: ${split(c.share)}`}>
-                  {[...RAG].reverse().filter(([k]) => c.share![k] > 0).map(([k]) => <span key={k} className={`tv-${k}`} style={{ flex: `${c.share![k]} 1 0` }} />)}
-                </div>
-              : <div key={c.key} className="tv-col empty" title={`${c.label}: no time recorded`} />))}
-          </div>
-          <div className="tv-wklabels">{cols.map((c) => <span key={c.key}>{c.label}</span>)}</div>
-        </section>
-      )}
-    </Shell>
+    <section className="tv-card" style={{ marginTop: 14 }}>
+      <style>{CSS}</style>
+      <div className="tv-cardhead">
+        <h2>Week By Week</h2>
+        <span className="r tv-keys">{RAG.map(([k, l]) => <span key={k}><i className={`tv-${k}`} />{l}</span>)}</span>
+      </div>
+      <div className="tv-weeks">
+        {r.weeks.map((w) => (w.share
+          ? <div key={w.start} className="tv-col" title={`${day(w.start)}: ${split(w.share)}`}>
+              {[...RAG].reverse().filter(([k]) => w.share![k] > 0).map(([k]) => <span key={k} className={`tv-${k}`} style={{ flex: `${w.share![k]} 1 0` }} />)}
+            </div>
+          : <div key={w.start} className="tv-col empty" title={`${day(w.start)}: no time recorded`} />))}
+      </div>
+      <div className="tv-wklabels">{r.weeks.map((w) => <span key={w.start}>{day(w.start)}</span>)}</div>
+    </section>
   );
 }
