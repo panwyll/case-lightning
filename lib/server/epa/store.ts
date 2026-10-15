@@ -6,6 +6,8 @@ import { baselineScan, estimatesOf, firmSettings, reportFor } from '../workload/
 import type { SessionUser } from '../types';
 import { completionSpans, DEFAULT_LUNCH, type Completion, type Span } from './ledger';
 import { baselineSplit, buildEpaReport, emailEvidence, weekStart, type EpaReport } from './report';
+import { buildMeasurement, type Measurement, type PersonScan } from './measure';
+import { DEFAULT_SETTINGS as WL_DEFAULTS, workingWeeks } from '../workload/model';
 import { asKind, EPA_KINDS, LEGACY_KINDS, fromTask, type EpaKind } from './taxonomy';
 
 export interface SpanIn { start: string; end: string; source: 'focus' | 'reading'; item: string; matterId?: string | null; kind: string; of?: string | null; action?: string | null }
@@ -92,4 +94,35 @@ export async function epaReport(tenantId: string, weeks: number): Promise<EpaRep
     people: perPerson.map((p) => p.spans).filter((s) => s.length), now, weeks, workday: st, levels,
     baseline: sum.size ? baselineSplit([...sum].map(([category, hoursPerWeek]) => ({ category, hoursPerWeek }))) : null,
   });
+}
+
+/** The firm's measurement: everyone's latest finished scan, as a typical week (measure.ts), and when the latest was run. */
+export async function firmMeasurement(tenantId: string): Promise<{ measurement: Measurement | null; scanned: number; scannedAt: string | null }> {
+  const scans = await query<{ id: string; since: Date; until: Date; created_at: Date; intouch: PersonScan['intouch'] }>(
+    `select distinct on (user_id) id, since, until, created_at, intouch from workload_scan
+      where tenant_id = $1 and status in ('CHECKING', 'COMPLETE') order by user_id, created_at desc`, [tenantId]
+  ).catch(() => []);
+  if (!scans.length) return { measurement: null, scanned: 0, scannedAt: null };
+  const [settings, levels] = await Promise.all([firmSettings(tenantId), engine().eventStore.loadLevels(tenantId)]);
+  const people: PersonScan[] = [];
+  for (const s of scans) {
+    // Each email with its time: the measurement places them on the person's day.
+    const rows = await query<{ id: string; direction: 'out' | 'in'; sent_at: Date; drafted_at: Date | null; category: string; roles: string[] | null; conversation_id: string | null }>(
+      `select id, direction, sent_at, drafted_at, category, recipient_roles as roles, conversation_id from workload_email
+        where scan_id = $1 and filtered is null and category is not null`, [s.id]
+    );
+    const as = (r: (typeof rows)[number]) => ({ id: r.id, at: r.sent_at.getTime(), draftedAt: r.drafted_at ? r.drafted_at.getTime() : null, category: r.category, roles: r.roles ?? [], conversationId: r.conversation_id });
+    people.push({
+      weeks: workingWeeks(new Date(s.since).toISOString(), new Date(s.until).toISOString()),
+      sent: rows.filter((r) => r.direction === 'out').map(as),
+      received: rows.filter((r) => r.direction === 'in').map(as),
+      intouch: s.intouch ?? null,
+    });
+  }
+  const measurement = buildMeasurement({
+    people, levels, contractedHours: Number(settings.contractedHours ?? WL_DEFAULTS.contractedHours),
+    workday: { workdayStart: settings.workdayStart ?? WL_DEFAULTS.workdayStart, workdayEnd: settings.workdayEnd ?? WL_DEFAULTS.workdayEnd },
+  });
+  const latest = Math.max(...scans.map((s) => new Date(s.created_at).getTime()));
+  return { measurement, scanned: people.length, scannedAt: new Date(latest).toISOString() };
 }

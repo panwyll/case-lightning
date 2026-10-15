@@ -244,7 +244,7 @@ export default function MeasurePage() {
                 <Fig value={n(c.setAside)} label="Set Aside" />
                 {c.intouch.state === 'read' && <Fig value={n(c.intouch.cases)} label="InTouch Cases" />}
                 {c.intouch.state === 'read' && <Fig value={n(c.intouch.items)} label="InTouch Filings" />}
-                {m?.replyHours != null && <Fig value={waitText(m.replyHours)} label="Average Reply Time" />}
+                {m && <Fig value={m.replyHours != null ? waitText(m.replyHours) : '—'} label="Average Reply Time" />}
               </div>
               {c.intouch.state === 'failed' && <p className="ms-err">InTouch could not be read: {c.intouch.error}</p>}
               {c.intouch.state === 'read' && !c.intouch.cases && !!c.intouch.feeEarners?.length && (

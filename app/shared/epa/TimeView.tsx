@@ -68,6 +68,7 @@ const CSS = `
 .tv-col > span:first-child{border-radius:5px 5px 0 0}
 .tv-col > span:last-child{border-radius:0 0 5px 5px}
 .tv-col.empty{background:#f1f5f9;border-radius:5px}
+.tv-wklabels .scan{color:#0f172a}
 .tv-wklabels{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:14px;margin-top:8px;font-size:12px;color:#64748b;font-weight:700;text-align:center}
 .tv-keys{display:flex;gap:18px;font-size:12.5px;font-weight:700;color:#334155}
 .tv-keys i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
@@ -124,13 +125,15 @@ function actionsFor(b: ParetoBar): Array<{ text: string; href?: string }> {
   return [{ text: 'Delegate To An Assistant' }];
 }
 
+type ScanBar = { at: string; share: RagSplit } | null;
 function useReport() {
   const [r, setR] = useState<EpaReport | null>(null);
+  const [scan, setScan] = useState<ScanBar>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    void flushAttention().then(() => api<{ report: EpaReport }>('/epa').then((x) => setR(x.report)).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not load the figures.')));
+    void flushAttention().then(() => api<{ report: EpaReport; scan?: ScanBar }>('/epa').then((x) => { setR(x.report); setScan(x.scan ?? null); }).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not load the figures.')));
   }, []);
-  return { r, err };
+  return { r, scan, err };
 }
 
 function Shell({ tabs, err, loading, children }: { tabs: ReactNode; err: string | null; loading: boolean; children: ReactNode }) {
@@ -247,8 +250,14 @@ export function TimeView({ tabs }: { tabs: ReactNode }) {
 
 /** Week by week, red / amber / green: a card at the foot of Analytics. Comparing weeks is not the action page's job. */
 export function WeekByWeek() {
-  const { r } = useReport();
-  if (!r || !r.weeks.some((w) => w.share)) return null;
+  const { r, scan } = useReport();
+  if (!r || (!r.weeks.some((w) => w.share) && !scan)) return null;
+  const bar = (key: string, title: string, sh: RagSplit) => (
+    <div key={key} className="tv-col" title={`${title}: ${split(sh)}`}>
+      {[...RAG].reverse().filter(([k]) => sh[k] > 0).map(([k]) => <span key={k} className={`tv-${k}`} style={{ flex: `${sh[k]} 1 0` }}>{sh[k] >= 0.08 ? pct(sh[k]) : ''}</span>)}
+    </div>
+  );
+  const scanLabel = scan ? `Scan ${new Date(scan.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : '';
   return (
     <section className="tv-card" style={{ marginTop: 14 }}>
       <style>{CSS}</style>
@@ -257,13 +266,14 @@ export function WeekByWeek() {
         <span className="r tv-keys">{RAG.map(([k, l]) => <span key={k}><i className={`tv-${k}`} />{l}</span>)}</span>
       </div>
       <div className="tv-weeks">
+        {scan && bar('scan', scanLabel, scan.share)}
         {r.weeks.map((w) => (w.share
           ? <div key={w.start} className="tv-col" title={`${day(w.start)}: ${split(w.share)}`}>
               {[...RAG].reverse().filter(([k]) => w.share![k] > 0).map(([k]) => <span key={k} className={`tv-${k}`} style={{ flex: `${w.share![k]} 1 0` }}>{w.share![k] >= 0.08 ? pct(w.share![k]) : ''}</span>)}
             </div>
           : <div key={w.start} className="tv-col empty" title={`${day(w.start)}: no time recorded`} />))}
       </div>
-      <div className="tv-wklabels">{r.weeks.map((w) => <span key={w.start}>{day(w.start)}</span>)}</div>
+      <div className="tv-wklabels">{scan && <span className="scan">{scanLabel}</span>}{r.weeks.map((w) => <span key={w.start}>{day(w.start)}</span>)}</div>
     </section>
   );
 }

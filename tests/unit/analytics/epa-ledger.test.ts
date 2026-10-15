@@ -184,3 +184,20 @@ test('completions out of hours are kept (they count as after hours) and capped',
   // A client update at 21:00 after the last thing at 17:00: three times 7 minutes, not four hours.
   assert.deepEqual(mins(completionSpans([done('a', 480, 'filing'), done('late', 720, 'client_updates')], RULES)).filter(([i]) => i === 'late'), [['late', 21]]);
 });
+
+test('quick emails sent in the middle of legal work keep their own minutes, and the legal work keeps the rest', () => {
+  const done: Completion[] = [
+    { at: at(60), item: 'chase', kind: 'client_chasers' }, // 10:00, a chaser sent mid-report
+    { at: at(120), item: 'ack', kind: 'acknowledging' }, // 11:00, an acknowledgement
+    { at: at(150), item: 'rot', kind: 'report_on_title' }, // 11:30, the report goes out
+  ];
+  const sl = attribute(completionSpans(done, { ...DAY, ...DEFAULT_LUNCH }));
+  const mins = (item: string) => sl.filter((s) => s.span.item === item).reduce((a, s) => a + (s.end - s.start) / 60_000, 0);
+  // Each quick email: its capped minutes just before it. The report: everything else since 09:00, through them.
+  const chase = mins('chase');
+  const ack = mins('ack');
+  assert.ok(chase > 0 && chase < 60 && ack > 0 && ack < 60);
+  assert.equal(Math.round(mins('rot') + chase + ack), 150);
+  // Not the old reading, where the report was given only the half hour since the acknowledgement.
+  assert.ok(mins('rot') > 30);
+});

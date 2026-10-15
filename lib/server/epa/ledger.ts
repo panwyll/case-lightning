@@ -9,9 +9,9 @@ import { isWorkingDay } from '../engine/working-days';
 import { EPA_KINDS, EPA_SPEC, TYPICAL_MINUTES, type EpaKind, type Rag } from './taxonomy';
 
 /** Where a span's evidence came from, strongest first (§2 "Evidence"). */
-export const SOURCES = ['focus', 'compose', 'interval', 'reading', 'estimate'] as const;
+export const SOURCES = ['focus', 'compose', 'interval', 'reading', 'estimate', 'deep'] as const;
 export type Source = (typeof SOURCES)[number];
-const RANK: Record<Source, number> = { focus: 0, compose: 1, interval: 2, reading: 3, estimate: 4 };
+const RANK: Record<Source, number> = { focus: 0, compose: 1, interval: 2, reading: 3, estimate: 4, deep: 5 };
 
 export interface Span {
   /** Epoch milliseconds. */
@@ -81,42 +81,62 @@ function local(ms: number): { midnight: number; minute: number; day: Date } {
  */
 export function completionSpans(events: Completion[], rules: ClipRules, cal: WorkingCalendar = EW_CALENDAR): Span[] {
   const ev = [...events].sort((a, b) => a.at - b.at || (a.item < b.item ? -1 : 1));
+  const deep = (e: Completion) => EPA_SPEC[e.kind]?.rag === 'green';
   const out: Span[] = [];
-  let prev = -Infinity;
-  for (let i = 0; i < ev.length; ) {
-    // A burst: this completion and any within a minute of the last one in it.
-    let j = i + 1;
-    while (j < ev.length && ev[j].at - ev[j - 1].at <= BURST_MS) j++;
-    const burst = ev.slice(i, j);
-    const end = burst[burst.length - 1].at;
-    const L = local(end);
-    const inHours = isWorkingDay(L.day, cal) && L.minute >= hm(rules.workdayStart) && L.minute < hm(rules.workdayEnd);
-    const cap = burst.reduce((a, e) => a + capMinutes(e.kind), 0) * 60_000;
-    let from = Math.max(prev, end - cap);
-    if (inHours) from = Math.max(from, L.midnight + hm(rules.workdayStart) * 60_000);
-    // The stretch, less lunch when it was in the working day.
-    let pieces: Array<[number, number]> = [[from, end]];
-    if (inHours) {
-      const [ls, le] = [L.midnight + hm(rules.lunchStart) * 60_000, L.midnight + hm(rules.lunchEnd) * 60_000];
-      pieces = pieces.flatMap(([a, b]) => [[a, Math.min(b, ls)], [Math.max(a, le), b]] as Array<[number, number]>).filter(([a, b]) => b > a);
-    }
-    // Shared equally across the burst, in the order they were finished.
-    const total = pieces.reduce((t, [a, b]) => t + (b - a), 0);
-    const share = total / burst.length;
-    let k = 0;
-    let left = share;
-    for (const [a0, b] of pieces) {
-      let a = a0;
-      while (a < b && k < burst.length) {
-        const take = Math.min(left, b - a);
-        const e = burst[k];
-        if (take > 0) out.push({ start: a, end: a + take, item: e.item, kind: e.kind, of: e.of ?? null, action: e.action ?? null, source: 'interval' });
-        a += take; left -= take;
-        if (left <= 1e-6) { k++; left = share; }
+  // Routine work: each burst gets the gap since whatever was finished before it, capped by what it takes.
+  // Legal work: the gap since the last LEGAL thing finished, through the quick emails sent meanwhile. It is the weakest
+  // evidence, so a reply sent or an email read in the middle of a report keeps its own minutes and the report the rest.
+  for (const [only, source] of [[(e: Completion) => !deep(e), 'interval'], [deep, 'deep']] as const) {
+    let prev = -Infinity;
+    for (let i = 0; i < ev.length; ) {
+      // A burst: this completion and any within a minute of the last one in it.
+      let j = i + 1;
+      while (j < ev.length && ev[j].at - ev[j - 1].at <= BURST_MS) j++;
+      const burst = ev.slice(i, j).filter(only);
+      const end = ev[j - 1].at;
+      i = j;
+      if (source === 'interval') {
+        // Legal work finished in between still ends a routine gap: the routine email did not take that time.
+        const from = prev;
+        prev = end;
+        if (burst.length) out.push(...stretch(burst, from, burst[burst.length - 1].at, rules, cal, source));
+      } else if (burst.length) {
+        const at = burst[burst.length - 1].at;
+        out.push(...stretch(burst, prev, at, rules, cal, source));
+        prev = at;
       }
     }
-    prev = end;
-    i = j;
+  }
+  return out;
+}
+
+/** A burst's stretch back to `prev`, capped by its kinds, clipped to the working day when done in it, less lunch, shared in order. */
+function stretch(burst: Completion[], prev: number, end: number, rules: ClipRules, cal: WorkingCalendar, source: Source): Span[] {
+  const out: Span[] = [];
+  const L = local(end);
+  const inHours = isWorkingDay(L.day, cal) && L.minute >= hm(rules.workdayStart) && L.minute < hm(rules.workdayEnd);
+  const cap = burst.reduce((a, e) => a + capMinutes(e.kind), 0) * 60_000;
+  let from = Math.max(prev, end - cap);
+  if (inHours) from = Math.max(from, L.midnight + hm(rules.workdayStart) * 60_000);
+  let pieces: Array<[number, number]> = [[from, end]];
+  if (inHours) {
+    const [ls, le] = [L.midnight + hm(rules.lunchStart) * 60_000, L.midnight + hm(rules.lunchEnd) * 60_000];
+    pieces = pieces.flatMap(([a, b]) => [[a, Math.min(b, ls)], [Math.max(a, le), b]] as Array<[number, number]>).filter(([a, b]) => b > a);
+  }
+  // Shared equally across the burst, in the order they were finished.
+  const total = pieces.reduce((t, [a, b]) => t + (b - a), 0);
+  const share = total / burst.length;
+  let k = 0;
+  let left = share;
+  for (const [a0, b] of pieces) {
+    let a = a0;
+    while (a < b && k < burst.length) {
+      const take = Math.min(left, b - a);
+      const e = burst[k];
+      if (take > 0) out.push({ start: a, end: a + take, item: e.item, kind: e.kind, of: e.of ?? null, action: e.action ?? null, source });
+      a += take; left -= take;
+      if (left <= 1e-6) { k++; left = share; }
+    }
   }
   return out;
 }
