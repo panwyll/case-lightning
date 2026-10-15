@@ -3,7 +3,7 @@ import { requireUser } from '@/lib/server/session';
 import { ok, fail } from '@/lib/server/http';
 import { query } from '@/lib/server/db';
 import { engine } from '@/lib/server/engine/adapters';
-import { firmSettings, latestScan } from '@/lib/server/workload/scan';
+import { firmSettings, latestScan, scanCounts } from '@/lib/server/workload/scan';
 import { DEFAULT_SETTINGS, TIMED_RANGE, workingWeeks } from '@/lib/server/workload/model';
 import { buildMeasurement, type PersonScan } from '@/lib/server/epa/measure';
 
@@ -56,7 +56,7 @@ export async function GET() {
       measurement: buildMeasurement({ people, contractedHours: contracted, levels }),
       team: team[0]?.n ?? 0,
       scanned: people.length,
-      mine: mine && { status: mine.status, messagesRead: mine.messages_read, classified: mine.classified, since: mine.since, until: mine.until, error: mine.error },
+      mine: mine && { status: mine.status, messagesRead: mine.messages_read, classified: mine.classified, since: mine.since, until: mine.until, error: mine.error, counts: await scanCounts(mine) },
     });
   } catch (e) {
     return fail(e);

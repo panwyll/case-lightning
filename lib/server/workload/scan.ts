@@ -194,6 +194,26 @@ export async function advanceScan(user: SessionUser, scan: ScanRow): Promise<Sca
   return s;
 }
 
+/** What a scan has read so far, by folder, and what it read from InTouch: shown while it runs and after, so it can be trusted. */
+export interface ScanCounts {
+  sent: number; received: number; setAside: number; classified: number; model: string | null;
+  intouch: { state: 'not_connected' | 'waiting' | 'reading' | 'read' | 'failed'; live: number; read: number; error: string | null };
+}
+export async function scanCounts(scan: ScanRow): Promise<ScanCounts> {
+  const rows = await query<{ direction: 'out' | 'in'; n: number; aside: number; classified: number }>(
+    `select direction, count(*)::int as n, count(filtered)::int as aside, count(category)::int as classified from workload_email where scan_id = $1 group by direction`, [scan.id]
+  );
+  const by = (d: 'out' | 'in') => rows.find((r) => r.direction === d);
+  const it = scan.intouch ?? null;
+  const connected = it ? true : await inTouchConnected(scan.tenant_id);
+  const state: ScanCounts['intouch']['state'] = it?.error ? 'failed' : it && scan.status !== 'SCANNING_INTOUCH' ? 'read' : scan.status === 'SCANNING_INTOUCH' ? 'reading' : !connected ? 'not_connected' : ['SCANNING_SENT', 'SCANNING_INBOX'].includes(scan.status) ? 'waiting' : 'not_connected';
+  return {
+    sent: by('out')?.n ?? 0, received: by('in')?.n ?? 0, setAside: (by('out')?.aside ?? 0) + (by('in')?.aside ?? 0),
+    classified: rows.reduce((a, r) => a + r.classified, 0), model: scan.model,
+    intouch: { state, live: it?.live ?? 0, read: it?.read ?? 0, error: it?.error ?? null },
+  };
+}
+
 async function inTouchConnected(tenantId: string): Promise<boolean> {
   const r = await queryOne<{ ok: boolean }>(`select status = 'CONNECTED' as ok from intouch_connection where tenant_id = $1`, [tenantId]).catch(() => null);
   return !!r?.ok;

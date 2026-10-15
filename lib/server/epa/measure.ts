@@ -6,6 +6,9 @@
  * Red and amber are measured: what was sent, how often, times the minutes each took (Outlook's own draft-to-send timing where
  * at least ten were timed, else the typical minutes below). Green cannot be seen in an inbox (reading a title leaves no
  * trace), so it is what is left of the contracted week: an upper bound, which errs in the firm's favour.
+ *
+ * Below MIN_SENT_PER_WEEK case emails sent a week per person the week is not drawn: a busy conveyancer sends hundreds, and a
+ * split drawn from a handful is noise dressed as a measurement.
  */
 import { actsUnasked, levelFor, ENGINE_ACTION_LABEL, type LevelConfig } from '../engine/types';
 import { ACTION_FOR, type ParetoBar, type RagSplit } from './report';
@@ -20,6 +23,8 @@ export const TYPICAL_MINUTES: Partial<Record<EpaKind, number>> = {
   sending_documents_client: 6, sending_documents_others: 5, acknowledging: 1.5, filing: 2, notes_and_outcomes: 4,
   client_process_questions: 6, client_legal_questions: 10, arranging_dates: 4, legal_correspondence: 10,
 };
+/** Below this many case emails sent a week per person, there is too little to measure. */
+export const MIN_SENT_PER_WEEK = 20;
 /** Timed emails needed before Outlook's timing replaces the typical minutes. */
 const TIMED_ENOUGH = 10;
 
@@ -49,6 +54,8 @@ export interface Measurement {
   greenMeasuredHours: number;
   /** What causes the red, a week: status requests and chasers received. */
   received: { clientStatusRequests: number; agentStatusRequests: number; otherSideStatusRequests: number; chasersReceived: number };
+  /** Case email sent a week per person: below a believable volume the week is not drawn (the page says so). */
+  sentPerPersonWeek: number;
   /** From InTouch, when it was read. */
   cases: { live: number; perConveyancer: number | null; openedPerWeek: number | null } | null;
 }
@@ -71,10 +78,12 @@ export function buildMeasurement(input: { people: PersonScan[]; contractedHours:
   let live = 0;
   let opened = 0;
   let intouchPeople = 0;
+  let sentCase = 0;
   for (const p of scanned) {
     for (const g of p.sent) {
       const k = fromEmail(g.category, g.roles);
       if (EPA_SPEC[k].rag === 'none') continue;
+      sentCase += g.count / p.weeks;
       const timedOk = g.timed >= TIMED_ENOUGH && g.timedMedianMinutes != null;
       const each = timedOk ? g.timedMedianMinutes! : TYPICAL_MINUTES[k] ?? 5;
       add(k, g.count / p.weeks, (g.count / p.weeks) * each, timedOk ? 'timed' : 'typical', g.timed);
@@ -138,6 +147,7 @@ export function buildMeasurement(input: { people: PersonScan[]; contractedHours:
     movesCasesOnAtMost: contracted ? Math.min(1, green / contracted) : 0,
     lines,
     greenMeasuredHours: r1(greenMeasured),
+    sentPerPersonWeek: r1(sentCase / scanned.length),
     received: { clientStatusRequests: Math.round(received.clientStatusRequests), agentStatusRequests: Math.round(received.agentStatusRequests), otherSideStatusRequests: Math.round(received.otherSideStatusRequests), chasersReceived: Math.round(received.chasersReceived) },
     cases: intouchPeople ? { live, perConveyancer: r1(live / intouchPeople), openedPerWeek: r1(opened) } : null,
   };
