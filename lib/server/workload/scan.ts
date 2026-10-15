@@ -8,7 +8,7 @@
  * Nobody is asked to check the model's labels: the scan finishes as complete.
  */
 import { query, queryOne } from '../db';
-import { listFolderWindow } from '../graph';
+import { conveyiOrigin, listFolderWindow } from '../graph';
 import { classifyWorkload, WORKLOAD_PROMPT_VERSION } from '../ai';
 import { tenantSelfAddresses } from '../matching';
 import type { SessionUser } from '../types';
@@ -116,7 +116,8 @@ export function stage(m: any, direction: 'out' | 'in', firm: string[]): Staged |
     isReply: isReplySubject(subject),
     isForward: isForwardSubject(subject),
     hasAttachments: !!m.hasAttachments,
-    filtered: filterByRule({ direction, from: from?.address ?? '', subject, text, hasAttachments: !!m.hasAttachments }),
+    // CONVEYi's own email (graph.ts stamp) is never counted as the person's work.
+    filtered: direction === 'out' && conveyiOrigin(m) === 'sent' ? 'conveyi' : filterByRule({ direction, from: from?.address ?? '', subject, text, hasAttachments: !!m.hasAttachments }),
     internal: direction === 'out' && allInternal(addresses, firm),
   };
 }

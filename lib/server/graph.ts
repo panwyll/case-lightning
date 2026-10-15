@@ -164,16 +164,20 @@ export async function listFolderWindow(
 ): Promise<{ messages: any[]; nextLink: string | null }> {
   const client = await graphClientForUser(userId);
   try {
+    // With CONVEYi's own stamp where the mailbox will give it (so its email is set aside), else without.
+    const page = (withOrigin: boolean) => {
+      const q = client
+        .api(`/me/mailFolders('${folder}')/messages`)
+        .header('Prefer', 'outlook.body-content-type="text"')
+        .select('id,subject,from,toRecipients,ccRecipients,conversationId,createdDateTime,sentDateTime,receivedDateTime,hasAttachments,isDraft,uniqueBody')
+        .filter(`receivedDateTime ge ${new Date(sinceIso).toISOString()} and receivedDateTime lt ${new Date(untilIso).toISOString()}`)
+        .orderby('receivedDateTime desc')
+        .top(top);
+      return (withOrigin ? q.expand(ORIGIN_EXPAND) : q).get();
+    };
     const result: any = nextLink
       ? await client.api(nextLink).header('Prefer', 'outlook.body-content-type="text"').get()
-      : await client
-          .api(`/me/mailFolders('${folder}')/messages`)
-          .header('Prefer', 'outlook.body-content-type="text"')
-          .select('id,subject,from,toRecipients,ccRecipients,conversationId,createdDateTime,sentDateTime,receivedDateTime,hasAttachments,isDraft,uniqueBody')
-          .filter(`receivedDateTime ge ${new Date(sinceIso).toISOString()} and receivedDateTime lt ${new Date(untilIso).toISOString()}`)
-          .orderby('receivedDateTime desc')
-          .top(top)
-          .get();
+      : await page(true).catch(() => page(false));
     return { messages: result.value ?? [], nextLink: result['@odata.nextLink'] ?? null };
   } catch (error) {
     throw new Error(describeGraphError(error));
@@ -315,9 +319,9 @@ export async function getMessage(userId: string, messageId: string): Promise<any
   // The headers carry the sender-authentication verdict (mail/sender-check.ts). A mailbox
   // that will not return them still gets its message; the sender then reads as unverified.
   try {
-    return await client.api(`/me/messages/${messageId}`).select(`${base},internetMessageHeaders`).get();
+    return await client.api(`/me/messages/${messageId}`).select(`${base},internetMessageHeaders`).expand(ORIGIN_EXPAND).get();
   } catch {
-    return client.api(`/me/messages/${messageId}`).select(base).get();
+    return client.api(`/me/messages/${messageId}`).select(base).expand(ORIGIN_EXPAND).get().catch(() => client.api(`/me/messages/${messageId}`).select(base).get());
   }
 }
 
@@ -341,6 +345,20 @@ export async function sendDraftMessage(userId: string, messageId: string): Promi
   if (!msg?.isDraft) throw new Error('That message is no longer a draft — it may already have been sent.');
   await client.api(`/me/messages/${messageId}/send`).post({});
   return { subject: msg.subject ?? null };
+}
+
+/**
+ * A hidden Outlook property on every message CONVEYi writes in someone's mailbox, so its own email is never counted as
+ * the person's work (epa/live.ts): 'sent' when CONVEYi sent it, 'draft' when it wrote a draft a person may send.
+ */
+export const CONVEYI_ORIGIN = 'String {6F2C9A41-3B7D-4E58-9C1A-2D5E8B7F0C34} Name ConveyiOrigin';
+const stamp = (value: 'sent' | 'draft') => ({ singleValueExtendedProperties: [{ id: CONVEYI_ORIGIN, value }] });
+/** Expand that reads the stamp back with a message. */
+export const ORIGIN_EXPAND = `singleValueExtendedProperties($filter=id eq '${CONVEYI_ORIGIN}')`;
+/** Whether CONVEYi wrote this message: sent it, wrote the draft a person sent, or neither. */
+export function conveyiOrigin(m: any): 'sent' | 'draft' | null {
+  const v = ((m?.singleValueExtendedProperties ?? []) as Array<{ id?: string; value?: string }>).find((p) => String(p.id ?? '').toLowerCase().endsWith('name conveyiorigin'))?.value;
+  return v === 'sent' || v === 'draft' ? v : null;
 }
 
 export async function createReplyDraft(
@@ -396,6 +414,7 @@ export async function createReplyDraft(
   } catch { /* the words go without a signature rather than not at all */ }
   const updateBody: Record<string, unknown> = {
     body: { contentType: 'HTML', content: signed },
+    ...stamp('draft'),
   };
 
   // Recipient safety net: Graph's createReply addresses the reply to the SENDER of the source
@@ -527,6 +546,7 @@ export async function createForwardDraft(
     comment,
     toRecipients: [{ emailAddress: { address: toEmail } }],
   });
+  await client.api(`/me/messages/${draft.id}`).patch(stamp('draft')).catch(() => {});
   return { id: draft.id, subject: draft.subject ?? '', webLink: draft.webLink ?? null };
 }
 
@@ -542,6 +562,7 @@ export async function createDraftMessage(
     subject,
     body: { contentType: 'HTML', content: bodyHtml },
     toRecipients: toRecipients.filter(Boolean).map((address) => ({ emailAddress: { address } })),
+    ...stamp('draft'),
   });
 }
 
@@ -558,7 +579,7 @@ export async function setMessageCategory(userId: string, messageId: string, cate
  */
 export async function sendMailTracked(userId: string, to: string | string[], subject: string, bodyHtml: string, attachments: Array<{ name: string; bytes: Buffer; contentType: string }> = []): Promise<{ internetMessageId: string | null }> {
   const client = await graphClientForUser(userId);
-  const draft = await client.api('/me/messages').post({ subject, body: { contentType: 'HTML', content: bodyHtml }, toRecipients: (Array.isArray(to) ? to : [to]).map((address) => ({ emailAddress: { address } })) });
+  const draft = await client.api('/me/messages').post({ subject, body: { contentType: 'HTML', content: bodyHtml }, toRecipients: (Array.isArray(to) ? to : [to]).map((address) => ({ emailAddress: { address } })), ...stamp('sent') });
   const id = String(draft?.id ?? '');
   for (const a of attachments) await addAttachmentToMessage(userId, id, a.name, a.bytes, a.contentType);
   let internetMessageId: string | null = draft?.internetMessageId ?? null;
@@ -585,6 +606,7 @@ export async function sendMail(userId: string, to: string, subject: string, body
       subject,
       body: { contentType: 'HTML', content: bodyHtml },
       toRecipients: [{ emailAddress: { address: to } }],
+      ...stamp('sent'),
     },
     saveToSentItems: true,
   });

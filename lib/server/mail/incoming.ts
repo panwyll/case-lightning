@@ -17,7 +17,7 @@ import { writeAssistCache, markAssistError } from '../assist-cache';
 import { enqueueMessage } from './queue';
 import { autoFileToCase } from './auto-file';
 import type { SessionUser } from '../types';
-import { recordSent } from '../epa/live';
+import { recordEmail } from '../epa/live';
 
 export async function processIncomingMessage(user: SessionUser, messageId: string): Promise<void> {
   const message = await getMessage(user.userId, messageId);
@@ -61,7 +61,7 @@ export async function processIncomingMessage(user: SessionUser, messageId: strin
       ).catch(() => 0);
     }
     // What the email was for, as a timed action on the Time page (epa/live.ts). Best-effort.
-    await recordSent(user, message).catch(() => false);
+    await recordEmail(user, message, 'out').catch(() => false);
     return; // done with this (outbound) message
   }
 
@@ -92,6 +92,9 @@ export async function processIncomingMessage(user: SessionUser, messageId: strin
     // Outside a request (a held email released on resume) there is no after(): run it now.
     await autoFileToCase(user, message, triage.top.matterId, { later: (fn) => { try { after(fn); } catch { void fn(); } } });
   }
+
+  // Reading time for the Time page (epa/live.ts), unless it is now a CONVEYi task on a case (timed there). Best-effort.
+  await recordEmail(user, message, 'in', { matterId: triage.top && hasTrustedLink(triage.top) && !strayed ? triage.top.matterId : null }).catch(() => false);
 
   // Precompute the full taskpane "situation" (thread summary + drafted
   // reply) and cache it, so opening this email is instant. runTriage above

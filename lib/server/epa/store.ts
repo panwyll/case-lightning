@@ -6,9 +6,9 @@ import { baselineScan, estimatesOf, firmSettings, reportFor } from '../workload/
 import type { SessionUser } from '../types';
 import { completionSpans, DEFAULT_LUNCH, type Completion, type Span } from './ledger';
 import { baselineSplit, buildEpaReport, emailEvidence, weekStart, type EpaReport } from './report';
-import { buildMeasurement, type Measurement, type PersonScan } from './measure';
+import { buildMeasurement, READ_MINUTES, type Measurement, type PersonScan } from './measure';
 import { DEFAULT_SETTINGS as WL_DEFAULTS, workingWeeks } from '../workload/model';
-import { asKind, EPA_KINDS, LEGACY_KINDS, fromTask, type EpaKind } from './taxonomy';
+import { asKind, EPA_KINDS, EPA_SPEC, LEGACY_KINDS, fromEmail, fromTask, type EpaKind } from './taxonomy';
 
 export interface SpanIn { start: string; end: string; source: 'focus' | 'reading'; item: string; matterId?: string | null; kind: string; of?: string | null; action?: string | null }
 
@@ -49,17 +49,28 @@ async function personSpans(tenantId: string, userId: string, since: Date, clip: 
       `select id, kind, chip, closed_at from task_record where tenant_id = $1 and closed_at > $2 and closed_by = $3::text and closed_how = 'done'`, [tenantId, since, userId]
     ).catch(() => []),
     // Recorded as they happened (live.ts): email classified as sent, and what was filed or completed in InTouch.
-    query<{ source: string; ref: string; at: Date; drafted_at: Date | null; category: string | null; roles: string[] | null; kind: string | null }>(
-      `select source, ref, at, drafted_at, category, roles, kind from epa_action where user_id = $1 and at > $2`, [userId, since]
+    query<{ source: string; ref: string; at: Date; drafted_at: Date | null; category: string | null; roles: string[] | null; kind: string | null; case_id: string | null }>(
+      `select source, ref, at, drafted_at, category, roles, kind, case_id from epa_action where user_id = $1 and at > $2`, [userId, since]
     ).catch(() => []),
   ]);
   const spans: Span[] = focus.map((f) => ({ start: f.started_at.getTime(), end: f.ended_at.getTime(), item: f.item, kind: asKind(f.kind), of: f.draft_of ? asKind(f.draft_of) : null, action: f.action, source: f.source }));
   // Completions (docs/epa.md §2): what this person finished, each given the time since the one before.
   const done: Completion[] = tasks.map((t) => { const w = fromTask({ kind: t.kind, chip: t.chip }); return { at: t.closed_at.getTime(), item: `task:${t.id}`, kind: w.kind, of: w.of ?? null, action: w.action ?? null }; });
   const emails = new Map(sent.map((e) => [e.id, e]));
+  // Emails opened on the Email tab: their reading is already timed there.
+  const opened = new Set(focus.filter((f) => f.item.startsWith('email:')).map((f) => f.item.slice('email:'.length)));
   for (const a of live) {
     if (a.source === 'sent') {
+      // CONVEYi sent it: CONVEYi's work, not the person's. A CONVEYi draft they sent: their time was checking it.
+      if (a.kind === 'conveyi') { emails.delete(a.ref); continue; }
+      if (a.kind === 'checking_drafts') { emails.delete(a.ref); done.push({ at: a.at.getTime(), item: `email:${a.ref}`, kind: 'checking_drafts', of: fromEmail(a.category, a.roles) }); continue; }
       if (!emails.has(a.ref)) emails.set(a.ref, { id: a.ref, category: a.category, drafted_at: a.drafted_at, sent_at: a.at, recipient_roles: a.roles });
+    } else if (a.source === 'received') {
+      // Reading, as the scan counts it, unless it became a CONVEYi task (filed to a case) or was opened in the app: timed there.
+      const mins = READ_MINUTES[a.category ?? ''] ?? 0;
+      const kind = fromEmail(a.category, a.roles);
+      if (a.case_id || opened.has(a.ref) || !mins || EPA_SPEC[kind].rag === 'none') continue;
+      spans.push({ start: a.at.getTime(), end: a.at.getTime() + mins * 60_000, item: `in:${a.ref}`, kind, source: 'estimate' });
     } else if (a.kind) done.push({ at: a.at.getTime(), item: `${a.source}:${a.ref}`, kind: asKind(a.kind) });
   }
   for (const e of emails.values()) {

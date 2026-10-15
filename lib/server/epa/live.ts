@@ -13,6 +13,7 @@
 import { query, queryOne, runAsSystem } from '../db';
 import { classifyTaskKinds, classifyWorkload } from '../ai';
 import { tenantSelfAddresses } from '../matching';
+import { conveyiOrigin } from '../graph';
 import type { SessionUser } from '../types';
 import type { InTouchApi, InTouchHttpClient } from '../integrations/intouch/client';
 import { stage } from '../workload/scan';
@@ -26,24 +27,39 @@ type Api = Pick<InTouchApi, 'listCases' | 'getCase' | 'tasks'> & Pick<InTouchHtt
 export const DAILY_CASES = 200;
 const CATCH_UP_MS = 7 * 86_400_000;
 
-/** An email the person just sent: what it was for and who it went to, kept as a timed action. */
-export async function recordSent(user: SessionUser, message: any): Promise<boolean> {
+/**
+ * An email the person sent or received, kept as evidence for the Time page, classified as the scan classifies it.
+ * - Sent by CONVEYi (its stamp, or an Internet Message-ID CONVEYi logged when it sent): kept as CONVEYi's work, never the
+ *   person's (`kind` 'conveyi').
+ * - A CONVEYi draft the person sent: their time is checking it (`kind` 'checking_drafts'), not the work it does.
+ * - Received: reading time, unless it became a CONVEYi task (`matterId`: filed to a case), whose handling is timed in the app.
+ */
+export async function recordEmail(user: SessionUser, message: any, direction: 'out' | 'in', opts: { matterId?: string | null } = {}): Promise<boolean> {
   const self = await tenantSelfAddresses(user.tenantId);
-  const s = stage(message, 'out', firmDomainsOf([...self.domains, domainOf(user.email)]));
-  // Automated, bulk or empty mail is not work; email to colleagues is not counted.
+  const s = stage(message, direction, firmDomainsOf([...self.domains, domainOf(user.email)]));
+  // Automated, bulk or empty mail is not work; email between colleagues is not counted.
   if (!s || s.filtered || s.internal) return false;
+  let origin: 'conveyi' | 'checking_drafts' | null = null;
+  if (direction === 'out') {
+    const stamped = conveyiOrigin(message);
+    const logged = !stamped && message.internetMessageId
+      ? await queryOne<{ id: string }>(`select id from client_message where tenant_id = $1 and provider_ref = $2 limit 1`, [user.tenantId, message.internetMessageId]).catch(() => null)
+      : null;
+    origin = stamped === 'sent' || logged ? 'conveyi' : stamped === 'draft' ? 'checking_drafts' : null;
+  }
   const outDefs = OUT_CATEGORIES.filter((c) => c !== 'internal').map((key) => ({ key, what: OUT_SPEC[key].what }));
   const inDefs = IN_CATEGORIES.map((key) => ({ key, what: IN_SPEC[key].what }));
   const r = await classifyWorkload({
     userId: user.userId, tenantId: user.tenantId, outCategories: outDefs, inCategories: inDefs, roles: ROLES,
-    emails: [{ id: 'm1', direction: 'out', subject: s.subject.slice(0, 200), people: s.people.slice(0, 300), isReply: s.isReply, isForward: s.isForward, hasAttachments: s.hasAttachments, text: s.text.slice(0, 900) }],
+    emails: [{ id: 'm1', direction, subject: s.subject.slice(0, 200), people: s.people.slice(0, 300), isReply: s.isReply, isForward: s.isForward, hasAttachments: s.hasAttachments, text: s.text.slice(0, 900) }],
   });
   const x = r.results.find((y) => y.id === 'm1');
-  if (!x || !(OUT_CATEGORIES as readonly string[]).includes(x.category)) return false;
+  const allowed: readonly string[] = direction === 'out' ? OUT_CATEGORIES : IN_CATEGORIES;
+  if (!x || !allowed.includes(x.category)) return false;
   const roles = (x.roles ?? []).filter((role) => (ROLES as readonly string[]).includes(role));
   await query(
-    `insert into epa_action (tenant_id, user_id, source, ref, at, drafted_at, category, roles, classified_by) values ($1,$2,'sent',$3,$4,$5,$6,$7,$8) on conflict (user_id, source, ref) do nothing`,
-    [user.tenantId, user.userId, s.id, s.sentAt, s.draftedAt, x.category, roles, r.model]
+    `insert into epa_action (tenant_id, user_id, source, ref, at, drafted_at, category, roles, kind, case_id, classified_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict (user_id, source, ref) do nothing`,
+    [user.tenantId, user.userId, direction === 'out' ? 'sent' : 'received', s.id, s.sentAt, s.draftedAt, x.category, roles, origin, opts.matterId ?? null, r.model]
   );
   return true;
 }

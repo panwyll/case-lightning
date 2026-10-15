@@ -47,8 +47,8 @@ export const ROLES = ['client', 'other_solicitor', 'estate_agent', 'lender', 'br
 export type Role = (typeof ROLES)[number];
 
 /** Why a message was set aside by rule before classification. */
-export type Filtered = 'automated' | 'bulk' | 'calendar' | 'auto_reply' | 'empty';
-export const FILTERED_LABEL: Record<Filtered, string> = { automated: 'Automated senders', bulk: 'Newsletters and bulk mail', calendar: 'Calendar responses', auto_reply: 'Out-of-office and bounces', empty: 'Nothing written' };
+export type Filtered = 'automated' | 'bulk' | 'calendar' | 'auto_reply' | 'empty' | 'conveyi';
+export const FILTERED_LABEL: Record<Filtered, string> = { automated: 'Automated senders', bulk: 'Newsletters and bulk mail', calendar: 'Calendar responses', auto_reply: 'Out-of-office and bounces', empty: 'Nothing written', conveyi: 'Sent by CONVEYi' };
 
 const AUTOMATED_SENDER = /(^|[._+-])(no-?reply|do-?not-?reply|donotreply|notifications?|mailer-daemon|postmaster|bounces?|alerts?|news(letter)?|marketing)([._+-]|@)/i;
 const CALENDAR = /^(accepted|declined|tentative|tentatively accepted|updated invitation|invitation|canceled|cancelled)( event)?:/i;
