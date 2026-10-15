@@ -12,9 +12,6 @@ import type { SessionUser } from '@/lib/server/types';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** Scans a person may start in 30 days: each costs model calls on up to 5,000 messages. */
-const SCANS_PER_MONTH = 4;
-
 const scanView = (s: ScanRow | null) => s && { id: s.id, status: s.status, since: s.since, until: s.until, messagesRead: s.messages_read, classified: s.classified, maxMessages: s.max_messages, model: s.model, promptVersion: s.prompt_version, error: s.error, createdAt: s.created_at, completedAt: s.completed_at };
 
 /** Whose report: your own, or (an admin) anyone's at the firm. */
@@ -75,8 +72,6 @@ export async function POST(req: NextRequest) {
     assertFeature('ai');
     const user = await requireUser();
     const body = z.object({ weeks: z.number().int().min(2).max(52).optional(), sinceBaseline: z.boolean().optional() }).parse(await req.json().catch(() => ({})));
-    const recent = await queryOne<{ n: number }>(`select count(*)::int as n from workload_scan where user_id = $1 and created_at > now() - interval '30 days'`, [user.userId]);
-    if ((recent?.n ?? 0) >= SCANS_PER_MONTH) throw Object.assign(new Error(`${SCANS_PER_MONTH} scans a month is the most; the next can start when the oldest is a month old.`), { status: 429 });
     let since: string | undefined;
     if (body.sinceBaseline) {
       const base = await baselineScan(user.userId);
