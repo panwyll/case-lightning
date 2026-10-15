@@ -48,3 +48,26 @@ test("Outlook's own timing is writing; an empty firm gives nothing", () => {
   assert.equal(m.cases, null);
   assert.equal(buildMeasurement({ people: [], contractedHours: 37.5, levels: DEFAULT_LEVELS }), null);
 });
+
+import { fromInTouchItem } from '../../../lib/server/epa/taxonomy';
+import { toFolderActivity } from '../../../lib/server/integrations/intouch/mapping';
+
+test('InTouch: what the firm filed, as a kind of work; email records and calls are not work of their own', () => {
+  assert.equal(fromInTouchItem({ kind: 'document', name: 'Report on Title - 12 Elm Rd.pdf' }), 'report_on_title');
+  assert.equal(fromInTouchItem({ kind: 'document', name: 'Additional Enquiries' }), 'raising_enquiries');
+  assert.equal(fromInTouchItem({ kind: 'document', name: 'TR1 signed.pdf' }), 'contract_and_lease_review');
+  assert.equal(fromInTouchItem({ kind: 'document', name: 'Completion Statement v2' }), 'requesting_funds');
+  assert.equal(fromInTouchItem({ kind: 'document', name: 'SDLT5 certificate' }), 'sdlt_return');
+  assert.equal(fromInTouchItem({ kind: 'document', name: 'AP1 application' }), 'land_registry_applications');
+  assert.equal(fromInTouchItem({ kind: 'document', name: 'Local search results' }), 'filing');
+  assert.equal(fromInTouchItem({ kind: 'note', name: null }), 'notes_and_outcomes');
+  assert.equal(fromInTouchItem({ kind: 'email', name: 'Re: completion' }), null);
+  assert.equal(fromInTouchItem({ kind: 'call', name: null }), null);
+});
+
+test('InTouch folder item: kind, when, who filed it and its name', () => {
+  const a = toFolderActivity({ type: 'Document', createdOn: '2026-10-06T10:00:00Z', fields: { fileName: 'Report on Title.pdf', label1: 'Reports', uploadedBy: 'Firm User' } });
+  assert.deepEqual(a, { kind: 'document', at: '2026-10-06T10:00:00.000Z', byFirm: true, name: 'Report on Title.pdf · Reports' });
+  assert.equal(toFolderActivity({ type: 'Email', createdOn: '2026-10-06T10:00:00Z' }).kind, 'email');
+  assert.equal(toFolderActivity({ type: 'Document', createdOn: '2026-10-06T10:00:00Z', uploadedBy: 'Client' }).byFirm, false);
+});

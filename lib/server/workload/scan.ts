@@ -34,7 +34,11 @@ export interface InTouchCounts {
   filedByFirm: { email: number; note: number; call: number; document: number };
   filedByOthers: number;
   /** What the firm filed, each with when (the measurement uses them as timed actions), and what kind of work it was. */
-  items?: Array<{ at: string; kind: string }>;
+  items?: Array<{ at: string; kind: string; name?: string | null; caseId?: string }>;
+  /** The cases read: their references, for showing what was read. */
+  refs?: Record<string, string>;
+  /** When none of the cases have this person as fee earner: the fee earners InTouch does have, most cases first. */
+  feeEarners?: string[];
   error?: string | null;
 }
 
@@ -44,6 +48,8 @@ const SLICE_MS = 12_000;
 const BATCH = 15;
 const CONCURRENCY = 5;
 const TEXT_CHARS = 900;
+/** InTouch cases read per person: the most recently updated. */
+export const INTOUCH_CASES = 60;
 /** Two months: the measurement phase's window. */
 export const DEFAULT_WEEKS = 9;
 /** Two months of a conveyancer receiving 200-300 emails a day and sending 60-80. */
@@ -200,7 +206,7 @@ export async function advanceScan(user: SessionUser, scan: ScanRow): Promise<Sca
 /** What a scan has read so far, by folder, and what it read from InTouch: shown while it runs and after, so it can be trusted. */
 export interface ScanCounts {
   sent: number; received: number; setAside: number; classified: number; model: string | null;
-  intouch: { state: 'not_connected' | 'waiting' | 'reading' | 'read' | 'failed'; live: number; read: number; error: string | null };
+  intouch: { state: 'not_connected' | 'waiting' | 'reading' | 'read' | 'failed'; live: number; read: number; cases: number; items: number; feeEarners: string[] | null; error: string | null };
 }
 export async function scanCounts(scan: ScanRow): Promise<ScanCounts> {
   const rows = await query<{ direction: 'out' | 'in'; n: number; aside: number; classified: number }>(
@@ -213,7 +219,7 @@ export async function scanCounts(scan: ScanRow): Promise<ScanCounts> {
   return {
     sent: by('out')?.n ?? 0, received: by('in')?.n ?? 0, setAside: (by('out')?.aside ?? 0) + (by('in')?.aside ?? 0),
     classified: rows.reduce((a, r) => a + r.classified, 0), model: scan.model,
-    intouch: { state, live: it?.live ?? 0, read: it?.read ?? 0, error: it?.error ?? null },
+    intouch: { state, live: it?.live ?? 0, read: it?.read ?? 0, cases: it?.cases.length ?? 0, items: it?.items?.length ?? 0, feeEarners: it?.feeEarners ?? null, error: it?.error ?? null },
   };
 }
 
@@ -237,16 +243,32 @@ async function advanceInTouch(user: SessionUser, scan: ScanRow, started: number)
     const { inTouchClient } = await import('../integrations/intouch/adapters');
     const client = await inTouchClient(user.tenantId);
     if (!scan.intouch) {
+      // The person's 60 most recently updated cases that were live or touched in the window: completed ones too, whose
+      // completion statements and transfers are the work being measured.
+      const picked: Array<{ id: string; ref: string; updatedAt: string }> = [];
+      const others = new Map<string, number>();
       let cursor: string | null = '1';
       for (let n = 0; cursor && n < 40; n++) {
         const page: Awaited<ReturnType<typeof client.listCases>> = await client.listCases({ cursor, limit: 100 });
         for (const c of page.items) {
-          if (!mine(user, c.feeEarner)) continue;
+          if (!mine(user, c.feeEarner)) {
+            const fe = c.feeEarner?.name || c.feeEarner?.email;
+            if (fe) others.set(fe, (others.get(fe) ?? 0) + 1);
+            continue;
+          }
           if (c.createdAt && c.createdAt >= scan.since && c.createdAt <= scan.until) counts.openedInWindow += 1;
-          if (c.status === 'active' || c.status === 'instructed') { counts.live += 1; counts.cases.push(c.id); }
+          const live = c.status === 'active' || c.status === 'instructed';
+          if (live) counts.live += 1;
+          if (live || (c.updatedAt && c.updatedAt >= scan.since)) picked.push({ id: c.id, ref: c.reference || c.firmReference || c.propertyAddress || c.id, updatedAt: c.updatedAt ?? '' });
         }
         cursor = page.next;
       }
+      picked.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      const chosen = picked.slice(0, INTOUCH_CASES);
+      counts.cases = chosen.map((c) => c.id);
+      counts.refs = Object.fromEntries(chosen.map((c) => [c.id, String(c.ref).slice(0, 60)]));
+      // None matched: say whose cases InTouch does have, so a name or email that differs is seen, not a silent zero.
+      if (!chosen.length) counts.feeEarners = [...others].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name]) => name);
     }
     while (counts.read < counts.cases.length && Date.now() - started < SLICE_MS) {
       const items = await client.folderActivity(counts.cases[counts.read], scan.since);
@@ -255,7 +277,7 @@ async function advanceInTouch(user: SessionUser, scan: ScanRow, started: number)
         if (i.byFirm === false) { counts.filedByOthers += 1; continue; }
         counts.filedByFirm[i.kind] += 1;
         const k = fromInTouchItem(i);
-        if (k && i.at) (counts.items ??= []).push({ at: i.at, kind: k });
+        if (k && i.at) (counts.items ??= []).push({ at: i.at, kind: k, name: (i.name ?? '').slice(0, 80) || null, caseId: counts.cases[counts.read] });
       }
       counts.read += 1;
     }

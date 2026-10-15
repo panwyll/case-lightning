@@ -26,6 +26,13 @@ export async function GET(req: NextRequest) {
     const scan = await latestScan(user.userId);
     if (!scan) return ok({ total: 0, page: 1, pages: 0, emails: [] });
     const page = Math.max(1, Number(req.nextUrl.searchParams.get('page')) || 1);
+    // What it read from InTouch: each document or note the firm filed, newest first, with its case and the kind of work.
+    if (req.nextUrl.searchParams.get('source') === 'intouch') {
+      const items = [...(scan.intouch?.items ?? [])].sort((a, b) => b.at.localeCompare(a.at));
+      const refs = scan.intouch?.refs ?? {};
+      const slice = items.slice((page - 1) * PAGE, page * PAGE).map((i) => ({ at: i.at, caseRef: (i.caseId && refs[i.caseId]) || null, name: i.name ?? null, label: EPA_SPEC[i.kind as keyof typeof EPA_SPEC]?.label ?? i.kind }));
+      return ok({ total: items.length, page, pages: Math.ceil(items.length / PAGE), items: slice });
+    }
     const [{ total }] = await query<{ total: number }>(`select count(*)::int as total from workload_email where scan_id = $1`, [scan.id]);
     const rows = await query<{ graph_message_id: string; direction: 'out' | 'in'; sent_at: Date; recipient_roles: string[] | null; filtered: Filtered | null; category: string | null }>(
       `select graph_message_id, direction, sent_at, recipient_roles, filtered, category from workload_email where scan_id = $1 order by sent_at desc limit $2 offset $3`,

@@ -17,6 +17,7 @@ import type { ScanCounts } from '@/lib/server/workload/scan';
  */
 interface Mine { status: string; messagesRead: number; classified: number; since: string; until: string; error: string | null; counts: ScanCounts }
 interface Res { measurement: Measurement | null; team: number; scanned: number; mine: Mine | null }
+interface ReadItem { at: string; caseRef: string | null; name: string | null; label: string }
 interface ReadEmail { at: string; direction: 'out' | 'in'; roles: string[]; label: string; subject: string | null; people: string | null; webLink: string | null }
 
 const RUNNING = ['SCANNING_SENT', 'SCANNING_INBOX', 'SCANNING_INTOUCH'];
@@ -54,6 +55,9 @@ const CSS = `
 .ms-t td{padding:7px 8px;border-bottom:1px solid #f1f3f7;vertical-align:top}
 .ms-t td.when{white-space:nowrap;color:#475569}
 .ms-t a{color:#5A27E0;text-decoration:none;font-weight:600}
+.ms-segs{display:inline-flex;background:#f1f5f9;border-radius:9px;padding:3px;margin-top:12px}
+.ms-segs button{border:0;background:none;font:inherit;font-size:13px;font-weight:700;color:#64748b;padding:5px 12px;border-radius:7px;cursor:pointer}
+.ms-segs button.on{background:#fff;color:#0f172a;box-shadow:0 1px 2px rgba(15,23,42,.08)}
 .ms-pg{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px;font-size:13px;color:#475569;font-weight:700}
 .ms-pg button{border:0;background:#f1f5f9;border-radius:8px;padding:6px 11px;font:inherit;font-weight:700;cursor:pointer}
 .ms-warn{display:flex;align-items:center;gap:10px;margin-top:14px;background:#fef9c3;border:1px solid #fde68a;color:#713f12;border-radius:10px;padding:9px 12px;font-size:13px;font-weight:700}
@@ -73,7 +77,7 @@ function Progress({ mine }: { mine: Mine }) {
   const at = order.indexOf(mine.status);
   const state = (i: number) => (at === -1 ? 'done' : i < at ? 'done' : i === at ? 'on' : 'wait');
   const it = c.intouch;
-  const intouchLine = it.state === 'not_connected' ? 'Not Connected' : it.state === 'failed' ? `Could Not Be Read: ${it.error}` : it.state === 'reading' ? `${n(it.read)} Of ${n(it.live)} Live Cases` : it.state === 'read' ? `${n(it.live)} Live Cases Read` : 'Waiting';
+  const intouchLine = it.state === 'not_connected' ? 'Not Connected' : it.state === 'failed' ? `Could Not Be Read: ${it.error}` : it.state === 'reading' ? (it.cases ? `${n(it.read)} Of ${n(it.cases)} Cases` : 'Finding Your Cases') : it.state === 'read' ? `${n(it.cases)} Cases · ${n(it.items)} Documents And Notes` : 'Waiting';
   const steps = [
     { title: 'Sent Items', line: `${n(c.sent)} Emails Read` },
     { title: 'Inbox', line: state(1) === 'wait' ? 'Waiting' : `${n(c.received)} Emails Read` },
@@ -99,34 +103,54 @@ function Progress({ mine }: { mine: Mine }) {
   );
 }
 
-/** Every email your scan read, newest first, with the label it was given. Read-only. */
-function EmailsRead() {
+/** Every email your scan read (and every InTouch document and note), newest first, with the label it was given. Read-only. */
+function EmailsRead({ intouch }: { intouch: boolean }) {
+  const [source, setSource] = useState<'email' | 'intouch'>('email');
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<{ total: number; pages: number; emails: ReadEmail[] } | null>(null);
+  const [data, setData] = useState<{ total: number; pages: number; emails?: ReadEmail[]; items?: ReadItem[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     setData(null);
-    api<{ total: number; pages: number; emails: ReadEmail[] }>(`/epa/measurement/emails?page=${page}`).then(setData).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not read them.'));
-  }, [page]);
-  if (err) return <p className="ms-err">{err}</p>;
-  if (!data) return <p className="tv-none">Reading your mailbox…</p>;
+    api<{ total: number; pages: number; emails?: ReadEmail[]; items?: ReadItem[] }>(`/epa/measurement/emails?page=${page}${source === 'intouch' ? '&source=intouch' : ''}`).then(setData).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not read them.'));
+  }, [page, source]);
+  const pick = (s: 'email' | 'intouch') => { setSource(s); setPage(1); };
   return (
     <>
-      <table className="ms-t">
-        <thead><tr><th>When</th><th>Sent Or Received</th><th>Who With</th><th>Subject</th><th>Labelled As</th></tr></thead>
-        <tbody>
-          {data.emails.map((e, i) => (
-            <tr key={i}>
-              <td className="when">{when(e.at)}</td>
-              <td>{e.direction === 'out' ? 'Sent' : 'Received'}</td>
-              <td>{e.roles.map((r) => ROLE[r] ?? r).join(', ') || '—'}</td>
-              <td>{e.webLink ? <a href={e.webLink} target="_blank" rel="noreferrer">{e.subject || '(No Subject)'}</a> : e.subject ?? '(No Longer In Your Mailbox)'}</td>
-              <td>{e.label}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {data.pages > 1 && (
+      {intouch && (
+        <span className="ms-segs" role="tablist">
+          <button type="button" role="tab" aria-selected={source === 'email'} className={source === 'email' ? 'on' : ''} onClick={() => pick('email')}>Emails</button>
+          <button type="button" role="tab" aria-selected={source === 'intouch'} className={source === 'intouch' ? 'on' : ''} onClick={() => pick('intouch')}>InTouch</button>
+        </span>
+      )}
+      {err && <p className="ms-err">{err}</p>}
+      {!data && !err && <p className="tv-none">{source === 'email' ? 'Reading your mailbox…' : 'Loading…'}</p>}
+      {data && source === 'email' && (
+        <table className="ms-t">
+          <thead><tr><th>When</th><th>Sent Or Received</th><th>Who With</th><th>Subject</th><th>Labelled As</th></tr></thead>
+          <tbody>
+            {(data.emails ?? []).map((e, i) => (
+              <tr key={i}>
+                <td className="when">{when(e.at)}</td>
+                <td>{e.direction === 'out' ? 'Sent' : 'Received'}</td>
+                <td>{e.roles.map((r) => ROLE[r] ?? r).join(', ') || '—'}</td>
+                <td>{e.webLink ? <a href={e.webLink} target="_blank" rel="noreferrer">{e.subject || '(No Subject)'}</a> : e.subject ?? '(No Longer In Your Mailbox)'}</td>
+                <td>{e.label}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {data && source === 'intouch' && (
+        <table className="ms-t">
+          <thead><tr><th>When</th><th>Case</th><th>Document Or Note</th><th>Labelled As</th></tr></thead>
+          <tbody>
+            {(data.items ?? []).map((x, i) => (
+              <tr key={i}><td className="when">{when(x.at)}</td><td>{x.caseRef ?? '—'}</td><td>{x.name ?? '—'}</td><td>{x.label}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {data && data.pages > 1 && (
         <div className="ms-pg">
           <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
           Page {page} Of {data.pages}
@@ -211,10 +235,13 @@ export default function MeasurePage() {
                 <span><b>{n(c.received)}</b> Received</span>
                 <span><b>{n(c.setAside)}</b> Set Aside As Automated, Bulk Or Empty</span>
                 <span><b>{n(c.classified)}</b> Labelled{c.model ? ` By ${/haiku/i.test(c.model) ? 'Claude Haiku' : c.model}` : ''}</span>
-                <span>InTouch: <b>{c.intouch.state === 'read' ? `${n(c.intouch.live)} Live Cases Read` : c.intouch.state === 'failed' ? 'Could Not Be Read' : 'Not Connected'}</b></span>
+                <span>InTouch: <b>{c.intouch.state === 'failed' ? 'Could Not Be Read' : c.intouch.state !== 'read' ? 'Not Connected' : c.intouch.cases ? `${n(c.intouch.cases)} Cases · ${n(c.intouch.items)} Documents And Notes` : 'No Cases With You As Fee Earner'}</b></span>
                 <button type="button" aria-expanded={showEmails} onClick={() => setShowEmails((v) => !v)}>{showEmails ? 'Hide' : 'See'} What It Read<ChevronRight size={16} style={{ transform: showEmails ? 'rotate(90deg)' : undefined }} /></button>
               </div>
-              {showEmails && <EmailsRead />}
+              {c.intouch.state === 'read' && !c.intouch.cases && !!c.intouch.feeEarners?.length && (
+                <div className="ms-warn" role="status"><span>InTouch has cases for {c.intouch.feeEarners.join(', ')}, none with your name or email as fee earner.</span></div>
+              )}
+              {showEmails && <EmailsRead intouch={c.intouch.state === 'read' && c.intouch.items > 0} />}
             </section>
           )}
           {res && !m && !mine && <p className="tv-none">No mailbox scanned yet.</p>}

@@ -237,13 +237,23 @@ export class InTouchHttpClient implements InTouchApi {
   /** What was filed on a matter since `since`: records and documents, newest pages first, never downloaded. */
   async folderActivity(caseId: string, since: string, maxPages = 5): Promise<Array<{ kind: 'email' | 'note' | 'call' | 'document'; at: string | null; byFirm: boolean | null; name: string | null }>> {
     const out: Array<{ kind: 'email' | 'note' | 'call' | 'document'; at: string | null; byFirm: boolean | null; name: string | null }> = [];
+    let ordered = true;
     for (let page = 1; page <= maxPages; page++) {
-      const data = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.folder(caseId), undefined, { query: { page, pageSize: 100, orderBy: 'createdOn', orderByDirection: 'desc' } });
+      let data: unknown;
+      try {
+        data = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.folder(caseId), undefined, { query: { page, pageSize: 100, ...(ordered ? { orderBy: 'createdOn', orderByDirection: 'desc' } : {}) } });
+      } catch (err) {
+        // InTouch may not sort the folder: read it unsorted, every page, and keep what falls in the window.
+        if (!ordered || !(err instanceof InTouchError) || err.status !== 400) throw err;
+        ordered = false;
+        page -= 1;
+        continue;
+      }
       const raws = (pick(data, ['items']) as unknown[] | undefined) ?? (Array.isArray(data) ? data : []);
       const items = raws.map(toFolderActivity);
       out.push(...items.filter((i) => !i.at || i.at >= since));
       // Newest first: once a page reaches before the window, there is nothing more to read.
-      if (raws.length < 100 || items.some((i) => i.at && i.at < since)) break;
+      if (raws.length < 100 || (ordered && items.some((i) => i.at && i.at < since))) break;
     }
     return out;
   }

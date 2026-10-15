@@ -116,7 +116,7 @@ export function fromInTouchItem(item: { kind: 'email' | 'note' | 'call' | 'docum
   if (/enquir/.test(n)) return 'raising_enquiries';
   if (/\btr1\b|transfer deed|\bcontract\b|\blease\b|\btp1\b/.test(n)) return 'contract_and_lease_review';
   if (/completion statement|statement of account/.test(n)) return 'requesting_funds';
-  if (/\bsdlt\b|stamp duty|\bltt\b/.test(n)) return 'sdlt_return';
+  if (/\bsdlt|stamp duty|\bltt\b/.test(n)) return 'sdlt_return';
   if (/\bap1\b|land registry|\bds1\b/.test(n)) return 'land_registry_applications';
   return 'filing';
 }
