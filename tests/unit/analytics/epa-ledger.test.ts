@@ -156,13 +156,15 @@ const done = (item: string, min: number, kind: Completion['kind'] = 'client_chas
 const mins = (sp: Span[]) => sp.map((s) => [s.item, (s.end - s.start) / 60_000]);
 
 test('completions: the in-tray of three, each given the time since the one before, from the start of the day', () => {
-  // Finished at 09:20, 09:40, 10:00.
-  assert.deepEqual(mins(completionSpans([done('a', 20), done('b', 40), done('c', 60)], RULES)), [['a', 20], ['b', 20], ['c', 20]]);
+  // Three reviews finished at 09:20, 09:40, 10:00.
+  assert.deepEqual(mins(completionSpans([done('a', 20, 'title_review'), done('b', 40, 'title_review'), done('c', 60, 'title_review')], RULES)), [['a', 20], ['b', 20], ['c', 20]]);
 });
 
-test('completions: routine work is capped at an hour, legal work at three; lunch is never work', () => {
-  // A chaser at 11:30 after nothing since 09:00: an hour, not two and a half.
-  assert.deepEqual(mins(completionSpans([done('c', 150)], RULES)), [['c', 60]]);
+test('completions: routine work is capped at three times what it takes, legal work at three hours; lunch is never work', () => {
+  // A chaser at 11:30 after nothing since 09:00: 15 minutes (three times 4, never under 15), not two and a half hours.
+  assert.deepEqual(mins(completionSpans([done('c', 150)], RULES)), [['c', 15]]);
+  // A Land Registry application (typically 25 minutes): up to 75.
+  assert.deepEqual(mins(completionSpans([done('l', 150, 'land_registry_applications')], RULES)), [['l', 75]]);
   // A title review at 12:00 after 09:00: three hours.
   assert.deepEqual(mins(completionSpans([done('t', 180, 'title_review')], RULES)), [['t', 180]]);
   // A review done 12:30 then one finished 14:30 (BST): 13:00–14:00 is lunch, so the second is 30 + 30 minutes.
@@ -179,6 +181,6 @@ test('completions: a run of approvals in one sitting shares the time before it',
 });
 
 test('completions out of hours are kept (they count as after hours) and capped', () => {
-  // An email at 21:00 after the last thing at 17:00: an hour, not four.
-  assert.deepEqual(mins(completionSpans([done('a', 480, 'filing'), done('late', 720, 'client_updates')], RULES)).filter(([i]) => i === 'late'), [['late', 60]]);
+  // A client update at 21:00 after the last thing at 17:00: three times 7 minutes, not four hours.
+  assert.deepEqual(mins(completionSpans([done('a', 480, 'filing'), done('late', 720, 'client_updates')], RULES)).filter(([i]) => i === 'late'), [['late', 21]]);
 });

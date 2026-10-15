@@ -4,7 +4,7 @@ import { ok, fail } from '@/lib/server/http';
 import { query } from '@/lib/server/db';
 import { engine } from '@/lib/server/engine/adapters';
 import { firmSettings, latestScan, scanCounts } from '@/lib/server/workload/scan';
-import { DEFAULT_SETTINGS, TIMED_RANGE, workingWeeks } from '@/lib/server/workload/model';
+import { DEFAULT_SETTINGS, workingWeeks } from '@/lib/server/workload/model';
 import { buildMeasurement, type PersonScan } from '@/lib/server/epa/measure';
 
 export const runtime = 'nodejs';
@@ -30,30 +30,22 @@ export async function GET() {
     ]);
     const people: PersonScan[] = [];
     for (const s of scans) {
-      const [sent, received] = await Promise.all([
-        query<{ category: string; roles: string[]; count: number; timed: number; median: number | null }>(
-          `select category, recipient_roles as roles, count(*)::int as count,
-                  count(*) filter (where m between $2 and $3)::int as timed,
-                  percentile_cont(0.5) within group (order by m) filter (where m between $2 and $3) as median
-             from (select category, recipient_roles, extract(epoch from (sent_at - drafted_at)) / 60 as m
-                     from workload_email where scan_id = $1 and direction = 'out' and filtered is null and category is not null) e
-            group by category, recipient_roles`, [s.id, TIMED_RANGE[0], TIMED_RANGE[1]]
-        ),
-        query<{ category: string; roles: string[]; count: number }>(
-          `select category, recipient_roles as roles, count(*)::int as count from workload_email
-            where scan_id = $1 and direction = 'in' and filtered is null and category is not null group by category, recipient_roles`, [s.id]
-        ),
-      ]);
+      // Each email with its time: the measurement places them on the person's day (lib/server/epa/measure.ts).
+      const rows = await query<{ id: string; direction: 'out' | 'in'; sent_at: Date; drafted_at: Date | null; category: string; roles: string[] | null }>(
+        `select id, direction, sent_at, drafted_at, category, recipient_roles as roles from workload_email
+          where scan_id = $1 and filtered is null and category is not null`, [s.id]
+      );
+      const as = (r: (typeof rows)[number]) => ({ id: r.id, at: r.sent_at.getTime(), draftedAt: r.drafted_at ? r.drafted_at.getTime() : null, category: r.category, roles: r.roles ?? [] });
       people.push({
         weeks: workingWeeks(new Date(s.since).toISOString(), new Date(s.until).toISOString()),
-        sent: sent.map((g) => ({ category: g.category, roles: g.roles ?? [], count: g.count, timed: g.timed, timedMedianMinutes: g.median == null ? null : Number(g.median) })),
-        received: received.map((g) => ({ category: g.category, roles: g.roles ?? [], count: g.count })),
+        sent: rows.filter((r) => r.direction === 'out').map(as),
+        received: rows.filter((r) => r.direction === 'in').map(as),
         intouch: s.intouch ?? null,
       });
     }
     const contracted = Number(settings.contractedHours ?? DEFAULT_SETTINGS.contractedHours);
     return ok({
-      measurement: buildMeasurement({ people, contractedHours: contracted, levels }),
+      measurement: buildMeasurement({ people, contractedHours: contracted, levels, workday: { workdayStart: settings.workdayStart ?? DEFAULT_SETTINGS.workdayStart, workdayEnd: settings.workdayEnd ?? DEFAULT_SETTINGS.workdayEnd } }),
       team: team[0]?.n ?? 0,
       scanned: people.length,
       mine: mine && { status: mine.status, messagesRead: mine.messages_read, classified: mine.classified, since: mine.since, until: mine.until, error: mine.error, counts: await scanCounts(mine) },

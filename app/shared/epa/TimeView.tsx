@@ -20,7 +20,8 @@ const CSS = `
 .tv-cardhead{display:flex;align-items:baseline;gap:10px;margin-bottom:16px;flex-wrap:wrap}
 .tv-cardhead .r{margin-left:auto;font-size:12.5px;color:#64748b;font-weight:700}
 .tv-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:16px;margin-top:16px}
-.tv-green{background:#1E8E4E}.tv-amber{background:#E39A2D}.tv-red{background:#D64A3A}
+.tv-green{background:#1E8E4E}.tv-amber{background:#E39A2D}.tv-red{background:#D64A3A}.tv-unseen{background:#CBD5E1}
+.tv-vstack > span.tv-unseen{color:#334155}
 .tv-week{display:flex;gap:22px;align-items:stretch;height:300px}
 .tv-vstack{width:120px;flex:none;display:flex;flex-direction:column;gap:2px}
 .tv-vstack > span{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:16px;min-height:0;overflow:hidden}
@@ -96,7 +97,7 @@ const SHORT: Partial<Record<EpaKind, string>> = {
   client_updates: 'Proactive Client Updates', agent_updates: 'Proactive Agent Updates', other_side_updates: 'Proactive Other Side Updates',
   lender_broker_updates: 'Proactive Lender Updates', resending_to_client: 'Resending Documents To Clients', resending_to_others: 'Resending Documents To Others',
   first_requests_client: 'Asking Clients For Documents', first_requests_others: 'Asking Others For Documents', sending_documents_client: 'Sending New Documents To Clients',
-  sending_documents_others: 'Sending New Documents To Others', acknowledging: 'Sending Acknowledge­ments', filing: 'Filing Emails And Documents',
+  sending_documents_others: 'Sending New Documents To Others', acknowledging: 'Acknowledging Receipt', filing: 'Filing Emails And Documents',
   recording_receipts: 'Recording Receipts', notes_and_outcomes: 'Writing File Notes', opening_the_case: 'Opening Cases', ordering_searches: 'Ordering Searches',
   land_registry_applications: 'Land Registry Applications', sdlt_return: 'SDLT Returns', closing_the_file: 'Closing Files', failed_sends: 'Resending Failed Emails',
   unlocking_files: 'Unlocking Protected Files', client_process_questions: 'Client Process Questions', arranging_dates: 'Completion Dates And Calls',
@@ -145,13 +146,14 @@ function Shell({ tabs, err, loading, children }: { tabs: ReactNode; err: string 
 }
 
 /** The red / amber / green bar for a week, green at the bottom, with each colour's rule on its legend. */
-export function RagCard({ title: heading, right, hours, share, foot }: { title: string; right?: ReactNode; hours: RagSplit; share: RagSplit | null; foot?: ReactNode }) {
+export function RagCard({ title: heading, right, hours, share, foot, unseen }: { title: string; right?: ReactNode; hours: RagSplit; share: RagSplit | null; foot?: ReactNode; unseen?: { hours: number; share: number } }) {
   return (
     <section className="tv-card">
       <div className="tv-cardhead"><h2>{heading}</h2>{right && <span className="r">{right}</span>}</div>
       {share ? (
         <div className="tv-week">
           <div className="tv-vstack" role="img" aria-label={split(share)}>
+            {unseen && unseen.share > 0 && <span className="tv-unseen" style={{ flex: `${unseen.share} 1 0` }} title={`Not Seen: ${pct(unseen.share)} · ${hrs(unseen.hours)}`}>{unseen.share >= 0.07 ? pct(unseen.share) : ''}</span>}
             {[...RAG].reverse().filter(([k]) => share[k] > 0).map(([k, l]) => (
               <span key={k} className={`tv-${k}`} style={{ flex: `${share[k]} 1 0` }} title={`${l}: ${pct(share[k])} · ${hrs(hours[k])}`}>{share[k] >= 0.07 ? pct(share[k]) : ''}</span>
             ))}
@@ -163,6 +165,12 @@ export function RagCard({ title: heading, right, hours, share, foot }: { title: 
                 <i className={`tv-${k}`} /><b>{l}</b><span>{pct(share[k])} · {hrs(hours[k])}</span>
               </div>
             ))}
+            {unseen && (
+              <div className="tv-tipped" tabIndex={0}>
+                <span className="tv-tip" role="tooltip"><b>Not Seen</b>Time no email or InTouch record accounts for: calls, meetings, reading files with no email after.</span>
+                <i className="tv-unseen" /><b>Not Seen</b><span>{pct(unseen.share)} · {hrs(unseen.hours)}</span>
+              </div>
+            )}
             {foot && <div className="tot">{foot}</div>}
           </div>
         </div>

@@ -227,7 +227,7 @@ export default function MeasurePage() {
           {m && (
             <>
               <div className="tv-top">
-                <RagCard title="A Typical Week" hours={m.hours} share={m.share} foot={`${m.people} ${m.people === 1 ? 'Conveyancer' : 'Conveyancers'} · ${m.contractedHours}h Week`} />
+                <RagCard title="A Typical Week" hours={m.hours} share={m.share} unseen={{ hours: m.hours.unseen, share: m.share.unseen }} foot={`${m.people} ${m.people === 1 ? 'Conveyancer' : 'Conveyancers'} · ${m.contractedHours}h Week`} />
                 <ParetoCard lines={m.lines} />
               </div>
               <ActionsCard lines={m.lines} timesHead="A Week" />

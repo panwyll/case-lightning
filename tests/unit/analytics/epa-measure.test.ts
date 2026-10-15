@@ -1,56 +1,50 @@
-/** The onboarding measurement (docs/epa-categories.md): a typical week from the mailbox scans, worked by hand. */
+/** The onboarding measurement (docs/epa-categories.md): a typical week from the scans, worked by hand on one day. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMeasurement, type PersonScan } from '../../../lib/server/epa/measure';
+import { buildMeasurement, type PersonScan, type ScanEmail } from '../../../lib/server/epa/measure';
 import { DEFAULT_LEVELS } from '../../../lib/server/engine/types';
 
-const person = (over: Partial<PersonScan> = {}): PersonScan => ({
-  weeks: 2,
+const T0 = Date.parse('2026-10-06T08:00:00Z'); // Tuesday 09:00 BST
+const at = (min: number) => T0 + min * 60_000;
+let id = 0;
+const mail = (min: number, category: string, roles: string[], draftedMin: number | null = null): ScanEmail => ({ id: `e${++id}`, at: at(min), draftedAt: draftedMin == null ? null : at(draftedMin), category, roles });
+
+const day = (): PersonScan => ({
+  weeks: 1,
   sent: [
-    // 60 client status replies in two weeks, Outlook timed 20 of them at 6 minutes: 30 a week × 6 = 3h.
-    { category: 'update_reply', roles: ['client'], count: 60, timed: 20, timedMedianMinutes: 6 },
-    // 40 lender chasers, too few timed: typical 4 minutes. 20 a week × 4 = 80 min.
-    { category: 'chaser', roles: ['lender'], count: 40, timed: 3, timedMedianMinutes: 2 },
-    // 20 legal questions: 10 a week × 10 = 100 min, amber.
-    { category: 'client_question', roles: ['client'], count: 20, timed: 0, timedMedianMinutes: null },
-    // Legal email: green the inbox does show. 10 a week × 10 = 100 min.
-    { category: 'legal_work', roles: ['other_solicitor'], count: 20, timed: 0, timedMedianMinutes: null },
-    // Colleagues: not counted.
-    { category: 'internal', roles: ['colleague'], count: 100, timed: 50, timedMedianMinutes: 3 },
+    mail(10, 'chaser', ['lender']), // 09:10, red: 10 minutes since the start of the day
+    mail(70, 'legal_work', ['other_solicitor']), // 10:10, green: the hour before it
+    mail(120, 'update_reply', ['client']), // 11:00, red: 50 minutes since, capped at 15
+    mail(130, 'internal', ['colleague']), // to a colleague: not counted
   ],
   received: [
-    { category: 'update_request', roles: ['client'], count: 50 },
-    { category: 'update_request', roles: ['estate_agent'], count: 10 },
-    { category: 'chaser_received', roles: ['other_solicitor'], count: 8 },
+    mail(90, 'update_request', ['client']), // 10:30, read for a minute: nothing else covers 10:30-10:31
   ],
-  intouch: { live: 60, openedInWindow: 8, filedByFirm: { email: 400, note: 20, call: 5, document: 60 }, filedByOthers: 30 },
-  ...over,
+  // The report on title the firm filed at 14:30: green, three hours back in clock time (11:30), less lunch: 90 + 30.
+  intouch: { live: 60, openedInWindow: 4, items: [{ at: new Date(at(330)).toISOString(), kind: 'report_on_title' }] },
 });
 
-test('a typical week: red and amber measured, green the rest of the week, so "at most"', () => {
-  const m = buildMeasurement({ people: [person()], contractedHours: 37.5, levels: DEFAULT_LEVELS })!;
-  // Red: 180 (status) + 80 (chasers) + filing 30 docs a week × 2 + notes 10 × 4 = 360 min = 6h. Email records are never counted.
-  assert.equal(m.hours.red, 6);
-  assert.equal(m.hours.amber, 1.7);
-  // Green: 37.5 - 6 - 1.67 = 29.83h, which is more than the 1.67h of legal email the inbox shows.
-  assert.equal(m.hours.green, 29.8);
-  assert.equal(Math.round(m.movesCasesOnAtMost * 1000), 796);
-  assert.deepEqual(m.lines.map((l) => [l.kind, l.times, l.avgMinutes, l.minutesBasis]), [
-    ['client_any_news', 30, 6, 'timed'],
-    ['client_legal_questions', 10, 10, 'typical'],
-    ['lender_chasers', 20, 4, 'typical'],
-    ['filing', 30, 2, 'intouch'],
-    ['notes_and_outcomes', 10, 4, 'intouch'],
-  ]);
-  assert.deepEqual(m.received, { clientStatusRequests: 25, agentStatusRequests: 5, otherSideStatusRequests: 0, chasersReceived: 4 });
+test('green is measured from the time before legal actions; what nothing accounts for is Not Seen, never green', () => {
+  const m = buildMeasurement({ people: [day()], contractedHours: 37.5, levels: DEFAULT_LEVELS })!;
+  // Red: 10 (chaser) + 15 (reply) + 1 (reading the request) = 26 min. Green: 60 + 120 = 180 min.
+  assert.equal(m.hours.red, 0.4);
+  assert.equal(m.hours.amber, 0);
+  assert.equal(m.hours.green, 3);
+  // The other 2,250 - 206 minutes of the week: Not Seen.
+  assert.equal(m.hours.unseen, 34.1);
+  assert.equal(Math.round(m.efficiencySeen! * 1000), Math.round((180 / 206) * 1000));
+  assert.deepEqual(m.lines.map((l) => [l.kind, l.times, l.avgMinutes]), [['client_any_news', 1, 16], ['lender_chasers', 1, 10]]);
+  assert.deepEqual(m.received, { clientStatusRequests: 1, agentStatusRequests: 0, otherSideStatusRequests: 0, chasersReceived: 0 });
   assert.deepEqual(m.cases, { live: 60, perConveyancer: 60, openedPerWeek: 4 });
+  assert.equal(m.sentPerPersonWeek, 3, 'the colleague email is not case email');
 });
 
-test('the firm is everyone added up; a busy week can leave green below what the inbox shows, never negative', () => {
-  const busy = person({ sent: [{ category: 'chaser', roles: ['client'], count: 2000, timed: 0, timedMedianMinutes: null }, { category: 'legal_work', roles: ['client'], count: 20, timed: 0, timedMedianMinutes: null }], intouch: null });
-  const m = buildMeasurement({ people: [busy, person()], contractedHours: 37.5, levels: DEFAULT_LEVELS })!;
-  assert.equal(m.people, 2);
-  assert.ok(m.hours.green >= 1.6, 'green is never less than the legal email seen');
-  assert.equal(m.cases!.perConveyancer, 60, 'only people InTouch was read for');
+test("Outlook's own timing is writing; an empty firm gives nothing", () => {
+  const p: PersonScan = { weeks: 1, sent: [mail(200, 'status_update', ['client'], 188)], received: [], intouch: null };
+  const m = buildMeasurement({ people: [p], contractedHours: 37.5, levels: DEFAULT_LEVELS })!;
+  // Drafted 12:08, sent 12:20: 12 minutes written, inside the 21-minute cap for a client update.
+  assert.equal(m.lines[0].kind, 'client_updates');
+  assert.equal(m.lines[0].avgMinutes, 21, 'the gap back to the start of the day, capped at three times 7, covers the writing');
+  assert.equal(m.cases, null);
   assert.equal(buildMeasurement({ people: [], contractedHours: 37.5, levels: DEFAULT_LEVELS }), null);
 });

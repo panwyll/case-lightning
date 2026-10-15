@@ -56,7 +56,7 @@ So there are two different measures, and they are never mixed.
 The base of the timeline is what each person finished: a task closed by them, an email they sent. Each completion is given the time back to the one before it:
 - clipped to the start of the working day when it was finished in working hours;
 - less lunch (13:00 to 14:00 by default);
-- capped by its kind: an hour for red and amber work (in case the gap was lunch, a call or a meeting), three hours for green;
+- capped by what the work takes: for red and amber, three times its typical minutes, never under 15 (an hour spent on something unseen before a chaser is not chasing); for green, three hours;
 - completions within a minute of each other are one sitting (a run of approvals), and the time before them is shared equally.
 
 Out-of-hours completions keep their gap (capped), so evening work shows as after hours. Three in-tray items finished at 09:20, 09:40 and 10:00 get 20 minutes each.

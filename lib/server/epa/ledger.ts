@@ -6,7 +6,7 @@
 import { EW_CALENDAR, type WorkingCalendar } from '../engine/working-days';
 import { inWorkingHours } from '../workload/model';
 import { isWorkingDay } from '../engine/working-days';
-import { EPA_KINDS, EPA_SPEC, type EpaKind, type Rag } from './taxonomy';
+import { EPA_KINDS, EPA_SPEC, TYPICAL_MINUTES, type EpaKind, type Rag } from './taxonomy';
 
 /** Where a span's evidence came from, strongest first (§2 "Evidence"). */
 export const SOURCES = ['focus', 'compose', 'interval', 'reading', 'estimate'] as const;
@@ -55,8 +55,13 @@ export function attribute(spans: Span[]): Slice[] {
 export interface Completion { at: number; item: string; kind: EpaKind; of?: EpaKind | null; action?: string | null }
 export interface ClipRules { workdayStart: string; workdayEnd: string; lunchStart: string; lunchEnd: string }
 export const DEFAULT_LUNCH = { lunchStart: '13:00', lunchEnd: '14:00' };
-/** The most one completion can be given: an hour for routine work (in case the gap was lunch or a meeting), longer for legal work. */
-export const CAP_MINUTES: Record<Rag, number> = { red: 60, amber: 60, green: 180, none: 60 };
+/**
+ * The most one completion can be given. Legal work: three hours (a title read before the report goes). Routine work: three
+ * times what it typically takes, never under 15 minutes, so an hour spent on something unseen before a chaser is not counted
+ * as chasing; the rest of the gap is left unseen rather than given to the wrong colour.
+ */
+export const GREEN_CAP_MINUTES = 180;
+export const capMinutes = (k: EpaKind): number => (EPA_SPEC[k].rag === 'green' ? GREEN_CAP_MINUTES : Math.max(15, 3 * (TYPICAL_MINUTES[k] ?? 5)));
 /** Completions this close together are one sitting (a run of approvals): the time before them is shared equally. */
 const BURST_MS = 60_000;
 
@@ -86,7 +91,7 @@ export function completionSpans(events: Completion[], rules: ClipRules, cal: Wor
     const end = burst[burst.length - 1].at;
     const L = local(end);
     const inHours = isWorkingDay(L.day, cal) && L.minute >= hm(rules.workdayStart) && L.minute < hm(rules.workdayEnd);
-    const cap = Math.max(...burst.map((e) => CAP_MINUTES[EPA_SPEC[e.kind].rag])) * 60_000 * burst.length;
+    const cap = burst.reduce((a, e) => a + capMinutes(e.kind), 0) * 60_000;
     let from = Math.max(prev, end - cap);
     if (inHours) from = Math.max(from, L.midnight + hm(rules.workdayStart) * 60_000);
     // The stretch, less lunch when it was in the working day.

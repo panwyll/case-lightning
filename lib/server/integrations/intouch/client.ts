@@ -235,8 +235,8 @@ export class InTouchHttpClient implements InTouchApi {
   }
 
   /** What was filed on a matter since `since`: records and documents, newest pages first, never downloaded. */
-  async folderActivity(caseId: string, since: string, maxPages = 5): Promise<Array<{ kind: 'email' | 'note' | 'call' | 'document'; at: string | null; byFirm: boolean | null }>> {
-    const out: Array<{ kind: 'email' | 'note' | 'call' | 'document'; at: string | null; byFirm: boolean | null }> = [];
+  async folderActivity(caseId: string, since: string, maxPages = 5): Promise<Array<{ kind: 'email' | 'note' | 'call' | 'document'; at: string | null; byFirm: boolean | null; name: string | null }>> {
+    const out: Array<{ kind: 'email' | 'note' | 'call' | 'document'; at: string | null; byFirm: boolean | null; name: string | null }> = [];
     for (let page = 1; page <= maxPages; page++) {
       const data = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.folder(caseId), undefined, { query: { page, pageSize: 100, orderBy: 'createdOn', orderByDirection: 'desc' } });
       const raws = (pick(data, ['items']) as unknown[] | undefined) ?? (Array.isArray(data) ? data : []);

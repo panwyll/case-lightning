@@ -12,6 +12,7 @@ import { listFolderWindow } from '../graph';
 import { classifyWorkload, WORKLOAD_PROMPT_VERSION } from '../ai';
 import { tenantSelfAddresses } from '../matching';
 import type { SessionUser } from '../types';
+import { fromInTouchItem } from '../epa/taxonomy';
 import { IN_CATEGORIES, IN_SPEC, OUT_CATEGORIES, OUT_SPEC, ROLES, allInternal, domainOf, filterByRule, firmDomainsOf, isForwardSubject, isReplySubject, wordCount, writtenText, type Filtered, type OutCategory } from './taxonomy';
 import { buildReport, type Report, type Row, type Settings } from './model';
 
@@ -32,6 +33,8 @@ export interface InTouchCounts {
   /** What the firm filed on them in the window, and what clients or InTouch filed. */
   filedByFirm: { email: number; note: number; call: number; document: number };
   filedByOthers: number;
+  /** What the firm filed, each with when (the measurement uses them as timed actions), and what kind of work it was. */
+  items?: Array<{ at: string; kind: string }>;
   error?: string | null;
 }
 
@@ -249,7 +252,10 @@ async function advanceInTouch(user: SessionUser, scan: ScanRow, started: number)
       const items = await client.folderActivity(counts.cases[counts.read], scan.since);
       for (const i of items) {
         if (i.at && (i.at < scan.since || i.at > scan.until)) continue;
-        if (i.byFirm === false) counts.filedByOthers += 1; else counts.filedByFirm[i.kind] += 1;
+        if (i.byFirm === false) { counts.filedByOthers += 1; continue; }
+        counts.filedByFirm[i.kind] += 1;
+        const k = fromInTouchItem(i);
+        if (k && i.at) (counts.items ??= []).push({ at: i.at, kind: k });
       }
       counts.read += 1;
     }

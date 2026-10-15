@@ -91,6 +91,36 @@ export const EPA_SPEC: Record<EpaKind, Spec> = {
   not_counted: { label: 'Not Counted', rag: 'none', remedy: 'keep', what: 'Colleagues; anything else' },
 };
 
+/** Minutes each when nothing timed it: what this work typically takes (the measurement, and the cap on a routine gap). */
+export const TYPICAL_MINUTES: Partial<Record<EpaKind, number>> = {
+  client_chasers: 4, other_side_chasers: 4, lender_chasers: 4, agent_chasers: 3, third_party_chasers: 4,
+  client_any_news: 5, agent_status_requests: 4, other_side_status_requests: 4, lender_broker_status_requests: 4,
+  client_updates: 7, agent_updates: 4, other_side_updates: 5, lender_broker_updates: 4,
+  resending_to_client: 5, resending_to_others: 4, first_requests_client: 4, first_requests_others: 4,
+  sending_documents_client: 6, sending_documents_others: 5, acknowledging: 1.5, filing: 2, recording_receipts: 2, notes_and_outcomes: 4,
+  client_process_questions: 6, client_legal_questions: 10, arranging_dates: 4, bank_details: 10, requesting_funds: 12, payments: 5,
+  checking_drafts: 2, ordering_searches: 8, land_registry_applications: 25, sdlt_return: 20, closing_the_file: 12, opening_the_case: 15,
+  legal_correspondence: 10,
+};
+
+/**
+ * Something the firm filed on an InTouch matter, as a kind of work (the measurement phase's InTouch evidence). Documents the
+ * firm produces are the legal work that made them; paperwork is its own kind; anything else filed is filing. Email records are
+ * not work of their own (InTouch's Exchange filing may have put them there): null.
+ */
+export function fromInTouchItem(item: { kind: 'email' | 'note' | 'call' | 'document'; name: string | null }): EpaKind | null {
+  if (item.kind === 'email' || item.kind === 'call') return null;
+  if (item.kind === 'note') return 'notes_and_outcomes';
+  const n = (item.name ?? '').toLowerCase();
+  if (/report on title|\brot\b|title report/.test(n)) return 'report_on_title';
+  if (/enquir/.test(n)) return 'raising_enquiries';
+  if (/\btr1\b|transfer deed|\bcontract\b|\blease\b|\btp1\b/.test(n)) return 'contract_and_lease_review';
+  if (/completion statement|statement of account/.test(n)) return 'requesting_funds';
+  if (/\bsdlt\b|stamp duty|\bltt\b/.test(n)) return 'sdlt_return';
+  if (/\bap1\b|land registry|\bds1\b/.test(n)) return 'land_registry_applications';
+  return 'filing';
+}
+
 /** Kinds an earlier version stored (activity_span.kind), read as today's. */
 export const LEGACY_KINDS: Record<string, EpaKind> = {
   chasing: 'client_chasers', being_chased: 'other_side_status_requests', status_updates: 'client_updates', any_news: 'client_any_news',
