@@ -1,13 +1,13 @@
 /**
  * What the time is spent on (docs/epa-categories.md): named as the work done, by whom it is with, sending or answering, each
- * with one obvious remedy. Green moves the case on and only a conveyancer can do it; amber probably needs a conveyancer but
- * does not move the case on; red is time wasted.
+ * with one obvious remedy. Green moves the case on and only a conveyancer can do it; amber moves the case on but someone other
+ * than a conveyancer could do it, or needs a conveyancer but does not move the case on; red is time wasted.
  * The same list for the measurement phase (inbox, InTouch) and Analytics → Time, so every source maps onto it here and
  * nowhere else. Pure.
  */
 
 export const EPA_KINDS = [
-  // Red: time that neither needs a conveyancer nor moves the case on.
+  // The colour of each is in EPA_SPEC.
   'client_chasers', 'other_side_chasers', 'lender_chasers', 'agent_chasers', 'third_party_chasers',
   'client_any_news', 'agent_status_requests', 'other_side_status_requests', 'lender_broker_status_requests',
   'client_updates', 'agent_updates', 'other_side_updates', 'lender_broker_updates',
@@ -17,9 +17,7 @@ export const EPA_KINDS = [
   'acknowledging', 'filing', 'recording_receipts', 'notes_and_outcomes', 'opening_the_case',
   'ordering_searches', 'land_registry_applications', 'sdlt_return', 'closing_the_file', 'failed_sends', 'unlocking_files',
   'client_process_questions', 'arranging_dates', 'bank_details', 'requesting_funds', 'checking_drafts',
-  // Amber: probably needs a conveyancer, but does not move the case on.
   'client_legal_questions', 'payments', 'difficult_emails',
-  // Green: only a conveyancer can do it, and it moves the case on.
   'title_review', 'search_review', 'raising_enquiries', 'reviewing_replies', 'contract_and_lease_review', 'mortgage_offer_review',
   'report_on_title', 'id_and_source_of_funds', 'advising', 'negotiating', 'resolving_issues', 'drafting', 'legal_correspondence',
   'exchange', 'completion',
@@ -51,25 +49,25 @@ export const EPA_SPEC: Record<EpaKind, Spec> = {
   lender_broker_updates: red('Sending Proactive Lender And Broker Updates', 'automate', 'Telling the lender or broker where the case is, before they ask'),
   resending_to_client: red('Resending Documents To The Client', 'prevent', '"I can\'t find the thing to sign": documents, links or forms sent again'),
   resending_to_others: red('Resending Documents To Others', 'automate', 'A copy of something already sent, asked for again by the other side, lender or agent'),
-  first_requests_client: red('Asking The Client For Documents', 'automate', 'Asking for ID, forms, funds or documents for the first time'),
-  first_requests_others: red('Asking Others For Documents', 'automate', 'Asking the other side, lender or agent for something for the first time'),
-  sending_documents_client: red('Sending Documents To The Client', 'automate', 'Signing packs, the contract to sign, the report on title'),
-  sending_documents_others: red('Sending Documents To Others', 'automate', 'Documents to the other side, the lender or a landlord'),
+  first_requests_client: amber('Asking The Client For Documents', 'automate', 'Asking for ID, forms, funds or documents for the first time'),
+  first_requests_others: amber('Asking Others For Documents', 'automate', 'Asking the other side, lender or agent for something for the first time'),
+  sending_documents_client: amber('Sending Documents To The Client', 'automate', 'Signing packs, the contract to sign, the report on title'),
+  sending_documents_others: amber('Sending Documents To Others', 'automate', 'Documents to the other side, the lender or a landlord'),
   acknowledging: red('Sending Acknowledgements', 'automate', '"Thanks, received", to anyone'),
   filing: red('Filing Emails And Documents', 'automate', 'Saving emails and documents to the case'),
   recording_receipts: red('Recording Receipts', 'automate', 'Logging on the case that something arrived'),
   notes_and_outcomes: red('Writing File Notes', 'delegate', 'File notes, call notes and recording what was decided'),
-  opening_the_case: red('Opening The Case', 'automate', 'Setting the case up and re-keying it between systems'),
-  ordering_searches: red('Ordering Searches', 'automate', 'Placing and tracking searches'),
-  land_registry_applications: red('Submitting Land Registry Applications', 'delegate', 'Filling in and submitting the application, and its admin'),
-  sdlt_return: red('Filing SDLT Returns', 'delegate', 'Completing and filing the return'),
+  opening_the_case: amber('Opening The Case', 'automate', 'Setting the case up and re-keying it between systems'),
+  ordering_searches: amber('Ordering Searches', 'automate', 'Placing and tracking searches'),
+  land_registry_applications: amber('Submitting Land Registry Applications', 'delegate', 'Filling in and submitting the application, and its admin'),
+  sdlt_return: amber('Filing SDLT Returns', 'delegate', 'Completing and filing the return'),
   closing_the_file: red('Closing Files', 'automate', 'Archiving, final letters and closing the file'),
   failed_sends: red('Resending Failed Emails', 'delegate', 'An email that bounced or had no address, sent another way'),
   unlocking_files: red('Unlocking Protected Files', 'delegate', 'Opening password-protected documents'),
   client_process_questions: red('Answering Client Process Questions', 'prevent', '"What happens next?", "What is a TA6?": the same answer for every client'),
-  arranging_dates: red('Arranging Completion Dates And Calls', 'delegate', 'Agreeing dates across the chain, booking calls and appointments'),
-  bank_details: red('Verifying Bank Details', 'delegate', 'Phoning to confirm bank details on a number already held: an assistant can do it'),
-  requesting_funds: red('Requesting Completion Funds', 'automate', 'The completion statement and the request for the money'),
+  arranging_dates: amber('Arranging Completion Dates And Calls', 'delegate', 'Agreeing dates across the chain, booking calls and appointments'),
+  bank_details: amber('Verifying Bank Details', 'delegate', 'Phoning to confirm bank details on a number already held: an assistant can do it'),
+  requesting_funds: amber('Requesting Completion Funds', 'automate', 'The completion statement and the request for the money'),
   checking_drafts: red('Checking CONVEYi Drafts', 'automate', 'Reading a CONVEYi draft before it goes, where CONVEYi could send it'),
   client_legal_questions: amber('Answering Client Legal Questions', 'keep', "A legal question about the client's case: needs a conveyancer, does not move the case on"),
   payments: amber('Authorising Payments', 'keep', 'Signing off money out of the client account'),

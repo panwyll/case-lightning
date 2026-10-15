@@ -32,6 +32,7 @@ const CSS = `
 .tv-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:8px;vertical-align:-1px}
 .tv-legend b{font-weight:800}
 .tv-legend span{color:#475569;margin-left:4px}
+.tv-legend .tv-tip{color:#e2e8f0;margin-left:0;font-size:12px}
 .tv-legend .tot{font-size:13px;color:#64748b;font-weight:700;border-top:1px solid #eef0f4;padding-top:12px}
 .tv-pareto{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:8px}
 .tv-pcol{position:relative;display:flex;flex-direction:column;cursor:default}
@@ -44,12 +45,9 @@ const CSS = `
 .tv-tipped{position:relative}
 .tv-tip{display:none;position:absolute;z-index:30;width:250px;background:#0f172a;color:#e2e8f0;border-radius:9px;padding:10px 12px;font-size:12px;font-weight:500;line-height:1.45;text-align:left;pointer-events:none;box-shadow:0 8px 24px rgba(15,23,42,.18)}
 .tv-tip b{display:block;color:#fff;font-weight:800;font-size:12.5px;margin-bottom:3px}
-.tv-tip em{display:block;font-style:normal;color:#cbd5e1;font-weight:700;margin-top:6px}
-.tv-pcol .tv-tip{top:0;left:50%;transform:translateX(-50%)}
-.tv-pcol.lft .tv-tip{left:0;transform:none}
-.tv-pcol.rgt .tv-tip{left:auto;right:0;transform:none}
-.tv-pcol:hover .tv-tip,.tv-pcol:focus-within .tv-tip,.tv-tipped:hover .tv-tip,.tv-tipped:focus-within .tv-tip{display:block}
-.tv-row .tv-tip{bottom:calc(100% + 6px);left:0}
+.tv-tipped:hover .tv-tip,.tv-tipped:focus-within .tv-tip{display:block}
+.tv-legend .tv-tip{bottom:calc(100% + 6px);left:0}
+.tv-legend .tv-tipped{cursor:default}
 .tv-actions{margin-top:16px}
 .tv-row{display:grid;grid-template-columns:330px 64px 64px 72px minmax(0,1fr);gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid #f1f3f7;font-size:13.5px}
 .tv-row:last-child{border-bottom:0}
@@ -76,15 +74,18 @@ const CSS = `
 `;
 
 const RAG = [['green', 'Green'], ['amber', 'Amber'], ['red', 'Red']] as const;
+/** How a piece of work gets its colour (docs/epa-categories.md). */
+const RULE: Record<'green' | 'amber' | 'red', string> = {
+  green: 'Moves the case on, and only a conveyancer can do it.',
+  amber: 'Moves the case on but someone other than a conveyancer could do it, or needs a conveyancer but does not move the case on.',
+  red: 'Time wasted: does not move the case on, and does not need a conveyancer.',
+};
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const hrs = (x: number) => (x > 0 && x < 0.05 ? '<0.1h' : `${x.toFixed(1)}h`);
 const mins = (x: number | null) => (x == null ? '—' : x < 1 ? '<1 min' : `${Math.round(x)} min`);
 const day = (iso: string, plus = 0) => new Date(Date.parse(iso) + plus * 86_400_000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 const title = (s: string) => s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 const split = (s: RagSplit) => RAG.map(([k, l]) => `${l} ${pct(s[k])}`).join(' · ');
-function Tip({ b }: { b: ParetoBar }) {
-  return <span className="tv-tip" role="tooltip"><b>{b.label}</b>{EPA_SPEC[b.kind].what}.<em>{hrs(b.hours)} · {b.times} times · {mins(b.avgMinutes)} each</em></span>;
-}
 /** Under a Pareto bar: the work written out, where the full label would not fit; the hover card has the rest. */
 const SHORT: Partial<Record<EpaKind, string>> = {
   client_chasers: 'Chasing Clients', other_side_chasers: 'Chasing The Other Side', lender_chasers: 'Chasing Lenders', agent_chasers: 'Chasing Agents',
@@ -148,7 +149,6 @@ export function TimeView({ tabs }: { tabs: ReactNode }) {
   const pareto = r?.pareto ?? [];
   const bars = pareto.slice(0, PARETO_BARS);
   const top = Math.max(0.0001, ...bars.map((b) => b.hours));
-  const edge = (i: number) => (i < 2 ? ' lft' : i >= bars.length - 2 ? ' rgt' : '');
   return (
     <Shell tabs={tabs} err={err} loading={!r}>
       {r && (
@@ -164,7 +164,12 @@ export function TimeView({ tabs }: { tabs: ReactNode }) {
                     ))}
                   </div>
                   <div className="tv-legend">
-                    {[...RAG].reverse().map(([k, l]) => <div key={k}><i className={`tv-${k}`} /><b>{l}</b><span>{pct(w.share![k])} · {hrs(w.hours[k])}</span></div>)}
+                    {[...RAG].reverse().map(([k, l]) => (
+                      <div key={k} className="tv-tipped" tabIndex={0}>
+                        <span className="tv-tip" role="tooltip"><b>{l}</b>{RULE[k]}</span>
+                        <i className={`tv-${k}`} /><b>{l}</b><span>{pct(w.share![k])} · {hrs(w.hours[k])}</span>
+                      </div>
+                    ))}
                     <div className="tot">{hrs(total)} Across The Firm</div>
                   </div>
                 </div>
@@ -176,9 +181,8 @@ export function TimeView({ tabs }: { tabs: ReactNode }) {
               {!bars.length ? <p className="tv-none">No red or amber time recorded yet.</p> : (
                 <>
                   <div className="tv-pareto">
-                    {bars.map((b, i) => (
-                      <div key={b.kind} className={`tv-pcol${edge(i)}`} tabIndex={0} aria-label={`${b.label}: ${hrs(b.hours)}`}>
-                        <Tip b={b} />
+                    {bars.map((b) => (
+                      <div key={b.kind} className="tv-pcol">
                         <div className="tv-pbar">
                           <small>{hrs(b.hours)}</small>
                           <i className={`tv-${b.rag}`} style={{ height: `${(b.hours / top) * 180}px` }} />
@@ -198,7 +202,7 @@ export function TimeView({ tabs }: { tabs: ReactNode }) {
               <div className="tv-row th"><span>Kind</span><span className="num">Hours</span><span className="num">Times</span><span className="num">Each</span><span>Action</span></div>
               {pareto.map((b) => (
                 <div key={b.kind} className="tv-row">
-                  <span className="k tv-tipped" tabIndex={0}><Tip b={b} /><i className={`tv-${b.rag}`} />{b.label}</span>
+                  <span className="k"><i className={`tv-${b.rag}`} />{b.label}</span>
                   <span className="num">{hrs(b.hours)}</span>
                   <span className="num">{b.times}</span>
                   <span className="num">{mins(b.avgMinutes)}</span>
