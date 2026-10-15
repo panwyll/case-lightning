@@ -19,10 +19,10 @@ const CSS = `
 .tv-card{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:18px 20px}
 .tv-cardhead{display:flex;align-items:baseline;gap:10px;margin-bottom:16px;flex-wrap:wrap}
 .tv-cardhead .r{margin-left:auto;font-size:12.5px;color:#64748b;font-weight:700}
-.tv-top{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}
+.tv-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:16px;margin-top:16px}
 .tv-green{background:#1E8E4E}.tv-amber{background:#E39A2D}.tv-red{background:#D64A3A}
-.tv-week{display:flex;gap:28px;align-items:stretch;height:300px}
-.tv-vstack{width:150px;flex:none;display:flex;flex-direction:column;gap:2px}
+.tv-week{display:flex;gap:22px;align-items:stretch;height:300px}
+.tv-vstack{width:120px;flex:none;display:flex;flex-direction:column;gap:2px}
 .tv-vstack > span{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:16px;min-height:0;overflow:hidden}
 .tv-vstack > span.tv-amber{color:#3b2405}
 .tv-vstack > span:first-child{border-radius:8px 8px 0 0}
@@ -101,7 +101,7 @@ const SHORT: Partial<Record<EpaKind, string>> = {
   client_legal_questions: 'Client Legal Questions', payments: 'Authorising Payments', difficult_emails: 'Complaints And Difficult Emails',
 };
 /** The biggest this many; the rest are in the Actions table. A lumped "Other" bar would tower over the categories it hides. */
-const PARETO_BARS = 6;
+const PARETO_BARS = 8;
 /** The CONVEYi actions, as the Actions column names them. */
 const ACTION_NAME: Record<string, string> = { chase: 'Chases', client_update: 'Client Updates', counterparty_update: 'Updates To Others', acknowledgement: 'Acknowledgements', search_order: 'Search Orders' };
 /** Where the fix is to stop it happening, what that is. */
