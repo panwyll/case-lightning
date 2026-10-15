@@ -122,9 +122,9 @@ No medians, percentiles or queue times: the readers are not analysts.
 | Report: weeks cut at Monday, Pareto with the action and its level, queue | `lib/server/epa/report.ts` | Built |
 | Focus capture | `app/shared/epa/useAttention.ts`: a task open in place on the Tasks list, a decision on its own page, an email open in Email | Built |
 | Storage | `activity_span` (migration 125); `POST /api/v1/epa/spans` (batched: on hide, every 5 minutes of use, and before the Efficiency page loads) | Built |
-| Completions | Tasks closed by the person (`task_record`), and sent emails from the mailbox scan (`workload_email`, with Outlook compose when timed) | Built; sent email only for the weeks a scan covers |
+| Completions | Tasks closed by the person (`task_record`), and sent emails from the mailbox scan (`workload_email`, with Outlook compose when timed) | Built |
+| Live actions | `lib/server/epa/live.ts` → `epa_action` (migration 127): each sent email classified as it is sent (the Sent Items subscription, `mail/incoming.ts`, on the classify model); what the firm filed in InTouch, read in the daily InTouch sync (cases changed since the last read, at most 200, at most a week back, credited to the fee earner); InTouch tasks completed (Task State Change webhook, credited to whoever InTouch says did it, else the fee earner; each task name read as a kind once per firm, `epa_task_kind`) | Built; no new scheduled work |
 | Outlook reading | The add-in's item selection, as `reading` spans | Not yet |
-| Sent email after the baseline scan | Reading yesterday's Sent Items each day | Not yet: scheduled work, so it waits to be agreed (the Vercel cost cap) |
 
 A row Approve on the Tasks list is a completion, so it is given the time since the last one. The queue table uses `task_record`, whose older rows may have no kind; those are classified by their chip.
 

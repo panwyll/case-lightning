@@ -5,7 +5,8 @@ import { ok, fail } from '@/lib/server/http';
 import { queryOne, runAsAutomation, runAsSystem } from '@/lib/server/db';
 import { toWebhookEvent } from '@/lib/server/integrations/intouch/mapping';
 import { applyWebhook } from '@/lib/server/integrations/intouch/sync';
-import { inTouchSyncDeps, inTouchWebhookKey } from '@/lib/server/integrations/intouch/adapters';
+import { inTouchClient, inTouchSyncDeps, inTouchWebhookKey } from '@/lib/server/integrations/intouch/adapters';
+import { recordInTouchTask } from '@/lib/server/epa/live';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -52,6 +53,8 @@ export async function POST(req: NextRequest) {
     try {
       const deps = await inTouchSyncDeps(tenantId);
       const summary = await runAsAutomation(() => applyWebhook(deps, tenantId, event));
+      // A completed task is a timed action for the Time page (epa/live.ts). Best-effort: it never makes InTouch retry.
+      if (event.type === 'task_state_change') await recordInTouchTask(tenantId, await inTouchClient(tenantId), event).catch((err) => console.warn('[intouch] task action not recorded', err instanceof Error ? err.message : err));
       return ok({ received: true, event: event.type, summary });
     } catch (err) {
       console.warn('[intouch] webhook failed', event.type, err instanceof Error ? err.message : err);

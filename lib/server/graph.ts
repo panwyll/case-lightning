@@ -311,7 +311,7 @@ export async function downloadDriveItem(userId: string, itemId: string): Promise
 export async function getMessage(userId: string, messageId: string): Promise<any> {
   const client = await graphClientForUser(userId);
   // uniqueBody is the part of a reply that is new in this message: the quoted history is left out by Exchange itself.
-  const base = 'id,subject,body,uniqueBody,bodyPreview,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,internetMessageId,conversationId,hasAttachments,replyTo,webLink';
+  const base = 'id,subject,body,uniqueBody,bodyPreview,from,toRecipients,ccRecipients,createdDateTime,sentDateTime,receivedDateTime,internetMessageId,conversationId,hasAttachments,replyTo,webLink';
   // The headers carry the sender-authentication verdict (mail/sender-check.ts). A mailbox
   // that will not return them still gets its message; the sender then reads as unverified.
   try {

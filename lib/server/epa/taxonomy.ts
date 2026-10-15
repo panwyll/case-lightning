@@ -111,14 +111,19 @@ export const TYPICAL_MINUTES: Partial<Record<EpaKind, number>> = {
 export function fromInTouchItem(item: { kind: 'email' | 'note' | 'call' | 'document'; name: string | null }): EpaKind | null {
   if (item.kind === 'email' || item.kind === 'call') return null;
   if (item.kind === 'note') return 'notes_and_outcomes';
-  const n = (item.name ?? '').toLowerCase();
+  return kindFromName(item.name) ?? 'filing';
+}
+
+/** A document or task named for the work it is, else null (a task then goes to the model, a document is filing). */
+export function kindFromName(name: string | null): EpaKind | null {
+  const n = (name ?? '').toLowerCase();
   if (/report on title|\brot\b|title report/.test(n)) return 'report_on_title';
   if (/enquir/.test(n)) return 'raising_enquiries';
   if (/\btr1\b|transfer deed|\bcontract\b|\blease\b|\btp1\b/.test(n)) return 'contract_and_lease_review';
   if (/completion statement|statement of account/.test(n)) return 'requesting_funds';
   if (/\bsdlt|stamp duty|\bltt\b/.test(n)) return 'sdlt_return';
   if (/\bap1\b|land registry|\bds1\b/.test(n)) return 'land_registry_applications';
-  return 'filing';
+  return null;
 }
 
 /** Kinds an earlier version stored (activity_span.kind), read as today's. */

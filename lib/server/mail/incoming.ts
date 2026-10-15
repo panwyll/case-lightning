@@ -17,6 +17,7 @@ import { writeAssistCache, markAssistError } from '../assist-cache';
 import { enqueueMessage } from './queue';
 import { autoFileToCase } from './auto-file';
 import type { SessionUser } from '../types';
+import { recordSent } from '../epa/live';
 
 export async function processIncomingMessage(user: SessionUser, messageId: string): Promise<void> {
   const message = await getMessage(user.userId, messageId);
@@ -59,6 +60,8 @@ export async function processIncomingMessage(user: SessionUser, messageId: strin
         `thread:${message.conversationId ?? ''}`
       ).catch(() => 0);
     }
+    // What the email was for, as a timed action on the Time page (epa/live.ts). Best-effort.
+    await recordSent(user, message).catch(() => false);
     return; // done with this (outbound) message
   }
 

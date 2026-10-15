@@ -3,7 +3,8 @@ import { assertFeature } from '@/lib/server/config';
 import { ok, fail } from '@/lib/server/http';
 import { query, runAsAutomation, runAsSystem } from '@/lib/server/db';
 import { syncInTouch } from '@/lib/server/integrations/intouch/sync';
-import { inTouchSyncDeps } from '@/lib/server/integrations/intouch/adapters';
+import { inTouchClient, inTouchSyncDeps } from '@/lib/server/integrations/intouch/adapters';
+import { readInTouchActivity } from '@/lib/server/epa/live';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,6 +30,12 @@ export async function GET(req: NextRequest) {
       } catch (err) {
         // One firm's broken connection must never stop the others syncing.
         results[tenantId] = { error: (err as Error).message };
+      }
+      // What the firm filed since yesterday, for the Time page (epa/live.ts). Never fails the sync.
+      try {
+        results[`${tenantId}:activity`] = await readInTouchActivity(tenantId, await inTouchClient(tenantId));
+      } catch (err) {
+        results[`${tenantId}:activity`] = { error: (err as Error).message };
       }
     }
     return ok({ results });

@@ -44,7 +44,9 @@ export type UsageFeature =
   | 'ID_AML_RESOLVED'
   | 'COMPLETION_BACKSTOP'
   // The workload baseline: what each scanned email was for (docs/workload-baseline.md)
-  | 'WORKLOAD_CLASSIFY';
+  | 'WORKLOAD_CLASSIFY'
+  // EPA, live: what kind of work an InTouch task is, read once per task name (epa/live.ts)
+  | 'EPA_TASK_KIND';
 
 export interface UsageContext {
   tenantId: string;

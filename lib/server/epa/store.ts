@@ -34,7 +34,7 @@ export async function recordSpans(user: SessionUser, spans: SpanIn[]): Promise<n
 
 /** One person's evidence since `since`: focus spans, Outlook drafting, and the time since each thing they finished. */
 async function personSpans(tenantId: string, userId: string, since: Date, clip: { workdayStart: string; workdayEnd: string }): Promise<Span[]> {
-  const [focus, sent, tasks] = await Promise.all([
+  const [focus, sent, tasks, live] = await Promise.all([
     query<{ started_at: Date; ended_at: Date; source: 'focus' | 'reading'; item: string; kind: string; draft_of: string | null; action: string | null }>(
       `select started_at, ended_at, source, item, kind, draft_of, action from activity_span where user_id = $1 and ended_at > $2 order by started_at`, [userId, since]
     ).catch(() => []),
@@ -46,11 +46,21 @@ async function personSpans(tenantId: string, userId: string, since: Date, clip: 
     query<{ id: string; kind: string | null; chip: string | null; closed_at: Date }>(
       `select id, kind, chip, closed_at from task_record where tenant_id = $1 and closed_at > $2 and closed_by = $3::text and closed_how = 'done'`, [tenantId, since, userId]
     ).catch(() => []),
+    // Recorded as they happened (live.ts): email classified as sent, and what was filed or completed in InTouch.
+    query<{ source: string; ref: string; at: Date; drafted_at: Date | null; category: string | null; roles: string[] | null; kind: string | null }>(
+      `select source, ref, at, drafted_at, category, roles, kind from epa_action where user_id = $1 and at > $2`, [userId, since]
+    ).catch(() => []),
   ]);
   const spans: Span[] = focus.map((f) => ({ start: f.started_at.getTime(), end: f.ended_at.getTime(), item: f.item, kind: asKind(f.kind), of: f.draft_of ? asKind(f.draft_of) : null, action: f.action, source: f.source }));
   // Completions (docs/epa.md §2): what this person finished, each given the time since the one before.
   const done: Completion[] = tasks.map((t) => { const w = fromTask({ kind: t.kind, chip: t.chip }); return { at: t.closed_at.getTime(), item: `task:${t.id}`, kind: w.kind, of: w.of ?? null, action: w.action ?? null }; });
-  for (const e of sent) {
+  const emails = new Map(sent.map((e) => [e.id, e]));
+  for (const a of live) {
+    if (a.source === 'sent') {
+      if (!emails.has(a.ref)) emails.set(a.ref, { id: a.ref, category: a.category, drafted_at: a.drafted_at, sent_at: a.at, recipient_roles: a.roles });
+    } else if (a.kind) done.push({ at: a.at.getTime(), item: `${a.source}:${a.ref}`, kind: asKind(a.kind) });
+  }
+  for (const e of emails.values()) {
     const ev = emailEvidence({ id: e.id, category: e.category, draftedAt: e.drafted_at?.toISOString() ?? null, sentAt: e.sent_at.toISOString(), roles: e.recipient_roles });
     if (!ev) continue;
     done.push(ev.done);
