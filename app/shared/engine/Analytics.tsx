@@ -13,6 +13,11 @@ const CSS = `
 .an-top{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .an-top h1{font-size:20px;font-weight:800;margin:0 auto 0 0}
 .an-sel{border:1px solid #cbd5e1;border-radius:8px;padding:7px 36px 7px 10px;font:inherit;font-size:13px;background:#fff}
+.an-segs{display:inline-flex;background:#f1f5f9;border-radius:9px;padding:3px}
+.an-segs button{border:0;background:none;font:inherit;font-size:13px;font-weight:700;color:#64748b;padding:5px 12px;border-radius:7px;cursor:pointer}
+.an-segs button.on{background:#fff;color:#0f172a;box-shadow:0 1px 2px rgba(15,23,42,.08)}
+.an-pill{appearance:none;-webkit-appearance:none;border:0;border-radius:9px;background:#f1f5f9 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 9px center;padding:8px 32px 8px 12px;font:inherit;font-size:13px;font-weight:700;color:#0f172a;cursor:pointer}
+.an-pill:hover{background-color:#e8ecf2}
 .an-card{background:#fff;border:1px solid #e6e8ee;border-radius:12px;padding:16px 18px;min-width:0}
 .an-h{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin:0 0 10px;display:flex;align-items:center;gap:8px}
 .an-grid{display:grid;gap:14px;margin-bottom:14px}
@@ -256,6 +261,8 @@ function PeopleTable({ people, onPick, fees }: { people: PersonRow[]; onPick?: (
   );
 }
 
+const SIDES: ReadonlyArray<[string, string]> = [['', 'All Cases'], ['purchase', 'Purchases'], ['sale', 'Sales'], ['remortgage', 'Remortgages'], ['transfer', 'Transfers']];
+
 export function AnalyticsView(props: {
   report: AnalyticsReport;
   people: Array<{ id: string; name: string }>;
@@ -271,25 +278,21 @@ export function AnalyticsView(props: {
 }) {
   const { report: r, person, side } = props;
   const p = r.pace;
-  const flowOut = useMemo(() => r.flow.shares.filter((s) => s.party !== 'none'), [r.flow.shares]);
-  const delayMax = Math.max(0.0001, ...r.delays.map((d) => d.share));
   return (
     <div className="an">
       <style>{CSS}</style>
       <div className="an-top">
         <h1 style={props.tabs ? { margin: 0 } : undefined}>Analytics</h1>
         {props.tabs}
-        <select className="an-sel" style={props.tabs ? { marginLeft: 'auto' } : undefined} value={person} onChange={(e) => props.onScope(e.target.value, side)} aria-label="Whose figures">
-          <option value="">Whole Firm</option>
-          {props.people.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-        </select>
-        <select className="an-sel" value={side} onChange={(e) => props.onScope(person, e.target.value)} aria-label="Which cases">
-          <option value="">All Cases</option>
-          <option value="purchase">Purchases</option>
-          <option value="sale">Sales</option>
-          <option value="remortgage">Remortgages</option>
-          <option value="transfer">Transfers</option>
-        </select>
+        <span style={{ marginLeft: props.tabs ? 'auto' : undefined, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="an-segs" role="tablist" aria-label="Which cases">
+            {SIDES.map(([v, l]) => <button key={v} type="button" role="tab" aria-selected={side === v} className={side === v ? 'on' : ''} onClick={() => props.onScope(person, v)}>{l}</button>)}
+          </span>
+          <select className="an-pill" value={person} onChange={(e) => props.onScope(e.target.value, side)} aria-label="Whose figures">
+            <option value="">Whole Firm</option>
+            {props.people.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </span>
       </div>
 
       <div className="an-grid an-g5">
@@ -335,71 +338,8 @@ export function AnalyticsView(props: {
         <MonthChart r={r} />
       </div>
 
-      <div className="an-grid an-g2">
-        <div className="an-card">
-          <div className="an-h">Where Cases Wait<Chip>90 Days</Chip></div>
-          <div className="an-stack">{r.flow.shares.map((s) => <div key={s.party} title={`${s.label}: ${pc(s.share)}`} style={{ width: `${s.share * 100}%`, background: COLOUR[s.party] }} />)}</div>
-          <div className="an-leg">{r.flow.shares.map((s) => <div key={s.party} style={s.party === 'us' ? { fontWeight: 700 } : undefined}><i style={{ background: COLOUR[s.party] }} />{s.label}<span>{pc(s.share)}</span></div>)}</div>
-          {r.flow.withUsOfOutstanding !== null && flowOut.length > 0 && <KV items={[['With Us When Open', pc(r.flow.withUsOfOutstanding)], ['Case-Days', r.flow.caseDays.toLocaleString('en-GB')]]} />}
-        </div>
-        <div className="an-card">
-          <div className="an-h">What Cases Wait For<Chip>12 Months</Chip></div>
-          <table className="an-t">
-            <thead><tr><th>Waiting For</th><th>Share</th><th className="num">Median</th><th className="num">Waits</th></tr></thead>
-            <tbody>
-              {r.delays.slice(0, 8).map((d) => (
-                <tr key={d.key}>
-                  <td><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: COLOUR[d.party], marginRight: 8 }} />{d.label}</td>
-                  <td><span className="an-mini" style={{ width: 90 }}><i style={{ width: `${(d.share / delayMax) * 100}%`, background: COLOUR[d.party] }} /></span>{pc(d.share)}</td>
-                  <td className="num"><span className={d.n < 5 ? 'an-thin' : undefined} title={`${d.n} finished`}>{d.p50 == null ? '–' : `${d.p50}d`}</span></td>
-                  <td className="num">{d.n}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="an-grid an-g2">
-        <div className="an-card">
-          <div className="an-h">Our Turnaround<Chip>90 Days</Chip></div>
-          <KV big items={[['Median', <S key="m" s={r.tasks.turnaroundHours} unit="h" />], ['85% Within', <S key="p" s={r.tasks.turnaroundHours} unit="h" p="p85" />], ['Tasks Cleared', r.tasks.turnaroundHours.n]]} />
-          {r.tasks.slowestKinds.length > 0 && (
-            <table className="an-t" style={{ marginTop: 10 }}>
-              <thead><tr><th>Slowest To Clear</th><th className="num">Median</th><th className="num">Tasks</th></tr></thead>
-              <tbody>{r.tasks.slowestKinds.map((k) => <tr key={k.kind}><td>{k.label}</td><td className="num">{hours(k.p50)}</td><td className="num">{k.n}</td></tr>)}</tbody>
-            </table>
-          )}
-        </div>
-        <div className="an-card">
-          <div className="an-h">Pipeline</div>
-          <KV big items={[...r.pipeline.byStep.map((x) => [x.label, x.count] as [string, React.ReactNode]), ['Completing In 30 Days', r.pipeline.completingNext30]]} />
-          <div className="an-h" style={{ marginTop: 16 }}>Fell Through<Chip>12 Months</Chip></div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}><span className="an-big" style={{ fontSize: 24 }}><span className={r.fallThrough.n < 5 ? 'an-thin' : undefined}>{pc(r.fallThrough.rate)}</span></span><span className="an-of">of {r.fallThrough.n}</span></div>
-          {r.fallThrough.rate != null && <Meter value={r.fallThrough.rate} max={Math.max(0.4, r.fallThrough.rate)} mark={r.fallThrough.industry.value} markLabel={`Industry ${pc(r.fallThrough.industry.value)}`} good={r.fallThrough.rate <= r.fallThrough.industry.value} />}
-          {r.fallThrough.reasons.length > 0 && <div className="an-chips">{r.fallThrough.reasons.slice(0, 5).map((x) => <span key={x.reason}>{x.reason} <b>{x.count}</b></span>)}</div>}
-          <div className="an-h" style={{ marginTop: 16 }}>Chases<Chip>90 Days</Chip></div>
-          <KV items={[['Sent', r.chases.sent], ['Answered In 3 Days', pc(r.chases.answeredWithin3Days)], ['Median Reply', r.chases.medianDaysToReply == null ? '–' : `${r.chases.medianDaysToReply}d`]]} />
-        </div>
-      </div>
-
       {r.team.people.length > 0 && <TeamChart team={r.team} />}
 
-      {r.people.length > 0 && (
-        <div className="an-card" style={{ marginBottom: 14 }}>
-          <div className="an-h">{props.admin && !person ? 'People' : 'Your Figures'}</div>
-          <PeopleTable fees={r.fees.set} people={r.people} onPick={props.admin && !person ? (id) => props.onScope(id, side) : undefined} />
-        </div>
-      )}
-
-      {r.satisfaction.comments.length > 0 && (
-        <div className="an-card">
-          <div className="an-h">What Clients Said</div>
-          <div className="an-grid an-g2" style={{ marginBottom: 0 }}>
-            {r.satisfaction.comments.map((c, i) => <p key={i} className="an-q">{c.comment}<small>{c.kind === 'nps' ? `${c.score}/10 at completion` : `${c.score}/5 at exchange`} · {new Date(c.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</small></p>)}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -62,6 +62,8 @@ const CSS = `
 .tv-do span{background:#f1f5f9;color:#334155}
 .tv-weeks{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:14px;align-items:end;height:260px}
 .tv-col{display:flex;flex-direction:column;gap:2px;height:100%}
+.tv-col > span{display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:800;min-height:0;overflow:hidden}
+.tv-col > span.tv-amber{color:#3b2405}
 .tv-col > span:first-child{border-radius:5px 5px 0 0}
 .tv-col > span:last-child{border-radius:0 0 5px 5px}
 .tv-col.empty{background:#f1f5f9;border-radius:5px}
@@ -231,7 +233,7 @@ export function WeekByWeek() {
       <div className="tv-weeks">
         {r.weeks.map((w) => (w.share
           ? <div key={w.start} className="tv-col" title={`${day(w.start)}: ${split(w.share)}`}>
-              {[...RAG].reverse().filter(([k]) => w.share![k] > 0).map(([k]) => <span key={k} className={`tv-${k}`} style={{ flex: `${w.share![k]} 1 0` }} />)}
+              {[...RAG].reverse().filter(([k]) => w.share![k] > 0).map(([k]) => <span key={k} className={`tv-${k}`} style={{ flex: `${w.share![k]} 1 0` }}>{w.share![k] >= 0.08 ? pct(w.share![k]) : ''}</span>)}
             </div>
           : <div key={w.start} className="tv-col empty" title={`${day(w.start)}: no time recorded`} />))}
       </div>
