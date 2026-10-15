@@ -53,7 +53,7 @@ The pitch: plug in the mailbox and InTouch, and within the hour it says where th
 
 | Figure | From | How firm |
 | --- | --- | --- |
-| Hours a week per red and amber category sent by email | Sent Items over 13 weeks: each email's category and recipient role, minutes from Outlook's draft-to-send timing where it has one, else the conveyancer's own estimate | Firm: counted, and checked by the conveyancer on a random sample (built) |
+| Hours a week per red and amber category sent by email | Sent Items over two months: each email's category and recipient role, minutes from Outlook's draft-to-send timing where it has one, else typical minutes | Counted |
 | What causes them | The Inbox: status requests, chasers received, documents delivered | Counted |
 | Filing | InTouch's folder: emails and documents filed per week | Counted; minutes each estimated |
 | Cases per conveyancer | InTouch's matter list by fee earner | Counted |
@@ -66,4 +66,4 @@ So the headline is "**at most** 25% of your week moves cases on": an upper bound
 - **The scan** (`lib/server/workload/scan.ts`): Sent Items, then the Inbox, then InTouch when it is connected. Up to 15,000 messages a person, enough for 200–300 received and 60–80 sent a day. Classified on the classify model (Haiku), 15 emails a call, the first 900 characters of what was written, nothing stored but the label. It now tells resends from first sends, and process questions from legal ones (prompt `wl-2`).
 - **InTouch** (counts only): the person's live cases (InTouch's fee earner is them, by email or name), cases opened in the window, and what was filed. Documents and notes filed by the firm count as Filing and Writing File Notes; email records do not, because InTouch's own Exchange filing may have put them there; client uploads are not our time. InTouch's tasks carry no completion date, so they cannot be placed in a window and are not read. Field names to confirm on a live account.
 - **The figures** (`lib/server/epa/measure.ts`): a week per category = how many a week × minutes each (Outlook's own draft-to-send timing where 10 or more were timed, else the typical minutes in the code). Green = the rest of the contracted week, never less than the legal email the inbox shows. Shown as the Time page's bar, Pareto and Actions, nothing else: no headline card, no figure tiles (status requests and chasers received a week, and live cases per conveyancer, are computed and kept for the Cases monitoring in docs/epa.md §6).
-- **The sample check:** the scan still draws 50 sent emails to confirm; the old Baseline page that showed them is retired (it redirects to Measurement), so checking them is to be rebuilt on the Measurement page.
+- **No checking:** nobody is asked to mark the model's labels; the scan finishes as complete. The old Baseline page, and its sample check, are retired (it redirects to Measurement).

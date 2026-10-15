@@ -3,16 +3,17 @@
  * onboarding: the page calls advance() until it says done. No message text is stored, so each page
  * of mail is classified in the same slice that reads it; only the row survives.
  *
- *   SCANNING_SENT → SCANNING_INBOX → CHECKING (sample drawn; report available, marked unchecked)
- *     → COMPLETE (the conveyancer has checked the sample, or chose to finish without it)
+ *   SCANNING_SENT → SCANNING_INBOX → SCANNING_INTOUCH (when connected) → COMPLETE
+ *
+ * Nobody is asked to check the model's labels: the scan finishes as complete.
  */
 import { query, queryOne } from '../db';
-import { listFolderWindow, getMessageForCheck } from '../graph';
+import { listFolderWindow } from '../graph';
 import { classifyWorkload, WORKLOAD_PROMPT_VERSION } from '../ai';
 import { tenantSelfAddresses } from '../matching';
 import type { SessionUser } from '../types';
 import { IN_CATEGORIES, IN_SPEC, OUT_CATEGORIES, OUT_SPEC, ROLES, allInternal, domainOf, filterByRule, firmDomainsOf, isForwardSubject, isReplySubject, wordCount, writtenText, type Filtered, type OutCategory } from './taxonomy';
-import { SAMPLE_SIZE, buildReport, drawSample, type Report, type Row, type Settings } from './model';
+import { buildReport, type Report, type Row, type Settings } from './model';
 
 export type ScanStatus = 'SCANNING_SENT' | 'SCANNING_INBOX' | 'SCANNING_INTOUCH' | 'CHECKING' | 'COMPLETE' | 'FAILED' | 'CANCELLED';
 export interface ScanRow {
@@ -176,15 +177,14 @@ export async function advanceScan(user: SessionUser, scan: ScanRow): Promise<Sca
       const read = s.messages_read + Math.min(room, page.messages.length);
       // The folder is done when Graph has no more pages, or the scan has read all it may.
       const folderDone = !page.nextLink || read >= s.max_messages;
-      const next: ScanStatus = !folderDone ? s.status : s.status === 'SCANNING_SENT' && read < s.max_messages ? 'SCANNING_INBOX' : (await inTouchConnected(user.tenantId)) ? 'SCANNING_INTOUCH' : 'CHECKING';
+      const next: ScanStatus = !folderDone ? s.status : s.status === 'SCANNING_SENT' && read < s.max_messages ? 'SCANNING_INBOX' : (await inTouchConnected(user.tenantId)) ? 'SCANNING_INTOUCH' : 'COMPLETE';
       const updated = await queryOne<ScanRow>(
-        `update workload_scan set messages_read = $2, classified = classified + $3, cursor = $4, status = $5, model = coalesce($6, model), updated_at = now() where id = $1 and status = any($7) returning *`,
+        `update workload_scan set messages_read = $2, classified = classified + $3, cursor = $4, status = $5, model = coalesce($6, model), updated_at = now(), completed_at = case when $5 = 'COMPLETE' then now() else completed_at end where id = $1 and status = any($7) returning *`,
         [s.id, read, classified, folderDone ? null : page.nextLink, next, model, ACTIVE]
       );
       // Cancelled while this page was being read: stop, and say so.
       if (!updated) return { ...s, status: 'CANCELLED' };
       s = norm(updated);
-      if (s.status === 'CHECKING') await drawCheckSample(s);
     }
   } catch (err) {
     const message = String((err as Error)?.message ?? err).slice(0, 500);
@@ -239,46 +239,16 @@ async function advanceInTouch(user: SessionUser, scan: ScanRow, started: number)
     finished = true;
   }
   const updated = await queryOne<ScanRow>(
-    `update workload_scan set intouch = $2::jsonb, status = $3, updated_at = now() where id = $1 and status = 'SCANNING_INTOUCH' returning *`,
-    [scan.id, JSON.stringify(counts), finished ? 'CHECKING' : 'SCANNING_INTOUCH']
+    `update workload_scan set intouch = $2::jsonb, status = $3, updated_at = now(), completed_at = case when $3 = 'COMPLETE' then now() else completed_at end where id = $1 and status = 'SCANNING_INTOUCH' returning *`,
+    [scan.id, JSON.stringify(counts), finished ? 'COMPLETE' : 'SCANNING_INTOUCH']
   );
   if (!updated) return { ...scan, status: 'CANCELLED' };
-  const s = norm(updated);
-  if (s.status === 'CHECKING') await drawCheckSample(s);
-  return s;
+  return norm(updated);
 }
 
-/** Mark a random sample of the sent, classified emails for the conveyancer to check (§3). */
-async function drawCheckSample(scan: ScanRow): Promise<void> {
-  const rows = await query<{ id: string }>(`select id from workload_email where scan_id = $1 and direction = 'out' and filtered is null and category is not null order by id`, [scan.id]);
-  const pick = drawSample(rows, SAMPLE_SIZE, scan.id).map((r) => r.id);
-  if (pick.length) await query(`update workload_email set in_sample = true where id = any($1)`, [pick]);
-}
 
-/** The emails to check, read live from Outlook (nothing is stored). */
-export async function checkQueue(user: SessionUser, scan: ScanRow): Promise<Array<{ id: string; category: string; checked: string | null; subject: string; people: string; sentAt: string | null; text: string; webLink: string | null; gone: boolean }>> {
-  const rows = await query<{ id: string; graph_message_id: string; category: string; checked_category: string | null }>(
-    `select id, graph_message_id, category, checked_category from workload_email where scan_id = $1 and in_sample order by id`, [scan.id]
-  );
-  return inParallel(rows, 5, async (r) => {
-    const m = await getMessageForCheck(user.userId, r.graph_message_id).catch(() => null);
-    return { id: r.id, category: r.category, checked: r.checked_category, subject: m?.subject ?? '', people: m?.people ?? '', sentAt: m?.sentAt ?? null, text: (m?.text ?? '').slice(0, 3000), webLink: m?.webLink ?? null, gone: !m };
-  });
-}
 
-/** The conveyancer's answer for one checked email: the right category (the same one when they agree). */
-export async function recordCheck(user: SessionUser, scanId: string, emailId: string, category: OutCategory): Promise<void> {
-  if (!OUT_CATEGORIES.includes(category)) throw Object.assign(new Error('Not a category.'), { status: 400 });
-  const r = await queryOne<{ id: string }>(
-    `update workload_email set checked_category = $4, checked_at = now() where id = $3 and scan_id = $2 and user_id = $1 and in_sample returning id`,
-    [user.userId, scanId, emailId, category]
-  );
-  if (!r) throw Object.assign(new Error('That email is not in the sample.'), { status: 404 });
-}
 
-export async function finishScan(userId: string, scanId: string): Promise<void> {
-  await query(`update workload_scan set status = 'COMPLETE', completed_at = now(), updated_at = now() where id = $1 and user_id = $2 and status = 'CHECKING'`, [scanId, userId]);
-}
 
 /** The firm's settings for the report, from the latest firm_baseline row. */
 export async function firmSettings(tenantId: string): Promise<Partial<Settings>> {
