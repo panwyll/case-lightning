@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, forgetApiCache } from '@/app/shared/engine/api';
 import { BusyButton, BUSY_CSS } from '@/app/shared/engine/BusyButton';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
-import { ActionsCard, ParetoCard, RagCard, TIME_CSS } from '@/app/shared/epa/TimeView';
+import { ParetoCard, RagCard, TIME_CSS } from '@/app/shared/epa/TimeView';
 import { paths } from '@/lib/paths';
 import { ArrowLeft, Check, ChevronRight, Loader, X } from '@/app/shared/icons';
 import { MIN_SENT_PER_WEEK, type Measurement } from '@/lib/server/epa/measure';
@@ -46,10 +46,11 @@ const CSS = `
 @keyframes ms-spin{to{transform:rotate(360deg)}}
 .ms-bar{height:6px;border-radius:99px;background:#eef0f4;overflow:hidden;margin-top:14px}
 .ms-bar i{display:block;height:100%;background:#5A27E0;border-radius:99px;transition:width .4s}
-.ms-read{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;font-size:13px;color:#334155;font-weight:600}
-.ms-read b{color:#0f172a;font-weight:800}
-.ms-read button{margin-left:auto;border:0;background:#f1f5f9;border-radius:9px;padding:7px 12px;font:inherit;font-size:13px;font-weight:700;color:#0f172a;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
-.ms-read button:hover{background:#e8ecf2}
+.ms-read{display:flex;flex-wrap:wrap;gap:10px 28px;align-items:center}
+.ms-fig b{display:block;font-size:22px;font-weight:800;color:#0f172a;line-height:1.1;letter-spacing:-.3px}
+.ms-fig span{display:block;font-size:12.5px;font-weight:700;color:#64748b;margin-top:3px}
+.ms-see{border:0;background:#f1f5f9;border-radius:9px;padding:8px 12px;font:inherit;font-size:13px;font-weight:800;color:#0f172a;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.ms-see:hover{background:#e8ecf2}
 .ms-t{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
 .ms-t th{text-align:left;font-size:12px;font-weight:800;color:#64748b;padding:6px 8px;border-bottom:1px solid #e6e8ee}
 .ms-t td{padding:7px 8px;border-bottom:1px solid #f1f3f7;vertical-align:top}
@@ -69,6 +70,12 @@ const n = (x: number) => x.toLocaleString('en-GB');
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const ROLE: Record<string, string> = { client: 'Client', other_solicitor: 'Other Side', estate_agent: 'Agent', lender: 'Lender', broker: 'Broker', colleague: 'Colleague', third_party: 'Third Party' };
+
+/** How long a wait is: hours, or days past a day. */
+const waitText = (h: number) => (h >= 24 ? `${(h / 24).toFixed(1)} Days` : `${h.toFixed(1)}h`);
+
+/** A figure: the number big, what it is beneath. */
+const Fig = ({ value, label }: { value: string; label: string }) => <div className="ms-fig"><b>{value}</b><span>{label}</span></div>;
 
 /** The three stages of a scan, each with what it has read. */
 function Progress({ mine }: { mine: Mine }) {
@@ -123,7 +130,7 @@ function EmailsRead({ intouch }: { intouch: boolean }) {
         </span>
       )}
       {err && <p className="ms-err">{err}</p>}
-      {!data && !err && <p className="tv-none">{source === 'email' ? 'Reading your mailbox…' : 'Loading…'}</p>}
+      {!data && !err && <p className="tv-none">Loading…</p>}
       {data && source === 'email' && (
         <table className="ms-t">
           <thead><tr><th>When</th><th>Sent Or Received</th><th>Who With</th><th>Subject</th><th>Labelled As</th></tr></thead>
@@ -133,7 +140,7 @@ function EmailsRead({ intouch }: { intouch: boolean }) {
                 <td className="when">{when(e.at)}</td>
                 <td>{e.direction === 'out' ? 'Sent' : 'Received'}</td>
                 <td>{e.roles.map((r) => ROLE[r] ?? r).join(', ') || '—'}</td>
-                <td>{e.webLink ? <a href={e.webLink} target="_blank" rel="noreferrer">{e.subject || '(No Subject)'}</a> : e.subject ?? '(No Longer In Your Mailbox)'}</td>
+                <td>{e.subject == null ? '—' : e.webLink ? <a href={e.webLink} target="_blank" rel="noreferrer">{e.subject || '(No Subject)'}</a> : e.subject || '(No Subject)'}</td>
                 <td>{e.label}</td>
               </tr>
             ))}
@@ -214,6 +221,7 @@ export default function MeasurePage() {
         {res && (
           <span className="r">
             {res.scanned} Of {res.team} Conveyancers Scanned
+            {finished && <button type="button" className="ms-see" aria-expanded={showEmails} onClick={() => setShowEmails((v) => !v)}>{showEmails ? 'Hide' : 'See'} What It Read<ChevronRight size={16} style={{ transform: showEmails ? 'rotate(90deg)' : undefined }} /></button>}
             {!isRunning && <BusyButton className="ms-go" busyLabel="Starting…" doneLabel="Started" onClick={start}>{finished ? 'Scan Again' : 'Scan My Last Two Months'}</BusyButton>}
           </span>
         )}
@@ -230,14 +238,15 @@ export default function MeasurePage() {
           {finished && c && (
             <section className="ms-card">
               <div className="ms-read">
-                <span>Your Scan: <b>{day(mine!.since)} – {day(mine!.until)}</b></span>
-                <span><b>{n(c.sent)}</b> Sent</span>
-                <span><b>{n(c.received)}</b> Received</span>
-                <span><b>{n(c.setAside)}</b> Set Aside As Automated, Bulk Or Empty</span>
-                <span><b>{n(c.classified)}</b> Labelled{c.model ? ` By ${/haiku/i.test(c.model) ? 'Claude Haiku' : c.model}` : ''}</span>
-                <span>InTouch: <b>{c.intouch.state === 'failed' ? 'Could Not Be Read' : c.intouch.state !== 'read' ? 'Not Connected' : c.intouch.cases ? `${n(c.intouch.cases)} Cases · ${n(c.intouch.items)} Documents And Notes` : 'No Cases With You As Fee Earner'}</b></span>
-                <button type="button" aria-expanded={showEmails} onClick={() => setShowEmails((v) => !v)}>{showEmails ? 'Hide' : 'See'} What It Read<ChevronRight size={16} style={{ transform: showEmails ? 'rotate(90deg)' : undefined }} /></button>
+                <Fig value={`${day(mine!.since)} – ${day(mine!.until)}`} label="Your Scan" />
+                <Fig value={n(c.sent)} label="Sent" />
+                <Fig value={n(c.received)} label="Received" />
+                <Fig value={n(c.setAside)} label="Set Aside" />
+                {c.intouch.state === 'read' && <Fig value={n(c.intouch.cases)} label="InTouch Cases" />}
+                {c.intouch.state === 'read' && <Fig value={n(c.intouch.items)} label="InTouch Filings" />}
+                {m?.replyHours != null && <Fig value={waitText(m.replyHours)} label="Average Reply Time" />}
               </div>
+              {c.intouch.state === 'failed' && <p className="ms-err">InTouch could not be read: {c.intouch.error}</p>}
               {c.intouch.state === 'read' && !c.intouch.cases && !!c.intouch.feeEarners?.length && (
                 <div className="ms-warn" role="status"><span>InTouch has cases for {c.intouch.feeEarners.join(', ')}, none with your name or email as fee earner.</span></div>
               )}
@@ -254,10 +263,9 @@ export default function MeasurePage() {
           {m && (
             <>
               <div className="tv-top">
-                <RagCard title="A Typical Week" hours={m.hours} share={m.share} unseen={{ hours: m.hours.unseen, share: m.share.unseen }} foot={`${m.people} ${m.people === 1 ? 'Conveyancer' : 'Conveyancers'} · ${m.contractedHours}h Week`} />
+                <RagCard title="A Typical Week" hours={m.hours} share={m.share} unseen={{ hours: m.hours.unseen, share: m.share.unseen }} foot={<>{m.people} {m.people === 1 ? 'Conveyancer' : 'Conveyancers'}<br />{m.contractedHours}h Week</>} />
                 <ParetoCard lines={m.lines} />
               </div>
-              <ActionsCard lines={m.lines} timesHead="A Week" />
             </>
           )}
         </>

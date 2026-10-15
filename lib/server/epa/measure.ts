@@ -24,7 +24,7 @@ export const READ_MINUTES: Record<string, number> = {
   update_request: 1, chaser_received: 1, document_delivery: 1.5, question: 2, instruction: 2, enquiry: 4, other: 0.5,
 };
 
-export interface ScanEmail { id: string; at: number; draftedAt: number | null; category: string; roles: string[] }
+export interface ScanEmail { id: string; at: number; draftedAt: number | null; category: string; roles: string[]; conversationId?: string | null }
 export interface PersonScan {
   weeks: number;
   sent: ScanEmail[];
@@ -47,6 +47,8 @@ export interface Measurement {
   sentPerPersonWeek: number;
   /** What causes the red, a week: status requests and chasers received. */
   received: { clientStatusRequests: number; agentStatusRequests: number; otherSideStatusRequests: number; chasersReceived: number };
+  /** How long people wait for a reply, in hours: each case email received to the next email sent on that conversation, everyone's averaged. */
+  replyHours: number | null;
   /** From InTouch, when it was read. */
   cases: { live: number; perConveyancer: number | null; openedPerWeek: number | null } | null;
 }
@@ -55,6 +57,25 @@ const WEEK_MS = 7 * 86_400_000;
 const r1 = (x: number) => Math.round(x * 10) / 10;
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const isKind = (k: string): k is EpaKind => (EPA_KINDS as readonly string[]).includes(k);
+/** A reply later than this is a new subject on an old thread, not a reply. */
+const REPLY_WITHIN_MS = 14 * 86_400_000;
+
+/**
+ * Each wait for a reply, in ms: a case email received, to the first email the person sent on that conversation after it.
+ * Two people waiting at once are two waits. Emails never answered are not waits that ended, so are left out.
+ */
+export function replyWaits(p: Pick<PersonScan, 'sent' | 'received'>): number[] {
+  const sentBy = new Map<string, number[]>();
+  for (const e of p.sent) if (e.conversationId) (sentBy.get(e.conversationId) ?? sentBy.set(e.conversationId, []).get(e.conversationId)!).push(e.at);
+  for (const xs of sentBy.values()) xs.sort((a, b) => a - b);
+  const out: number[] = [];
+  for (const e of p.received) {
+    if (!e.conversationId || e.category === 'other') continue;
+    const reply = sentBy.get(e.conversationId)?.find((t) => t > e.at);
+    if (reply != null && reply - e.at <= REPLY_WITHIN_MS) out.push(reply - e.at);
+  }
+  return out;
+}
 
 /** One person's evidence as spans: actions, writing, reading. */
 function spansOf(p: PersonScan, workday: { workdayStart: string; workdayEnd: string }): Span[] {
@@ -95,7 +116,9 @@ export function buildMeasurement(input: { people: PersonScan[]; contractedHours:
   let live = 0;
   let opened = 0;
   let intouchPeople = 0;
+  const waits: number[] = [];
   for (const p of scanned) {
+    waits.push(...replyWaits(p));
     const spans = spansOf(p, workday);
     sentCase += p.sent.filter((e) => EPA_SPEC[fromEmail(e.category, e.roles)].rag !== 'none').length / p.weeks;
     let seen = 0;
@@ -164,6 +187,7 @@ export function buildMeasurement(input: { people: PersonScan[]; contractedHours:
     efficiencySeen: seenH ? h.green / seenH : null,
     lines,
     sentPerPersonWeek: r1(sentCase / scanned.length),
+    replyHours: waits.length ? r1(waits.reduce((a, b) => a + b, 0) / waits.length / 3_600_000) : null,
     received: { clientStatusRequests: Math.round(received.clientStatusRequests), agentStatusRequests: Math.round(received.agentStatusRequests), otherSideStatusRequests: Math.round(received.otherSideStatusRequests), chasersReceived: Math.round(received.chasersReceived) },
     cases: intouchPeople ? { live, perConveyancer: r1(live / intouchPeople), openedPerWeek: r1(opened) } : null,
   };

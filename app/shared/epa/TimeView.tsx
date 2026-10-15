@@ -15,7 +15,7 @@ const CSS = `
 .tv{max-width:1360px}
 .tv-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .tv-head h1{font-size:21px;font-weight:800;margin:0}
-.tv h2{font-size:15px;font-weight:800;margin:0;color:#0f172a}
+.tv h2,.tv-card h2{font-size:15px;font-weight:800;margin:0;color:#0f172a}
 .tv-card{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:18px 20px}
 .tv-cardhead{display:flex;align-items:baseline;gap:10px;margin-bottom:16px;flex-wrap:wrap}
 .tv-cardhead .r{margin-left:auto;font-size:12.5px;color:#64748b;font-weight:700}
@@ -40,7 +40,7 @@ const CSS = `
 .tv-pbar{display:flex;flex-direction:column;justify-content:flex-end;height:212px;border-bottom:1px solid #e6e8ee}
 .tv-pbar i{display:block;border-radius:4px 4px 0 0;min-height:2px}
 .tv-pbar small{display:block;text-align:center;font-size:11.5px;font-weight:800;color:#0f172a;margin-bottom:4px}
-.tv-plabel{font-size:11.5px;font-weight:700;color:#475569;text-align:center;line-height:1.25;margin-top:8px;min-height:44px;hyphens:auto;overflow-wrap:break-word}
+.tv-plabel{font-size:11.5px;font-weight:700;color:#475569;text-align:center;line-height:1.25;margin-top:8px;min-height:44px}
 .tv-pcol:hover i{filter:brightness(.92)}
 .tv-pcol:hover .tv-plabel{color:#0f172a}
 .tv-tipped{position:relative}
@@ -97,7 +97,7 @@ const SHORT: Partial<Record<EpaKind, string>> = {
   client_updates: 'Proactive Client Updates', agent_updates: 'Proactive Agent Updates', other_side_updates: 'Proactive Other Side Updates',
   lender_broker_updates: 'Proactive Lender Updates', resending_to_client: 'Resending Documents To Clients', resending_to_others: 'Resending Documents To Others',
   first_requests_client: 'Asking Clients For Documents', first_requests_others: 'Asking Others For Documents', sending_documents_client: 'Sending New Documents To Clients',
-  sending_documents_others: 'Sending New Documents To Others', acknowledging: 'Acknowledging Receipt', filing: 'Filing Emails And Documents',
+  sending_documents_others: 'Sending New Documents To Others', acknowledging: 'Acknowledg\u00ADing Receipt', filing: 'Filing Emails And Documents',
   recording_receipts: 'Recording Receipts', notes_and_outcomes: 'Writing File Notes', opening_the_case: 'Opening Cases', ordering_searches: 'Ordering Searches',
   land_registry_applications: 'Land Registry Applications', sdlt_return: 'SDLT Returns', closing_the_file: 'Closing Files', failed_sends: 'Resending Failed Emails',
   unlocking_files: 'Unlocking Protected Files', client_process_questions: 'Client Process Questions', arranging_dates: 'Completion Dates And Calls',

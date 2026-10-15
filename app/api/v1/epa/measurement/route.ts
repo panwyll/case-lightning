@@ -31,11 +31,11 @@ export async function GET() {
     const people: PersonScan[] = [];
     for (const s of scans) {
       // Each email with its time: the measurement places them on the person's day (lib/server/epa/measure.ts).
-      const rows = await query<{ id: string; direction: 'out' | 'in'; sent_at: Date; drafted_at: Date | null; category: string; roles: string[] | null }>(
-        `select id, direction, sent_at, drafted_at, category, recipient_roles as roles from workload_email
+      const rows = await query<{ id: string; direction: 'out' | 'in'; sent_at: Date; drafted_at: Date | null; category: string; roles: string[] | null; conversation_id: string | null }>(
+        `select id, direction, sent_at, drafted_at, category, recipient_roles as roles, conversation_id from workload_email
           where scan_id = $1 and filtered is null and category is not null`, [s.id]
       );
-      const as = (r: (typeof rows)[number]) => ({ id: r.id, at: r.sent_at.getTime(), draftedAt: r.drafted_at ? r.drafted_at.getTime() : null, category: r.category, roles: r.roles ?? [] });
+      const as = (r: (typeof rows)[number]) => ({ id: r.id, at: r.sent_at.getTime(), draftedAt: r.drafted_at ? r.drafted_at.getTime() : null, category: r.category, roles: r.roles ?? [], conversationId: r.conversation_id });
       people.push({
         weeks: workingWeeks(new Date(s.since).toISOString(), new Date(s.until).toISOString()),
         sent: rows.filter((r) => r.direction === 'out').map(as),

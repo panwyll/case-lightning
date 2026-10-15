@@ -159,11 +159,15 @@ async function classifyAndStore(user: SessionUser, scan: ScanRow, staged: Staged
     const r = results.get(m.id);
     const category = m.filtered ? null : m.internal ? 'internal' : r?.category ?? null;
     if (category) classified += 1;
-    await query(
-      `insert into workload_email (scan_id, tenant_id, user_id, graph_message_id, conversation_id, direction, drafted_at, sent_at, words_written, recipient_roles, is_reply, is_forward, has_attachments, filtered, category, confidence, classified_by)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) on conflict (scan_id, graph_message_id) do nothing`,
-      [scan.id, scan.tenant_id, scan.user_id, m.id, m.conversationId, m.direction, m.draftedAt, m.sentAt, m.words, m.internal ? ['colleague'] : r?.roles ?? [], m.isReply, m.isForward, m.hasAttachments, m.filtered, category, m.internal ? 1 : r?.confidence ?? null, m.filtered ? null : m.internal ? 'rule' : r ? 'model' : null]
-    );
+    const values = [scan.id, scan.tenant_id, scan.user_id, m.id, m.conversationId, m.direction, m.draftedAt, m.sentAt, m.words, m.internal ? ['colleague'] : r?.roles ?? [], m.isReply, m.isForward, m.hasAttachments, m.filtered, category, m.internal ? 1 : r?.confidence ?? null, m.filtered ? null : m.internal ? 'rule' : r ? 'model' : null];
+    const cols = 'scan_id, tenant_id, user_id, graph_message_id, conversation_id, direction, drafted_at, sent_at, words_written, recipient_roles, is_reply, is_forward, has_attachments, filtered, category, confidence, classified_by';
+    const params = '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17';
+    // The subject and who with, for See What It Read (migration 128); before that migration, without them.
+    await query(`insert into workload_email (${cols}, subject, who) values (${params},$18,$19) on conflict (scan_id, graph_message_id) do nothing`, [...values, m.subject.slice(0, 300), m.people.slice(0, 300)])
+      .catch((e: { code?: string }) => {
+        if (e?.code !== '42703') throw e;
+        return query(`insert into workload_email (${cols}) values (${params}) on conflict (scan_id, graph_message_id) do nothing`, values);
+      });
   }
   return { classified, model };
 }

@@ -71,3 +71,20 @@ test('InTouch folder item: kind, when, who filed it and its name', () => {
   assert.equal(toFolderActivity({ type: 'Email', createdOn: '2026-10-06T10:00:00Z' }).kind, 'email');
   assert.equal(toFolderActivity({ type: 'Document', createdOn: '2026-10-06T10:00:00Z', uploadedBy: 'Client' }).byFirm, false);
 });
+
+test('a reply wait runs from the email received to the next one sent on that conversation; two people waiting are two waits', async () => {
+  const { replyWaits } = await import('../../../lib/server/epa/measure');
+  const H = 3_600_000;
+  const e = (id: string, h: number, category: string, conversationId: string | null): ScanEmail => ({ id, at: T0 + h * H, draftedAt: null, category, roles: [], conversationId });
+  const waits = replyWaits({
+    received: [
+      e('a', 0, 'update_request', 'c1'), // client asks at 0h
+      e('b', 1, 'question', 'c2'), // agent asks at 1h, at the same time as the client waits
+      e('c', 2, 'other', 'c1'), // not case mail: no wait
+      e('d', 3, 'enquiry', 'c3'), // never answered: left out
+      e('f', 0, 'question', 'c4'), // answered after three weeks: a new subject, not a reply
+    ],
+    sent: [e('x', 4, 'update_reply', 'c1'), e('y', 3, 'update_reply', 'c2'), e('z', 21 * 24, 'legal_work', 'c4')],
+  });
+  assert.deepEqual(waits.map((w) => w / H).sort(), [2, 4]);
+});
