@@ -5,14 +5,15 @@ import { BusyButton, BUSY_CSS } from '@/app/shared/engine/BusyButton';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { ActionsCard, ParetoCard, RagCard, TIME_CSS } from '@/app/shared/epa/TimeView';
 import { paths } from '@/lib/paths';
-import { ArrowLeft, Check, ChevronRight, Loader } from '@/app/shared/icons';
+import { ArrowLeft, Check, ChevronRight, Loader, X } from '@/app/shared/icons';
 import { MIN_SENT_PER_WEEK, type Measurement } from '@/lib/server/epa/measure';
 import type { ScanCounts } from '@/lib/server/workload/scan';
 
 /**
  * The onboarding measurement (docs/epa-categories.md): each conveyancer scans two months of their own inbox and InTouch once,
  * and the firm sees a typical week in Analytics → Time's colours. Never one person's figures. Your own scan shows what it read,
- * and every email it read can be listed, so the result can be trusted; nobody is asked to mark anything.
+ * and every email it read can be listed, so the result can be trusted; nobody is asked to mark anything. A thin scan is still
+ * drawn, with a closable warning.
  */
 interface Mine { status: string; messagesRead: number; classified: number; since: string; until: string; error: string | null; counts: ScanCounts }
 interface Res { measurement: Measurement | null; team: number; scanned: number; mine: Mine | null }
@@ -55,7 +56,8 @@ const CSS = `
 .ms-t a{color:#5A27E0;text-decoration:none;font-weight:600}
 .ms-pg{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px;font-size:13px;color:#475569;font-weight:700}
 .ms-pg button{border:0;background:#f1f5f9;border-radius:8px;padding:6px 11px;font:inherit;font-weight:700;cursor:pointer}
-.ms-thin{font-size:14px;color:#334155;font-weight:600}
+.ms-warn{display:flex;align-items:center;gap:10px;margin-top:14px;background:#fef9c3;border:1px solid #fde68a;color:#713f12;border-radius:10px;padding:9px 12px;font-size:13px;font-weight:700}
+.ms-warn button{margin-left:auto;border:0;background:none;color:#713f12;cursor:pointer;display:inline-flex;padding:2px}
 @media (max-width:1100px){.ms-steps{grid-template-columns:1fr}}
 `;
 
@@ -139,6 +141,7 @@ export default function MeasurePage() {
   const [res, setRes] = useState<Res | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [showEmails, setShowEmails] = useState(false);
+  const [hideThin, setHideThin] = useState(false);
   const running = useRef(false);
   const load = useCallback(async () => {
     forgetApiCache();
@@ -215,12 +218,13 @@ export default function MeasurePage() {
             </section>
           )}
           {res && !m && !mine && <p className="tv-none">No mailbox scanned yet.</p>}
-          {m && thin && (
-            <section className="ms-card">
-              <p className="ms-thin">Too little email to measure: {m.sentPerPersonWeek} case emails sent a week per conveyancer, where a busy conveyancer sends hundreds. Scan the mailboxes the case work is done from.</p>
-            </section>
+          {m && thin && !hideThin && (
+            <div className="ms-warn" role="status">
+              <span>Not much data found: {m.sentPerPersonWeek} case emails sent a week per conveyancer.</span>
+              <button type="button" aria-label="Close" onClick={() => setHideThin(true)}><X size={16} /></button>
+            </div>
           )}
-          {m && !thin && (
+          {m && (
             <>
               <div className="tv-top">
                 <RagCard title="A Typical Week" hours={m.hours} share={m.share} foot={`${m.people} ${m.people === 1 ? 'Conveyancer' : 'Conveyancers'} · ${m.contractedHours}h Week`} />

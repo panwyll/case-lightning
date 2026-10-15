@@ -7,8 +7,7 @@
  * at least ten were timed, else the typical minutes below). Green cannot be seen in an inbox (reading a title leaves no
  * trace), so it is what is left of the contracted week: an upper bound, which errs in the firm's favour.
  *
- * Below MIN_SENT_PER_WEEK case emails sent a week per person the week is not drawn: a busy conveyancer sends hundreds, and a
- * split drawn from a handful is noise dressed as a measurement.
+ * Below MIN_SENT_PER_WEEK case emails sent a week per person the page warns that not much data was found (it still draws it).
  */
 import { actsUnasked, levelFor, ENGINE_ACTION_LABEL, type LevelConfig } from '../engine/types';
 import { ACTION_FOR, type ParetoBar, type RagSplit } from './report';
@@ -23,7 +22,7 @@ export const TYPICAL_MINUTES: Partial<Record<EpaKind, number>> = {
   sending_documents_client: 6, sending_documents_others: 5, acknowledging: 1.5, filing: 2, notes_and_outcomes: 4,
   client_process_questions: 6, client_legal_questions: 10, arranging_dates: 4, legal_correspondence: 10,
 };
-/** Below this many case emails sent a week per person, there is too little to measure. */
+/** Below this many case emails sent a week per person, the page warns that not much data was found. */
 export const MIN_SENT_PER_WEEK = 20;
 /** Timed emails needed before Outlook's timing replaces the typical minutes. */
 const TIMED_ENOUGH = 10;
@@ -54,7 +53,7 @@ export interface Measurement {
   greenMeasuredHours: number;
   /** What causes the red, a week: status requests and chasers received. */
   received: { clientStatusRequests: number; agentStatusRequests: number; otherSideStatusRequests: number; chasersReceived: number };
-  /** Case email sent a week per person: below a believable volume the week is not drawn (the page says so). */
+  /** Case email sent a week per person: below a believable volume the page warns, and still draws the week. */
   sentPerPersonWeek: number;
   /** From InTouch, when it was read. */
   cases: { live: number; perConveyancer: number | null; openedPerWeek: number | null } | null;
