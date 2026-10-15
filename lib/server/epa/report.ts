@@ -5,7 +5,7 @@
 import { actsUnasked, levelFor, ENGINE_ACTION_LABEL, type EngineAction, type LevelConfig, type TrustLevel } from '../engine/types';
 import { timedMinutes } from '../workload/model';
 import { attribute, measure, type Completion, type Span } from './ledger';
-import { EPA_KINDS, EPA_SPEC, fromBaselineCategory, type EpaKind } from './taxonomy';
+import { EPA_KINDS, EPA_SPEC, fromBaselineCategory, fromEmail, type EpaKind } from './taxonomy';
 
 const WEEK_MS = 7 * 86_400_000;
 /** Monday 00:00 UTC of the week holding `ms` (an hour out from London in summer, at midnight: no work falls there). */
@@ -16,9 +16,9 @@ export function weekStart(ms: number): number {
 }
 
 /** A sent email from the mailbox scan: a completion, and when Outlook timed its draft, the writing itself. */
-export interface SentEmail { id: string; category: string | null; draftedAt: string | null; sentAt: string }
+export interface SentEmail { id: string; category: string | null; draftedAt: string | null; sentAt: string; roles?: readonly string[] | null }
 export function emailEvidence(e: SentEmail): { done: Completion; compose: Span | null } | null {
-  const kind = fromBaselineCategory(e.category);
+  const kind = fromEmail(e.category, e.roles);
   if (EPA_SPEC[kind].rag === 'none') return null;
   const end = Date.parse(e.sentAt);
   const t = timedMinutes({ draftedAt: e.draftedAt, sentAt: e.sentAt });
@@ -30,21 +30,20 @@ export function emailEvidence(e: SentEmail): { done: Completion; compose: Span |
  * and the bar says so rather than suggesting something that does not exist.
  */
 export const ACTION_FOR: Partial<Record<EpaKind, EngineAction>> = {
-  chasing: 'chase',
-  requesting: 'chase',
-  acknowledging: 'acknowledgement',
-  status_updates: 'client_update',
-  sending_documents: 'client_update',
+  client_chasers: 'chase', other_side_chasers: 'chase', lender_chasers: 'chase', agent_chasers: 'chase',
+  first_requests_others: 'chase', first_requests_client: 'client_update',
+  client_updates: 'client_update', sending_documents_client: 'client_update', resending_to_client: 'client_update',
+  agent_updates: 'counterparty_update', other_side_updates: 'counterparty_update', lender_broker_updates: 'counterparty_update',
+  acknowledging: 'acknowledgement', ordering_searches: 'search_order',
 };
-const PROPOSAL_ACTION: Record<string, EngineAction> = { chase: 'chase', acknowledgement: 'acknowledgement', client_update: 'client_update', counterparty_update: 'counterparty_update', search_order: 'search_order', email_no_reply: 'email_no_reply' };
 
 export interface ParetoBar {
   kind: EpaKind; label: string; rag: 'red' | 'amber'; hours: number; share: number; cumulative: number;
   /** How many separate things (emails, tasks) the time went on, and the average minutes each took. */
   times: number; avgMinutes: number | null;
   action: { key: EngineAction; label: string; level: TrustLevel; sendsUnasked: boolean } | null;
-  /** Checking Drafts, by the CONVEYi action whose drafts were being read. */
-  parts?: Array<{ action: string; label: string; hours: number; level: TrustLevel | null }>;
+  /** Checking CONVEYi Drafts, by what the drafts were (Lender Chasers, Client Updates…), with the action that would send them. */
+  parts?: Array<{ of: string; label: string; hours: number; action: EngineAction | null; level: TrustLevel | null }>;
 }
 export interface RagSplit { red: number; amber: number; green: number }
 export interface EpaWeek {
@@ -129,9 +128,9 @@ export function buildEpaReport(input: {
         times, avgMinutes: times ? r1(m.minutes[k] / times) : null,
         action: key && level ? { key, label: ENGINE_ACTION_LABEL[key], level, sendsUnasked: actsUnasked(level, key) } : null,
         parts: k === 'checking_drafts'
-          ? Object.entries(m.checking).sort((a, b) => b[1] - a[1]).map(([a, mins]) => {
-              const key = PROPOSAL_ACTION[a];
-              return { action: a, label: key ? ENGINE_ACTION_LABEL[key] : a.replace(/_/g, ' '), hours: r2(mins / 60), level: key ? levelFor(input.levels, key) : null };
+          ? Object.entries(m.checking).sort((a, b) => b[1] - a[1]).map(([of, mins]) => {
+              const key = ACTION_FOR[of as EpaKind] ?? null;
+              return { of, label: EPA_SPEC[of as EpaKind]?.label ?? 'Other Checks', hours: r2(mins / 60), action: key, level: key ? levelFor(input.levels, key) : null };
             })
           : undefined,
       });

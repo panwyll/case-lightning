@@ -5,6 +5,7 @@ import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { paths } from '@/lib/paths';
 import { flushAttention } from '@/app/shared/epa/useAttention';
 import type { EpaReport, ParetoBar, RagSplit } from '@/lib/server/epa/report';
+import { EPA_SPEC, type EpaKind } from '@/lib/server/epa/taxonomy';
 
 /**
  * Analytics → Time (docs/epa.md §3), for action: this week's red / amber / green, the Pareto of red and amber, and what to
@@ -72,22 +73,33 @@ const title = (s: string) => s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 const split = (s: RagSplit) => RAG.map(([k, l]) => `${l} ${pct(s[k])}`).join(' · ');
 const tip = (b: ParetoBar) => `${b.label}: ${hrs(b.hours)} · ${b.times} times · ${mins(b.avgMinutes)} each`;
 /** Under a Pareto bar, where a column is narrow; the full name is in its tooltip and the Actions table. */
-const SHORT: Record<string, string> = {
-  acknowledging: 'Acks', requesting: 'Requests', checking_drafts: 'Drafts', sending_documents: 'Sending Docs', status_updates: 'Updates',
-  any_news: 'Any News', client_questions: 'Questions', being_chased: 'Chased', scheduling: 'Scheduling',
+const SHORT: Partial<Record<EpaKind, string>> = {
+  client_any_news: '"Any News?"', agent_status_requests: 'Agent Status', other_side_status_requests: 'Other Side Status',
+  lender_broker_status_requests: 'Lender Status', lender_broker_updates: 'Lender Updates', resending_to_client: 'Resends To Client',
+  resending_to_others: 'Resends To Others', first_requests_client: 'Asking The Client', first_requests_others: 'Asking Others',
+  sending_documents_client: 'Docs To Client', sending_documents_others: 'Docs To Others', acknowledging: 'Acks', filing: 'Filing',
+  recording_receipts: 'Receipts', notes_and_outcomes: 'Notes', opening_the_case: 'Case Set-Up', ordering_searches: 'Search Orders',
+  land_registry_applications: 'Land Registry', closing_the_file: 'Closing Files', arranging_dates: 'Dates And Calls',
+  requesting_funds: 'Funds Requests', checking_drafts: 'Checking Drafts',
 };
-/** At most this many bars; the rest are one "Other" bar. */
+/** The biggest this many; the rest are in the Actions table. A lumped "Other" bar would tower over the categories it hides. */
 const PARETO_BARS = 8;
+/** The CONVEYi actions, as the Actions column names them. */
+const ACTION_NAME: Record<string, string> = { chase: 'Chases', client_update: 'Client Updates', counterparty_update: 'Updates To Others', acknowledgement: 'Acknowledgements', search_order: 'Search Orders' };
+/** Where the fix is to stop it happening, what that is. */
+const PREVENT: Partial<Record<EpaKind, string>> = { client_any_news: 'Give Clients The Portal', resending_to_client: 'Send Documents As Secure Links' };
 
-/** What to do about a bar: switch the CONVEYi action that takes it to Send, or hand it to an assistant. */
+/** What to do about a bar: switch the CONVEYi action that takes it to Send, stop it happening, or hand it to an assistant. */
 function actionsFor(b: ParetoBar): Array<{ text: string; href?: string }> {
-  const delegate = { text: 'Delegate To An Assistant' };
   if (b.kind === 'checking_drafts') {
-    const open = (b.parts ?? []).filter((p) => p.level && p.level !== 'auto');
-    return open.length ? open.map((p) => ({ text: `Set ${title(p.label)} To Send`, href: paths.rules })) : [delegate];
+    const open = [...new Set((b.parts ?? []).filter((p) => p.action && p.level !== 'auto').map((p) => p.action!))];
+    return open.length ? open.map((a) => ({ text: `Set ${ACTION_NAME[a] ?? title(a.replace(/_/g, ' '))} To Send`, href: paths.rules })) : [{ text: 'Delegate To An Assistant' }];
   }
-  if (b.action && !b.action.sendsUnasked) return [{ text: `Set ${title(b.action.label)} To Send`, href: paths.rules }];
-  return [delegate];
+  if (b.action && !b.action.sendsUnasked) return [{ text: `Set ${ACTION_NAME[b.action.key] ?? title(b.action.label)} To Send`, href: paths.rules }];
+  const remedy = EPA_SPEC[b.kind].remedy;
+  if (remedy === 'prevent' && PREVENT[b.kind]) return [{ text: PREVENT[b.kind]! }];
+  if (remedy === 'keep') return [{ text: 'Delegate The Preparation' }];
+  return [{ text: 'Delegate To An Assistant' }];
 }
 
 function useReport() {
@@ -116,11 +128,7 @@ export function TimeView({ tabs }: { tabs: ReactNode }) {
   const w = r?.week ?? null;
   const total = w ? w.hours.green + w.hours.amber + w.hours.red : 0;
   const pareto = r?.pareto ?? [];
-  const rest = pareto.length > PARETO_BARS ? pareto.slice(PARETO_BARS - 1) : [];
-  const bars = [
-    ...(rest.length ? pareto.slice(0, PARETO_BARS - 1) : pareto).map((b) => ({ key: b.kind as string, label: SHORT[b.kind] ?? b.label, colour: `tv-${b.rag}`, hours: b.hours, tip: tip(b) })),
-    ...(rest.length ? [{ key: 'other', label: 'Other', colour: '', hours: rest.reduce((a, b) => a + b.hours, 0), tip: `Other: ${rest.map((b) => b.label).join(', ')}` }] : []),
-  ];
+  const bars = pareto.slice(0, PARETO_BARS).map((b) => ({ key: b.kind as string, label: SHORT[b.kind as EpaKind] ?? b.label, colour: `tv-${b.rag}`, hours: b.hours, tip: tip(b) }));
   const top = Math.max(0.0001, ...bars.map((b) => b.hours));
   return (
     <Shell tabs={tabs} err={err} loading={!r}>
@@ -152,7 +160,7 @@ export function TimeView({ tabs }: { tabs: ReactNode }) {
                     {bars.map((b) => (
                       <div key={b.key} className="tv-pbar" title={b.tip}>
                         <small>{hrs(b.hours)}</small>
-                        <i className={b.colour} style={{ height: `${(b.hours / top) * 200}px`, background: b.colour ? undefined : '#94a3b8' }} />
+                        <i className={b.colour} style={{ height: `${(b.hours / top) * 200}px` }} />
                       </div>
                     ))}
                   </div>

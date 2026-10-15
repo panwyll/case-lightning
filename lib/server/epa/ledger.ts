@@ -120,7 +120,7 @@ export interface WeekMeasures {
   /** Minutes given to each kind; and how many of them fell outside working hours. */
   minutes: Record<EpaKind, number>;
   afterHoursMinutes: Record<EpaKind, number>;
-  /** Checking Drafts by what the draft was (the CONVEYi action that would take it on Send). */
+  /** Checking CONVEYi Drafts by what the draft was. */
   checkingByAction: Record<string, number>;
   rag: Record<Exclude<Rag, 'none'>, number>;
   /** green ÷ (red + amber + green); null with no counted time. */
@@ -162,7 +162,7 @@ export function measure(slices: Slice[], workday: { workdayStart: string; workda
     const m = (s.end - s.start) / 60_000;
     total += m;
     if (s.span.source !== 'estimate') measured += m;
-    if (s.span.kind === 'checking_drafts') { const k = s.span.action ?? s.span.of ?? 'other'; checking[k] = (checking[k] ?? 0) + m; }
+    if (s.span.kind === 'checking_drafts') { const k = s.span.of ?? 'other'; checking[k] = (checking[k] ?? 0) + m; }
   }
   const rag = { red: 0, amber: 0, green: 0 };
   for (const k of EPA_KINDS) { const r = EPA_SPEC[k].rag; if (r !== 'none') rag[r] += minutes[k]; }

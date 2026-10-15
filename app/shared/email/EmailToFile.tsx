@@ -144,8 +144,8 @@ export default function EmailToFile() {
   const [noMailbox, setNoMailbox] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sel, setSel] = useState<string | null>(null);
-  // EPA (docs/epa.md §2): an email open here is being filed to its case: admin time.
-  useAttention(sel ? { item: `email:${sel}`, kind: 'admin' } : null);
+  // EPA (docs/epa.md §2): an email open here is being filed to its case.
+  useAttention(sel ? { item: `email:${sel}`, kind: 'filing' } : null);
   const [tab, setTab] = useState<'cases' | 'bulk'>('cases');
   const [totals, setTotals] = useState<{ toFile: number; bulk: number } | null>(null);
   const [mailboxes, setMailboxes] = useState<Array<{ userId: string; name: string; self: boolean }>>([]);
