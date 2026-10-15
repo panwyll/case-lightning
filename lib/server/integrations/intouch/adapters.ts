@@ -256,7 +256,9 @@ export class PgInTouchMirrorStore implements InTouchMirrorStore {
       );
       return { matterId: r!.id, created: true };
     }).then(async (res) => {
-      if (res.created) await enrolIfUntracked(tenantId, res.matterId, extras.createdBy ?? 'system').catch(() => {});
+      // A case InTouch has had for more than a couple of days is under way: placed from its files before anything is sent.
+      const underWay = !!c.createdAt && Date.now() - Date.parse(c.createdAt) > 2 * 86_400_000;
+      if (res.created) await enrolIfUntracked(tenantId, res.matterId, extras.createdBy ?? 'system', { placing: underWay ? 'Taken on from InTouch part-way through' : null }).catch(() => {});
       return res;
     });
   }
@@ -391,6 +393,7 @@ export async function inTouchSyncDeps(tenantId: string): Promise<InTouchSyncDeps
     engine: engine(),
     systemUserId: null,
     log: (msg, detail) => console.warn(`[intouch] ${msg}`, detail instanceof Error ? detail.message : detail ?? ''),
+    ingest: async (t, m, d) => (await import('../../engine/ingest-hook')).ingestFiledDocument(t, m, d),
   };
 }
 

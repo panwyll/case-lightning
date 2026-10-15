@@ -274,6 +274,9 @@ export const EVENT_TYPES = [
   'title_plan_read',
   'supporting_document_read',
   'manual_handling_cleared',
+  // A case taken on part-way through: read from its history, nothing sent, until a person confirms where it is
+  'placement_started',
+  'placement_confirmed',
   'funding_changed',
   'survey_plan_recorded',
   'signing_method_set',
@@ -621,6 +624,10 @@ export type NoteCommand =
   | { type: 'resend_to_client'; waitKey: WaitKey; subject: string }
   /** The offer is gone (the client or lender says so): the mortgage step reopens and holds exchange until a new offer is in. */
   | { type: 'record_mortgage_withdrawn'; reason: string }
+  /** The other side's solicitor says contracts are exchanged: approving records the exchange, with the completion date they give. */
+  | { type: 'record_exchange'; completionDate: string | null }
+  /** The other side's solicitor says completion has taken place: approving records it, as the Confirm Completion step does. */
+  | { type: 'record_completion' }
   | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; /** Overrides the kind's usual severity (a withdrawn offer is High, not the usual Medium). */ severity?: 'info' | 'warning' | 'critical' };
 
 export const SIGNED_DOCUMENTS = ['contract', 'transfer', 'mortgage_deed', 'deed_of_trust'] as const;
@@ -1296,6 +1303,8 @@ export interface Payloads {
   supporting_document_read: { facts: SupportingDocFacts };
   /** A person resumed automation after a pause, with why. */
   manual_handling_cleared: { reason: string; was: string | null };
+  placement_started: { reason: string };
+  placement_confirmed: { steps: string[]; note: string };
   /** The buyer now has a mortgage, or is now buying without one. */
   funding_changed: { hasLender: boolean; reason: string };
   /** The client's plan for a survey: none (their choice, recorded) or booked for a date. */
@@ -1700,6 +1709,12 @@ export interface MatterState {
   lastSeq: number;
   lastEventAt: string | null;
   manualHandling: { required: boolean; reason: string | null };
+  /**
+   * A case taken on part-way through (an InTouch import, onboarding, an existing case enrolled): while `placing`, what is
+   * on file is read and moves the case on, but nothing is sent or proposed, and the Tasks list asks only that a person
+   * confirm where it is. Confirming marks what was done outside CONVEYi and lets the engine take over from there.
+   */
+  placement?: { status: 'placing' | 'confirmed'; since: string; confirmedAt: string | null; reason: string };
 
   idCheck: {
     status: 'not_started' | 'requested' | ReviewStatus;

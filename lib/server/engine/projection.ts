@@ -1312,6 +1312,15 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       break;
     }
     // A person marked a step complete by hand (manual handling): it reads as reviewed, and anything waited on for it stops.
+    case 'placement_started': {
+      const p = e.payload as Payloads['placement_started'];
+      s.placement = { status: 'placing', since: e.createdAt, confirmedAt: null, reason: p.reason };
+      break;
+    }
+    case 'placement_confirmed': {
+      if (s.placement) s.placement = { ...s.placement, status: 'confirmed', confirmedAt: e.createdAt };
+      break;
+    }
     case 'step_completed_manually': {
       const p = e.payload as Payloads['step_completed_manually'];
       s.manualSteps = { ...(s.manualSteps ?? {}), [p.step]: { at: e.createdAt, by: e.actor, note: p.note, documentIds: p.documentIds, skipReason: p.skipReason ?? null, eventId: e.id, stage: s.stage } };

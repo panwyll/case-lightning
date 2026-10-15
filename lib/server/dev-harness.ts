@@ -17,6 +17,8 @@ export const DEV_MATTER = '22222222-2222-4222-8222-222222222222';
 export const DEV_USER = '33333333-3333-4333-8333-333333333333';
 const LEVELS: LevelConfig = { acknowledgement: 'propose', chase: 'propose', client_update: 'propose', search_order: 'propose', auto_clear: 'assist' };
 
+/** Reset with `placing`: the next case is one taken on part-way through, waiting to be confirmed. */
+let placingNext = false;
 let h: { svc: EngineService; ports: ReturnType<typeof mockPorts>; names: Map<string, string> } | null = null;
 
 const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
@@ -30,6 +32,10 @@ export async function devHarness() {
   const svc = new EngineService(store, ports);
   h = { svc, ports, names: new Map() };
   const run = (cmd: Record<string, unknown>) => svc.run(DEV_TENANT, DEV_MATTER, { actor: DEV_USER, ...cmd } as never);
+  if (placingNext) {
+    await run({ type: 'enrol', transactionType: 'freehold_purchase', hasLender: true, requiredSearches: ['LLC1', 'CON29', 'DRAINAGE_WATER'], placing: 'Taken on from InTouch part-way through' });
+    return h;
+  }
   await run({ type: 'enrol', transactionType: 'freehold_sale', hasLender: false, hasExistingMortgage: false, requiredSearches: [] });
   await run({ type: 'raise_issue', kind: 'building_regs_missing', title: 'No building regs sign-off for the 2019 loft conversion', detail: 'TA6 section 4 says the loft was converted in 2019; no completion certificate supplied.', resolveBy: day(-2) });
   await run({ type: 'raise_issue', kind: 'restrictive_covenant', title: 'Covenant against alterations without the developer\'s consent', resolveBy: day(4) });
@@ -98,7 +104,7 @@ export async function devRun(body: Record<string, unknown>) {
   return { events: r.events.map((e) => ({ type: e.type })) };
 }
 
-export function devReset() { h = null; }
+export function devReset(placing = false) { h = null; placingNext = placing; }
 
 /** An issue's message step: the draft, then the send (the mock chaser receives it). */
 export async function devIssueDraft(issueId: string, step: string) {

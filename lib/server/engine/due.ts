@@ -58,6 +58,8 @@ function moneySteps(s: MatterState): DueStep[] {
 export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   if (!s.enrolled) return [];
   if (s.abandoned || s.closedAt) return moneySteps(s);
+  // Taken on part-way through: the one thing to do is confirm where it is (what was read from its history, and what was done outside CONVEYi).
+  if (s.placement?.status === 'placing') return [{ key: 'confirm_placement', lane: 'id_aml', title: 'Confirm where this case is', detail: 'Read from what is on file. Tick what was done before CONVEYi took it on; nothing is sent until you confirm.' }];
   const tt = s.transactionType ?? 'freehold_purchase';
   const p = profileOf(tt);
   const buyer = p.side === 'buyer', seller = p.side === 'seller';

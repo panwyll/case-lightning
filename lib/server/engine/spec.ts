@@ -146,7 +146,7 @@ export const SUBFLOW_SPECS: SubflowSpec[] = [
 ];
 
 export const COMMAND_SPECS: CommandSpec[] = [
-  { type: 'enrol', actor: 'either', stages: 'not_enrolled', emits: ['matter_created', 'issue_raised', 'id_party_added'], description: 'Put a matter under the engine (lender?, required searches, target dates, counterparty type, shadow mode).' },
+  { type: 'enrol', actor: 'either', stages: 'not_enrolled', emits: ['matter_created', 'issue_raised', 'id_party_added', 'placement_started'], description: 'Put a matter under the engine (lender?, required searches, target dates, counterparty type, shadow mode).' },
   { type: 'mark_manual_handling', actor: 'either', stages: 'any', emits: ['manual_handling_required'], description: 'Stop automation; a person runs the matter from here.' },
   { type: 'request_id_check', actor: 'either', stages: 'any', emits: ['id_check_requested'], description: 'Ask the ID provider (or record that the firm did) — for the first client, or for a named party (co-client, gift donor).' },
   { type: 'id_check_result', actor: 'automation', stages: 'any', emits: ['id_check_cleared', 'id_check_flagged', 'auto_clear_review_raised'], description: 'The provider\'s report, extracted and rule-checked.' },
@@ -253,6 +253,8 @@ export const COMMAND_SPECS: CommandSpec[] = [
   { type: 'set_signing_method', actor: 'person', stages: 'any', emits: ['signing_method_set'], description: 'Wet ink or electronic, for one deed on this case: the lender\'s rules, or the client\'s circumstances.', eventuality: true },
   { type: 'record_signing_pack_sent', actor: 'automation', stages: 'any', emits: ['signing_pack_sent'], description: 'The client was sent what they must sign and how; the wait on the signed documents starts.' },
   { type: 'record_signing_envelope', actor: 'automation', stages: 'any', emits: ['signing_envelope_sent'], description: 'A deed went out for electronic signature with the firm\'s signing provider.' },
+  { type: 'start_placement', actor: 'automation', stages: 'any', emits: ['placement_started'], description: 'An existing case enrolled before it was placed: read from what is on file, with nothing sent, until a person confirms where it is.' },
+  { type: 'confirm_placement', actor: 'person', stages: 'any', emits: ['step_completed_manually', 'placement_confirmed'], description: 'A person confirms where a case taken on part-way through is, marking what was done outside CONVEYi; the engine takes over from there.' },
   { type: 'resume_automation', actor: 'person', stages: 'any', emits: ['manual_handling_cleared'], description: 'A person resumes automation after a pause (a tenure mismatch, unregistered land, a rejected proof of funds), saying why.', eventuality: true },
   { type: 'set_funding', actor: 'person', stages: ['instruction', 'pre_contract', 'contract_review', 'pre_exchange'], emits: ['funding_changed'], description: 'The buyer now has a mortgage, or is now buying without one: the mortgage step appears or goes, and nothing waits on an offer for a cash purchase.', eventuality: true },
   { type: 'record_survey_plan', actor: 'person', stages: ['instruction', 'pre_contract', 'contract_review', 'pre_exchange'], emits: ['survey_plan_recorded'], description: 'The client\'s survey plan: not having one (their choice, recorded; they are no longer asked) or booked for a date (not asked again until after it).', eventuality: true },

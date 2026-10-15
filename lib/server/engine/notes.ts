@@ -104,6 +104,10 @@ export function senderPolicy(source: NoteSource | undefined, action: NoteAction)
   if (action.command?.type === 'raise_issue' && action.command.kind === 'mortgage_at_risk' && relation === 'lender') {
     return [{ ...action, command: { ...action.command, detail: `Reported by the lender or broker. ${action.command.detail ?? ''}`.trim() } }];
   }
+  // Exchange and completion happen between the solicitors: only the other side's solicitor (or a colleague) reporting it is a line to record; anyone else's word is context.
+  if ((action.command?.type === 'record_exchange' || action.command?.type === 'record_completion') && relation !== 'other_side' && relation !== 'colleague') {
+    return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (said by ${RELATION_LABEL[relation]}; confirm with the other side's solicitor)` }];
+  }
   // Only the client or the lender marks the offer gone; anyone else saying so is a problem to raise, not a fact to record.
   if (action.command?.type === 'record_mortgage_withdrawn' && relation !== 'client' && relation !== 'lender' && relation !== 'colleague') {
     return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (said by ${RELATION_LABEL[relation]}; confirm with the lender or broker first)` }];
@@ -293,6 +297,8 @@ export function commandTitle(c: NoteCommand): string {
     case 'raise_issue': return `Issue: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
     case 'record_client_progress': return `The client says ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} is done or on its way`;
     case 'record_mortgage_withdrawn': return 'Mark the mortgage offer withdrawn';
+    case 'record_exchange': return `Record exchange${c.completionDate ? `, completion ${dayShort(c.completionDate)}` : ''}`;
+    case 'record_completion': return 'Record completion';
     case 'resend_to_client': return `Send the client ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} again`;
   }
 }
@@ -389,6 +395,8 @@ export function effectText(c: NoteCommand, opts: { withMessages?: boolean } = {}
     case 'record_client_progress': return `Notes against ${WAIT_LABEL[c.waitKey]} that they say: "${c.claim.slice(0, 120)}". It is not chased again before ${c.expectBy ? prettyDate(c.expectBy) : 'three working days from now'}; nothing is cleared until it arrives`;
     case 'resend_to_client': return `Sends the request for ${WAIT_LABEL[c.waitKey]} again, with its links and forms`;
     case 'record_mortgage_withdrawn': return 'Marks the mortgage offer withdrawn: the mortgage step reopens and holds exchange until a new offer is in (refused after exchange: then it is an issue for a person)';
+    case 'record_exchange': return `Records contracts as exchanged${c.completionDate ? ` with completion on ${prettyDate(c.completionDate)}` : ''}, as the Contracts Exchanged step does (refused if the case is not ready to exchange)`;
+    case 'record_completion': return 'Records completion, as the Confirm Completion step does (refused if the money is not in place)';
     case 'record_survey_plan': return c.plan === 'none' ? 'Records that the client has chosen not to have a survey; they are no longer asked about one' : `Records the survey as booked${c.date ? ` for ${prettyDate(c.date)}` : ''}; the client is not asked about it again until after that date`;
     case 'record_availability': return `Notes that ${AVAILABILITY_PARTY_LABEL[c.party]} is away ${prettyDate(c.from)} to ${prettyDate(c.until)}: chases to them wait, updates say so, and target dates are checked against it`;
     case 'raise_issue': return `Raises the issue "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}"${c.gate === 'none' ? '' : ` (holds ${c.gate})`}${!opts.withMessages && issueConsequence(c.kind) ? ` and ${issueConsequence(c.kind)}` : ''}`;
@@ -496,6 +504,8 @@ export function effectChanges(c: NoteCommand, opts: { jeopardy?: (kind: string) 
       out.push(`It is logged on the case as "${label}", with this email as the source`);
       return out;
     }
+    case 'record_exchange': return ['Contracts are recorded as exchanged', 'What follows exchange starts: the completion date is set and the steps to completion open'];
+    case 'record_completion': return ['Completion is recorded', 'What follows completion starts: SDLT, registration and closing the file'];
     case 'record_mortgage_withdrawn': return ['The mortgage offer is marked withdrawn', 'You cannot exchange until a new offer arrives and you have checked it', 'The client is chased for the new offer as with the first'];
     case 'set_file_delivery': return c.mode === 'attachments' ? ['Files go to this client as attachments from now on, not a secure link', 'The files with this reply go as attachments'] : ['Files go to this client as a secure link from now on'];
     case 'record_chain_consent': return c.given ? ['Updates to the other side may say where the client\'s own sale or purchase stands (never the detail of a problem)'] : ['Updates to the other side say nothing about the client\'s own sale or purchase'];
@@ -559,6 +569,8 @@ export function commandProblem(c: NoteCommand): string | null {
   }
   if (c.type === 'resend_to_client') return RESENDABLE.includes(c.waitKey) ? null : `"${c.waitKey}" is not something we send the client`;
   if (c.type === 'record_mortgage_withdrawn') return c.reason?.trim() ? null : 'it does not say why';
+  if (c.type === 'record_exchange') return c.completionDate && !/^\d{4}-\d{2}-\d{2}$/.test(c.completionDate) ? `"${c.completionDate}" is not a date (YYYY-MM-DD)` : null;
+  if (c.type === 'record_completion') return null;
   if (c.type === 'raise_issue') {
     if (!ISSUE_KIND_SPEC[c.kind as IssueKind]) return `"${c.kind}" is not an issue kind`;
     if (!c.title?.trim()) return 'the issue has no title';
@@ -606,6 +618,24 @@ interface Rule {
 
 /** "My lender has rescinded the offer": the offer is gone, not merely at risk. */
 export const OFFER_WITHDRAWN = /\b((lender|bank|provider|broker|building society|mortgage company|they|he|she)\s+(has |have |had )?(now )?(rescinded|revoked|withdrawn|withdrew|pulled|cancell?ed|retracted|declined|refused|turned down)\s+(the |their |my |our |its |his |her )?(mortgage )?(offer|mortgage|application|lending|loan)|(has |have |had )(now )?(rescinded|revoked|withdrawn|withdrew|pulled|cancell?ed|retracted)\s+(the |their |my |our |its |his |her )?(mortgage )?offer|(mortgage )?offer\s+(has been |was |is |got |has )?(rescinded|revoked|cancell?ed|retracted|withdrawn|pulled))\b/i;
+/** "We have exchanged contracts", "contracts were exchanged at 11:42": done, not planned. */
+export const EXCHANGED = /\b((we|they|contracts?)\s+(have|has|had|were|was|are)\s+(now\s+|just\s+)?(been\s+)?exchanged|we'?ve\s+(now\s+|just\s+)?exchanged|exchanged\s+(contracts\s+)?(today|this (morning|afternoon)|at \d))/i;
+/** "Completion has taken place", "we have completed this morning". */
+export const COMPLETED = /\b(completion\s+(has\s+)?(now\s+)?taken\s+place|we\s+(have|'ve)\s+(now\s+|just\s+)?completed|completed\s+(today|this (morning|afternoon)|at \d)|keys\s+(can|may)\s+(now\s+)?be\s+released)/i;
+/** Not done yet: "once we have exchanged", "hope to exchange", "not yet completed". */
+const NOT_YET = /\b(once|until|before|if|hope|hoping|aim|plan|expect|not yet|ready to|yet to)\b/i;
+const MONTH_NAMES = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+/** A completion date in the sentence ("completion 30 October", "30/10/2026"), as YYYY-MM-DD; this year or next when no year is given. */
+export function isoDateIn(t: string, now = new Date()): string | null {
+  const num = /\b(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})\b/.exec(t);
+  if (num) { const y = num[3].length === 2 ? 2000 + Number(num[3]) : Number(num[3]); return `${y}-${num[2].padStart(2, '0')}-${num[1].padStart(2, '0')}`; }
+  const word = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_NAMES.join('|')}|${MONTH_NAMES.map((m) => m.slice(0, 3)).join('|')})\\b(?:\\s+(\\d{4}))?`, 'i').exec(t);
+  if (!word) return null;
+  const m = MONTH_NAMES.findIndex((x) => x.startsWith(word[2].toLowerCase().slice(0, 3))) + 1;
+  let y = word[3] ? Number(word[3]) : now.getUTCFullYear();
+  if (!word[3] && new Date(Date.UTC(y, m - 1, Number(word[1]))) < new Date(now.getTime() - 86_400_000)) y += 1;
+  return `${y}-${String(m).padStart(2, '0')}-${word[1].padStart(2, '0')}`;
+}
 const RULES: Rule[] = [
   {
     // "happy with the survey and wants to proceed" — the client's view of the physical condition.
@@ -844,6 +874,8 @@ export class DeterministicNoteReader {
       for (const sentence of sentences) {
         const t = sentence.trim();
         // The offer gone: besides the issue, the case itself is marked (the mortgage step reopens and holds exchange).
+        if (EXCHANGED.test(t) && !NOT_YET.test(t)) out.push({ kind: 'progress', summary: 'Contracts are exchanged', quote: t, confidence: 0.8, command: { type: 'record_exchange', completionDate: isoDateIn(t) } });
+        if (COMPLETED.test(t) && !NOT_YET.test(t)) out.push({ kind: 'progress', summary: 'Completion has taken place', quote: t, confidence: 0.8, command: { type: 'record_completion' } });
         if (OFFER_WITHDRAWN.test(t)) out.push({ kind: 'issue', summary: 'Mark the mortgage offer withdrawn', quote: t, confidence: 0.8, command: { type: 'record_mortgage_withdrawn', reason: t.slice(0, 300) } });
         const wait = waitIn(t, input.waits ?? []);
         if (wait && RESEND.test(t) && RESENDABLE.includes(wait.waitKey as WaitKey)) {

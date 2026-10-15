@@ -136,7 +136,9 @@ export interface SummaryOverride {
 export type Command = CommandBody & { completion?: Completion | null };
 
 type CommandBody =
-  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; attorneys?: string[] | null; officers?: string[] | null; executors?: string[] | null; occupiers?: string[] | null; sdlt?: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; linkedConsiderationPennies?: number | null } | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean; shapes?: CaseShape[] | null; partyNames?: string[] | null }
+  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; attorneys?: string[] | null; officers?: string[] | null; executors?: string[] | null; occupiers?: string[] | null; sdlt?: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; linkedConsiderationPennies?: number | null } | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean; shapes?: CaseShape[] | null; partyNames?: string[] | null; /** Taken on part-way through: placed from its history before anything is sent. */ placing?: string | null }
+  | { type: 'start_placement'; actor: Actor; reason: string }
+  | { type: 'confirm_placement'; actor: Actor; steps: string[]; note?: string | null }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
   | { type: 'resume_automation'; actor: Actor; reason: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null; party?: string | null; link?: string | null }
@@ -301,6 +303,7 @@ export type CommandType = CommandBody['type'];
 /** Commands a human may issue from the dashboard/API. Everything else is automation-only. */
 export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'enrol',
+  'confirm_placement',
   'mark_manual_handling',
   'resume_automation',
   'request_id_check',
@@ -485,7 +488,14 @@ const stageAtLeast = (s: MatterState, stage: Stage): boolean => {
   return want === -1 ? stageIndex(s.stage) >= stageIndex(stage) : cur >= want;
 };
 
+/**
+ * Records of something that happened (a search ordered, a pack sent or asked for). While a case taken on part-way through
+ * is being placed, its history lands whatever stage the engine has reached: it happened in that order. The stage still
+ * moves only when its gates are met. Money, approvals and filings keep their stage.
+ */
+const HISTORY_RECORDS = new Set(['Ordering a search', 'Requesting the management pack', 'Sending the contract pack']);
 const requireStageAtLeast = (s: MatterState, stage: Stage, what: string): void => {
+  if (s.placement?.status === 'placing' && HISTORY_RECORDS.has(what)) return;
   if (!stageAtLeast(s, stage)) reject(`${what} comes at the ${stage.replace(/_/g, ' ')} stage in this system's process; this case is at ${s.stage.replace(/_/g, ' ')}.`);
 };
 
@@ -1049,7 +1059,27 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         ...conditionIssues,
         ...partyEvents,
         ...extraParties,
+        ...(cmd.placing?.trim() ? [{ type: 'placement_started', actor: cmd.actor, payload: { reason: cmd.placing.trim() } } as NewEvent] : []),
       ];
+    }
+    case 'start_placement': {
+      // An existing case enrolled before it was placed: placed from what is on file. Only once, and only before anything moved it on.
+      requireEnrolled(s);
+      if (s.placement) reject('This case has already been placed.');
+      if (s.closedAt || s.abandoned) reject('The case is closed.');
+      return [{ type: 'placement_started', actor: cmd.actor, payload: { reason: cmd.reason.trim() || 'Taken on part-way through' } }];
+    }
+    case 'confirm_placement': {
+      requireEnrolled(s);
+      if (s.placement?.status !== 'placing') reject('This case is not waiting to be placed.');
+      if (!isUserActor(cmd.actor)) reject('A person confirms where a case is.', 403);
+      const steps = [...new Set(cmd.steps)];
+      const bad = steps.filter((x) => !isManualStep(x));
+      if (bad.length) reject(`"${bad[0]}" is not a step that can be marked done.`, 400);
+      const note = cmd.note?.trim() || 'Done before CONVEYi took the case on';
+      // Each step done outside CONVEYi, as Mark Complete records it; facts it would ask for are left to the file.
+      const done: NewEvent[] = steps.filter((x) => !s.manualSteps?.[x]).map((step) => ({ type: 'step_completed_manually', actor: cmd.actor, payload: { step, note, documentIds: [], facts: null, skipReason: (MANUAL_STEP_REQUIRED[step] ?? []).length ? 'Confirmed when the case was taken on' : null } }));
+      return [...done, { type: 'placement_confirmed', actor: cmd.actor, payload: { steps, note } }];
     }
     case 'add_party': {
       requireEnrolled(s);

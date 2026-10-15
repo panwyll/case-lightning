@@ -45,7 +45,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   const p = (await params).path.join('/');
   const body = await req.json().catch(() => ({}));
   try {
-    if (p === 'reset') { devReset(); return NextResponse.json({ ok: true }); }
+    if (p === 'reset') { devReset(req.nextUrl.searchParams.get('placing') === '1'); return NextResponse.json({ ok: true }); }
     if (/^decisions\/[A-Za-z0-9-]{3,40}\/open-source$/.test(p)) return NextResponse.json(await devOpenSource(p.split('/')[1]));
     if (/^decisions\/[A-Za-z0-9-]{3,40}\/resolve$/.test(p)) { await wait(700); return NextResponse.json(await devResolve(p.split('/')[1], body)); }
     if (/^matters\/[^/]+\/engine\/upload$/.test(p)) { await wait(1500); return NextResponse.json(await devUpload(body.fileName, body.role ?? 'auto')); }

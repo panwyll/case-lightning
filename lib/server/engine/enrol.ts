@@ -19,7 +19,8 @@ export function clientNamesOf(track: string | null, buyers: string[] | null, sel
 
 /** Enrol one matter if it is open and not yet on the engine. Returns true when it enrolled it. */
 /** `funding`: what the New Case form said; otherwise a lender on the matter means a mortgage (a purchase) or one to pay off (a sale or remortgage). */
-export async function enrolIfUntracked(tenantId: string, matterId: string, actor: string = SYSTEM, funding: { hasLender?: boolean; hasExistingMortgage?: boolean } = {}): Promise<boolean> {
+/** `placing`: the case was taken on part-way through (why, in a few words): it is placed from its history before anything is sent. */
+export async function enrolIfUntracked(tenantId: string, matterId: string, actor: string = SYSTEM, funding: { hasLender?: boolean; hasExistingMortgage?: boolean; placing?: string | null } = {}): Promise<boolean> {
   const m = await runAsSystem(() =>
     queryOne<{ status: string | null; track: string | null; lender: string | null; exchange_target_date: string | null; completion_target_date: string | null; enrolled: string | null; buyer_names: string[] | null; seller_names: string[] | null }>(
       `select m.status, m.track, m.lender, m.buyer_names, m.seller_names, m.exchange_target_date::text, m.completion_target_date::text, s.state->>'enrolled' as enrolled
@@ -45,8 +46,25 @@ export async function enrolIfUntracked(tenantId: string, matterId: string, actor
     // Our clients by name: the rules that ask "is this our client?" read them.
     partyNames: clientNamesOf(m.track, m.buyer_names, m.seller_names),
     parties: Math.max(1, clientNamesOf(m.track, m.buyer_names, m.seller_names).length),
+    placing: funding.placing ?? null,
   }));
   return true;
+}
+
+/**
+ * A case placed from its history: every document already filed on it is read again, oldest first, through the same
+ * ingest as a new one (searches, offers, forms, the title...), so the case lands where its evidence says. Nothing is
+ * sent while it is placing. Bounded; email bodies are read as documents only (their notes are not raised again).
+ */
+export async function replayFiled(tenantId: string, matterId: string, limit = 300): Promise<number> {
+  const docs = await runAsSystem(() => query<{ id: string }>(
+    `select id from document where tenant_id = $1 and matter_id = $2 and superseded_at is null and coalesce(doc_type, '') not in ('PROPOSAL', 'SANDBOX_EMAIL') and coalesce(doc_type, '') not like '%DRAFT%'
+      order by created_at asc limit $3`, [tenantId, matterId, limit]
+  )).catch(() => []);
+  const { ingestFiledDocument } = await import('./ingest-hook');
+  let n = 0;
+  for (const d of docs) { if (await ingestFiledDocument(tenantId, matterId, d.id).catch(() => null)) n++; }
+  return n;
 }
 
 /** Enrol every open matter in the firm that is not yet tracked. Returns how many it enrolled. */
@@ -62,7 +80,12 @@ export async function enrolAllOpen(tenantId: string, actor: string = SYSTEM): Pr
   );
   let enrolled = 0; let failed = 0;
   for (const r of rows) {
-    try { if (await enrolIfUntracked(tenantId, r.id, actor)) enrolled++; } catch { failed++; }
+    try {
+      // A case with documents already on it was taken on part-way through: placed from them.
+      const has = await runAsSystem(() => queryOne<{ n: number }>(`select count(*)::int as n from document where tenant_id = $1 and matter_id = $2 and coalesce(doc_type, '') not in ('PROPOSAL', 'SANDBOX_EMAIL')`, [tenantId, r.id])).catch(() => null);
+      const placing = (has?.n ?? 0) > 0 ? 'Enrolled with documents already on file' : null;
+      if (await enrolIfUntracked(tenantId, r.id, actor, { placing })) { enrolled++; if (placing) await replayFiled(tenantId, r.id); }
+    } catch { failed++; }
   }
   return { enrolled, failed };
 }

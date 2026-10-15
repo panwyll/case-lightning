@@ -254,6 +254,8 @@ export class EngineService {
     });
     this.remember(tenantId, matterId, result.state);
     const followOn = async () => {
+      // A case being placed from its history: what was read moves it on, but nothing goes out until a person confirms where it is.
+      if (result.state.placement?.status === 'placing') return;
       await this.asAutomation(() => this.effects(tenantId, matterId, result.events, result.state, subflows));
       await this.asAutomation(() => this.acknowledge(tenantId, matterId, result.events, result.state, subflows));
       if (result.events.length && reportReady(result.state)) await this.draftReportWhenReady(tenantId, matterId);
@@ -315,6 +317,8 @@ export class EngineService {
    */
   private async proposeUnless(tenantId: string, matterId: string, levels: LevelConfig, action: EngineAction, subject: string | null, dedupKey: string, detail: Record<string, unknown>, summary: string, always = false): Promise<boolean> {
     const state = await this.getState(tenantId, matterId);
+    // Being placed from its history: nothing is sent or proposed (the caller does nothing) until a person confirms where it is.
+    if (state.placement?.status === 'placing') return true;
     // Manual handling: whatever would have gone out on its own is proposed instead, for the person who has the case.
     const manual = state.manualHandling.required;
     // `always`: a person approves it whatever the trust level (a death notice is never sent unread).
@@ -1439,6 +1443,8 @@ export class EngineService {
     let state = await this.getState(tenantId, matterId);
     // Manual handling does not stop the clock: chases due are proposed to the person who has the case.
     if (!state.enrolled || state.abandoned || state.closedAt) return { chases: 0, escalations: 0 };
+    // Being placed: nothing is chased or raised by the clock until a person confirms where the case is.
+    if (state.placement?.status === 'placing') return { chases: 0, escalations: 0 };
     const sla = await this.store.loadSla(tenantId);
     const subflows = await this.levels(tenantId);
     let chases = 0;
@@ -2125,6 +2131,12 @@ export class EngineService {
                 }
               } else if (c.type === 'record_client_progress') {
                 await this.run(tenantId, matterId, { type: 'record_client_progress', actor: e.actor, waitKey: c.waitKey, subject: c.subject ?? '', claim: c.claim, expectBy: c.expectBy, noteId: p.noteId });
+              } else if (c.type === 'record_exchange') {
+                // As the Contracts Exchanged step: the machine still refuses it if the case is not ready to exchange.
+                if (!c.completionDate) throw new Error('The email gives no completion date: record the exchange from its task, with the date.');
+                await this.run(tenantId, matterId, { type: 'contracts_exchanged', actor: e.actor, completionDate: c.completionDate });
+              } else if (c.type === 'record_completion') {
+                await this.run(tenantId, matterId, { type: 'completion_confirmed', actor: e.actor });
               } else if (c.type === 'record_mortgage_withdrawn') {
                 await this.run(tenantId, matterId, { type: 'mortgage_offer_withdrawn', actor: e.actor, reason: c.reason });
               } else if (c.type === 'resend_to_client') {

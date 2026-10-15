@@ -15,6 +15,7 @@
  *   SCANNING → CLUSTERING → PROPOSING → AWAITING_REVIEW
  *     → (confirm) → PROVISIONING → COMPLETED
  */
+import { saveEmailAttachmentsToMatter } from './files';
 import { query, queryOne } from './db';
 import { listMailSince, listThreadMessages, describeGraphError } from './graph';
 import { extractPostcodes, isNoiseAddress } from './matching';
@@ -514,7 +515,16 @@ async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Pr
   }
   await timed('upsertChunks', () => upsertChunks({ tenantId: user.tenantId, matterId, sourceKind: 'EMAIL', text, metadata: { source: 'onboarding' } }));
   // The extracted data lives in matter_summary, the timeline and the seeded tasks.
-  return `${extracted.outstanding.length} outstanding → ${seeded} task(s) · ${extracted.timeline.length} timeline · ${allMessages.length} msg(s)`;
+  // A case found under way is placed from its history: the documents its emails carried (searches, the offer, forms)
+  // are filed oldest first and read by the engine, which moves it on without sending anything. Bounded to the slice.
+  let filed = 0;
+  const started = Date.now();
+  const withFiles = allMessages.filter((m) => m?.hasAttachments).sort((a, b) => String(a.receivedDateTime ?? '').localeCompare(String(b.receivedDateTime ?? '')));
+  for (const m of withFiles.slice(0, 12)) {
+    if (Date.now() - started > 20_000) break;
+    filed += await saveEmailAttachmentsToMatter(user, matterId, m.id, m.subject).catch(() => 0);
+  }
+  return `${extracted.outstanding.length} outstanding → ${seeded} task(s) · ${extracted.timeline.length} timeline · ${allMessages.length} msg(s) · ${filed} file(s)`;
 }
 
 // Provision APPROVED cases in TWO bounded phases so no single slice does too much:
@@ -558,6 +568,8 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
               sellerNames: (edits.sellerNames as string[]) ?? c.seller_names ?? [],
               counterpartySolicitor: c.counterparty_solicitor ?? undefined,
               counterpartyAgent: c.counterparty_agent ?? undefined,
+              // Found in the mailbox already under way: placed from its emails before anything is sent.
+              placing: 'Found under way in the mailbox at onboarding',
             })
           );
           matterId = created.id;

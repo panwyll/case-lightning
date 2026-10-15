@@ -22,6 +22,7 @@ import { UploadButton, BusyButton } from './BusyButton';
 import { STEP_UPLOADS, WAIT_ACTIONS, uploadFor, uploadForStep, type UploadOutcome } from './stepUploads';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { ContributionsForm } from './ContributionsForm';
+import { PlacementForm } from './PlacementForm';
 import { CompletionSheet } from './CompletionSheet';
 import { ClientDecisionSheet } from './ClientDecisionSheet';
 import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, Mail, User, X, Zap } from '@/app/shared/icons';
@@ -830,6 +831,7 @@ function WorkPanelBody({ matterId, api, view, busy, err, cmd, onChanged, notice,
     if (key === 'deposit_in') return act('exchange', 'deposit_received', 'Record Received', {}, { primary: true });
     if (key === 'final_bill') return act('registration', 'final_bill_delivered', 'Record Sent', {}, { primary: true });
     if (key === 'completion_payment_sent') return act('completion', 'completion_payment_sent', 'Record Sent', {}, { primary: true });
+    if (key === 'confirm_placement') return <PlacementForm s={s} busy={busy} onSubmit={(body) => cmd(body)} />;
     if (key === 'contributions') return <ContributionsForm names={s.partyNames ?? []} busy={busy} onSubmit={(body) => cmd(body)} />;
     if (key === 'register_check') return act('registration', 'register_checked', 'Record Checked', {}, { primary: true });
     if (key.startsWith('requisition_extend:')) return act('registration', 'requisition_extended', 'Record More Time', { requisitionEventId: key.slice('requisition_extend:'.length) });

@@ -378,6 +378,8 @@ const NoteSchema = z.object({
           z.object({ type: z.literal('send_file_copy'), what: z.string().describe('The document they want a copy of, in their words ("the TA10", "my survey", "the mortgage offer")') }),
           z.object({ type: z.literal('record_client_progress'), waitKey: z.string().describe('One of the WAITING FOR keys'), subject: z.string().describe('The subject shown with that key, or empty'), claim: z.string().describe('What they say, in a few words'), expectBy: z.string().nullable().describe('YYYY-MM-DD when they say it will arrive, else null') }),
           z.object({ type: z.literal('record_mortgage_withdrawn'), reason: z.string().describe('What they said, in a few words') }),
+          z.object({ type: z.literal('record_exchange'), completionDate: z.string().nullable().describe('The completion date they give, YYYY-MM-DD, or null') }).describe('The other side\'s solicitor says contracts HAVE BEEN exchanged (done, not planned)'),
+          z.object({ type: z.literal('record_completion') }).describe('The other side\'s solicitor says completion HAS taken place (done, not planned)'),
           z.object({ type: z.literal('resend_to_client'), waitKey: z.string().describe('One of the WAITING FOR keys whose form or link they need again'), subject: z.string() }),
           z.object({ type: z.literal('record_availability'), party: z.enum(['client', 'seller_side', 'agent', 'lender']), from: z.string().describe('YYYY-MM-DD'), until: z.string().describe('YYYY-MM-DD'), note: z.string() }),
         ])

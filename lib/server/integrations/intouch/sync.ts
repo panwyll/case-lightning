@@ -74,6 +74,8 @@ export interface InTouchSyncDeps {
   systemUserId: string | null;
   log: (msg: string, detail?: unknown) => void;
   now?: () => Date;
+  /** Read a mirrored document the way a mail attachment is read (the classifier, then the engine). Without it, the file name's hint. */
+  ingest?: (tenantId: string, matterId: string, documentId: string) => Promise<unknown>;
 }
 
 /**
@@ -146,6 +148,8 @@ export async function syncInTouch(deps: InTouchSyncDeps, tenantId: string, opts:
 /** Every file in the matter's folder, mirrored and read. Idempotent per InTouch id. */
 export async function applyCaseFacts(deps: InTouchSyncDeps, tenantId: string, ref: InTouchMirrorRef, out: InTouchSyncSummary): Promise<void> {
   // ── every file in the matter's folder: the ID report, completed forms, the client's uploads ──
+  // Oldest first, so a case read from its history reaches each step in the order it happened.
+  const fresh: InTouchDocument[] = [];
   let cursor: string | null = null;
   do {
     const page = await deps.api.listDocuments(ref.intouchCaseId, { cursor, limit: 100 });
@@ -154,25 +158,41 @@ export async function applyCaseFacts(deps: InTouchSyncDeps, tenantId: string, re
       if (await deps.store.seen(tenantId, 'document', d.id)) continue;
       // What we filed there ourselves (write-back labels it CONVEYi) is never mirrored back.
       if ((d.category ?? '').toLowerCase() === 'conveyi') continue;
-      try {
-        const documentId = await mirrorDocument(deps, tenantId, ref, d);
-        if (!documentId) continue;
-        // The ordinary ingest path decides what the document is; InTouch's category is a
-        // hint, never an instruction, and the engine's own state still vetoes it.
-        // Failure is recorded, never fatal.
+      fresh.push(d);
+    }
+  } while (cursor);
+  fresh.sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+  for (const d of fresh) {
+    try {
+      const documentId = await mirrorDocument(deps, tenantId, ref, d);
+      if (!documentId) continue;
+      // The ordinary ingest path decides what the document is, as for a mail attachment; the engine's own state
+      // still vetoes it. Failure is recorded, never fatal.
+      if (deps.ingest) {
+        if (!notForTheReader(d)) await deps.ingest(tenantId, ref.matterId, documentId).catch((err) => out.errors.push(`document ${d.id}: ${(err as Error).message}`));
+      } else {
         const hint = hintFor(d);
         if (hint) {
           const state = await deps.engine.getState(tenantId, ref.matterId);
           const action = routeClassification(state, hint);
           await runAction(deps.engine, tenantId, ref.matterId, documentId, action).catch((err) => out.errors.push(`document ${d.id}: ${(err as Error).message}`));
         }
-        await deps.store.markSeen(tenantId, ref.matterId, 'document', d.id, d.category);
-        out.documents += 1;
-      } catch (err) {
-        out.errors.push(`document ${d.id}: ${(err as Error).message}`);
       }
+      await deps.store.markSeen(tenantId, ref.matterId, 'document', d.id, d.category);
+      out.documents += 1;
+    } catch (err) {
+      out.errors.push(`document ${d.id}: ${(err as Error).message}`);
     }
-  } while (cursor);
+  }
+}
+
+/**
+ * Filed but never routed: source-of-funds reports and bank statements are proof-of-funds evidence, which has its own
+ * reviewed flow; routed, a Thirdfort source-of-funds report could be taken for the ID check.
+ */
+export function notForTheReader(d: InTouchDocument): boolean {
+  const c = `${d.category ?? ''} ${d.fileName}`.toLowerCase();
+  return /source[\s_-]?of[\s_-]?(funds|wealth)|\bsof\b|\bsow\b|bank[\s_-]?statement|\bstatement\b/.test(c);
 }
 
 /**
