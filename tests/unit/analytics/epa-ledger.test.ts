@@ -50,7 +50,7 @@ test('the week: efficiency, RAG, measured share, switches, focus blocks and afte
   ]);
   sl.find((s) => s.span.item === 'draft')!.span.of = 'lender_chasers';
   const m = measure(sl, DAY);
-  assert.deepEqual(m.rag, { red: 40, amber: 0, green: 60 }, 'checking a draft CONVEYi could send is time wasted: red');
+  assert.deepEqual(m.rag, { red: 40, amber: 0, green: 60 }, 'checking a draft CONVEYi could send needs no lawyer and does not move the case: red');
   assert.equal(m.efficiency, 0.6);
   assert.equal(m.measuredShare, 90 / 100);
   assert.deepEqual(m.checkingByAction, { lender_chasers: 20 });

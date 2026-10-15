@@ -6,7 +6,7 @@ Built in `lib/server/epa/taxonomy.ts`. These labels are what the measurement pha
 
 - **Green:** only a conveyancer can do it, and it moves the case on.
 - **Amber:** moves the case on but someone other than a conveyancer could do it, or needs a conveyancer but does not move the case on.
-- **Red:** time wasted. Does not move the case on, and does not need a conveyancer.
+- **Red:** does not need a lawyer, and does not move the case on. Never called "wasted": a client update keeps the client happy and brings referrals, it just needs no lawyer.
 
 The rule for each colour is its tooltip on the page; the categories carry no tooltips.
 

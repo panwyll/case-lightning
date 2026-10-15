@@ -78,7 +78,7 @@ const RAG = [['green', 'Green'], ['amber', 'Amber'], ['red', 'Red']] as const;
 const RULE: Record<'green' | 'amber' | 'red', string> = {
   green: 'Moves the case on, and only a conveyancer can do it.',
   amber: 'Moves the case on but someone other than a conveyancer could do it, or needs a conveyancer but does not move the case on.',
-  red: 'Time wasted: does not move the case on, and does not need a conveyancer.',
+  red: 'Does not need a lawyer, and does not move the case on.',
 };
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const hrs = (x: number) => (x > 0 && x < 0.05 ? '<0.1h' : `${x.toFixed(1)}h`);

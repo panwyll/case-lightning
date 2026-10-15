@@ -1,7 +1,8 @@
 /**
  * What the time is spent on (docs/epa-categories.md): named as the work done, by whom it is with, sending or answering, each
  * with one obvious remedy. Green moves the case on and only a conveyancer can do it; amber moves the case on but someone other
- * than a conveyancer could do it, or needs a conveyancer but does not move the case on; red is time wasted.
+ * than a conveyancer could do it, or needs a conveyancer but does not move the case on; red does not need a lawyer and does
+ * not move the case on (never called "wasted": client updates keep clients happy and bring referrals).
  * The same list for the measurement phase (inbox, InTouch) and Analytics → Time, so every source maps onto it here and
  * nowhere else. Pure.
  */
