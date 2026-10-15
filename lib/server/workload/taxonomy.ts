@@ -4,7 +4,7 @@
  */
 
 /** What a conveyancer's sent email was for. Exactly one per message. */
-export const OUT_CATEGORIES = ['chaser', 'status_update', 'update_reply', 'first_request', 'file_send', 'acknowledgement', 'scheduling', 'client_question', 'legal_work', 'internal', 'non_case'] as const;
+export const OUT_CATEGORIES = ['chaser', 'status_update', 'update_reply', 'first_request', 'file_send', 'resend', 'acknowledgement', 'scheduling', 'process_question', 'client_question', 'legal_work', 'internal', 'non_case'] as const;
 export type OutCategory = (typeof OUT_CATEGORIES)[number];
 
 /** What a received email asked of us. */
@@ -19,10 +19,12 @@ export const OUT_SPEC: Record<OutCategory, { label: string; what: string; tier: 
   status_update: { label: 'Status Updates', what: 'Telling someone where the case stands, unprompted', tier: 'automated' },
   update_reply: { label: 'Answers To "Any News?"', what: 'Replying to someone asking for an update', tier: 'automated' },
   first_request: { label: 'First Requests', what: 'Asking for something for the first time: ID, forms, funds, documents, figures', tier: 'automated' },
-  file_send: { label: 'Files Sent', what: 'Sending a document or a copy someone needs', tier: 'automated' },
+  file_send: { label: 'Files Sent', what: 'Sending a document someone has not had before', tier: 'automated' },
+  resend: { label: 'Resends', what: 'Sending again something already sent: a document, a link, a form ("I can\'t find it", "can you send it again?")', tier: 'automated' },
   acknowledgement: { label: 'Acknowledgements', what: 'Confirming something arrived', tier: 'automated' },
   scheduling: { label: 'Scheduling', what: 'Arranging calls, appointments, dates, completion logistics', tier: 'drafted' },
-  client_question: { label: 'Client Questions', what: "Answering a client's question about the process or their case (not \"any news?\")", tier: 'drafted' },
+  process_question: { label: 'Process Questions', what: 'Answering a client\'s question about how conveyancing works, the same for every client: "what happens next?", "what is a TA6?"', tier: 'automated' },
+  client_question: { label: 'Legal Questions', what: "Answering a client's legal question about their own case: what a finding means for them, what they should do (not \"any news?\", not how the process works)", tier: 'drafted' },
   legal_work: { label: 'Legal Work', what: 'Enquiries and replies, advice, reports, contract points, negotiation, undertakings', tier: 'conveyancer' },
   internal: { label: 'Internal', what: 'To colleagues at the firm', tier: 'excluded' },
   non_case: { label: 'Not Case Work', what: 'Anything else', tier: 'excluded' },

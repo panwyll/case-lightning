@@ -18,7 +18,7 @@ export async function POST() {
     const scan = await latestScan(user.userId);
     if (!scan) return ok({ done: true, status: 'IDLE' });
     const s = await advanceScan(user, scan);
-    return ok({ done: !['SCANNING_SENT', 'SCANNING_INBOX'].includes(s.status), status: s.status, messagesRead: s.messages_read, classified: s.classified, error: s.error });
+    return ok({ done: !['SCANNING_SENT', 'SCANNING_INBOX', 'SCANNING_INTOUCH'].includes(s.status), status: s.status, messagesRead: s.messages_read, classified: s.classified, intouch: s.intouch ? { live: s.intouch.live, read: s.intouch.read } : null, error: s.error });
   } catch (error) {
     return fail(error);
   }

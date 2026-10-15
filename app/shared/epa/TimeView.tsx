@@ -15,6 +15,8 @@ const CSS = `
 .tv{max-width:1360px}
 .tv-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .tv-head h1{font-size:21px;font-weight:800;margin:0}
+.tv-measure{margin-left:auto;font-size:13px;font-weight:700;color:#0f172a;background:#f1f5f9;border-radius:9px;padding:8px 12px;text-decoration:none}
+.tv-measure:hover{background:#e8ecf2}
 .tv h2{font-size:15px;font-weight:800;margin:0;color:#0f172a}
 .tv-card{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:18px 20px}
 .tv-cardhead{display:flex;align-items:baseline;gap:10px;margin-bottom:16px;flex-wrap:wrap}
@@ -136,7 +138,7 @@ function Shell({ tabs, err, loading, children }: { tabs: ReactNode; err: string 
   return (
     <div className="tv">
       <style>{ENGINE_CSS + CSS}</style>
-      <div className="tv-head"><h1>Analytics</h1>{tabs}</div>
+      <div className="tv-head"><h1>Analytics</h1>{tabs}<a className="tv-measure" href={paths.measure}>Measurement</a></div>
       {err && <p className="tv-err">{err}</p>}
       {loading && !err && <p className="tv-none">Loading…</p>}
       {children}
@@ -144,75 +146,93 @@ function Shell({ tabs, err, loading, children }: { tabs: ReactNode; err: string 
   );
 }
 
+/** The red / amber / green bar for a week, green at the bottom, with each colour's rule on its legend. */
+export function RagCard({ title: heading, right, hours, share, foot }: { title: string; right?: ReactNode; hours: RagSplit; share: RagSplit | null; foot?: ReactNode }) {
+  return (
+    <section className="tv-card">
+      <div className="tv-cardhead"><h2>{heading}</h2>{right && <span className="r">{right}</span>}</div>
+      {share ? (
+        <div className="tv-week">
+          <div className="tv-vstack" role="img" aria-label={split(share)}>
+            {[...RAG].reverse().filter(([k]) => share[k] > 0).map(([k, l]) => (
+              <span key={k} className={`tv-${k}`} style={{ flex: `${share[k]} 1 0` }} title={`${l}: ${pct(share[k])} · ${hrs(hours[k])}`}>{share[k] >= 0.07 ? pct(share[k]) : ''}</span>
+            ))}
+          </div>
+          <div className="tv-legend">
+            {[...RAG].reverse().map(([k, l]) => (
+              <div key={k} className="tv-tipped" tabIndex={0}>
+                <span className="tv-tip" role="tooltip"><b>{l}</b>{RULE[k]}</span>
+                <i className={`tv-${k}`} /><b>{l}</b><span>{pct(share[k])} · {hrs(hours[k])}</span>
+              </div>
+            ))}
+            {foot && <div className="tot">{foot}</div>}
+          </div>
+        </div>
+      ) : <p className="tv-none">No time recorded yet.</p>}
+    </section>
+  );
+}
+
+/** The Pareto of red and amber: the biggest few as bars, labels written out. */
+export function ParetoCard({ lines }: { lines: ParetoBar[] }) {
+  const bars = lines.slice(0, PARETO_BARS);
+  const top = Math.max(0.0001, ...bars.map((b) => b.hours));
+  return (
+    <section className="tv-card">
+      <div className="tv-cardhead"><h2>Pareto</h2></div>
+      {!bars.length ? <p className="tv-none">No red or amber time recorded yet.</p> : (
+        <div className="tv-pareto">
+          {bars.map((b) => (
+            <div key={b.kind} className="tv-pcol">
+              <div className="tv-pbar">
+                <small>{hrs(b.hours)}</small>
+                <i className={`tv-${b.rag}`} style={{ height: `${(b.hours / top) * 180}px` }} />
+              </div>
+              <div className="tv-plabel">{SHORT[b.kind] ?? b.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Every red and amber kind: hours, how many times, minutes each, and what to do about it. */
+export function ActionsCard({ lines, timesHead = 'Times' }: { lines: ParetoBar[]; timesHead?: string }) {
+  if (!lines.length) return null;
+  return (
+    <section className="tv-card tv-actions">
+      <div className="tv-cardhead"><h2>Actions</h2></div>
+      <div className="tv-row th"><span>Kind</span><span className="num">Hours</span><span className="num">{timesHead}</span><span className="num">Each</span><span>Action</span></div>
+      {lines.map((b) => (
+        <div key={b.kind} className="tv-row">
+          <span className="k"><i className={`tv-${b.rag}`} />{b.label}</span>
+          <span className="num">{hrs(b.hours)}</span>
+          <span className="num">{b.times}</span>
+          <span className="num">{mins(b.avgMinutes)}</span>
+          <span className="tv-do">{actionsFor(b).map((a) => (a.href ? <a key={a.text} href={a.href}>{a.text}</a> : <span key={a.text}>{a.text}</span>))}</span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** The styles the cards above need, for a page other than Analytics. */
+export const TIME_CSS = CSS;
+
 export function TimeView({ tabs }: { tabs: ReactNode }) {
   const { r, err } = useReport();
   const w = r?.week ?? null;
   const total = w ? w.hours.green + w.hours.amber + w.hours.red : 0;
-  const pareto = r?.pareto ?? [];
-  const bars = pareto.slice(0, PARETO_BARS);
-  const top = Math.max(0.0001, ...bars.map((b) => b.hours));
   return (
     <Shell tabs={tabs} err={err} loading={!r}>
       {r && (
         <>
           <div className="tv-top">
-            <section className="tv-card">
-              <div className="tv-cardhead"><h2>This Week</h2>{w && <span className="r">{day(w.start)} – {day(w.start, 6)}</span>}</div>
-              {w?.share ? (
-                <div className="tv-week">
-                  <div className="tv-vstack" role="img" aria-label={split(w.share)}>
-                    {[...RAG].reverse().filter(([k]) => w.share![k] > 0).map(([k, l]) => (
-                      <span key={k} className={`tv-${k}`} style={{ flex: `${w.share![k]} 1 0` }} title={`${l}: ${pct(w.share![k])} · ${hrs(w.hours[k])}`}>{w.share![k] >= 0.07 ? pct(w.share![k]) : ''}</span>
-                    ))}
-                  </div>
-                  <div className="tv-legend">
-                    {[...RAG].reverse().map(([k, l]) => (
-                      <div key={k} className="tv-tipped" tabIndex={0}>
-                        <span className="tv-tip" role="tooltip"><b>{l}</b>{RULE[k]}</span>
-                        <i className={`tv-${k}`} /><b>{l}</b><span>{pct(w.share![k])} · {hrs(w.hours[k])}</span>
-                      </div>
-                    ))}
-                    <div className="tot">{hrs(total)} Across The Firm</div>
-                  </div>
-                </div>
-              ) : <p className="tv-none">No time recorded yet.</p>}
-            </section>
-
-            <section className="tv-card">
-              <div className="tv-cardhead"><h2>Pareto</h2></div>
-              {!bars.length ? <p className="tv-none">No red or amber time recorded yet.</p> : (
-                <>
-                  <div className="tv-pareto">
-                    {bars.map((b) => (
-                      <div key={b.kind} className="tv-pcol">
-                        <div className="tv-pbar">
-                          <small>{hrs(b.hours)}</small>
-                          <i className={`tv-${b.rag}`} style={{ height: `${(b.hours / top) * 180}px` }} />
-                        </div>
-                        <div className="tv-plabel">{SHORT[b.kind] ?? b.label}</div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </section>
+            <RagCard title="This Week" right={w ? `${day(w.start)} – ${day(w.start, 6)}` : undefined} hours={w?.hours ?? { red: 0, amber: 0, green: 0 }} share={w?.share ?? null} foot={`${hrs(total)} Across The Firm`} />
+            <ParetoCard lines={r.pareto} />
           </div>
-
-          {!!pareto.length && (
-            <section className="tv-card tv-actions">
-              <div className="tv-cardhead"><h2>Actions</h2></div>
-              <div className="tv-row th"><span>Kind</span><span className="num">Hours</span><span className="num">Times</span><span className="num">Each</span><span>Action</span></div>
-              {pareto.map((b) => (
-                <div key={b.kind} className="tv-row">
-                  <span className="k"><i className={`tv-${b.rag}`} />{b.label}</span>
-                  <span className="num">{hrs(b.hours)}</span>
-                  <span className="num">{b.times}</span>
-                  <span className="num">{mins(b.avgMinutes)}</span>
-                  <span className="tv-do">{actionsFor(b).map((a) => (a.href ? <a key={a.text} href={a.href}>{a.text}</a> : <span key={a.text}>{a.text}</span>))}</span>
-                </div>
-              ))}
-            </section>
-          )}
+          <ActionsCard lines={r.pareto} />
         </>
       )}
     </Shell>

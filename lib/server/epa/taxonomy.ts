@@ -141,9 +141,10 @@ export function fromEmail(category: string | null | undefined, roles?: readonly 
     case 'update_reply': return byParty('answer', p);
     case 'first_request': return byParty('request', p);
     case 'file_send': return byParty('send', p);
+    case 'resend': return p === 'client' || p === null ? 'resending_to_client' : 'resending_to_others';
     case 'acknowledgement': return 'acknowledging';
     case 'scheduling': return 'arranging_dates';
-    // The scan cannot yet tell a legal question from a status or process one: counted as legal, so the figure errs kind.
+    case 'process_question': return 'client_process_questions';
     case 'client_question': return 'client_legal_questions';
     case 'legal_work': return 'legal_correspondence';
     // Received: the cause, not the time; read only for the measurement phase's counts.

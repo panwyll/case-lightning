@@ -230,6 +230,21 @@ export function toDocument(raw: unknown, caseId: string): InTouchDocument | null
   };
 }
 
+/**
+ * A folder item as activity: what kind of record it is, when it was filed and whether the firm filed it. For the measurement
+ * phase's counts (docs/epa-categories.md), so nothing is downloaded. Field names to confirm on a live account.
+ */
+export function toFolderActivity(raw: unknown): { kind: 'email' | 'note' | 'call' | 'document'; at: string | null; byFirm: boolean | null } {
+  const type = norm(pick(raw, ['type', 'itemType', 'kind']));
+  const f = (pick(raw, ['fields']) as Raw | undefined) ?? {};
+  const by = norm(pick(f, ['uploadedBy', 'source', 'createdBy', 'origin']) ?? pick(raw, ['uploadedBy', 'source', 'origin', 'createdBy']));
+  return {
+    kind: /^emails?$/.test(type) ? 'email' : /^notes?$/.test(type) ? 'note' : /call/.test(type) ? 'call' : 'document',
+    at: iso(pick(raw, ['createdOn', 'createdAt', 'uploadedAt', 'created', 'date'])),
+    byFirm: !by ? null : by.includes('client') || by.includes('customer') || by.includes('intouch') || by.includes('system') ? false : true,
+  };
+}
+
 export function toTask(raw: unknown): InTouchTask {
   return {
     id: str(pick(raw, ['guid', 'id'])) ?? '',

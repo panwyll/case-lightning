@@ -14,7 +14,7 @@
  * knows about retries, pagination and downloads, and nothing about field names.
  */
 import { INTOUCH_API_TOKEN_HEADER, INTOUCH_ENDPOINTS, MILESTONE_WORDS, type InTouchMilestone } from './endpoints';
-import { pick, primaryClient, taskForMilestone, toCase, toDocument, toHtml, toTask, toWebhookEvent, unwrap } from './mapping';
+import { pick, primaryClient, taskForMilestone, toCase, toDocument, toFolderActivity, toHtml, toTask, toWebhookEvent, unwrap } from './mapping';
 import { InTouchError, type InTouchAccount, type InTouchCase, type InTouchDocument, type InTouchListOptions, type InTouchPage, type InTouchParty, type InTouchTask, type InTouchWebhookEvent } from './types';
 
 /**
@@ -232,6 +232,20 @@ export class InTouchHttpClient implements InTouchApi {
     const disposition = res.headers['content-disposition'] ?? '';
     const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
     return { bytes: Buffer.from(await res.arrayBuffer()), mimeType: res.headers['content-type'] ?? null, fileName: m ? decodeURIComponent(m[1]) : null };
+  }
+
+  /** What was filed on a matter since `since`: records and documents, newest pages first, never downloaded. */
+  async folderActivity(caseId: string, since: string, maxPages = 5): Promise<Array<{ kind: 'email' | 'note' | 'call' | 'document'; at: string | null; byFirm: boolean | null }>> {
+    const out: Array<{ kind: 'email' | 'note' | 'call' | 'document'; at: string | null; byFirm: boolean | null }> = [];
+    for (let page = 1; page <= maxPages; page++) {
+      const data = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.folder(caseId), undefined, { query: { page, pageSize: 100, orderBy: 'createdOn', orderByDirection: 'desc' } });
+      const raws = (pick(data, ['items']) as unknown[] | undefined) ?? (Array.isArray(data) ? data : []);
+      const items = raws.map(toFolderActivity);
+      out.push(...items.filter((i) => !i.at || i.at >= since));
+      // Newest first: once a page reaches before the window, there is nothing more to read.
+      if (raws.length < 100 || items.some((i) => i.at && i.at < since)) break;
+    }
+    return out;
   }
 
   async tasks(caseId: string): Promise<InTouchTask[]> {

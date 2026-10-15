@@ -20,6 +20,8 @@ export const paths = {
   analytics: `${APP_BASE}/analytics`,
   /** The workload baseline: where the week goes, from the conveyancer's own mailbox (docs/workload-baseline.md). */
   baseline: `${APP_BASE}/baseline`,
+  /** The onboarding measurement: two months of inbox and InTouch as a typical week (docs/epa-categories.md). */
+  measure: `${APP_BASE}/measure`,
   email: `${APP_BASE}/email`,
   decision: (eventId: string) => `${APP_BASE}/decisions/${eventId}`,
   /** Every open case as a list, to pick one from. */

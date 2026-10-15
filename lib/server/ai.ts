@@ -494,7 +494,7 @@ export async function classifyEmail(input: {
 }
 
 /** The workload baseline's prompt, versioned: a change of wording is a change of method, kept with each scan. */
-export const WORKLOAD_PROMPT_VERSION = 'wl-1';
+export const WORKLOAD_PROMPT_VERSION = 'wl-2';
 
 /**
  * What each of up to ten emails was for (docs/workload-baseline.md §2). Sent emails get one of the
@@ -540,6 +540,8 @@ export async function classifyWorkload(input: {
     },
     `SENT categories (for emails the conveyancer sent):\n${defs(input.outCategories)}\n\nRECEIVED categories (for emails the conveyancer received):\n${defs(input.inCategories)}\n\n` +
       'Notes: a chaser asks AGAIN for something already requested or overdue; a first request asks for it the first time. An answer to "any news?" replies to someone who asked for an update; a status update is sent unprompted. ' +
+      'A resend sends again something the recipient already had (a document, a link, a form), usually because they asked for it again; a file send is a document they have not had. ' +
+      'A process question is about how conveyancing works and has the same answer for every client; a client question is a legal question about their own case. ' +
       'Anything about enquiries, title, searches, the contract, advice or an undertaking is legal_work. Emails to colleagues are internal.\n\n' +
       input.emails.map((e) => `=== EMAIL ${e.id} (${e.direction === 'out' ? 'SENT' : 'RECEIVED'}${e.isReply ? ', a reply' : ''}${e.isForward ? ', a forward' : ''}${e.hasAttachments ? ', with attachments' : ''}) ===\n${e.direction === 'out' ? 'To' : 'From'}: ${e.people}\nSubject: ${e.subject}\n${e.text}`).join('\n\n')
   );

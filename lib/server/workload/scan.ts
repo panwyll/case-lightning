@@ -14,19 +14,37 @@ import type { SessionUser } from '../types';
 import { IN_CATEGORIES, IN_SPEC, OUT_CATEGORIES, OUT_SPEC, ROLES, allInternal, domainOf, filterByRule, firmDomainsOf, isForwardSubject, isReplySubject, wordCount, writtenText, type Filtered, type OutCategory } from './taxonomy';
 import { SAMPLE_SIZE, buildReport, drawSample, type Report, type Row, type Settings } from './model';
 
-export type ScanStatus = 'SCANNING_SENT' | 'SCANNING_INBOX' | 'CHECKING' | 'COMPLETE' | 'FAILED' | 'CANCELLED';
+export type ScanStatus = 'SCANNING_SENT' | 'SCANNING_INBOX' | 'SCANNING_INTOUCH' | 'CHECKING' | 'COMPLETE' | 'FAILED' | 'CANCELLED';
 export interface ScanRow {
   id: string; tenant_id: string; user_id: string; status: ScanStatus; since: string; until: string; cursor: string | null;
   max_messages: number; messages_read: number; classified: number; model: string | null; prompt_version: string | null; error: string | null;
   created_at: string; completed_at: string | null;
+  /** What the scan read from InTouch (migration 126); null before it reached InTouch, or where InTouch is not connected. */
+  intouch?: InTouchCounts | null;
+}
+
+/** The person's own cases in InTouch over the scan's window: counts only. */
+export interface InTouchCounts {
+  /** The person's live cases (their ids, read in turn), and how many have been read. */
+  cases: string[]; read: number;
+  live: number; openedInWindow: number;
+  /** What the firm filed on them in the window, and what clients or InTouch filed. */
+  filedByFirm: { email: number; note: number; call: number; document: number };
+  filedByOthers: number;
+  error?: string | null;
 }
 
 const SLICE_MS = 12_000;
-const BATCH = 10;
+// Batches of 15 at five at a time, the first 900 characters of what was written: enough to say what an email was for,
+// on the classify model (Haiku), at about a penny per hundred emails.
+const BATCH = 15;
 const CONCURRENCY = 5;
-const TEXT_CHARS = 1200;
-export const DEFAULT_WEEKS = 13;
-const ACTIVE: ScanStatus[] = ['SCANNING_SENT', 'SCANNING_INBOX'];
+const TEXT_CHARS = 900;
+/** Two months: the measurement phase's window. */
+export const DEFAULT_WEEKS = 9;
+/** Two months of a conveyancer receiving 200-300 emails a day and sending 60-80. */
+export const MAX_MESSAGES = 15000;
+const ACTIVE: ScanStatus[] = ['SCANNING_SENT', 'SCANNING_INBOX', 'SCANNING_INTOUCH'];
 
 const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : String(d));
 const norm = (s: ScanRow): ScanRow => ({ ...s, since: iso(s.since), until: iso(s.until), created_at: iso(s.created_at), completed_at: s.completed_at ? iso(s.completed_at) : null });
@@ -51,8 +69,8 @@ export async function startScan(user: SessionUser, opts: { weeks?: number; since
   const since = opts.since ? new Date(opts.since) : new Date(until.getTime() - weeks * 7 * 86_400_000);
   if (!(since < until)) throw Object.assign(new Error('The window must start before it ends.'), { status: 400 });
   const s = await queryOne<ScanRow>(
-    `insert into workload_scan (tenant_id, user_id, since, until, prompt_version) values ($1, $2, $3, $4, $5) returning *`,
-    [user.tenantId, user.userId, since.toISOString(), until.toISOString(), WORKLOAD_PROMPT_VERSION]
+    `insert into workload_scan (tenant_id, user_id, since, until, prompt_version, max_messages) values ($1, $2, $3, $4, $5, $6) returning *`,
+    [user.tenantId, user.userId, since.toISOString(), until.toISOString(), WORKLOAD_PROMPT_VERSION, MAX_MESSAGES]
   );
   return norm(s!);
 }
@@ -149,6 +167,7 @@ export async function advanceScan(user: SessionUser, scan: ScanRow): Promise<Sca
   let s = scan;
   try {
     while (Date.now() - started < SLICE_MS && ACTIVE.includes(s.status)) {
+      if (s.status === 'SCANNING_INTOUCH') { s = await advanceInTouch(user, s, started); continue; }
       const folder = s.status === 'SCANNING_SENT' ? 'sentitems' : 'inbox';
       const page = await listFolderWindow(user.userId, folder, s.since, s.until, s.cursor);
       const room = Math.max(0, s.max_messages - s.messages_read);
@@ -157,7 +176,7 @@ export async function advanceScan(user: SessionUser, scan: ScanRow): Promise<Sca
       const read = s.messages_read + Math.min(room, page.messages.length);
       // The folder is done when Graph has no more pages, or the scan has read all it may.
       const folderDone = !page.nextLink || read >= s.max_messages;
-      const next: ScanStatus = !folderDone ? s.status : s.status === 'SCANNING_SENT' && read < s.max_messages ? 'SCANNING_INBOX' : 'CHECKING';
+      const next: ScanStatus = !folderDone ? s.status : s.status === 'SCANNING_SENT' && read < s.max_messages ? 'SCANNING_INBOX' : (await inTouchConnected(user.tenantId)) ? 'SCANNING_INTOUCH' : 'CHECKING';
       const updated = await queryOne<ScanRow>(
         `update workload_scan set messages_read = $2, classified = classified + $3, cursor = $4, status = $5, model = coalesce($6, model), updated_at = now() where id = $1 and status = any($7) returning *`,
         [s.id, read, classified, folderDone ? null : page.nextLink, next, model, ACTIVE]
@@ -172,6 +191,60 @@ export async function advanceScan(user: SessionUser, scan: ScanRow): Promise<Sca
     await query(`update workload_scan set status = 'FAILED', error = $2, updated_at = now() where id = $1`, [scan.id, message]);
     return { ...s, status: 'FAILED', error: message };
   }
+  return s;
+}
+
+async function inTouchConnected(tenantId: string): Promise<boolean> {
+  const r = await queryOne<{ ok: boolean }>(`select status = 'CONNECTED' as ok from intouch_connection where tenant_id = $1`, [tenantId]).catch(() => null);
+  return !!r?.ok;
+}
+
+/** Live cases InTouch counts as this person's: by their email, else their name, as InTouch's fee earner. */
+const mine = (user: SessionUser, fe: { email: string | null; name: string | null } | null) =>
+  !!fe && ((!!fe.email && fe.email.toLowerCase() === user.email.toLowerCase()) || (!!fe.name && !!user.displayName && fe.name.trim().toLowerCase() === user.displayName.trim().toLowerCase()));
+
+/**
+ * The InTouch part of a scan, in slices: first the person's live cases, then what was filed on each in the window.
+ * Counts only. InTouch failing never fails the scan: the error is kept and the report says InTouch was not read.
+ */
+async function advanceInTouch(user: SessionUser, scan: ScanRow, started: number): Promise<ScanRow> {
+  const counts: InTouchCounts = scan.intouch ?? { cases: [], read: 0, live: 0, openedInWindow: 0, filedByFirm: { email: 0, note: 0, call: 0, document: 0 }, filedByOthers: 0, error: null };
+  let finished = false;
+  try {
+    const { inTouchClient } = await import('../integrations/intouch/adapters');
+    const client = await inTouchClient(user.tenantId);
+    if (!scan.intouch) {
+      let cursor: string | null = '1';
+      for (let n = 0; cursor && n < 40; n++) {
+        const page: Awaited<ReturnType<typeof client.listCases>> = await client.listCases({ cursor, limit: 100 });
+        for (const c of page.items) {
+          if (!mine(user, c.feeEarner)) continue;
+          if (c.createdAt && c.createdAt >= scan.since && c.createdAt <= scan.until) counts.openedInWindow += 1;
+          if (c.status === 'active' || c.status === 'instructed') { counts.live += 1; counts.cases.push(c.id); }
+        }
+        cursor = page.next;
+      }
+    }
+    while (counts.read < counts.cases.length && Date.now() - started < SLICE_MS) {
+      const items = await client.folderActivity(counts.cases[counts.read], scan.since);
+      for (const i of items) {
+        if (i.at && (i.at < scan.since || i.at > scan.until)) continue;
+        if (i.byFirm === false) counts.filedByOthers += 1; else counts.filedByFirm[i.kind] += 1;
+      }
+      counts.read += 1;
+    }
+    finished = counts.read >= counts.cases.length;
+  } catch (err) {
+    counts.error = String((err as Error)?.message ?? err).slice(0, 300);
+    finished = true;
+  }
+  const updated = await queryOne<ScanRow>(
+    `update workload_scan set intouch = $2::jsonb, status = $3, updated_at = now() where id = $1 and status = 'SCANNING_INTOUCH' returning *`,
+    [scan.id, JSON.stringify(counts), finished ? 'CHECKING' : 'SCANNING_INTOUCH']
+  );
+  if (!updated) return { ...scan, status: 'CANCELLED' };
+  const s = norm(updated);
+  if (s.status === 'CHECKING') await drawCheckSample(s);
   return s;
 }
 

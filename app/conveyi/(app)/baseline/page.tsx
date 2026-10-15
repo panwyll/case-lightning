@@ -64,7 +64,7 @@ const hrs = (x: number | null | undefined) => (x == null ? '—' : `${x.toFixed(
 const gbp = (p: number | null | undefined) => (p == null ? '—' : `£${Math.round(p / 100).toLocaleString('en-GB')}`);
 const day = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 const BASIS: Record<string, string> = { timed: 'Timed in Outlook', estimate: 'Typing + your estimate', typing_only: 'Typing only (estimate pending)' };
-const RUNNING = ['SCANNING_SENT', 'SCANNING_INBOX'];
+const RUNNING = ['SCANNING_SENT', 'SCANNING_INBOX', 'SCANNING_INTOUCH'];
 
 export default function BaselinePage() {
   return <Suspense fallback={<div style={{ padding: 20, color: '#64748b' }}>Loading…</div>}><Baseline /></Suspense>;
