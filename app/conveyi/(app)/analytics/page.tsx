@@ -3,7 +3,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/app/shared/engine/api';
 import { AnalyticsView } from '@/app/shared/engine/Analytics';
-import { EfficiencyView } from '@/app/shared/epa/EfficiencyView';
+import { TimeView } from '@/app/shared/epa/TimeView';
 import Link from 'next/link';
 import { paths } from '@/lib/paths';
 import type { AnalyticsReport } from '@/lib/server/analytics/kpis';
@@ -11,7 +11,7 @@ import type { AnalyticsReport } from '@/lib/server/analytics/kpis';
 interface Res { report: AnalyticsReport; people: Array<{ id: string; name: string }>; me: string; admin: boolean }
 
 /**
- * Analytics: Efficiency first (docs/epa.md: the share of time on conveyancer-only work), then Cases (the firm, or one
+ * Analytics: Time first (docs/epa.md: where the firm's time goes, legal work against routine), then Cases (the firm, or one
  * person, for all cases or one kind: ?view=cases&person=&side=).
  */
 export default function AnalyticsPage() {
@@ -24,7 +24,7 @@ function Tabs({ view }: { view: 'efficiency' | 'cases' }) {
   return (
     <span className="an-tabs" role="tablist">
       <style>{TABS_CSS}</style>
-      <Link role="tab" aria-selected={view === 'efficiency'} className={view === 'efficiency' ? 'on' : ''} href={paths.analytics}>Efficiency</Link>
+      <Link role="tab" aria-selected={view === 'efficiency'} className={view === 'efficiency' ? 'on' : ''} href={paths.analytics}>Time</Link>
       <Link role="tab" aria-selected={view === 'cases'} className={view === 'cases' ? 'on' : ''} href={`${paths.analytics}?view=cases`}>Cases</Link>
     </span>
   );
@@ -32,7 +32,7 @@ function Tabs({ view }: { view: 'efficiency' | 'cases' }) {
 
 function Analytics() {
   const params = useSearchParams();
-  return params.get('view') === 'cases' ? <Cases /> : <div style={{ padding: '18px 22px' }}><EfficiencyView tabs={<Tabs view="efficiency" />} /></div>;
+  return params.get('view') === 'cases' ? <Cases /> : <div style={{ padding: '18px 22px' }}><TimeView tabs={<Tabs view="efficiency" />} /></div>;
 }
 
 function Cases() {

@@ -8,7 +8,7 @@ The loop, every week:
 3. **Action:** what to do about the top items, mostly a CONVEYi action switched from Propose to Send, and a template or rule fixed.
 4. **Monitor:** next week's figures against this week's and against the baseline.
 
-Page: Analytics → Efficiency, the first tab of Analytics (`/conveyi/analytics`). Code: `lib/server/epa/`.
+Page: Analytics → Time, the first tab of Analytics (`/conveyi/analytics`). Code: `lib/server/epa/`.
 
 ## 1. The kinds of work
 
@@ -97,21 +97,18 @@ These are counted, not costed: no minutes are added for "switching cost". They s
 
 ## 3. The page
 
-- **Efficiency:** this week's percentage, its weekly trend, the target and the baseline (from the mailbox scan, docs/workload-baseline.md).
-- **RAG:** hours red, amber and green this week, last week, and at baseline.
-- **Pareto:** red and amber kinds by hours, biggest first, with the cumulative line. Each bar names its action: the CONVEYi action that takes that work, at the level it is on now, and a link to change it.
-- **Monitor:** the top five kinds, week by week, and what CONVEYi sent in their place that week (priced with the baseline's minutes, as in the baseline's "since go-live").
-- **Focus:** switches per hour, the median focus block, the share in long blocks, and the after-hours share.
-- **Queue:** for each kind, how long items waited (the median and the 85th percentile). This is queue time, never added up.
-- **Confidence:** the measured share, and the unattributed hours.
+Analytics → Time shows the whole firm, never one person: per-person figures read as a league table, and "efficiency" reads as a witch hunt, so the page says neither. Each person's time is still attributed on their own timeline (§2) and then added up.
 
-Each person sees their own figures, and the team's. An admin sees each person's.
+- **Last week:** one bar of the last complete week, split into Legal Work (green), Checks (amber) and Routine (red), with each share and its hours. Under it, the same bar before CONVEYi, from the mailbox scans.
+- **Week by week:** the same split for each of the last eight weeks.
+- **Where routine time goes:** the red and amber kinds for that week, biggest first. Each shows its hours, how many times it happened (emails and tasks), the average minutes each took, and the CONVEYi action that takes it, at its level now, with a link to switch it to Send.
+
+No medians, percentiles or queue times: the readers are not analysts.
 
 ## 4. Privacy
 
 - Spans record which item and what kind of work, never content.
-- They are the person's own, visible to them and the firm's admins.
-- The page shows hours by kind of work, never a minute-by-minute log of anyone's day.
+- The page shows the firm's hours by kind of work, never one person's, and never a minute-by-minute log of anyone's day.
 
 ## 5. What is built, and what is not yet
 

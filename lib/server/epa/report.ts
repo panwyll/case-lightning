@@ -1,10 +1,10 @@
 /**
  * The EPA page's figures (docs/epa.md §3), from evidence already loaded: week by week through the attention timeline,
- * the Pareto of red and amber work with the CONVEYi action that takes each, and queue times. Pure; store.ts loads.
+ * the Pareto of red and amber work with the CONVEYi action that takes each. Pure; store.ts loads.
  */
 import { actsUnasked, levelFor, ENGINE_ACTION_LABEL, type EngineAction, type LevelConfig, type TrustLevel } from '../engine/types';
 import { timedMinutes } from '../workload/model';
-import { attribute, measure, type Completion, type Span, type WeekMeasures } from './ledger';
+import { attribute, measure, type Completion, type Span } from './ledger';
 import { EPA_KINDS, EPA_SPEC, fromBaselineCategory, type EpaKind } from './taxonomy';
 
 const WEEK_MS = 7 * 86_400_000;
@@ -40,70 +40,96 @@ const PROPOSAL_ACTION: Record<string, EngineAction> = { chase: 'chase', acknowle
 
 export interface ParetoBar {
   kind: EpaKind; label: string; rag: 'red' | 'amber'; hours: number; share: number; cumulative: number;
+  /** How many separate things (emails, tasks) the time went on, and the average minutes each took. */
+  times: number; avgMinutes: number | null;
   action: { key: EngineAction; label: string; level: TrustLevel; sendsUnasked: boolean } | null;
   /** Checking Drafts, by the CONVEYi action whose drafts were being read. */
   parts?: Array<{ action: string; label: string; hours: number; level: TrustLevel | null }>;
 }
-export interface QueueLine { kind: EpaKind; label: string; done: number; medianHours: number | null; p85Hours: number | null }
-export interface EpaWeek { start: string; measures: WeekMeasures; hours: { red: number; amber: number; green: number; unattributed: number } }
+export interface RagSplit { red: number; amber: number; green: number }
+export interface EpaWeek {
+  start: string;
+  /** Hours by colour, and each colour's share of the counted time. */
+  hours: RagSplit; share: RagSplit | null;
+  unattributedHours: number;
+}
 export interface EpaReport {
   weeks: EpaWeek[];
+  /** The last complete week (the lead figure and the Pareto), else this week so far. */
+  week: EpaWeek | null;
   pareto: ParetoBar[];
-  /** The week the Pareto is for. */
-  paretoWeek: string | null;
-  queue: QueueLine[];
-  baselineEfficiency: number | null;
+  /** Before CONVEYi, from the mailbox scans (sent email only). */
+  baseline: RagSplit | null;
+  people: number;
 }
 
 const r1 = (x: number) => Math.round(x * 10) / 10;
 const r2 = (x: number) => Math.round(x * 100) / 100;
-const pctl = (xs: number[], p: number) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+const shareOf = (h: RagSplit): RagSplit | null => { const t = h.red + h.amber + h.green; return t ? { red: h.red / t, amber: h.amber / t, green: h.green / t } : null; };
 
-/** Efficiency at baseline, from the mailbox scan's hours per category (sent email only: the page says so). */
-export function baselineEfficiency(lines: Array<{ category: string; hoursPerWeek: number }>): number | null {
+/** The red / amber / green split before CONVEYi, from the mailbox scans' hours per category (sent email only). */
+export function baselineSplit(lines: Array<{ category: string; hoursPerWeek: number }>): RagSplit | null {
   const by = { red: 0, amber: 0, green: 0 };
   for (const l of lines) { const rag = EPA_SPEC[fromBaselineCategory(l.category)].rag; if (rag !== 'none') by[rag] += l.hoursPerWeek; }
-  const t = by.red + by.amber + by.green;
-  return t ? by.green / t : null;
+  return shareOf(by);
 }
 
+/**
+ * The firm's report: each person's time attributed on their own timeline (no minute counted twice, docs/epa.md §2),
+ * then added up. Nobody is shown on their own.
+ */
 export function buildEpaReport(input: {
-  spans: Span[];
+  people: Span[][];
   now: number;
   weeks: number;
   workday: { workdayStart: string; workdayEnd: string };
   levels: LevelConfig;
-  tasks: Array<{ kind: EpaKind; openedAt: number; closedAt: number }>;
-  baselineEfficiency: number | null;
+  baseline: RagSplit | null;
 }): EpaReport {
   const first = weekStart(input.now) - (input.weeks - 1) * WEEK_MS;
-  const weeks: EpaWeek[] = [];
+  type Acc = { minutes: Record<string, number>; items: Record<string, Set<string>>; checking: Record<string, number>; unattributed: number };
+  const accs: Array<{ start: number; acc: Acc }> = [];
   for (let w = first; w <= input.now; w += WEEK_MS) {
-    // Spans are cut to the week so a stretch over midnight on Sunday is split, never counted twice.
-    const inWeek = input.spans
-      .filter((s) => s.end > w && s.start < w + WEEK_MS)
-      .map((s) => ({ ...s, start: Math.max(s.start, w), end: Math.min(s.end, w + WEEK_MS) }));
-    const m = measure(attribute(inWeek), input.workday);
-    weeks.push({ start: new Date(w).toISOString(), measures: m, hours: { red: r1(m.rag.red / 60), amber: r1(m.rag.amber / 60), green: r1(m.rag.green / 60), unattributed: r1(m.unattributedMinutes / 60) } });
+    const acc: Acc = { minutes: {}, items: {}, checking: {}, unattributed: 0 };
+    input.people.forEach((spans, p) => {
+      // Spans are cut to the week so a stretch over midnight on Sunday is split, never counted twice.
+      const inWeek = spans.filter((s) => s.end > w && s.start < w + WEEK_MS).map((s) => ({ ...s, start: Math.max(s.start, w), end: Math.min(s.end, w + WEEK_MS) }));
+      const slices = attribute(inWeek);
+      const m = measure(slices, input.workday);
+      for (const k of EPA_KINDS) acc.minutes[k] = (acc.minutes[k] ?? 0) + m.minutes[k];
+      for (const [a, v] of Object.entries(m.checkingByAction)) acc.checking[a] = (acc.checking[a] ?? 0) + v;
+      acc.unattributed += m.unattributedMinutes;
+      for (const sl of slices) (acc.items[sl.span.kind] ??= new Set()).add(`${p}:${sl.span.item}`);
+    });
+    accs.push({ start: w, acc });
   }
+  const toWeek = ({ start, acc }: { start: number; acc: Acc }): EpaWeek => {
+    const h = { red: 0, amber: 0, green: 0 };
+    for (const k of EPA_KINDS) { const rag = EPA_SPEC[k].rag; if (rag !== 'none') h[rag] += acc.minutes[k] ?? 0; }
+    const hours = { red: r1(h.red / 60), amber: r1(h.amber / 60), green: r1(h.green / 60) };
+    return { start: new Date(start).toISOString(), hours, share: shareOf(h), unattributedHours: r1(acc.unattributed / 60) };
+  };
+  const weeks = accs.map(toWeek);
 
-  // The Pareto is for the latest week with time in it.
-  const pw = [...weeks].reverse().find((w) => w.measures.efficiency != null) ?? null;
+  // The last complete week; this week so far only when there is nothing before it.
+  const lead = [...accs].reverse().find((a) => a.start + WEEK_MS <= input.now && shareOf(toWeek(a).hours)) ?? [...accs].reverse().find((a) => toWeek(a).share) ?? null;
   const pareto: ParetoBar[] = [];
-  if (pw) {
-    const m = pw.measures;
-    const kinds = EPA_KINDS.filter((k) => (EPA_SPEC[k].rag === 'red' || EPA_SPEC[k].rag === 'amber') && m.minutes[k] > 0).sort((a, b) => m.minutes[b] - m.minutes[a]);
+  if (lead) {
+    const m = lead.acc;
+    const kinds = EPA_KINDS.filter((k) => (EPA_SPEC[k].rag === 'red' || EPA_SPEC[k].rag === 'amber') && (m.minutes[k] ?? 0) > 0).sort((a, b) => m.minutes[b] - m.minutes[a]);
     const total = kinds.reduce((a, k) => a + m.minutes[k], 0);
     let cum = 0;
     for (const k of kinds) {
       cum += m.minutes[k];
       const key = ACTION_FOR[k];
       const level = key ? levelFor(input.levels, key) : null;
+      const times = m.items[k]?.size ?? 0;
       pareto.push({
         kind: k, label: EPA_SPEC[k].label, rag: EPA_SPEC[k].rag as 'red' | 'amber', hours: r2(m.minutes[k] / 60), share: m.minutes[k] / total, cumulative: cum / total,
+        times, avgMinutes: times ? r1(m.minutes[k] / times) : null,
         action: key && level ? { key, label: ENGINE_ACTION_LABEL[key], level, sendsUnasked: actsUnasked(level, key) } : null,
         parts: k === 'checking_drafts'
-          ? Object.entries(m.checkingByAction).sort((a, b) => b[1] - a[1]).map(([a, mins]) => {
+          ? Object.entries(m.checking).sort((a, b) => b[1] - a[1]).map(([a, mins]) => {
               const key = PROPOSAL_ACTION[a];
               return { action: a, label: key ? ENGINE_ACTION_LABEL[key] : a.replace(/_/g, ' '), hours: r2(mins / 60), level: key ? levelFor(input.levels, key) : null };
             })
@@ -111,13 +137,5 @@ export function buildEpaReport(input: {
       });
     }
   }
-
-  // Queue time: how long items waited, per kind. Never added up into anyone's hours.
-  const since = first;
-  const queue: QueueLine[] = EPA_KINDS.filter((k) => k !== 'not_counted').map((k) => {
-    const waits = input.tasks.filter((t) => t.kind === k && t.closedAt >= since).map((t) => (t.closedAt - t.openedAt) / 3_600_000);
-    return { kind: k, label: EPA_SPEC[k].label, done: waits.length, medianHours: waits.length ? r1(pctl(waits, 0.5)!) : null, p85Hours: waits.length ? r1(pctl(waits, 0.85)!) : null };
-  }).filter((q) => q.done > 0).sort((a, b) => (b.medianHours ?? 0) - (a.medianHours ?? 0));
-
-  return { weeks, pareto, paretoWeek: pw?.start ?? null, queue, baselineEfficiency: input.baselineEfficiency };
+  return { weeks, week: lead ? toWeek(lead) : null, pareto, baseline: input.baseline, people: input.people.length };
 }

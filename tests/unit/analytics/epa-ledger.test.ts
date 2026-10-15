@@ -85,7 +85,7 @@ test('kinds: a chaser is a chaser; a proposal is checking a draft of something; 
   assert.equal(fromBaselineCategory('legal_work'), 'legal_review');
 });
 
-import { baselineEfficiency, buildEpaReport, emailEvidence, weekStart } from '../../../lib/server/epa/report';
+import { baselineSplit, buildEpaReport, emailEvidence, weekStart } from '../../../lib/server/epa/report';
 import { DEFAULT_LEVELS } from '../../../lib/server/engine/types';
 
 test('a sent email is a completion; when Outlook timed its draft, the writing is evidence too', () => {
@@ -97,32 +97,38 @@ test('a sent email is a completion; when Outlook timed its draft, the writing is
   assert.equal(emailEvidence({ id: 'm3', category: 'internal', draftedAt: null, sentAt: '2026-10-06T10:00:00Z' }), null, 'colleagues are not counted');
 });
 
-test('the report: weeks cut at Monday so nothing counts twice, the Pareto biggest first with the action that takes each', () => {
+test('the firm report: each person on their own timeline, added up; the last complete week leads; times and average each', () => {
   const mon = weekStart(Date.parse('2026-10-07T12:00:00Z'));
   assert.equal(new Date(mon).toISOString(), '2026-10-05T00:00:00.000Z');
-  const m = (min: number) => mon + 9 * 3_600_000 + min * 60_000;
-  const spans: Span[] = [
-    { start: mon - 30 * 60_000, end: mon + 30 * 60_000, item: 'late', kind: 'admin', source: 'focus' }, // Sunday night into Monday
-    { start: m(0), end: m(60), item: 'title', kind: 'legal_review', source: 'focus' },
-    { start: m(60), end: m(90), item: 'c', kind: 'chasing', source: 'focus' },
-    { start: m(90), end: m(100), item: 'a', kind: 'acknowledging', source: 'focus' },
-    { start: m(100), end: m(140), item: 'd', kind: 'checking_drafts', of: 'chasing', action: 'chase', source: 'focus' },
+  const prev = mon - 7 * 86_400_000;
+  const p = (min: number) => prev + 9 * 3_600_000 + min * 60_000;
+  const asha: Span[] = [
+    { start: p(0), end: p(60), item: 'title', kind: 'legal_review', source: 'focus' },
+    { start: p(60), end: p(90), item: 'c1', kind: 'chasing', source: 'focus' },
+    { start: p(90), end: p(100), item: 'a', kind: 'acknowledging', source: 'focus' },
+    { start: p(100), end: p(140), item: 'd', kind: 'checking_drafts', of: 'chasing', action: 'chase', source: 'focus' },
   ];
-  const r = buildEpaReport({ spans, now: m(200), weeks: 2, workday: { workdayStart: '09:00', workdayEnd: '17:30' }, levels: { ...DEFAULT_LEVELS, acknowledgement: 'assist' }, tasks: [{ kind: 'chasing', openedAt: m(-600), closedAt: m(60) }], baselineEfficiency: 0.3 });
+  const ben: Span[] = [
+    // At the same time as Asha's title review: a different person, so both count.
+    { start: p(0), end: p(30), item: 'c2', kind: 'chasing', source: 'focus' },
+    { start: mon - 30 * 60_000, end: mon + 30 * 60_000, item: 'late', kind: 'admin', source: 'focus' }, // Sunday night into Monday
+  ];
+  const r = buildEpaReport({ people: [asha, ben], now: mon + 10 * 3_600_000, weeks: 2, workday: { workdayStart: '09:00', workdayEnd: '17:30' }, levels: { ...DEFAULT_LEVELS, acknowledgement: 'assist' }, baseline: null });
   assert.equal(r.weeks.length, 2);
-  assert.equal(r.weeks[0].measures.minutes.admin, 30, 'Sunday\'s half stays in last week');
-  assert.equal(r.weeks[1].measures.minutes.admin, 30);
-  assert.deepEqual(r.pareto.map((b) => [b.kind, b.hours]), [['checking_drafts', 0.67], ['chasing', 0.5], ['admin', 0.5], ['acknowledging', 0.17]]);
+  assert.equal(r.week!.start, new Date(prev).toISOString(), 'the complete week leads, not this week so far');
+  assert.deepEqual(r.week!.hours, { red: 1.7, amber: 0.7, green: 1 });
+  assert.deepEqual(r.week!.share, { red: 0.5, amber: 0.2, green: 0.3 });
+  assert.equal(r.weeks[1].hours.red, 0.5, "Sunday's other half is this week's");
+  assert.deepEqual(r.pareto.map((b) => [b.kind, b.hours, b.times, b.avgMinutes]), [['chasing', 1, 2, 30], ['checking_drafts', 0.67, 1, 40], ['admin', 0.5, 1, 30], ['acknowledging', 0.17, 1, 10]]);
   assert.equal(r.pareto[r.pareto.length - 1].cumulative, 1);
-  assert.deepEqual(r.pareto.find((b) => b.kind === 'chasing')!.action, { key: 'chase', label: 'Chases', level: 'propose', sendsUnasked: false });
+  assert.deepEqual(r.pareto[0].action, { key: 'chase', label: 'Chases', level: 'propose', sendsUnasked: false });
   assert.equal(r.pareto.find((b) => b.kind === 'acknowledging')!.action!.sendsUnasked, true);
   assert.equal(r.pareto.find((b) => b.kind === 'admin')!.action, null, 'no action is suggested where CONVEYi has none');
-  assert.deepEqual(r.pareto[0].parts, [{ action: 'chase', label: 'Chases', hours: 0.67, level: 'propose' }]);
-  assert.deepEqual(r.queue, [{ kind: 'chasing', label: 'Chasing', done: 1, medianHours: 11, p85Hours: 11 }]);
+  assert.deepEqual(r.pareto[1].parts, [{ action: 'chase', label: 'Chases', hours: 0.67, level: 'propose' }]);
 });
 
-test('baseline efficiency from the mailbox scan\'s hours', () => {
-  assert.equal(baselineEfficiency([{ category: 'chaser', hoursPerWeek: 3 }, { category: 'legal_work', hoursPerWeek: 1 }, { category: 'internal', hoursPerWeek: 5 }]), 0.25);
+test('before CONVEYi, from the mailbox scans\' hours', () => {
+  assert.deepEqual(baselineSplit([{ category: 'chaser', hoursPerWeek: 3 }, { category: 'legal_work', hoursPerWeek: 1 }, { category: 'internal', hoursPerWeek: 5 }]), { red: 0.75, amber: 0, green: 0.25 });
 });
 
 const RULES = { ...DAY, ...DEFAULT_LUNCH };
