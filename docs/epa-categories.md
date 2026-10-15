@@ -28,7 +28,7 @@ The rule for each colour is its tooltip on the page; the categories carry no too
 - Answering Client Process Questions · Checking CONVEYi Drafts
 
 **Amber: moves the case on, someone other than a conveyancer could do it**
-- Asking The Client For Documents · Asking Others For Documents · Sending Documents To The Client · Sending Documents To Others
+- Asking The Client For Documents · Asking Others For Documents · Sending New Documents To The Client · Sending New Documents To Others
 - Opening The Case · Ordering Searches · Submitting Land Registry Applications · Filing SDLT Returns
 - Arranging Completion Dates And Calls · Verifying Bank Details · Requesting Completion Funds
 
