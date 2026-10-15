@@ -33,12 +33,23 @@ const CSS = `
 .tv-legend b{font-weight:800}
 .tv-legend span{color:#475569;margin-left:4px}
 .tv-legend .tot{font-size:13px;color:#64748b;font-weight:700;border-top:1px solid #eef0f4;padding-top:12px}
-.tv-pareto{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:10px;align-items:end;height:236px;border-bottom:1px solid #e6e8ee}
-.tv-pbar{display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+.tv-pareto{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:8px}
+.tv-pcol{position:relative;display:flex;flex-direction:column;cursor:default}
+.tv-pbar{display:flex;flex-direction:column;justify-content:flex-end;height:212px;border-bottom:1px solid #e6e8ee}
 .tv-pbar i{display:block;border-radius:4px 4px 0 0;min-height:2px}
 .tv-pbar small{display:block;text-align:center;font-size:11.5px;font-weight:800;color:#0f172a;margin-bottom:4px}
-.tv-plabels{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:10px;margin-top:8px}
-.tv-plabels span{font-size:11px;font-weight:700;color:#475569;text-align:center;line-height:1.25}
+.tv-plabel{font-size:11.5px;font-weight:700;color:#475569;text-align:center;line-height:1.25;margin-top:8px;min-height:44px;hyphens:auto;overflow-wrap:break-word}
+.tv-pcol:hover i{filter:brightness(.92)}
+.tv-pcol:hover .tv-plabel{color:#0f172a}
+.tv-tipped{position:relative}
+.tv-tip{display:none;position:absolute;z-index:30;width:250px;background:#0f172a;color:#e2e8f0;border-radius:9px;padding:10px 12px;font-size:12px;font-weight:500;line-height:1.45;text-align:left;pointer-events:none;box-shadow:0 8px 24px rgba(15,23,42,.18)}
+.tv-tip b{display:block;color:#fff;font-weight:800;font-size:12.5px;margin-bottom:3px}
+.tv-tip em{display:block;font-style:normal;color:#cbd5e1;font-weight:700;margin-top:6px}
+.tv-pcol .tv-tip{top:0;left:50%;transform:translateX(-50%)}
+.tv-pcol.lft .tv-tip{left:0;transform:none}
+.tv-pcol.rgt .tv-tip{left:auto;right:0;transform:none}
+.tv-pcol:hover .tv-tip,.tv-pcol:focus-within .tv-tip,.tv-tipped:hover .tv-tip,.tv-tipped:focus-within .tv-tip{display:block}
+.tv-row .tv-tip{bottom:calc(100% + 6px);left:0}
 .tv-actions{margin-top:16px}
 .tv-row{display:grid;grid-template-columns:330px 64px 64px 72px minmax(0,1fr);gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid #f1f3f7;font-size:13.5px}
 .tv-row:last-child{border-bottom:0}
@@ -71,23 +82,26 @@ const mins = (x: number | null) => (x == null ? '—' : x < 1 ? '<1 min' : `${Ma
 const day = (iso: string, plus = 0) => new Date(Date.parse(iso) + plus * 86_400_000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 const title = (s: string) => s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 const split = (s: RagSplit) => RAG.map(([k, l]) => `${l} ${pct(s[k])}`).join(' · ');
-const tip = (b: ParetoBar) => `${b.label}: ${EPA_SPEC[b.kind].what}. ${hrs(b.hours)} · ${b.times} times · ${mins(b.avgMinutes)} each`;
-/** Under a Pareto bar, where a column is narrow; the full name is in its tooltip and the Actions table. */
+function Tip({ b }: { b: ParetoBar }) {
+  return <span className="tv-tip" role="tooltip"><b>{b.label}</b>{EPA_SPEC[b.kind].what}.<em>{hrs(b.hours)} · {b.times} times · {mins(b.avgMinutes)} each</em></span>;
+}
+/** Under a Pareto bar: the work written out, where the full label would not fit; the hover card has the rest. */
 const SHORT: Partial<Record<EpaKind, string>> = {
-  client_chasers: 'Chasing Clients', other_side_chasers: 'Chasing Other Side', lender_chasers: 'Chasing Lenders', agent_chasers: 'Chasing Agents',
-  third_party_chasers: 'Chasing Third Parties', client_any_news: 'Client Status Answers', agent_status_requests: 'Agent Status Answers',
-  other_side_status_requests: 'Other Side Status Answers', lender_broker_status_requests: 'Lender Status Answers', client_updates: 'Client Updates',
-  agent_updates: 'Agent Updates', other_side_updates: 'Other Side Updates', lender_broker_updates: 'Lender Updates', resending_to_client: 'Resending To Client',
-  resending_to_others: 'Resending To Others', first_requests_client: 'Asking Client For Docs', first_requests_others: 'Asking Others For Docs',
-  sending_documents_client: 'Docs To Client', sending_documents_others: 'Docs To Others', acknowledging: 'Acknowledge­ments', filing: 'Filing',
-  recording_receipts: 'Receipts', notes_and_outcomes: 'File Notes', opening_the_case: 'Case Set-Up', ordering_searches: 'Search Orders',
-  land_registry_applications: 'Land Registry', sdlt_return: 'SDLT', closing_the_file: 'Closing Files', failed_sends: 'Failed Emails',
-  unlocking_files: 'Locked Files', client_process_questions: 'Process Questions', arranging_dates: 'Dates And Calls', bank_details: 'Bank Details',
-  requesting_funds: 'Funds Requests', checking_drafts: 'Checking Drafts', client_legal_questions: 'Legal Questions', payments: 'Payments',
-  difficult_emails: 'Complaints',
+  client_chasers: 'Chasing Clients', other_side_chasers: 'Chasing The Other Side', lender_chasers: 'Chasing Lenders', agent_chasers: 'Chasing Agents',
+  third_party_chasers: 'Chasing Third Parties', client_any_news: 'Answering Client Status Requests', agent_status_requests: 'Answering Agent Status Requests',
+  other_side_status_requests: 'Answering Other Side Status Requests', lender_broker_status_requests: 'Answering Lender Status Requests',
+  client_updates: 'Proactive Client Updates', agent_updates: 'Proactive Agent Updates', other_side_updates: 'Proactive Other Side Updates',
+  lender_broker_updates: 'Proactive Lender Updates', resending_to_client: 'Resending Documents To Clients', resending_to_others: 'Resending Documents To Others',
+  first_requests_client: 'Asking Clients For Documents', first_requests_others: 'Asking Others For Documents', sending_documents_client: 'Sending Documents To Clients',
+  sending_documents_others: 'Sending Documents To Others', acknowledging: 'Sending Acknowledge­ments', filing: 'Filing Emails And Documents',
+  recording_receipts: 'Recording Receipts', notes_and_outcomes: 'Writing File Notes', opening_the_case: 'Opening Cases', ordering_searches: 'Ordering Searches',
+  land_registry_applications: 'Land Registry Applications', sdlt_return: 'SDLT Returns', closing_the_file: 'Closing Files', failed_sends: 'Resending Failed Emails',
+  unlocking_files: 'Unlocking Protected Files', client_process_questions: 'Client Process Questions', arranging_dates: 'Completion Dates And Calls',
+  bank_details: 'Verifying Bank Details', requesting_funds: 'Requesting Completion Funds', checking_drafts: 'Checking CONVEYi Drafts',
+  client_legal_questions: 'Client Legal Questions', payments: 'Authorising Payments', difficult_emails: 'Complaints And Difficult Emails',
 };
 /** The biggest this many; the rest are in the Actions table. A lumped "Other" bar would tower over the categories it hides. */
-const PARETO_BARS = 8;
+const PARETO_BARS = 6;
 /** The CONVEYi actions, as the Actions column names them. */
 const ACTION_NAME: Record<string, string> = { chase: 'Chases', client_update: 'Client Updates', counterparty_update: 'Updates To Others', acknowledgement: 'Acknowledgements', search_order: 'Search Orders' };
 /** Where the fix is to stop it happening, what that is. */
@@ -132,8 +146,9 @@ export function TimeView({ tabs }: { tabs: ReactNode }) {
   const w = r?.week ?? null;
   const total = w ? w.hours.green + w.hours.amber + w.hours.red : 0;
   const pareto = r?.pareto ?? [];
-  const bars = pareto.slice(0, PARETO_BARS).map((b) => ({ key: b.kind as string, label: SHORT[b.kind as EpaKind] ?? b.label, colour: `tv-${b.rag}`, hours: b.hours, tip: tip(b) }));
+  const bars = pareto.slice(0, PARETO_BARS);
   const top = Math.max(0.0001, ...bars.map((b) => b.hours));
+  const edge = (i: number) => (i < 2 ? ' lft' : i >= bars.length - 2 ? ' rgt' : '');
   return (
     <Shell tabs={tabs} err={err} loading={!r}>
       {r && (
@@ -161,14 +176,17 @@ export function TimeView({ tabs }: { tabs: ReactNode }) {
               {!bars.length ? <p className="tv-none">No red or amber time recorded yet.</p> : (
                 <>
                   <div className="tv-pareto">
-                    {bars.map((b) => (
-                      <div key={b.key} className="tv-pbar" title={b.tip}>
-                        <small>{hrs(b.hours)}</small>
-                        <i className={b.colour} style={{ height: `${(b.hours / top) * 200}px` }} />
+                    {bars.map((b, i) => (
+                      <div key={b.kind} className={`tv-pcol${edge(i)}`} tabIndex={0} aria-label={`${b.label}: ${hrs(b.hours)}`}>
+                        <Tip b={b} />
+                        <div className="tv-pbar">
+                          <small>{hrs(b.hours)}</small>
+                          <i className={`tv-${b.rag}`} style={{ height: `${(b.hours / top) * 180}px` }} />
+                        </div>
+                        <div className="tv-plabel">{SHORT[b.kind] ?? b.label}</div>
                       </div>
                     ))}
                   </div>
-                  <div className="tv-plabels">{bars.map((b) => <span key={b.key}>{b.label}</span>)}</div>
                 </>
               )}
             </section>
@@ -180,7 +198,7 @@ export function TimeView({ tabs }: { tabs: ReactNode }) {
               <div className="tv-row th"><span>Kind</span><span className="num">Hours</span><span className="num">Times</span><span className="num">Each</span><span>Action</span></div>
               {pareto.map((b) => (
                 <div key={b.kind} className="tv-row">
-                  <span className="k" title={EPA_SPEC[b.kind].what}><i className={`tv-${b.rag}`} />{b.label}</span>
+                  <span className="k tv-tipped" tabIndex={0}><Tip b={b} /><i className={`tv-${b.rag}`} />{b.label}</span>
                   <span className="num">{hrs(b.hours)}</span>
                   <span className="num">{b.times}</span>
                   <span className="num">{mins(b.avgMinutes)}</span>

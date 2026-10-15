@@ -94,7 +94,7 @@ export function buildEpaReport(input: {
       // Spans are cut to the week so a stretch over midnight on Sunday is split, never counted twice.
       const inWeek = spans.filter((s) => s.end > w && s.start < w + WEEK_MS).map((s) => ({ ...s, start: Math.max(s.start, w), end: Math.min(s.end, w + WEEK_MS) }));
       const slices = attribute(inWeek);
-      const m = measure(slices, input.workday);
+      const m = measure(slices, input.workday, undefined, { afterHours: false });
       for (const k of EPA_KINDS) acc.minutes[k] = (acc.minutes[k] ?? 0) + m.minutes[k];
       for (const [a, v] of Object.entries(m.checkingByAction)) acc.checking[a] = (acc.checking[a] ?? 0) + v;
       acc.unattributed += m.unattributedMinutes;

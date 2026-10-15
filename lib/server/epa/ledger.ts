@@ -146,20 +146,18 @@ const zero = <K extends string>(keys: readonly K[]) => Object.fromEntries(keys.m
 const median = (xs: number[]) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b); const i = Math.floor(s.length / 2); return s.length % 2 ? s[i] : (s[i - 1] + s[i]) / 2; };
 
 /** The week's measures from its slices (§2 "The week", "Context switching"). */
-export function measure(slices: Slice[], workday: { workdayStart: string; workdayEnd: string }, cal: WorkingCalendar = EW_CALENDAR): WeekMeasures {
+export function measure(slices: Slice[], workday: { workdayStart: string; workdayEnd: string }, cal: WorkingCalendar = EW_CALENDAR, opts: { afterHours?: boolean } = {}): WeekMeasures {
+  const withAfter = opts.afterHours !== false;
   const minutes = zero(EPA_KINDS);
   const after = zero(EPA_KINDS);
   const checking: Record<string, number> = {};
   let measured = 0;
   let total = 0;
   for (const s of slices) {
-    // Minute by minute for in and after hours: a slice may cross the end of the working day.
-    for (let t = s.start; t < s.end; t += 60_000) {
-      const m = Math.min(60_000, s.end - t) / 60_000;
-      minutes[s.span.kind] += m;
-      if (!inWorkingHours(new Date(t).toISOString(), workday, cal)) after[s.span.kind] += m;
-    }
     const m = (s.end - s.start) / 60_000;
+    minutes[s.span.kind] += m;
+    // Minute by minute for after hours (a slice may cross the end of the working day): slow, so only when it is wanted.
+    if (withAfter) for (let t = s.start; t < s.end; t += 60_000) if (!inWorkingHours(new Date(t).toISOString(), workday, cal)) after[s.span.kind] += Math.min(60_000, s.end - t) / 60_000;
     total += m;
     if (s.span.source !== 'estimate') measured += m;
     if (s.span.kind === 'checking_drafts') { const k = s.span.of ?? 'other'; checking[k] = (checking[k] ?? 0) + m; }

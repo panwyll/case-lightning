@@ -127,3 +127,10 @@ No medians, percentiles or queue times: the readers are not analysts.
 | Sent email after the baseline scan | Reading yesterday's Sent Items each day | Not yet: scheduled work, so it waits to be agreed (the Vercel cost cap) |
 
 A row Approve on the Tasks list is a completion, so it is given the time since the last one. The queue table uses `task_record`, whose older rows may have no kind; those are classified by their chip.
+
+## 6. To monitor (noted 2026-10-15, not built)
+
+Both belong on Analytics → Cases, week by week.
+
+1. **Status requests and chasers received.** How many "where are we?" emails and chasers the firm receives a week, split into clients and the other side (and agents). Being proactive should push both down: this is the proof that proactive updates work. Sources: the mailbox scan's received categories (update requests, chasers received) at onboarding; live, triage's reading of every incoming case email.
+2. **The bounce rate of automated replies.** Of the replies CONVEYi sends by itself, the share where the recipient comes back to correct or clarify ("no, I meant…", "that's not what I asked") in the same thread within a few days. It is the quality check on automating replies, and the reason to pull a kind back to Propose. Needs: each automatic send marked (the engine's sent messages are logged with their Message-ID), and a reading of the next inbound reply in that thread for a correction or clarification, which triage does not do yet.
