@@ -97,7 +97,7 @@ test('a sent email is a completion; when Outlook timed its draft, the writing is
   assert.equal(emailEvidence({ id: 'm3', category: 'internal', draftedAt: null, sentAt: '2026-10-06T10:00:00Z' }), null, 'colleagues are not counted');
 });
 
-test('the firm report: each person on their own timeline, added up; the last complete week leads; times and average each', () => {
+test('the firm report: each person on their own timeline, added up; the latest week with time leads; times and average each', () => {
   const mon = weekStart(Date.parse('2026-10-07T12:00:00Z'));
   assert.equal(new Date(mon).toISOString(), '2026-10-05T00:00:00.000Z');
   const prev = mon - 7 * 86_400_000;
@@ -113,12 +113,16 @@ test('the firm report: each person on their own timeline, added up; the last com
     { start: p(0), end: p(30), item: 'c2', kind: 'chasing', source: 'focus' },
     { start: mon - 30 * 60_000, end: mon + 30 * 60_000, item: 'late', kind: 'admin', source: 'focus' }, // Sunday night into Monday
   ];
+  // Sunday night's admin is moved to Ben's last week so this week has nothing yet: last week leads.
+  ben[1] = { start: mon - 60 * 60_000, end: mon - 30 * 60_000, item: 'late', kind: 'admin', source: 'focus' };
   const r = buildEpaReport({ people: [asha, ben], now: mon + 10 * 3_600_000, weeks: 2, workday: { workdayStart: '09:00', workdayEnd: '17:30' }, levels: { ...DEFAULT_LEVELS, acknowledgement: 'assist' }, baseline: null });
   assert.equal(r.weeks.length, 2);
-  assert.equal(r.week!.start, new Date(prev).toISOString(), 'the complete week leads, not this week so far');
+  assert.equal(r.week!.start, new Date(prev).toISOString(), 'this week has nothing yet, so last week leads');
   assert.deepEqual(r.week!.hours, { red: 1.7, amber: 0.7, green: 1 });
   assert.deepEqual(r.week!.share, { red: 0.5, amber: 0.2, green: 0.3 });
-  assert.equal(r.weeks[1].hours.red, 0.5, "Sunday's other half is this week's");
+  assert.equal(r.weeks[1].share, null);
+  const now = buildEpaReport({ people: [asha, [{ start: mon + 9 * 3_600_000, end: mon + 9.5 * 3_600_000, item: 'x', kind: 'chasing', source: 'focus' }]], now: mon + 10 * 3_600_000, weeks: 2, workday: { workdayStart: '09:00', workdayEnd: '17:30' }, levels: DEFAULT_LEVELS, baseline: null });
+  assert.equal(now.week!.start, new Date(mon).toISOString(), 'once this week has time, it leads');
   assert.deepEqual(r.pareto.map((b) => [b.kind, b.hours, b.times, b.avgMinutes]), [['chasing', 1, 2, 30], ['checking_drafts', 0.67, 1, 40], ['admin', 0.5, 1, 30], ['acknowledging', 0.17, 1, 10]]);
   assert.equal(r.pareto[r.pareto.length - 1].cumulative, 1);
   assert.deepEqual(r.pareto[0].action, { key: 'chase', label: 'Chases', level: 'propose', sendsUnasked: false });

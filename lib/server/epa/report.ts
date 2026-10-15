@@ -55,7 +55,7 @@ export interface EpaWeek {
 }
 export interface EpaReport {
   weeks: EpaWeek[];
-  /** The last complete week (the lead figure and the Pareto), else this week so far. */
+  /** This week so far (the lead figure and the Pareto), else the latest week with time in it. */
   week: EpaWeek | null;
   pareto: ParetoBar[];
   /** Before CONVEYi, from the mailbox scans (sent email only). */
@@ -111,8 +111,8 @@ export function buildEpaReport(input: {
   };
   const weeks = accs.map(toWeek);
 
-  // The last complete week; this week so far only when there is nothing before it.
-  const lead = [...accs].reverse().find((a) => a.start + WEEK_MS <= input.now && shareOf(toWeek(a).hours)) ?? [...accs].reverse().find((a) => toWeek(a).share) ?? null;
+  // This week so far; last week while this one has nothing in it yet (a Monday morning).
+  const lead = [...accs].reverse().find((a) => toWeek(a).share) ?? null;
   const pareto: ParetoBar[] = [];
   if (lead) {
     const m = lead.acc;

@@ -4,154 +4,211 @@ import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { paths } from '@/lib/paths';
 import { flushAttention } from '@/app/shared/epa/useAttention';
-import type { EpaReport, EpaWeek, RagSplit } from '@/lib/server/epa/report';
+import type { EpaReport, ParetoBar, RagSplit } from '@/lib/server/epa/report';
 
 /**
- * Analytics → Time (docs/epa.md): the whole firm's week as legal work, checks and routine; week by week; and the routine
- * time ranked, with how often each thing happened and how long it took. Never one person's figures.
+ * Analytics → Time and Analytics → Trend (docs/epa.md §3). Time is for action: this week's red / amber / green, the Pareto
+ * of red and amber, and what to automate or delegate. Trend is how the weeks compare. The whole firm only, never one person.
  */
 const CSS = `
 .tv{max-width:1360px}
 .tv-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .tv-head h1{font-size:21px;font-weight:800;margin:0}
 .tv h2{font-size:15px;font-weight:800;margin:0;color:#0f172a}
-.tv-card{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:18px 20px;margin-top:16px}
-.tv-cardhead{display:flex;align-items:baseline;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.tv-card{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:18px 20px}
+.tv-cardhead{display:flex;align-items:baseline;gap:10px;margin-bottom:16px;flex-wrap:wrap}
 .tv-cardhead .r{margin-left:auto;font-size:12.5px;color:#64748b;font-weight:700}
-.tv-stack{display:flex;gap:2px;height:46px}
-.tv-stack.thin{height:20px}
-.tv-stack > span{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:15px;min-width:0;overflow:hidden;white-space:nowrap}
-.tv-stack.thin > span{font-size:11.5px}
-.tv-stack > span:first-child{border-radius:6px 0 0 6px}
-.tv-stack > span:last-child{border-radius:0 6px 6px 0}
-.tv-stack > span:only-child{border-radius:6px}
+.tv-top{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}
 .tv-green{background:#1E8E4E}.tv-amber{background:#E39A2D}.tv-red{background:#D64A3A}
-.tv-amber{color:#3b2405 !important}
-.tv-legend{display:flex;gap:22px;flex-wrap:wrap;margin-top:12px;font-size:13.5px;color:#0f172a}
-.tv-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+.tv-week{display:flex;gap:28px;align-items:stretch;height:300px}
+.tv-vstack{width:150px;flex:none;display:flex;flex-direction:column;gap:2px}
+.tv-vstack > span{display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:16px;min-height:0;overflow:hidden}
+.tv-vstack > span.tv-amber{color:#3b2405}
+.tv-vstack > span:first-child{border-radius:8px 8px 0 0}
+.tv-vstack > span:last-child{border-radius:0 0 8px 8px}
+.tv-vstack > span:only-child{border-radius:8px}
+.tv-legend{display:flex;flex-direction:column;justify-content:center;gap:16px;font-size:14px}
+.tv-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:8px;vertical-align:-1px}
 .tv-legend b{font-weight:800}
-.tv-legend span{color:#475569}
-.tv-before{display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px;align-items:center;margin-top:14px;font-size:12.5px;font-weight:700;color:#475569}
-.tv-weeks{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:14px;align-items:end;height:170px}
+.tv-legend span{color:#475569;margin-left:4px}
+.tv-legend .tot{font-size:13px;color:#64748b;font-weight:700;border-top:1px solid #eef0f4;padding-top:12px}
+.tv-pareto{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:10px;align-items:end;height:236px;border-bottom:1px solid #e6e8ee}
+.tv-pbar{display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+.tv-pbar i{display:block;border-radius:4px 4px 0 0;min-height:2px}
+.tv-pbar small{display:block;text-align:center;font-size:11.5px;font-weight:800;color:#0f172a;margin-bottom:4px}
+.tv-plabels{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:10px;margin-top:8px}
+.tv-plabels span{font-size:11.5px;font-weight:700;color:#475569;text-align:center;line-height:1.25}
+.tv-actions{margin-top:16px}
+.tv-row{display:grid;grid-template-columns:220px 70px 70px 80px minmax(0,1fr);gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid #f1f3f7;font-size:13.5px}
+.tv-row:last-child{border-bottom:0}
+.tv-row.th{font-size:12px;font-weight:800;color:#64748b;padding-top:0}
+.tv-row .num{text-align:right;font-variant-numeric:tabular-nums}
+.tv-row .k{display:flex;align-items:center;gap:9px;font-weight:800}
+.tv-row .k i{width:10px;height:10px;border-radius:3px;flex:none}
+.tv-do{display:flex;gap:8px;flex-wrap:wrap}
+.tv-do a,.tv-do span{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;border-radius:8px;padding:6px 11px;text-decoration:none;white-space:nowrap}
+.tv-do a{background:#5A27E0;color:#fff}
+.tv-do a:hover{background:#4A1FC0}
+.tv-do span{background:#f1f5f9;color:#334155}
+.tv-weeks{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:14px;align-items:end;height:260px}
 .tv-col{display:flex;flex-direction:column;gap:2px;height:100%}
 .tv-col > span:first-child{border-radius:5px 5px 0 0}
 .tv-col > span:last-child{border-radius:0 0 5px 5px}
 .tv-col.empty{background:#f1f5f9;border-radius:5px}
+.tv-col.before{opacity:.55}
 .tv-wklabels{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:14px;margin-top:8px;font-size:12px;color:#64748b;font-weight:700;text-align:center}
-.tv-wklabels .on{color:#0f172a}
-.tv-row{display:grid;grid-template-columns:190px minmax(0,1fr) 64px 64px 72px 310px;gap:14px;align-items:center;padding:9px 0;border-bottom:1px solid #f1f3f7;font-size:13.5px}
-.tv-row.th{font-size:12px;font-weight:800;color:#64748b;padding-top:0}
-.tv-row .num{text-align:right;font-variant-numeric:tabular-nums}
-.tv-row .bar{height:12px;background:#f3f4f6;border-radius:4px;overflow:hidden}
-.tv-row .bar i{display:block;height:100%;border-radius:4px}
-.tv-row.part{font-size:12.5px;color:#475569}
-.tv-row.part > span:first-child{padding-left:16px}
-.tv-lvl{display:inline-block;font-size:11px;font-weight:800;border-radius:999px;padding:1px 8px;margin-right:8px}
-.tv-lvl.propose{background:#fef3c7;color:#92400e}.tv-lvl.assist{background:#e0e7ff;color:#3730a3}.tv-lvl.auto{background:#dcfce7;color:#166534}
-.tv-row a{color:#5A27E0;font-weight:800;text-decoration:none}
+.tv-keys{display:flex;gap:18px;font-size:12.5px;font-weight:700;color:#334155}
+.tv-keys i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
 .tv-none{color:#64748b;font-size:13.5px;padding:8px 0}
 .tv-err{color:#b91c1c;font-size:13px;margin-top:12px}
-@media (max-width:1100px){.tv-row{grid-template-columns:150px minmax(0,1fr) 56px 56px 70px}.tv-row > :last-child{grid-column:1/-1}}
+@media (max-width:1100px){.tv-top{grid-template-columns:1fr}.tv-row{grid-template-columns:160px 56px 56px 64px}.tv-row > :last-child{grid-column:1/-1}}
 `;
 
-const COLOURS = [['green', 'Legal Work'], ['amber', 'Checks'], ['red', 'Routine']] as const;
+const RAG = [['green', 'Green'], ['amber', 'Amber'], ['red', 'Red']] as const;
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const hrs = (x: number) => (x > 0 && x < 0.05 ? '<0.1h' : `${x.toFixed(1)}h`);
 const mins = (x: number | null) => (x == null ? '—' : x < 1 ? '<1 min' : `${Math.round(x)} min`);
 const day = (iso: string, plus = 0) => new Date(Date.parse(iso) + plus * 86_400_000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 const title = (s: string) => s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
-const LEVEL: Record<string, string> = { propose: 'Propose', assist: 'Assist', auto: 'Auto' };
+const split = (s: RagSplit) => RAG.map(([k, l]) => `${l} ${pct(s[k])}`).join(' · ');
+const tip = (b: ParetoBar) => `${b.label}: ${hrs(b.hours)} · ${b.times} times · ${mins(b.avgMinutes)} each`;
+/** Under a Pareto bar, where a column is narrow; the full name is in its tooltip and the Actions table. */
+const SHORT: Record<string, string> = {
+  acknowledging: 'Acks', requesting: 'Requests', checking_drafts: 'Drafts', sending_documents: 'Sending Docs', status_updates: 'Updates',
+  any_news: 'Any News', client_questions: 'Questions', being_chased: 'Chased', scheduling: 'Scheduling',
+};
+/** At most this many bars; the rest are one "Other" bar. */
+const PARETO_BARS = 8;
 
-/** One red / amber / green bar, each part labelled with its share where it is wide enough to read. */
-function Stack({ share, thin = false }: { share: RagSplit; thin?: boolean }) {
-  return (
-    <div className={`tv-stack${thin ? ' thin' : ''}`} role="img" aria-label={COLOURS.map(([k, l]) => `${l} ${pct(share[k])}`).join(', ')}>
-      {COLOURS.filter(([k]) => share[k] > 0).map(([k, l]) => (
-        <span key={k} className={`tv-${k}`} style={{ flex: `${share[k]} 1 0` }} title={`${l}: ${pct(share[k])}`}>{share[k] >= 0.08 ? pct(share[k]) : ''}</span>
-      ))}
-    </div>
-  );
+/** What to do about a bar: switch the CONVEYi action that takes it to Send, or hand it to an assistant. */
+function actionsFor(b: ParetoBar): Array<{ text: string; href?: string }> {
+  const delegate = { text: 'Delegate To An Assistant' };
+  if (b.kind === 'checking_drafts') {
+    const open = (b.parts ?? []).filter((p) => p.level && p.level !== 'auto');
+    return open.length ? open.map((p) => ({ text: `Set ${title(p.label)} To Send`, href: paths.rules })) : [delegate];
+  }
+  if (b.action && !b.action.sendsUnasked) return [{ text: `Set ${title(b.action.label)} To Send`, href: paths.rules }];
+  return [delegate];
 }
 
-export function TimeView({ tabs }: { tabs: ReactNode }) {
+function useReport() {
   const [r, setR] = useState<EpaReport | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     void flushAttention().then(() => api<{ report: EpaReport }>('/epa').then((x) => setR(x.report)).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not load the figures.')));
   }, []);
+  return { r, err };
+}
 
-  const w: EpaWeek | null = r?.week ?? null;
-  const maxShare = r?.pareto[0]?.share ?? 1;
+function Shell({ tabs, err, loading, children }: { tabs: ReactNode; err: string | null; loading: boolean; children: ReactNode }) {
   return (
     <div className="tv">
       <style>{ENGINE_CSS + CSS}</style>
       <div className="tv-head"><h1>Analytics</h1>{tabs}</div>
       {err && <p className="tv-err">{err}</p>}
-      {!r && !err && <p className="tv-none">Loading…</p>}
+      {loading && !err && <p className="tv-none">Loading…</p>}
+      {children}
+    </div>
+  );
+}
+
+export function TimeView({ tabs }: { tabs: ReactNode }) {
+  const { r, err } = useReport();
+  const w = r?.week ?? null;
+  const total = w ? w.hours.green + w.hours.amber + w.hours.red : 0;
+  const pareto = r?.pareto ?? [];
+  const rest = pareto.length > PARETO_BARS ? pareto.slice(PARETO_BARS - 1) : [];
+  const bars = [
+    ...(rest.length ? pareto.slice(0, PARETO_BARS - 1) : pareto).map((b) => ({ key: b.kind as string, label: SHORT[b.kind] ?? b.label, colour: `tv-${b.rag}`, hours: b.hours, tip: tip(b) })),
+    ...(rest.length ? [{ key: 'other', label: 'Other', colour: '', hours: rest.reduce((a, b) => a + b.hours, 0), tip: `Other: ${rest.map((b) => b.label).join(', ')}` }] : []),
+  ];
+  const top = Math.max(0.0001, ...bars.map((b) => b.hours));
+  return (
+    <Shell tabs={tabs} err={err} loading={!r}>
       {r && (
         <>
-          <section className="tv-card">
-            <div className="tv-cardhead">
-              <h2>{w ? `Week Of ${day(w.start)} – ${day(w.start, 6)}` : 'Last Week'}</h2>
-              {w && <span className="r">{hrs(w.hours.green + w.hours.amber + w.hours.red)} Across The Firm</span>}
-            </div>
-            {w?.share ? (
-              <>
-                <Stack share={w.share} />
-                <div className="tv-legend">
-                  {COLOURS.map(([k, l]) => <div key={k}><i className={`tv-${k}`} /><b>{l}</b> <span>{pct(w.share![k])} · {hrs(w.hours[k])}</span></div>)}
+          <div className="tv-top">
+            <section className="tv-card">
+              <div className="tv-cardhead"><h2>This Week</h2>{w && <span className="r">{day(w.start)} – {day(w.start, 6)}</span>}</div>
+              {w?.share ? (
+                <div className="tv-week">
+                  <div className="tv-vstack" role="img" aria-label={split(w.share)}>
+                    {RAG.filter(([k]) => w.share![k] > 0).map(([k, l]) => (
+                      <span key={k} className={`tv-${k}`} style={{ flex: `${w.share![k]} 1 0` }} title={`${l}: ${pct(w.share![k])} · ${hrs(w.hours[k])}`}>{w.share![k] >= 0.07 ? pct(w.share![k]) : ''}</span>
+                    ))}
+                  </div>
+                  <div className="tv-legend">
+                    {RAG.map(([k, l]) => <div key={k}><i className={`tv-${k}`} /><b>{l}</b><span>{pct(w.share![k])} · {hrs(w.hours[k])}</span></div>)}
+                    <div className="tot">{hrs(total)} Across The Firm</div>
+                  </div>
                 </div>
-                {r.baseline && <div className="tv-before"><span>Before CONVEYi</span><Stack share={r.baseline} thin /></div>}
-              </>
-            ) : <p className="tv-none">No time recorded yet.</p>}
-          </section>
+              ) : <p className="tv-none">No time recorded yet.</p>}
+            </section>
 
-          <section className="tv-card">
-            <div className="tv-cardhead"><h2>Week By Week</h2></div>
-            <div className="tv-weeks">
-              {r.weeks.map((wk) => (
-                wk.share
-                  ? <div key={wk.start} className="tv-col" title={COLOURS.map(([k, l]) => `${l} ${pct(wk.share![k])}`).join(' · ')}>
-                      {[...COLOURS].reverse().filter(([k]) => wk.share![k] > 0).map(([k]) => <span key={k} className={`tv-${k}`} style={{ flex: `${wk.share![k]} 1 0` }} />)}
-                    </div>
-                  : <div key={wk.start} className="tv-col empty" title="No time recorded" />
-              ))}
-            </div>
-            <div className="tv-wklabels">{r.weeks.map((wk) => <span key={wk.start} className={wk.start === w?.start ? 'on' : ''}>{day(wk.start)}</span>)}</div>
-          </section>
-
-          <section className="tv-card">
-            <div className="tv-cardhead"><h2>Where Routine Time Goes</h2>{w && <span className="r">Week Of {day(w.start)}</span>}</div>
-            {!r.pareto.length ? <p className="tv-none">No routine time recorded yet.</p> : (
-              <>
-                <div className="tv-row th"><span>Kind</span><span /><span className="num">Hours</span><span className="num">Times</span><span className="num">Each</span><span>CONVEYi</span></div>
-                {r.pareto.map((b) => (
-                  <div key={b.kind}>
-                    <div className="tv-row">
-                      <span><b>{b.label}</b></span>
-                      <span className="bar"><i className={`tv-${b.rag}`} style={{ width: `${(b.share / maxShare) * 100}%` }} /></span>
-                      <span className="num"><b>{hrs(b.hours)}</b></span>
-                      <span className="num">{b.times}</span>
-                      <span className="num">{mins(b.avgMinutes)}</span>
-                      <span>
-                        {b.action
-                          ? <><span className={`tv-lvl ${b.action.level}`}>{LEVEL[b.action.level]}</span>{b.action.sendsUnasked ? `${title(b.action.label)} Send` : <a href={paths.rules}>Set {title(b.action.label)} To Send</a>}</>
-                          : b.kind === 'checking_drafts' ? 'By Action Below' : 'No CONVEYi Action Yet'}
-                      </span>
-                    </div>
-                    {b.parts?.map((p) => (
-                      <div key={p.action} className="tv-row part">
-                        <span>{title(p.label)}</span><span /><span className="num">{hrs(p.hours)}</span><span /><span />
-                        <span>{p.level ? <><span className={`tv-lvl ${p.level}`}>{LEVEL[p.level]}</span><a href={paths.rules}>Change Level</a></> : null}</span>
+            <section className="tv-card">
+              <div className="tv-cardhead"><h2>Pareto</h2></div>
+              {!bars.length ? <p className="tv-none">No red or amber time recorded yet.</p> : (
+                <>
+                  <div className="tv-pareto">
+                    {bars.map((b) => (
+                      <div key={b.key} className="tv-pbar" title={b.tip}>
+                        <small>{hrs(b.hours)}</small>
+                        <i className={b.colour} style={{ height: `${(b.hours / top) * 200}px`, background: b.colour ? undefined : '#94a3b8' }} />
                       </div>
                     ))}
                   </div>
-                ))}
-              </>
-            )}
-          </section>
+                  <div className="tv-plabels">{bars.map((b) => <span key={b.key}>{b.label}</span>)}</div>
+                </>
+              )}
+            </section>
+          </div>
+
+          {!!pareto.length && (
+            <section className="tv-card tv-actions">
+              <div className="tv-cardhead"><h2>Actions</h2></div>
+              <div className="tv-row th"><span>Kind</span><span className="num">Hours</span><span className="num">Times</span><span className="num">Each</span><span>Action</span></div>
+              {pareto.map((b) => (
+                <div key={b.kind} className="tv-row">
+                  <span className="k"><i className={`tv-${b.rag}`} />{b.label}</span>
+                  <span className="num">{hrs(b.hours)}</span>
+                  <span className="num">{b.times}</span>
+                  <span className="num">{mins(b.avgMinutes)}</span>
+                  <span className="tv-do">{actionsFor(b).map((a) => (a.href ? <a key={a.text} href={a.href}>{a.text}</a> : <span key={a.text}>{a.text}</span>))}</span>
+                </div>
+              ))}
+            </section>
+          )}
         </>
       )}
-    </div>
+    </Shell>
+  );
+}
+
+/** Analytics → Trend: each week's red / amber / green, after the same split before CONVEYi. */
+export function TrendView({ tabs }: { tabs: ReactNode }) {
+  const { r, err } = useReport();
+  const cols = r ? [
+    ...(r.baseline ? [{ key: 'before', label: 'Before CONVEYi', share: r.baseline as RagSplit | null, before: true }] : []),
+    ...r.weeks.map((w) => ({ key: w.start, label: day(w.start), share: w.share, before: false })),
+  ] : [];
+  return (
+    <Shell tabs={tabs} err={err} loading={!r}>
+      {r && (
+        <section className="tv-card" style={{ marginTop: 16 }}>
+          <div className="tv-cardhead">
+            <h2>Week By Week</h2>
+            <span className="r tv-keys">{RAG.map(([k, l]) => <span key={k}><i className={`tv-${k}`} />{l}</span>)}</span>
+          </div>
+          <div className="tv-weeks">
+            {cols.map((c) => (c.share
+              ? <div key={c.key} className={`tv-col${c.before ? ' before' : ''}`} title={`${c.label}: ${split(c.share)}`}>
+                  {[...RAG].reverse().filter(([k]) => c.share![k] > 0).map(([k]) => <span key={k} className={`tv-${k}`} style={{ flex: `${c.share![k]} 1 0` }} />)}
+                </div>
+              : <div key={c.key} className="tv-col empty" title={`${c.label}: no time recorded`} />))}
+          </div>
+          <div className="tv-wklabels">{cols.map((c) => <span key={c.key}>{c.label}</span>)}</div>
+        </section>
+      )}
+    </Shell>
   );
 }

@@ -3,7 +3,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/app/shared/engine/api';
 import { AnalyticsView } from '@/app/shared/engine/Analytics';
-import { TimeView } from '@/app/shared/epa/TimeView';
+import { TimeView, TrendView } from '@/app/shared/epa/TimeView';
 import Link from 'next/link';
 import { paths } from '@/lib/paths';
 import type { AnalyticsReport } from '@/lib/server/analytics/kpis';
@@ -11,7 +11,8 @@ import type { AnalyticsReport } from '@/lib/server/analytics/kpis';
 interface Res { report: AnalyticsReport; people: Array<{ id: string; name: string }>; me: string; admin: boolean }
 
 /**
- * Analytics: Time first (docs/epa.md: where the firm's time goes, legal work against routine), then Cases (the firm, or one
+ * Analytics: Time first (docs/epa.md: this week's red / amber / green, the Pareto and what to do about it), Trend (week by
+ * week), then Cases (the firm, or one
  * person, for all cases or one kind: ?view=cases&person=&side=).
  */
 export default function AnalyticsPage() {
@@ -20,19 +21,23 @@ export default function AnalyticsPage() {
 
 const TABS_CSS = `.an-tabs{display:inline-flex;background:#f1f5f9;border-radius:9px;padding:3px;margin-left:6px}.an-tabs a{font-size:13px;font-weight:700;color:#64748b;padding:5px 12px;border-radius:7px;text-decoration:none}.an-tabs a.on{background:#fff;color:#0f172a;box-shadow:0 1px 2px rgba(15,23,42,.08)}`;
 
-function Tabs({ view }: { view: 'efficiency' | 'cases' }) {
+type View = 'time' | 'trend' | 'cases';
+const TAB: ReadonlyArray<[View, string, string]> = [['time', 'Time', paths.analytics], ['trend', 'Trend', `${paths.analytics}?view=trend`], ['cases', 'Cases', `${paths.analytics}?view=cases`]];
+
+function Tabs({ view }: { view: View }) {
   return (
     <span className="an-tabs" role="tablist">
       <style>{TABS_CSS}</style>
-      <Link role="tab" aria-selected={view === 'efficiency'} className={view === 'efficiency' ? 'on' : ''} href={paths.analytics}>Time</Link>
-      <Link role="tab" aria-selected={view === 'cases'} className={view === 'cases' ? 'on' : ''} href={`${paths.analytics}?view=cases`}>Cases</Link>
+      {TAB.map(([v, label, href]) => <Link key={v} role="tab" aria-selected={view === v} className={view === v ? 'on' : ''} href={href}>{label}</Link>)}
     </span>
   );
 }
 
 function Analytics() {
-  const params = useSearchParams();
-  return params.get('view') === 'cases' ? <Cases /> : <div style={{ padding: '18px 22px' }}><TimeView tabs={<Tabs view="efficiency" />} /></div>;
+  const view = useSearchParams().get('view');
+  if (view === 'cases') return <Cases />;
+  if (view === 'trend') return <div style={{ padding: '18px 22px' }}><TrendView tabs={<Tabs view="trend" />} /></div>;
+  return <div style={{ padding: '18px 22px' }}><TimeView tabs={<Tabs view="time" />} /></div>;
 }
 
 function Cases() {

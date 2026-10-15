@@ -8,7 +8,7 @@ The loop, every week:
 3. **Action:** what to do about the top items, mostly a CONVEYi action switched from Propose to Send, and a template or rule fixed.
 4. **Monitor:** next week's figures against this week's and against the baseline.
 
-Page: Analytics → Time, the first tab of Analytics (`/conveyi/analytics`). Code: `lib/server/epa/`.
+Pages: Analytics → Time (the first tab, `/conveyi/analytics`) and Analytics → Trend. Code: `lib/server/epa/`.
 
 ## 1. The kinds of work
 
@@ -97,11 +97,14 @@ These are counted, not costed: no minutes are added for "switching cost". They s
 
 ## 3. The page
 
-Analytics → Time shows the whole firm, never one person: per-person figures read as a league table, and "efficiency" reads as a witch hunt, so the page says neither. Each person's time is still attributed on their own timeline (§2) and then added up.
+Analytics shows the whole firm, never one person: per-person figures read as a league table, and "efficiency" reads as a witch hunt, so the page says neither. Each person's time is still attributed on their own timeline (§2) and then added up.
 
-- **Last week:** one bar of the last complete week, split into Legal Work (green), Checks (amber) and Routine (red), with each share and its hours. Under it, the same bar before CONVEYi, from the mailbox scans.
-- **Week by week:** the same split for each of the last eight weeks.
-- **Where routine time goes:** the red and amber kinds for that week, biggest first. Each shows its hours, how many times it happened (emails and tasks), the average minutes each took, and the CONVEYi action that takes it, at its level now, with a link to switch it to Send.
+**Analytics → Time** is for action, this week only:
+- **This Week:** one vertical bar of this week so far, red / amber / green, with each share and its hours (last week while this one has nothing yet).
+- **Pareto:** the red and amber kinds as vertical bars, biggest first; past seven, the rest are one Other bar.
+- **Actions:** every red and amber kind with its hours, how many times it happened (emails and tasks) and the average minutes each, and what to do: switch the CONVEYi action that takes it to Send, or delegate it to an assistant.
+
+**Analytics → Trend** is how the weeks compare: each week's red / amber / green, after the same split before CONVEYi (from the mailbox scans). Comparing weeks is for a monthly or quarterly look, not the weekly action page.
 
 No medians, percentiles or queue times: the readers are not analysts.
 
