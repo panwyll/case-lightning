@@ -66,6 +66,7 @@ export default function ToolsPage() {
             </a>
           );
         })}
+        <a className="ig-card" href={paths.measure}><h2 className="ig-name">Measurement</h2></a>
       </div>
 
       <h2 className="ig-h2">Engine</h2>

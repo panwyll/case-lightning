@@ -15,8 +15,6 @@ const CSS = `
 .tv{max-width:1360px}
 .tv-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .tv-head h1{font-size:21px;font-weight:800;margin:0}
-.tv-measure{margin-left:auto;font-size:13px;font-weight:700;color:#0f172a;background:#f1f5f9;border-radius:9px;padding:8px 12px;text-decoration:none}
-.tv-measure:hover{background:#e8ecf2}
 .tv h2{font-size:15px;font-weight:800;margin:0;color:#0f172a}
 .tv-card{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:18px 20px}
 .tv-cardhead{display:flex;align-items:baseline;gap:10px;margin-bottom:16px;flex-wrap:wrap}
@@ -138,7 +136,7 @@ function Shell({ tabs, err, loading, children }: { tabs: ReactNode; err: string 
   return (
     <div className="tv">
       <style>{ENGINE_CSS + CSS}</style>
-      <div className="tv-head"><h1>Analytics</h1>{tabs}<a className="tv-measure" href={paths.measure}>Measurement</a></div>
+      <div className="tv-head"><h1>Analytics</h1>{tabs}</div>
       {err && <p className="tv-err">{err}</p>}
       {loading && !err && <p className="tv-none">Loading…</p>}
       {children}
