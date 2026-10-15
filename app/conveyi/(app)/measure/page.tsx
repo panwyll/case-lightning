@@ -25,14 +25,9 @@ const CSS = `
 .ms h1{font-size:21px;font-weight:800;margin:0}
 .ms-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .ms-head .r{margin-left:auto;display:flex;gap:10px;align-items:center;font-size:13px;color:#475569;font-weight:700}
-.ms-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:14px}
-.ms-tile{background:#fff;border:1px solid #e6e8ee;border-radius:12px;padding:9px 14px;display:flex;align-items:center;gap:10px}
-.ms-tile .k{font-size:12px;font-weight:700;color:#475569;line-height:1.3}
-.ms-tile b{margin-left:auto;font-size:20px;font-weight:800;color:#0f172a}
 .ms-err{color:#b91c1c;font-size:13px}
 .ms-go{border:0;background:#5A27E0;color:#fff;border-radius:9px;padding:8px 14px;font:inherit;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .ms-go:hover{background:#4A1FC0}
-@media (max-width:1100px){.ms-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `;
 
 
@@ -88,12 +83,6 @@ export default function MeasurePage() {
       {res && !m && !isRunning && <p className="tv-none">No mailbox scanned yet.</p>}
       {m && (
         <>
-          <div className="ms-tiles">
-            <div className="ms-tile"><span className="k">Client Status Requests A Week</span><b>{m.received.clientStatusRequests}</b></div>
-            <div className="ms-tile"><span className="k">Agent And Other Side Status Requests A Week</span><b>{m.received.agentStatusRequests + m.received.otherSideStatusRequests}</b></div>
-            <div className="ms-tile"><span className="k">Chasers Received A Week</span><b>{m.received.chasersReceived}</b></div>
-            <div className="ms-tile"><span className="k">Live Cases Per Conveyancer</span><b>{m.cases?.perConveyancer ?? '—'}</b></div>
-          </div>
           <div className="tv-top">
             <RagCard title="A Typical Week" hours={m.hours} share={m.share} foot={`${m.people} ${m.people === 1 ? 'Conveyancer' : 'Conveyancers'} · ${m.contractedHours}h Week`} />
             <ParetoCard lines={m.lines} />
