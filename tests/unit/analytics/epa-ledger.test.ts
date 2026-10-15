@@ -50,7 +50,7 @@ test('the week: efficiency, RAG, measured share, switches, focus blocks and afte
   ]);
   sl.find((s) => s.span.item === 'draft')!.span.of = 'lender_chasers';
   const m = measure(sl, DAY);
-  assert.deepEqual(m.rag, { red: 20, amber: 20, green: 60 });
+  assert.deepEqual(m.rag, { red: 40, amber: 0, green: 60 }, 'checking a draft CONVEYi could send is time wasted: red');
   assert.equal(m.efficiency, 0.6);
   assert.equal(m.measuredShare, 90 / 100);
   assert.deepEqual(m.checkingByAction, { lender_chasers: 20 });
@@ -134,8 +134,8 @@ test('the firm report: each person on their own timeline, added up; the latest w
   const r = buildEpaReport({ people: [asha, ben], now: mon + 10 * 3_600_000, weeks: 2, workday: { workdayStart: '09:00', workdayEnd: '17:30' }, levels: { ...DEFAULT_LEVELS, acknowledgement: 'assist' }, baseline: null });
   assert.equal(r.weeks.length, 2);
   assert.equal(r.week!.start, new Date(prev).toISOString(), 'this week has nothing yet, so last week leads');
-  assert.deepEqual(r.week!.hours, { red: 1.7, amber: 0.7, green: 1 });
-  assert.deepEqual(r.week!.share, { red: 0.5, amber: 0.2, green: 0.3 });
+  assert.deepEqual(r.week!.hours, { red: 2.3, amber: 0, green: 1 });
+  assert.deepEqual(r.week!.share, { red: 0.7, amber: 0, green: 0.3 });
   assert.equal(r.weeks[1].share, null);
   const now = buildEpaReport({ people: [asha, [{ start: mon + 9 * 3_600_000, end: mon + 9.5 * 3_600_000, item: 'x', kind: 'client_chasers', source: 'focus' }]], now: mon + 10 * 3_600_000, weeks: 2, workday: { workdayStart: '09:00', workdayEnd: '17:30' }, levels: DEFAULT_LEVELS, baseline: null });
   assert.equal(now.week!.start, new Date(mon).toISOString(), 'once this week has time, it leads');
@@ -144,7 +144,7 @@ test('the firm report: each person on their own timeline, added up; the latest w
   assert.deepEqual(r.pareto[0].action, { key: 'chase', label: 'Chases', level: 'propose', sendsUnasked: false });
   assert.equal(r.pareto.find((b) => b.kind === 'acknowledging')!.action!.sendsUnasked, true);
   assert.equal(r.pareto.find((b) => b.kind === 'filing')!.action, null, 'no action is suggested where CONVEYi has none');
-  assert.deepEqual(r.pareto[1].parts, [{ of: 'lender_chasers', label: 'Lender Chasers', hours: 0.67, action: 'chase', level: 'propose' }]);
+  assert.deepEqual(r.pareto[1].parts, [{ of: 'lender_chasers', label: 'Sending Lender Chasers', hours: 0.67, action: 'chase', level: 'propose' }]);
 });
 
 test('before CONVEYi, from the mailbox scans\' hours', () => {

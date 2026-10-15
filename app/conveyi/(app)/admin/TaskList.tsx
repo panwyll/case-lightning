@@ -166,7 +166,7 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
     const base = open.endsWith(':email') ? open.slice(0, -':email'.length) : open;
     const i = [...data.do, ...data.escalate, ...data.waiting].find((w) => `${w.matterId}:${w.id}` === base);
     if (!i) return null;
-    const work = open.endsWith(':email') ? { kind: 'client_questions' as const } : fromTask({ kind: i.kind ?? 'step', chip: i.chip ?? chipLabel(i.kind ?? '') });
+    const work = open.endsWith(':email') ? { kind: 'client_legal_questions' as const } : fromTask({ kind: i.kind ?? 'step', chip: i.chip ?? chipLabel(i.kind ?? '') });
     return { item: `task:${base}`, matterId: i.matterId, ...work };
   }, [open, data]);
   useAttention(openItem);

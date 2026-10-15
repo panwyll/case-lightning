@@ -1,11 +1,13 @@
 /**
- * What the time is spent on (docs/epa-categories.md): named as the work, by who it is with, each with one obvious remedy.
+ * What the time is spent on (docs/epa-categories.md): named as the work done, by whom it is with, sending or answering, each
+ * with one obvious remedy. Green moves the case on and only a conveyancer can do it; amber probably needs a conveyancer but
+ * does not move the case on; red is time wasted.
  * The same list for the measurement phase (inbox, InTouch) and Analytics → Time, so every source maps onto it here and
  * nowhere else. Pure.
  */
 
 export const EPA_KINDS = [
-  // Red: needs no conveyancer.
+  // Red: time that neither needs a conveyancer nor moves the case on.
   'client_chasers', 'other_side_chasers', 'lender_chasers', 'agent_chasers', 'third_party_chasers',
   'client_any_news', 'agent_status_requests', 'other_side_status_requests', 'lender_broker_status_requests',
   'client_updates', 'agent_updates', 'other_side_updates', 'lender_broker_updates',
@@ -14,9 +16,10 @@ export const EPA_KINDS = [
   'sending_documents_client', 'sending_documents_others',
   'acknowledging', 'filing', 'recording_receipts', 'notes_and_outcomes', 'opening_the_case',
   'ordering_searches', 'land_registry_applications', 'sdlt_return', 'closing_the_file', 'failed_sends', 'unlocking_files',
-  // Amber: needs an eye, not the conveyancer's time.
-  'client_questions', 'arranging_dates', 'bank_details', 'requesting_funds', 'payments', 'checking_drafts', 'difficult_emails',
-  // Green: only a conveyancer.
+  'client_process_questions', 'arranging_dates', 'bank_details', 'requesting_funds', 'checking_drafts',
+  // Amber: probably needs a conveyancer, but does not move the case on.
+  'client_legal_questions', 'payments', 'difficult_emails',
+  // Green: only a conveyancer can do it, and it moves the case on.
   'title_review', 'search_review', 'raising_enquiries', 'reviewing_replies', 'contract_and_lease_review', 'mortgage_offer_review',
   'report_on_title', 'id_and_source_of_funds', 'advising', 'negotiating', 'resolving_issues', 'drafting', 'legal_correspondence',
   'exchange', 'completion',
@@ -33,52 +36,53 @@ const amber = (label: string, remedy: Remedy, what: string): Spec => ({ label, r
 const green = (label: string, what: string): Spec => ({ label, rag: 'green', remedy: 'keep', what });
 
 export const EPA_SPEC: Record<EpaKind, Spec> = {
-  client_chasers: red('Client Chasers', 'automate', 'Asking the client again for ID, forms, funds, signed documents or a decision'),
-  other_side_chasers: red('Other Side Chasers', 'automate', "Asking the other side's solicitor again: contract pack, replies, transfer deed, completion information"),
-  lender_chasers: red('Lender Chasers', 'automate', 'Redemption statements, offers, lender consent'),
-  agent_chasers: red('Agent Chasers', 'automate', 'Memorandum of sale, buyer details, keys'),
-  third_party_chasers: red('Third Party Chasers', 'delegate', 'Search providers, HM Land Registry, managing agents, brokers'),
-  client_any_news: red('Client "Any News?"', 'prevent', 'The client asking how it is going'),
-  agent_status_requests: red('Agent Status Requests', 'automate', 'The estate agent asking where the chain is'),
-  other_side_status_requests: red('Other Side Status Requests', 'automate', 'The other solicitor asking where we are'),
-  lender_broker_status_requests: red('Lender And Broker Status Requests', 'automate', 'The lender or broker asking how it is going'),
-  client_updates: red('Client Updates', 'automate', 'Telling the client where it is, unprompted'),
-  agent_updates: red('Agent Updates', 'automate', 'Telling the estate agent'),
-  other_side_updates: red('Other Side Updates', 'automate', 'Telling the other solicitor where we are'),
-  lender_broker_updates: red('Lender And Broker Updates', 'automate', 'Telling the lender or broker'),
-  resending_to_client: red('Resending To The Client', 'prevent', '"I can\'t find the thing to sign": documents, links or forms sent again'),
-  resending_to_others: red('Resending To Others', 'automate', 'A copy of something already sent, asked for again'),
-  first_requests_client: red('First Requests To The Client', 'automate', 'Asking for ID, forms, funds or documents the first time'),
-  first_requests_others: red('First Requests To Others', 'automate', 'Asking the other side, lender or agent for something the first time'),
+  client_chasers: red('Sending Client Chasers', 'automate', 'Asking the client again for ID, forms, funds, signed documents or a decision'),
+  other_side_chasers: red('Sending Other Side Chasers', 'automate', "Asking the other side's solicitor again for the contract pack, replies, the transfer deed or completion information"),
+  lender_chasers: red('Sending Lender Chasers', 'automate', 'Asking a lender again for a redemption statement, an offer or consent'),
+  agent_chasers: red('Sending Agent Chasers', 'automate', 'Asking the estate agent again for the memorandum of sale, buyer details or keys'),
+  third_party_chasers: red('Sending Third Party Chasers', 'delegate', 'Asking search providers, HM Land Registry, managing agents or brokers again'),
+  client_any_news: red('Answering Client Status Requests', 'prevent', 'Replying when the client asks how it is going'),
+  agent_status_requests: red('Answering Agent Status Requests', 'automate', 'Replying when the estate agent asks where the chain is'),
+  other_side_status_requests: red('Answering Other Side Status Requests', 'automate', 'Replying when the other solicitor asks where we are'),
+  lender_broker_status_requests: red('Answering Lender And Broker Status Requests', 'automate', 'Replying when the lender or broker asks how it is going'),
+  client_updates: red('Sending Proactive Client Updates', 'automate', 'Telling the client where the case is, before they ask'),
+  agent_updates: red('Sending Proactive Agent Updates', 'automate', 'Telling the estate agent where the case is, before they ask'),
+  other_side_updates: red('Sending Proactive Other Side Updates', 'automate', 'Telling the other solicitor where we are, before they ask'),
+  lender_broker_updates: red('Sending Proactive Lender And Broker Updates', 'automate', 'Telling the lender or broker where the case is, before they ask'),
+  resending_to_client: red('Resending Documents To The Client', 'prevent', '"I can\'t find the thing to sign": documents, links or forms sent again'),
+  resending_to_others: red('Resending Documents To Others', 'automate', 'A copy of something already sent, asked for again by the other side, lender or agent'),
+  first_requests_client: red('Asking The Client For Documents', 'automate', 'Asking for ID, forms, funds or documents for the first time'),
+  first_requests_others: red('Asking Others For Documents', 'automate', 'Asking the other side, lender or agent for something for the first time'),
   sending_documents_client: red('Sending Documents To The Client', 'automate', 'Signing packs, the contract to sign, the report on title'),
-  sending_documents_others: red('Sending Documents To Others', 'automate', 'To the other side, the lender or a landlord'),
-  acknowledging: red('Acknowledging', 'automate', '"Thanks, received", to anyone'),
+  sending_documents_others: red('Sending Documents To Others', 'automate', 'Documents to the other side, the lender or a landlord'),
+  acknowledging: red('Sending Acknowledgements', 'automate', '"Thanks, received", to anyone'),
   filing: red('Filing Emails And Documents', 'automate', 'Saving emails and documents to the case'),
-  recording_receipts: red('Recording Receipts', 'automate', 'Logging that something arrived'),
-  notes_and_outcomes: red('Notes And Outcomes', 'delegate', 'File notes, call notes, recording what was decided'),
+  recording_receipts: red('Recording Receipts', 'automate', 'Logging on the case that something arrived'),
+  notes_and_outcomes: red('Writing File Notes', 'delegate', 'File notes, call notes and recording what was decided'),
   opening_the_case: red('Opening The Case', 'automate', 'Setting the case up and re-keying it between systems'),
   ordering_searches: red('Ordering Searches', 'automate', 'Placing and tracking searches'),
-  land_registry_applications: red('Land Registry Applications', 'delegate', 'Filling in and submitting the application'),
-  sdlt_return: red('SDLT Return', 'delegate', 'Completing and filing the return'),
-  closing_the_file: red('Closing The File', 'automate', 'Archiving and final letters'),
-  failed_sends: red('Failed Sends', 'delegate', 'An email that bounced or had no address, sent another way'),
-  unlocking_files: red('Unlocking Files', 'delegate', 'Opening password-protected documents'),
-  client_questions: amber('Client Questions', 'delegate', 'Answering a client question about the process or their case'),
-  arranging_dates: amber('Arranging Dates And Calls', 'delegate', 'Completion dates across the chain, calls and appointments'),
-  bank_details: amber('Bank Details', 'delegate', 'Verifying bank details by phone'),
-  requesting_funds: amber('Requesting Completion Funds', 'delegate', 'The completion statement and funds request'),
-  payments: amber('Payments', 'keep', 'Authorising and returning money'),
-  checking_drafts: amber('Checking CONVEYi Drafts', 'automate', 'Reading a CONVEYi draft before it goes'),
-  difficult_emails: amber('Difficult Emails', 'delegate', 'Upset clients, hostile other sides, complaints'),
+  land_registry_applications: red('Submitting Land Registry Applications', 'delegate', 'Filling in and submitting the application, and its admin'),
+  sdlt_return: red('Filing SDLT Returns', 'delegate', 'Completing and filing the return'),
+  closing_the_file: red('Closing Files', 'automate', 'Archiving, final letters and closing the file'),
+  failed_sends: red('Resending Failed Emails', 'delegate', 'An email that bounced or had no address, sent another way'),
+  unlocking_files: red('Unlocking Protected Files', 'delegate', 'Opening password-protected documents'),
+  client_process_questions: red('Answering Client Process Questions', 'prevent', '"What happens next?", "What is a TA6?": the same answer for every client'),
+  arranging_dates: red('Arranging Completion Dates And Calls', 'delegate', 'Agreeing dates across the chain, booking calls and appointments'),
+  bank_details: red('Verifying Bank Details', 'delegate', 'Phoning to confirm bank details on a number already held: an assistant can do it'),
+  requesting_funds: red('Requesting Completion Funds', 'automate', 'The completion statement and the request for the money'),
+  checking_drafts: red('Checking CONVEYi Drafts', 'automate', 'Reading a CONVEYi draft before it goes, where CONVEYi could send it'),
+  client_legal_questions: amber('Answering Client Legal Questions', 'keep', "A legal question about the client's case: needs a conveyancer, does not move the case on"),
+  payments: amber('Authorising Payments', 'keep', 'Signing off money out of the client account'),
+  difficult_emails: amber('Handling Complaints And Difficult Emails', 'delegate', 'Upset clients, hostile other sides, complaints'),
   title_review: green('Title Review', 'The register, plan and title documents'),
-  search_review: green('Search Review', 'Search results'),
+  search_review: green('Search Review', 'Reading search results'),
   raising_enquiries: green('Raising Enquiries', 'Enquiries to the other side'),
   reviewing_replies: green('Reviewing Replies', 'Replies to enquiries'),
-  contract_and_lease_review: green('Contract And Lease Review', 'The contract, the lease, the management pack'),
+  contract_and_lease_review: green('Contract And Lease Review', 'The contract, the lease and the management pack'),
   mortgage_offer_review: green('Mortgage Offer Review', 'The offer and its conditions'),
   report_on_title: green('Report On Title', 'The report to the client'),
   id_and_source_of_funds: green('ID And Source Of Funds', 'The judgement on ID, AML and where the money comes from'),
-  advising: green('Advising The Client', "Advice, the client's instructions and decisions"),
+  advising: green('Advising The Client', "Advice that moves the case: the client's instructions and decisions"),
   negotiating: green('Negotiating', 'Points with the other side'),
   resolving_issues: green('Resolving Issues', 'An issue on the case: a death, a defect, a dispute'),
   drafting: green('Drafting', 'Drafting a legal document'),
@@ -92,7 +96,7 @@ export const EPA_SPEC: Record<EpaKind, Spec> = {
 export const LEGACY_KINDS: Record<string, EpaKind> = {
   chasing: 'client_chasers', being_chased: 'other_side_status_requests', status_updates: 'client_updates', any_news: 'client_any_news',
   requesting: 'first_requests_client', sending_documents: 'sending_documents_client', admin: 'filing', scheduling: 'arranging_dates',
-  legal_review: 'title_review', exchange_completion: 'exchange',
+  legal_review: 'title_review', exchange_completion: 'exchange', client_questions: 'client_legal_questions',
 };
 export const asKind = (k: string | null | undefined): EpaKind => ((EPA_KINDS as readonly string[]).includes(k ?? '') ? (k as EpaKind) : LEGACY_KINDS[k ?? ''] ?? 'not_counted');
 
@@ -140,13 +144,14 @@ export function fromEmail(category: string | null | undefined, roles?: readonly 
     case 'file_send': return byParty('send', p);
     case 'acknowledgement': return 'acknowledging';
     case 'scheduling': return 'arranging_dates';
-    case 'client_question': return 'client_questions';
+    // The scan cannot yet tell a legal question from a status or process one: counted as legal, so the figure errs kind.
+    case 'client_question': return 'client_legal_questions';
     case 'legal_work': return 'legal_correspondence';
     // Received: the cause, not the time; read only for the measurement phase's counts.
     case 'update_request': return byParty('answer', p);
     case 'chaser_received': return p === 'client' ? 'client_any_news' : byParty('answer', p);
     case 'document_delivery': return 'filing';
-    case 'question': return 'client_questions';
+    case 'question': return 'client_legal_questions';
     case 'instruction': return 'advising';
     case 'enquiry': return 'reviewing_replies';
     default: return 'not_counted';
@@ -188,7 +193,7 @@ export function fromTask(item: { kind: string | null; chip?: string | null }): E
   }
   if (kind === 'auto_clear') return { kind: 'checking_drafts', of: null, action: 'auto_clear' };
   if (kind === 'note_actions:ack') return { kind: 'acknowledging' };
-  if (kind === 'note_actions:email') return { kind: 'client_questions' };
+  if (kind === 'note_actions:email') return { kind: 'client_legal_questions' };
   if (kind === 'note_actions') return { kind: 'notes_and_outcomes' };
   if (kind === 'bank_details') return { kind: 'bank_details' };
   if (kind === 'linked_case') return { kind: 'not_counted' };

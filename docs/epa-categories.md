@@ -1,78 +1,65 @@
 # What the time is spent on: the categories
 
-Built in `lib/server/epa/taxonomy.ts` (the questions at the end are still open). These labels are what the measurement phase reports at onboarding (from the conveyancer's inbox and InTouch) and what Analytics → Time shows every week, so they are the same list in both places.
+Built in `lib/server/epa/taxonomy.ts`. These labels are what the measurement phase reports at onboarding and what Analytics → Time shows every week: the same list in both places.
+
+## Red, amber, green
+
+- **Green:** only a conveyancer can do it, and it moves the case on.
+- **Amber:** probably needs a conveyancer, but does not move the case on. A week of only amber leaves the north star where it was.
+- **Red:** time wasted. Neither needs a conveyancer nor moves the case on.
 
 ## Rules for a category
 
-1. **Named as the work, by who it is with.** "Lender Chasers", not "Requests". Someone reading the label knows what was done and to whom.
-2. **One obvious remedy each.** Automate it (a CONVEYi action set to Send), delegate it (an assistant), prevent it (fix what causes it), or keep it (the conveyancer's own work). If two remedies apply, it is two categories.
-3. **The same label from every source.** A chaser is "Lender Chasers" whether it was an email in Sent Items, a CONVEYi proposal approved on the Tasks list, or an InTouch task ticked.
-4. **A bar is a category.** What was chased (the redemption statement, the offer) is the drill-down under the bar, not a bar of its own.
+1. **Named as the work done:** what was done ("Sending", "Answering"), to or for whom, and whether it was proactive or in reply. "Sending Proactive Client Updates" and "Answering Client Status Requests" are different work with different fixes.
+2. **One obvious remedy each:** automate (a CONVEYi action set to Send), delegate (an assistant), prevent (stop it happening), or keep (make it faster).
+3. **The same label from every source:** an email in Sent Items, a CONVEYi proposal approved on the Tasks list, an InTouch task ticked.
+4. **Never a catch-all.** No "Admin", "Requests" or "Other". A chip the list does not know is not counted rather than guessed.
 
 ## The list
 
-### Red: needs no conveyancer
+The description of each is its tooltip on the page.
 
-| Category | What it is | Remedy | Task chips it covers |
-| --- | --- | --- | --- |
-| **Client Chasers** | Asking the client again for something they owe: ID, forms, funds, signed documents, a decision | Automate | Chase The Client; client chase proposals |
-| **Other Side Chasers** | Asking the other side's solicitor again: contract pack, replies, transfer deed, completion information | Automate | Chase The Seller's Side; Seller's Solicitor Chaser |
-| **Lender Chasers** | Redemption statements, offers, lender consent | Automate | Lender Chaser, Letter To The Lender |
-| **Agent Chasers** | Memorandum of sale, buyer details, keys | Automate | |
-| **Third Party Chasers** | Search providers, HM Land Registry, managing agents, brokers | Delegate (portal or phone) | Chase The Third Party |
-| **Client "Any News?"** | The client asking how it is going | Prevent (portal) / Automate | |
-| **Agent Status Requests** | The estate agent asking where the chain is | Automate | |
-| **Other Side Status Requests** | The other solicitor asking where we are, or chasing us for something we owe | Automate (status) / Delegate | |
-| **Broker And Lender Status Requests** | The broker or lender asking how it is going | Automate | |
-| **Client Updates** | Telling the client where it is, unprompted (milestones) | Automate | Client Update |
-| **Agent Updates** | Telling the agent | Automate | Agent Update, Letter To The Agent |
-| **Other Side Updates** | Telling the other solicitor where we are | Automate | Other Side Update, Letter To The Other Side |
-| **Lender And Broker Updates** | Telling the lender or broker | Automate | |
-| **Resending To The Client** | "I can't find the thing to sign, can you send it again?", lost links, forms sent twice | Prevent (portal, secure links) / Automate | |
-| **Resending To Others** | The other side or lender asking for a copy of something already sent | Automate | |
-| **First Requests To The Client** | Asking for ID, forms, funds or documents the first time | Automate | Client Request |
-| **First Requests To Others** | Asking the other side, lender or agent for something the first time | Automate | Request proposals (contract pack, redemption) |
-| **Sending Documents To The Client** | Signing packs, the contract to sign, the report on title | Automate | Send Client Documents |
-| **Sending Documents To Others** | To the other side, the lender, a landlord | Automate | Send Buyer's/Seller's Solicitor Documents, Send Lender Documents, Send Landlord Documents |
-| **Acknowledging** | "Thanks, received", to anyone | Automate | Client / Seller's Solicitor Acknowledgement |
-| **Filing Emails And Documents** | Saving emails and documents to the case (InTouch at an InTouch firm) | Automate | Upload Documents |
-| **Recording Receipts** | Logging that something arrived | Automate | Record Receipt |
-| **Notes And Outcomes** | File notes, call notes, recording what was decided | Delegate | Record Outcome |
-| **Opening The Case** | Setting the case up, entering details, re-keying between systems | Automate (InTouch mirror) | |
-| **Ordering Searches** | Placing and tracking searches | Automate | Search Order, Run Search |
-| **Land Registry Applications** | Filling in and submitting the application, answering requisitions' admin | Delegate | Submit Application, HMLR Requisition |
-| **SDLT Return** | Completing and filing the return | Delegate | File Return |
-| **Closing The File** | Archiving, final letters, file closure | Automate | Close File, Close Case |
-| **Failed Sends** | An email that bounced or had no address, sent another way | Delegate | Unsuccessful Send |
-| **Unlocking Files** | Opening password-protected documents | Delegate | Unlock File |
+**Red**
+- Sending Client Chasers · Sending Other Side Chasers · Sending Lender Chasers · Sending Agent Chasers · Sending Third Party Chasers
+- Answering Client Status Requests · Answering Agent Status Requests · Answering Other Side Status Requests · Answering Lender And Broker Status Requests
+- Sending Proactive Client Updates · Sending Proactive Agent Updates · Sending Proactive Other Side Updates · Sending Proactive Lender And Broker Updates
+- Resending Documents To The Client · Resending Documents To Others
+- Asking The Client For Documents · Asking Others For Documents
+- Sending Documents To The Client · Sending Documents To Others · Sending Acknowledgements
+- Filing Emails And Documents · Recording Receipts · Writing File Notes · Opening The Case · Ordering Searches · Submitting Land Registry Applications · Filing SDLT Returns · Closing Files · Resending Failed Emails · Unlocking Protected Files
+- Answering Client Process Questions · Arranging Completion Dates And Calls · Verifying Bank Details · Requesting Completion Funds · Checking CONVEYi Drafts
 
-### Amber: needs an eye, not the conveyancer's time
+**Amber**
+- Answering Client Legal Questions · Authorising Payments · Handling Complaints And Difficult Emails
 
-| Category | What it is | Remedy | Task chips it covers |
-| --- | --- | --- | --- |
-| **Client Questions** | A question about the process or their case. To split into process questions (the same answer for every client) and case questions once the classifier can tell them apart | Delegate | |
-| **Arranging Dates And Calls** | Completion dates across the chain, calls and appointments. To split once the classifier can tell them apart | Delegate | |
-| **Bank Details** | Verifying bank details by phone | Delegate (never automated) | Verify Details |
-| **Requesting Completion Funds** | The completion statement and funds request | Delegate | Request Funds |
-| **Payments** | Authorising and returning money | Keep (sign-off) / Delegate (preparation) | Authorise Payment, Return Money |
-| **Checking CONVEYi Drafts** | Reading a CONVEYi draft before it goes, by kind of draft | Automate (set that kind to Send) | every proposal |
-| **Difficult Emails** | Upset clients, hostile other sides, complaints | Delegate (neutral summary, calm draft) | |
-
-### Green: only a conveyancer
-
-Title Review · Search Review · Raising Enquiries · Reviewing Replies · Contract And Lease Review · Mortgage Offer Review · Report On Title · ID And Source Of Funds · Advising The Client · Negotiating · Resolving Issues · Drafting · Legal Correspondence (an email that is legal work, where the scan cannot say which) · Exchange · Completion.
-
-These are not on the Pareto but show in This Week's green, and are what stage 2 shortens.
+**Green**
+- Title Review · Search Review · Raising Enquiries · Reviewing Replies · Contract And Lease Review · Mortgage Offer Review · Report On Title · ID And Source Of Funds · Advising The Client · Negotiating · Resolving Issues · Drafting · Legal Correspondence · Exchange · Completion
 
 ## How each source is read
 
-- **Tasks in CONVEYi:** from the chip, the task's kind and what a proposal would send (who it is to, what it asks for). Deterministic. A chip the list does not know is not counted, never guessed.
-- **Sent emails (the inbox scan, and every email sent once live):** classified into the list above from who it went to (their role on the case: built), whether the thread already asked for the same thing (a chaser, not a first request), whether it answers an inbound "any news?" (then it is that category), and its words (built, through the scan's categories); and whether it carries a document already sent (a resend: not yet, so resends are counted as sending until the classifier learns it). A reply takes the category of what it answers.
-- **Received emails:** classified the same way. They are the cause, not the time: the time is the reply.
-- **InTouch:** its completed tasks are mapped once, at onboarding, from the firm's own template task names to these categories. Its filed emails and documents count towards Filing To InTouch. InTouch records no time, so the time comes from the person's mailbox and CONVEYi.
+- **Tasks in CONVEYi:** from the chip, the task's kind and what a proposal would send (to whom, asking for what). Deterministic.
+- **Sent email:** the scan's category plus the recipient's role on the case gives the label: a chaser to a lender is Sending Lender Chasers; a reply to "any news?" from an agent is Answering Agent Status Requests; an unprompted update is proactive.
+- **Received email** is the cause, not the time: the time is the reply, which takes the category of what it answers.
+- **InTouch:** filed emails and documents count towards Filing; its completed tasks map once, at onboarding, from the firm's own task names. InTouch records no time.
 
-## Questions before building
+## The measurement phase (onboarding)
 
-1. Is a bar "who × what kind of work" (Lender Chasers), with what was chased underneath, the right depth? Or should the bar go one deeper ("Lender Chasers · Redemption Statements")?
-2. Do Phil's conveyancers file to InTouch and record receipts by hand today? If InTouch's own Exchange filing already does it, Filing To InTouch drops out.
-3. Anything missing that you see them lose hours to?
+The pitch: plug in the mailbox and InTouch, and within the hour it says where the week goes and what share of it moves cases on.
+
+**What it measures, and how firmly:**
+
+| Figure | From | How firm |
+| --- | --- | --- |
+| Hours a week per red and amber category sent by email | Sent Items over 13 weeks: each email's category and recipient role, minutes from Outlook's draft-to-send timing where it has one, else the conveyancer's own estimate | Firm: counted, and checked by the conveyancer on a random sample (built) |
+| What causes them | The Inbox: status requests, chasers received, documents delivered | Counted |
+| Filing | InTouch's folder: emails and documents filed per week | Counted; minutes each estimated |
+| Cases per conveyancer | InTouch's matter list by fee earner | Counted |
+| Green | Not visible in email or InTouch: reading a title or a search leaves no trace | **The rest of the contracted week**, so the share is shown as "at most" |
+
+So the headline is "**at most** 25% of your week moves cases on": an upper bound, which errs in the firm's favour and still lands, because the red is measured, not estimated.
+
+**What it needs before it can say that, not built yet:**
+1. **The classifier learns the new categories it cannot tell yet:** client process questions from legal ones (today all are counted as legal, amber, the kind side), and resends from first sends (today counted as sending).
+2. **The scan report uses this page's layout:** the stacked bar, the Pareto and the actions, for "your typical week", instead of the separate Baseline page.
+3. **InTouch's folder and matter list read for the counts above.** Field names to confirm on a live account (docs/intouch-integration.md, "Still to confirm").
+4. **Green as the remainder of the contracted week,** labelled "at most".
