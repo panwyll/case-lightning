@@ -9,20 +9,32 @@ import { archiveHandled } from './archive';
 import { emitMatterEvent } from '../events';
 import { describeFiling, fileEmailAttachments, fileEmailBodyAsDocument, indexEmailBodyToMatter } from '../files';
 import { markMatterDraftsStale } from '../worklist';
-import { queryOne } from '../db';
+import { query, queryOne } from '../db';
 
 /**
  * Claim an email for filing: true for the first caller only. A repeated notification and the inbox
  * sweep can reach the same message at the same moment; only one files it. Before migration 110 the
  * claim cannot be recorded, and filing goes ahead as it always did.
  */
-export async function claimFiling(tenantId: string, messageId: string, matterId: string | null): Promise<boolean> {
+export async function claimFiling(tenantId: string, messageId: string, matterId: string | null, by: { userId?: string | null; subject?: string | null } = {}): Promise<boolean> {
   try {
-    const row = await queryOne<{ graph_message_id: string }>(`insert into mail_filing_claim (tenant_id, graph_message_id, matter_id) values ($1, $2, $3) on conflict do nothing returning graph_message_id`, [tenantId, messageId, matterId]);
+    // Who filed it and what it was, for the Tasks list's Pending (migration 131); before it, the claim alone.
+    const row = await queryOne<{ graph_message_id: string }>(
+      `insert into mail_filing_claim (tenant_id, graph_message_id, matter_id, filed_by, subject) values ($1, $2, $3, $4, $5) on conflict do nothing returning graph_message_id`,
+      [tenantId, messageId, matterId, by.userId ?? null, by.subject ? String(by.subject).slice(0, 300) : null]
+    ).catch((e: { code?: string }) => {
+      if (e?.code !== '42703') throw e;
+      return queryOne<{ graph_message_id: string }>(`insert into mail_filing_claim (tenant_id, graph_message_id, matter_id) values ($1, $2, $3) on conflict do nothing returning graph_message_id`, [tenantId, messageId, matterId]);
+    });
     return !!row;
   } catch {
     return true;
   }
+}
+
+/** The filing's reading is done: Pending on the Tasks list shows the task it made, or "No Action Required". */
+export async function finishFiling(tenantId: string, messageId: string): Promise<void> {
+  await query(`update mail_filing_claim set finished_at = now() where tenant_id = $1 and graph_message_id = $2 and finished_at is null`, [tenantId, messageId]).catch(() => {});
 }
 import type { SessionUser } from '../types';
 
@@ -52,4 +64,5 @@ export async function autoFileToCase(user: SessionUser, message: any, matterId: 
   // New information can overtake a reply sitting in Drafts: flag those (this conversation's own draft is reconsidered anyway).
   const fromWho = message.from?.emailAddress?.name || message.from?.emailAddress?.address || 'someone';
   await markMatterDraftsStale(user.tenantId, matterId, `New email from ${fromWho}${message.subject ? ` — “${String(message.subject).slice(0, 60)}”` : ''}`, `thread:${message.conversationId ?? ''}`).catch(() => 0);
+  await finishFiling(user.tenantId, messageId);
 }

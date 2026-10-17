@@ -15,7 +15,7 @@ import { paths } from '@/lib/paths';
 import { useAttention } from '@/app/shared/epa/useAttention';
 import { fromTask } from '@/lib/server/epa/taxonomy';
 import { SEVERITY_LABEL } from '@/app/shared/engine/severity';
-import { ChevronRight, CheckCircle, Search, X } from '@/app/shared/icons';
+import { ChevronRight, CheckCircle, Loader, Search, X } from '@/app/shared/icons';
 import { Waiting, WORK_CSS } from './EngineWork';
 
 /**
@@ -45,6 +45,16 @@ const CSS = `
 .tl-q svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#94a3b8}
 .tl-q input{width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:8px;padding:6px 10px 6px 32px;font-size:12.5px;font-family:inherit}
 .tl-q input:focus{outline:2px solid #c4b5fd;border-color:#8b5cf6}
+.tl-pend{display:flex;align-items:center;gap:10px;padding:8px 14px 8px 40px;font-size:13px;color:#475569;border-top:1px solid #eceef3}
+.tl-pend .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.tl-pend .m{font-size:12px;font-weight:700;color:#5A27E0;white-space:nowrap}
+.tl-pend.done,.tl-pend.done .m{color:#15803d}
+.tl-pend svg.tl-spin{animation:tl-spin 1s linear infinite;color:#5A27E0}
+@keyframes tl-spin{to{transform:rotate(360deg)}}
+.tl-pending{background:#fff;border:1px solid #e2dcf5;border-radius:12px;margin:12px 0}
+.tl-pending h3{margin:0;padding:8px 14px;font-size:13px;font-weight:800;color:#0f172a;background:#f3f0fb;border-radius:12px 12px 0 0}
+.tl-pending .tl-pend{padding-left:14px}
+.tl-pending .tl-pend:first-of-type{border-top:0}
 .tl-groups{background:#fff;border:1px solid #e2dcf5;border-radius:12px;margin-bottom:12px}
 .tl-group:first-child .tl-case{border-radius:12px 12px 0 0}
 .tl-case .qa{flex:none;position:relative;margin-left:8px}
@@ -271,6 +281,8 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
   }, [data, matches, sort, now, done]);
 
   // Grouped by case, in the order the sort puts their first task.
+  // Emails filed and still being read: under their case if it is listed, else in Pending (below Waiting).
+  const pending = usePending(() => void load());
   const groups = useMemo(() => {
     const m = new Map<string, { matterId: string; address: string; ref: string | null; clients: string[]; band: string; items: WorkItem[] }>();
     for (const i of tasks) {
@@ -303,6 +315,7 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
             {g.clients.length > 0 && <span className="who">{g.clients.join(' & ')}</span>}
             <span className="qa" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}><CaseQuickActions api={api} matterId={g.matterId} lazy onChanged={() => void load()} /></span>
           </div>
+          {!folded.has(g.matterId) && pending.filter((p) => p.matterId === g.matterId).map((p) => <PendingRow key={p.messageId} i={p} />)}
           {!folded.has(g.matterId) && g.items.map((i) => {
             const isDecision = i.ref?.type === 'decision';
             const isStep = i.ref?.type === 'step';
@@ -396,6 +409,11 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
       ))}
       </div>}
       {data.waiting.length > 0 && <Waiting items={data.waiting.filter(matches)} total={data.waiting.length} onChanged={() => void load()} />}
+      {(() => {
+        const listed = new Set(groups.map((g) => g.matterId));
+        const rest = pending.filter((p) => !p.matterId || !listed.has(p.matterId));
+        return rest.length > 0 && <div className="tl-pending"><h3>Pending</h3>{rest.map((p) => <PendingRow key={p.messageId} i={p} withCase />)}</div>;
+      })()}
       {dismissed.length > 0 && (
         <div className="tl-dis">
           <button type="button" onClick={() => setShowDismissed((v) => !v)} aria-expanded={showDismissed}><ChevronRight size={16} style={{ transform: showDismissed ? 'rotate(90deg)' : undefined }} />Deleted<span className="n">{dismissedShown.length !== dismissed.length ? `${dismissedShown.length} of ${dismissed.length}` : dismissed.length}</span></button>
@@ -415,6 +433,54 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+type PendingItem = { messageId: string; matterId: string | null; subject: string | null; address: string | null; ref: string | null; claimedAt: string; state: 'processing' | 'task' | 'no_action' };
+
+/**
+ * Emails you filed whose reading is still running in the background: shown as processing so nothing looks lost, then the
+ * task it made (the list reloads) or "No Action Required" for a moment. Asks only while something is processing.
+ */
+function usePending(onTask: () => void) {
+  const [items, setItems] = useState<PendingItem[]>([]);
+  const seen = useRef<Map<string, PendingItem['state']>>(new Map());
+  const [shown, setShown] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      const r = await api<{ items: PendingItem[] }>('/mail/pending').catch(() => ({ items: [] as PendingItem[] }));
+      if (!live) return;
+      let reload = false;
+      for (const i of r.items) {
+        const was = seen.current.get(i.messageId);
+        if (i.state === 'task' && was !== 'task') reload = true;
+        // "No Action Required" stays a moment, then goes.
+        if (i.state === 'no_action' && was !== 'no_action') {
+          setShown((x) => new Set(x).add(i.messageId));
+          setTimeout(() => { if (live) setShown((x) => { const n = new Set(x); n.delete(i.messageId); return n; }); }, 3000);
+        }
+        seen.current.set(i.messageId, i.state);
+      }
+      setItems(r.items);
+      if (reload) onTask();
+      if (r.items.some((i) => i.state === 'processing')) timer = setTimeout(() => void tick(), 4000);
+    };
+    void tick();
+    return () => { live = false; if (timer) clearTimeout(timer); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return items.filter((i) => i.state === 'processing' || (i.state === 'no_action' && shown.has(i.messageId)));
+}
+
+function PendingRow({ i, withCase }: { i: PendingItem; withCase?: boolean }) {
+  const done = i.state === 'no_action';
+  return (
+    <div className={`tl-pend${done ? ' done' : ''}`}>
+      {done ? <CheckCircle size={16} /> : <Loader size={16} className="tl-spin" />}
+      <span className="t">{withCase && (i.address || i.ref) ? <b>{i.address || i.ref} · </b> : null}{i.subject?.trim() || 'Email'}</span>
+      <span className="m">{done ? 'No Action Required' : 'Processing'}</span>
     </div>
   );
 }

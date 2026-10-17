@@ -26,6 +26,8 @@
 - **An email is a conversation**: its source pane shows the thread as chat bubbles (ours right, theirs left, attachments as chips, quoted history recovered); clicking one opens the usual From / To / Cc / Date / Subject view (`EmailThread.tsx`, `email-thread.ts`).
 - **Checked at realistic widths** (1280–1400 desktop, narrow panel) on `/dev/harness` before shipping.
 
+- **Filed email shows as Pending until it is read** (`TaskList.tsx usePending`, `/api/v1/mail/pending`, migration 131). An email someone files is read in the background; until that is done it is a Processing row under its case (or in a Pending box below Waiting, above Deleted, when the case has no tasks listed). When it makes a task the list reloads and the task is there; when it needs nothing the row says No Action Required for three seconds and goes. The list asks only while something is processing.
+
 ## Client portal
 
 `/portal/<token>` (migration 121, `lib/server/client-portal.ts`, `engine/client-portal.ts`).

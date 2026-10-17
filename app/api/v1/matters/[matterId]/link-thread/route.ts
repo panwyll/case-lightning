@@ -117,8 +117,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     if (messageId) {
       after(async () => {
         // Filed by hand: recorded, so the sweep or a late notification does not file it again.
-        const { claimFiling } = await import('@/lib/server/mail/auto-file');
-        await claimFiling(user.tenantId, messageId, matterId);
+        const { claimFiling, finishFiling } = await import('@/lib/server/mail/auto-file');
+        await claimFiling(user.tenantId, messageId, matterId, { userId: user.userId, subject });
         let attachments: { saved: number; files: Array<{ name: string; outcome: string; as: string | null; reason: string | null }> } = { saved: 0, files: [] };
         let email: { outcome: string; as: string | null; reason: string | null; proposals?: number } | null = null;
         const problems: string[] = [];
@@ -151,6 +151,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
         }).catch((e) => console.error('[link-thread] could not log the filing', (e as Error).message));
         // Read and filed: now the conversation leaves the inbox, so Outlook matches the Email tab.
         await archiveHandled(user.tenantId, owner.userId, conversationId, matterId);
+        await finishFiling(user.tenantId, messageId);
       });
     } else {
       after(() => archiveHandled(user.tenantId, owner.userId, conversationId, matterId).then(() => {}));
