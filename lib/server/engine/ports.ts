@@ -247,6 +247,8 @@ export interface EnginePorts {
    * order or ask the client a second time. Absent or null: we order as usual.
    */
   orderedIn?: (tenantId: string, matterId: string) => Promise<{ searches: boolean; idChecks: boolean } | null>;
+  /** Create the case in the firm's own case system again (Try Again on "Case not created in …"): integrations/case-system.ts. */
+  caseSystem?: { create(tenantId: string, matterId: string): Promise<void> };
   /** Runs a write a person's own decision causes (the approved report going out) on the app role, outside an automation block; identity where there is no database. */
   asApprover?: <T>(fn: () => Promise<T>) => Promise<T>;
   /** Enrolment fires the ID / AML check and the proof-of-funds form unasked (subject to trust levels). Default on; flow fixtures turn it off to drive each step by hand. */

@@ -6,6 +6,7 @@ import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { fmtWhen } from '@/app/shared/engine/types';
 import { ArrowLeft, Check } from '@/app/shared/icons';
 import { TaskMapping } from './TaskMapping';
+import { CreateCases } from './CreateCases';
 
 /**
  * InTouch — connection status, what it has brought in, and the one switch that matters:
@@ -29,6 +30,7 @@ interface Status {
     milestonesEnabled: boolean;
     documentsWriteback?: boolean;
     emailsWriteback?: boolean;
+    createMarkers?: Record<string, unknown>;
     tasksWriteback?: boolean;
     notesWriteback?: boolean;
   } | null;
@@ -193,6 +195,11 @@ export default function InTouchPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div className="eg-card" style={{ padding: 14, marginBottom: 12 }}>
+                <b>Create Cases In InTouch</b>
+                <CreateCases markers={(c!.createMarkers ?? {}) as never} canManage={!!s.canManage} />
               </div>
 
               {c!.tasksWriteback && (

@@ -239,4 +239,6 @@ The rules are the same as for milestones:
 - the upload goes to `POST /matters/{guid}/files` labelled `CONVEYi` (multipart; see "Still to confirm");
 - the note goes to `POST /matters/{guid}/folder/notes` as `{ htmlContent, label1: "CONVEYi" }`.
 
+**Cases opened in CONVEYi are created in InTouch** (`integrations/case-system.ts`, the generic case-system interface; `intouch/case-system.ts`, migration 133). New Case, with InTouch connected and **Create Cases In InTouch** filled in, creates the InTouch matter (`POST /api/v2/public/matters`, `{ data: { <data marker>: value } }`) and stores its id on the case, so it is an ordinary mirrored case from then on. Which marker takes each field is the firm's own InTouch set-up: off until the reference, client name and address markers are set. Our reference goes in as the firm's reference, so a sync that sees the new matter first still links it rather than making a second case. A failure is a task, "Case not created in InTouch", with Try Again. Cases that came from InTouch, or were found under way in the mailbox, are never created again; sandbox cases never reach InTouch.
+
 Task names differ by firm: the defaults read them by their words (`TASK_STEPS[].words`); check Task Mapping against the firm's workflow at the pilot's start.

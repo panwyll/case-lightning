@@ -212,6 +212,7 @@ export function productionPorts(): EnginePorts {
       idCheckProvider,
       // Loaded when asked: the InTouch adapters import the engine.
       orderedIn: async (tenantId: string, matterId: string) => (await import('../integrations/intouch/adapters')).inTouchOrdering(tenantId, matterId),
+      caseSystem: { create: async (tenantId: string, matterId: string) => { await (await import('../integrations/case-system')).createInCaseSystem(tenantId, matterId, { retry: true }); } },
       clientComms,
       clientReminderHours: (tenantId: string) => getPolicy(tenantId, 'clientReminderHours'),
       chaser,

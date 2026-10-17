@@ -143,6 +143,8 @@ export interface InTouchConnectionRow {
   emailsWriteback?: boolean;
   tasksWriteback?: boolean;
   taskMap?: Record<string, string>;
+  /** Which of the firm's data markers takes each field of a case created in InTouch (intouch/case-system.ts). */
+  createMarkers?: Record<string, unknown>;
 }
 
 export interface InTouchSyncSummary {

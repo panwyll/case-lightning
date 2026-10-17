@@ -2369,6 +2369,11 @@ export class EngineService {
     const s = await this.getState(tenantId, matterId);
     const i = s.issues[issueId];
     if (!i || i.kind !== 'send_failed' || (i.status !== 'open' && i.status !== 'negotiating')) throw Object.assign(new Error('There is no failed send to try again here.'), { status: 409 });
+    // A case the firm's own case system did not create: try creating it again.
+    if (/\[case-system:[a-z]+\]/.test(i.detail ?? '') && this.ports.caseSystem) {
+      await this.ports.caseSystem.create(tenantId, matterId);
+      return this.run(tenantId, matterId, { type: 'resolve_issue', actor: userId, issueId, resolution: 'other', note: 'Created on retry.' });
+    }
     const proposal = (i.detail ?? '').match(/\[proposal:([0-9a-f-]{36})\]/)?.[1];
     if (proposal && s.proposals[proposal]?.status === 'failed') return this.retryFailedAction(tenantId, matterId, proposal, userId);
     const packed = (i.detail ?? '').match(/\[retry:([A-Za-z0-9_-]+)\]/)?.[1];

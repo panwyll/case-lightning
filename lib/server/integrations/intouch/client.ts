@@ -45,6 +45,8 @@ export interface InTouchApi {
   fileEmail(caseId: string, email: { at: string; subject: string; text: string; from?: { email: string; name?: string | null } | null; to?: Array<{ email: string; name?: string | null }> }): Promise<{ id: string | null }>;
   /** Tick off one of the matter's tasks (write-back: a step done in CONVEYi). */
   completeTask(taskId: string): Promise<void>;
+  /** Create (or update) a matter by the firm's data markers: { matterGuid, matterLink }. */
+  saveMatter(data: Record<string, string>): Promise<{ matterGuid: string | null; matterLink: string | null }>;
 }
 
 export interface InTouchClientConfig {
@@ -300,6 +302,13 @@ export class InTouchHttpClient implements InTouchApi {
 
   async addNote(caseId: string, text: string): Promise<void> {
     await this.request<unknown>('POST', INTOUCH_ENDPOINTS.fileNote(caseId), { htmlContent: toHtml(text).slice(0, 100_000), label1: 'CONVEYi' });
+  }
+
+  async saveMatter(data: Record<string, string>): Promise<{ matterGuid: string | null; matterLink: string | null }> {
+    const r = await this.request<unknown>('POST', INTOUCH_ENDPOINTS.saveMatter, { data });
+    const g = pick(r, ['matterGuid']);
+    const l = pick(r, ['matterLink']);
+    return { matterGuid: typeof g === 'string' ? g : null, matterLink: typeof l === 'string' ? l : null };
   }
 
   async completeTask(taskId: string): Promise<void> {

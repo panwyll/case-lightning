@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { outOfJurisdiction } from '@/lib/server/engine/jurisdiction';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { z } from 'zod';
@@ -121,6 +121,8 @@ export async function POST(req: NextRequest) {
         [user.tenantId, created.id, c.email.toLowerCase(), c.name, c.role, c.phone]
       ).catch(() => {});
     }
+    // Opened here, so opened in the firm's own case system too (InTouch, where connected and set up), after the response.
+    after(async () => { const { createInCaseSystem } = await import('@/lib/server/integrations/case-system'); await createInCaseSystem(user.tenantId, created.id).catch((e) => console.warn('[case-system] create failed', (e as Error).message)); });
     // The client's chain, linked at setup: both cases, both ways (the case was enrolled as it was created).
     let linkError: string | null = null;
     if (body.linkedMatterId) {

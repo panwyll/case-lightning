@@ -131,11 +131,12 @@ export async function inTouchOrdering(tenantId: string, matterId: string): Promi
 }
 
 export async function inTouchConnection(tenantId: string): Promise<InTouchConnectionRow | null> {
-  type Row = { tenant_id: string; account_id: string | null; account_name: string | null; status: InTouchConnectionRow['status']; status_detail: string | null; last_sync_at: Date | null; last_sync_detail: InTouchSyncSummary | null; connected_at: Date | null; milestones_enabled: boolean; documents_writeback?: boolean; notes_writeback?: boolean; emails_writeback?: boolean; tasks_writeback?: boolean; task_map?: Record<string, string> | null };
+  type Row = { tenant_id: string; account_id: string | null; account_name: string | null; status: InTouchConnectionRow['status']; status_detail: string | null; last_sync_at: Date | null; last_sync_detail: InTouchSyncSummary | null; connected_at: Date | null; milestones_enabled: boolean; documents_writeback?: boolean; notes_writeback?: boolean; emails_writeback?: boolean; tasks_writeback?: boolean; task_map?: Record<string, string> | null; create_markers?: Record<string, unknown> | null };
   const cols = 'tenant_id, account_id, account_name, status, status_detail, last_sync_at, last_sync_detail, connected_at, milestones_enabled';
   // Before migration 119 the write-back columns do not exist yet: read without them rather than fail the page.
   // Before migration 132 the email and task columns do not exist: read the older ones (and before 119, none).
-  const r = await queryOne<Row>(`select ${cols}, documents_writeback, notes_writeback, emails_writeback, tasks_writeback, task_map from intouch_connection where tenant_id = $1`, [tenantId])
+  const r = await queryOne<Row>(`select ${cols}, documents_writeback, notes_writeback, emails_writeback, tasks_writeback, task_map, create_markers from intouch_connection where tenant_id = $1`, [tenantId])
+    .catch((err: { code?: string }) => (err?.code === '42703' ? queryOne<Row>(`select ${cols}, documents_writeback, notes_writeback, emails_writeback, tasks_writeback, task_map from intouch_connection where tenant_id = $1`, [tenantId]) : Promise.reject(err)))
     .catch((err: { code?: string }) => (err?.code === '42703' ? queryOne<Row>(`select ${cols}, documents_writeback, notes_writeback from intouch_connection where tenant_id = $1`, [tenantId]) : Promise.reject(err)))
     .catch((err: { code?: string }) => (err?.code === '42703' ? queryOne<Row>(`select ${cols} from intouch_connection where tenant_id = $1`, [tenantId]) : Promise.reject(err)));
   if (!r) return null;
@@ -158,6 +159,7 @@ export async function inTouchConnection(tenantId: string): Promise<InTouchConnec
     emailsWriteback: !!r.emails_writeback,
     tasksWriteback: !!r.tasks_writeback,
     taskMap: r.task_map ?? {},
+    createMarkers: r.create_markers ?? {},
   };
 }
 
