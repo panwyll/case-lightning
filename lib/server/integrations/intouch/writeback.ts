@@ -1,19 +1,25 @@
 /**
  * CONVEYi → InTouch: write-back, so InTouch stays the firm's system of record (docs/intouch-integration.md
- * "Writing back"). Two things, each off until the firm turns it on:
+ * "Writing back"). Four things, each off until the firm turns it on:
  *
  *   - documents: what CONVEYi files on a mirrored case (letters it generated, the proof-of-funds
  *     declaration, emails filed, the client's uploads to our forms) is filed on the InTouch case.
  *     Never drafts, internal working papers or raw bank data. A document uploaded is stamped with
  *     InTouch's id for it, so the next sync recognises it and never mirrors it back;
  *   - notes: one line on the InTouch case for each significant thing the engine records (stage
- *     moves, searches ordered, chases, client updates, enquiries, issues, exchange, completion).
+ *     moves, searches ordered, chases, client updates, enquiries, issues, exchange, completion);
+ *   - emails: every email CONVEYi sent on the case (chases, updates, replies, acknowledgements) filed in the InTouch
+ *     case's correspondence as it went, so nobody files it by hand;
+ *   - tasks: a step done in CONVEYi completes the firm's matching InTouch task (task-steps.ts: the firm's mapping, else
+ *     the task whose name reads as the step), so nobody ticks it off twice.
  *
  * Same rules as milestones: only for a matter the engine runs, never in shadow mode; once per
  * document and per event (keyed in intouch_applied); a failure is retried by the next sync.
  */
 import { NOTE_TYPES } from '../leap/writeback';
 import type { InTouchApi } from './client';
+import type { InTouchTask } from './types';
+import { stepOf, taskForStep, TASK_EVENT_TYPES } from './task-steps';
 import type { EngineEvent, MatterState } from '../../engine/types';
 
 /** What InTouch is never sent: drafts, internal working papers, raw bank data. */
@@ -25,24 +31,27 @@ export const INTOUCH_NOTE: Record<string, (p: Record<string, unknown>) => string
   issue_raised: (p) => `Issue raised: ${String(p.title ?? '').replace(/\s*\[[a-z-]+:[^\]]*\]/g, '')}${p.gate && p.gate !== 'none' ? ` (holds ${p.gate})` : ''}`,
   issue_resolved: (p) => `Issue resolved (${String(p.resolution ?? '').replace(/_/g, ' ')})${p.note ? `: ${p.note}` : ''}`,
   proof_of_funds_submitted: () => 'Proof of funds submitted by the client',
-  proof_of_funds_approved: () => 'Proof of funds signed off',
+  proof_of_funds_reviewed: () => 'Proof of funds signed off',
   deposit_received: () => 'Deposit received',
 };
 
 export interface InTouchWritebackStore {
-  writebackOptions(tenantId: string): Promise<{ documents: boolean; notes: boolean }>;
+  writebackOptions(tenantId: string): Promise<{ documents: boolean; notes: boolean; emails?: boolean; tasks?: boolean; taskMap?: Record<string, string> }>;
+  /** Emails CONVEYi sent on the matter not yet filed in InTouch, oldest first, with who sent them. */
+  outgoingEmails?(tenantId: string, matterId: string): Promise<Array<{ id: string; at: string; subject: string; text: string; to: string | null; from: { email: string; name: string | null } | null }>>;
+  /** The kind of record (default the notes'): events already written back in that way are not returned. */
   /** Documents on the matter not from InTouch and not yet sent, oldest first. */
   outgoingDocuments(tenantId: string, matterId: string): Promise<Array<{ id: string; fileName: string; docType: string | null }>>;
   documentBytes(tenantId: string, documentId: string): Promise<{ name: string; bytes: Buffer; contentType: string } | null>;
   /** Our document now exists in InTouch as `intouchId`. */
   documentSent(tenantId: string, matterId: string, documentId: string, intouchId: string): Promise<void>;
   /** The matter's events of the given types not yet noted, oldest first. */
-  unnotedEvents(tenantId: string, matterId: string, types: string[]): Promise<EngineEvent[]>;
-  eventNoted(tenantId: string, matterId: string, eventId: string): Promise<void>;
+  unnotedEvents(tenantId: string, matterId: string, types: string[], kind?: 'note_out' | 'task_out'): Promise<EngineEvent[]>;
+  eventNoted(tenantId: string, matterId: string, eventId: string, kind?: 'note_out' | 'task_out' | 'email_out'): Promise<void>;
 }
 
-export async function writeBackToInTouch(api: InTouchApi, store: InTouchWritebackStore, tenantId: string, ref: { matterId: string; intouchCaseId: string }, state: MatterState | null, log: (m: string, d?: unknown) => void): Promise<{ documents: number; notes: number }> {
-  const out = { documents: 0, notes: 0 };
+export async function writeBackToInTouch(api: InTouchApi, store: InTouchWritebackStore, tenantId: string, ref: { matterId: string; intouchCaseId: string }, state: MatterState | null, log: (m: string, d?: unknown) => void): Promise<{ documents: number; notes: number; emails: number; tasks: number }> {
+  const out = { documents: 0, notes: 0, emails: 0, tasks: 0 };
   if (!state || !state.enrolled || state.shadowMode) return out;
   const opts = await store.writebackOptions(tenantId);
   if (opts.documents) {
@@ -65,6 +74,36 @@ export async function writeBackToInTouch(api: InTouchApi, store: InTouchWritebac
         await store.eventNoted(tenantId, ref.matterId, e.id);
         out.notes += 1;
       } catch (err) { log(`note for event ${e.id} not sent to InTouch (retried next sync)`, err); break; }
+    }
+  }
+  if (opts.emails && store.outgoingEmails) {
+    for (const m of await store.outgoingEmails(tenantId, ref.matterId)) {
+      try {
+        await api.fileEmail(ref.intouchCaseId, { at: m.at, subject: m.subject || '(no subject)', text: m.text, from: m.from, to: m.to ? [{ email: m.to }] : [] });
+        await store.eventNoted(tenantId, ref.matterId, m.id, 'email_out');
+        out.emails += 1;
+      } catch (err) { log(`email ${m.id} not filed in InTouch (retried next sync)`, err); break; }
+    }
+  }
+  if (opts.tasks) {
+    const done = await store.unnotedEvents(tenantId, ref.matterId, TASK_EVENT_TYPES, 'task_out');
+    // The matter's tasks are read once, and only when there is something to tick off.
+    let tasks: InTouchTask[] | null = null;
+    for (const e of done) {
+      const step = stepOf(e.type, e.payload as Record<string, unknown>);
+      try {
+        if (step) {
+          tasks ??= await api.tasks(ref.intouchCaseId);
+          const task = taskForStep(step, tasks, opts.taskMap ?? {});
+          if (task) {
+            await api.completeTask(task.id);
+            task.completed = true;
+            out.tasks += 1;
+          }
+        }
+        // Done or with nothing to tick: either way not looked at again.
+        await store.eventNoted(tenantId, ref.matterId, e.id, 'task_out');
+      } catch (err) { log(`task for event ${e.id} not completed in InTouch (retried next sync)`, err); break; }
     }
   }
   return out;

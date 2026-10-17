@@ -222,19 +222,21 @@ is the firm's own case file.
 
 ## Writing back (InTouch as the system of record)
 
-A firm that keeps InTouch as its file can have CONVEYi write into it (`writeback.ts`, migration 119). Two switches, each **off** until an admin turns it on under Integrations → InTouch, both audited:
+A firm that keeps InTouch as its file can have CONVEYi write into it (`writeback.ts`, migrations 119 and 132). Four switches, each **off** until an admin turns it on under Integrations → InTouch, both audited:
 
 | Switch | Does |
 | --- | --- |
 | **Send Documents To InTouch** | Every document CONVEYi files on a mirrored case (letters it generated, the proof-of-funds declaration with its analysis, emails filed, the client's uploads to our forms) is filed on the InTouch case. **Never** drafts (`REPORT_ON_TITLE_DRAFT`, `PROPOSAL`), internal working papers (dossiers, the bank-details note) or raw bank data (`OPEN_BANKING_ACCOUNT`). A document sent is stamped with InTouch's id for it, so the next sync recognises it and never mirrors it back. |
 | **Send Case Notes To InTouch** | One line on the InTouch case for each significant thing the engine records, in the same words as the LEAP file notes: stage moves, searches ordered, ID checks requested, chases and client updates sent, the report on title sent, enquiries raised, issues raised and resolved, proof of funds submitted and signed off, deposit received, exchange, completion. Format: `CONVEYi · <date time> · <what happened>`. |
+| **Send Emails To InTouch** | Every email CONVEYi sends on a mirrored case (chases, updates, replies, acknowledgements: the `client_message` log, bounced ones left out) is filed in the InTouch case's correspondence (`POST …/folder/emails`), from the case handler, as it went. Turn it off for a firm whose InTouch already files their sent mail itself, or it is there twice. |
+| **Send Task Completions To InTouch** | A step done in CONVEYi (the event, or Mark Complete on that step) ticks off the firm's InTouch task for it (`POST /mattertasks/{guid}/complete`, `task-steps.ts`): the task the firm mapped it to under **Task Mapping** (their own task names, read from their cases; or *Don't tick anything off*), else the first open task whose name reads as the step. Never a task already done; never a guess when nothing matches. Some InTouch tasks move the client portal, as milestones do. |
 
 The rules are the same as for milestones:
 - only for a matter the engine runs, never in shadow mode;
-- once per document and per event (`intouch_applied` kinds `document_out` / `note_out`);
-- it runs with every sync and webhook, so a failure is simply retried next time.
+- once per document, event and email (`intouch_applied` kinds `document_out` / `note_out` / `email_out` / `task_out`);
+- it runs as it happens (after each engine command on a mirrored case, `writeBackNow`) and again with every sync and webhook, so a failure is simply retried next time.
 
 - the upload goes to `POST /matters/{guid}/files` labelled `CONVEYi` (multipart; see "Still to confirm");
 - the note goes to `POST /matters/{guid}/folder/notes` as `{ htmlContent, label1: "CONVEYi" }`.
 
-The API can also file a record of an email we sent (`POST …/folder/emails`, `client.fileEmail`); it is not switched on yet.
+Task names differ by firm: the defaults read them by their words (`TASK_STEPS[].words`); check Task Mapping against the firm's workflow at the pilot's start.

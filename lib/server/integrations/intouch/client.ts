@@ -43,6 +43,8 @@ export interface InTouchApi {
   addNote(caseId: string, text: string): Promise<void>;
   /** File a record of an email we sent on the matter (it does not send anything). */
   fileEmail(caseId: string, email: { at: string; subject: string; text: string; from?: { email: string; name?: string | null } | null; to?: Array<{ email: string; name?: string | null }> }): Promise<{ id: string | null }>;
+  /** Tick off one of the matter's tasks (write-back: a step done in CONVEYi). */
+  completeTask(taskId: string): Promise<void>;
 }
 
 export interface InTouchClientConfig {
@@ -298,6 +300,10 @@ export class InTouchHttpClient implements InTouchApi {
 
   async addNote(caseId: string, text: string): Promise<void> {
     await this.request<unknown>('POST', INTOUCH_ENDPOINTS.fileNote(caseId), { htmlContent: toHtml(text).slice(0, 100_000), label1: 'CONVEYi' });
+  }
+
+  async completeTask(taskId: string): Promise<void> {
+    await this.request<unknown>('POST', INTOUCH_ENDPOINTS.completeTask(taskId));
   }
 
   async fileEmail(caseId: string, email: { at: string; subject: string; text: string; from?: { email: string; name?: string | null } | null; to?: Array<{ email: string; name?: string | null }> }): Promise<{ id: string | null }> {

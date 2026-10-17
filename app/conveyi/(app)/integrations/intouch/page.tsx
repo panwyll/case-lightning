@@ -5,6 +5,7 @@ import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { fmtWhen } from '@/app/shared/engine/types';
 import { ArrowLeft, Check } from '@/app/shared/icons';
+import { TaskMapping } from './TaskMapping';
 
 /**
  * InTouch — connection status, what it has brought in, and the one switch that matters:
@@ -27,6 +28,8 @@ interface Status {
     connectedAt: string | null;
     milestonesEnabled: boolean;
     documentsWriteback?: boolean;
+    emailsWriteback?: boolean;
+    tasksWriteback?: boolean;
     notesWriteback?: boolean;
   } | null;
   counts: { cases: number; documents: number; milestones: number };
@@ -181,7 +184,7 @@ export default function InTouchPage() {
               <div className="eg-card" style={{ padding: 14, marginBottom: 12 }}>
                 <b>Write Back To InTouch</b>
                 <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-                  {([['documents', 'Documents', c!.documentsWriteback], ['notes', 'Case Notes', c!.notesWriteback]] as const).map(([key, label, on]) => (
+                  {([['documents', 'Documents', c!.documentsWriteback], ['notes', 'Case Notes', c!.notesWriteback], ['emails', 'Emails', c!.emailsWriteback], ['tasks', 'Task Completions', c!.tasksWriteback]] as const).map(([key, label, on]) => (
                     <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <button className={`eg-btn${on ? '' : ' primary'}`} disabled={!!busy} onClick={() => act(label, () => api('/integrations/intouch/writeback', { method: 'POST', body: JSON.stringify({ [key]: !on }) }))}>
                         {on ? `Stop Sending ${label}` : `Send ${label} To InTouch`}
@@ -191,6 +194,13 @@ export default function InTouchPage() {
                   ))}
                 </div>
               </div>
+
+              {c!.tasksWriteback && (
+                <div className="eg-card" style={{ padding: 14, marginBottom: 12 }}>
+                  <b>Task Mapping</b>
+                  <TaskMapping canManage={!!s.canManage} />
+                </div>
+              )}
 
               <div className="eg-card" style={{ padding: 14 }}>
                 <b>What Has Come Across</b>

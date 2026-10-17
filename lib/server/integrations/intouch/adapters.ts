@@ -131,10 +131,12 @@ export async function inTouchOrdering(tenantId: string, matterId: string): Promi
 }
 
 export async function inTouchConnection(tenantId: string): Promise<InTouchConnectionRow | null> {
-  type Row = { tenant_id: string; account_id: string | null; account_name: string | null; status: InTouchConnectionRow['status']; status_detail: string | null; last_sync_at: Date | null; last_sync_detail: InTouchSyncSummary | null; connected_at: Date | null; milestones_enabled: boolean; documents_writeback?: boolean; notes_writeback?: boolean };
+  type Row = { tenant_id: string; account_id: string | null; account_name: string | null; status: InTouchConnectionRow['status']; status_detail: string | null; last_sync_at: Date | null; last_sync_detail: InTouchSyncSummary | null; connected_at: Date | null; milestones_enabled: boolean; documents_writeback?: boolean; notes_writeback?: boolean; emails_writeback?: boolean; tasks_writeback?: boolean; task_map?: Record<string, string> | null };
   const cols = 'tenant_id, account_id, account_name, status, status_detail, last_sync_at, last_sync_detail, connected_at, milestones_enabled';
   // Before migration 119 the write-back columns do not exist yet: read without them rather than fail the page.
-  const r = await queryOne<Row>(`select ${cols}, documents_writeback, notes_writeback from intouch_connection where tenant_id = $1`, [tenantId])
+  // Before migration 132 the email and task columns do not exist: read the older ones (and before 119, none).
+  const r = await queryOne<Row>(`select ${cols}, documents_writeback, notes_writeback, emails_writeback, tasks_writeback, task_map from intouch_connection where tenant_id = $1`, [tenantId])
+    .catch((err: { code?: string }) => (err?.code === '42703' ? queryOne<Row>(`select ${cols}, documents_writeback, notes_writeback from intouch_connection where tenant_id = $1`, [tenantId]) : Promise.reject(err)))
     .catch((err: { code?: string }) => (err?.code === '42703' ? queryOne<Row>(`select ${cols} from intouch_connection where tenant_id = $1`, [tenantId]) : Promise.reject(err)));
   if (!r) return null;
   const creds = await inTouchCredentials(tenantId);
@@ -153,10 +155,19 @@ export async function inTouchConnection(tenantId: string): Promise<InTouchConnec
     milestonesEnabled: r.milestones_enabled,
     documentsWriteback: !!r.documents_writeback,
     notesWriteback: !!r.notes_writeback,
+    emailsWriteback: !!r.emails_writeback,
+    tasksWriteback: !!r.tasks_writeback,
+    taskMap: r.task_map ?? {},
   };
 }
 
-export async function setInTouchConnectionMeta(tenantId: string, meta: { accountId?: string | null; accountName?: string | null; connectedBy?: string | null; milestonesEnabled?: boolean; documentsWriteback?: boolean; notesWriteback?: boolean }): Promise<void> {
+export async function setInTouchConnectionMeta(tenantId: string, meta: { accountId?: string | null; accountName?: string | null; connectedBy?: string | null; milestonesEnabled?: boolean; documentsWriteback?: boolean; notesWriteback?: boolean; emailsWriteback?: boolean; tasksWriteback?: boolean; taskMap?: Record<string, string> }): Promise<void> {
+  if (meta.emailsWriteback != null || meta.tasksWriteback != null || meta.taskMap) {
+    await runAsSystem(() => query(
+      `update intouch_connection set emails_writeback = coalesce($2, emails_writeback), tasks_writeback = coalesce($3, tasks_writeback), task_map = coalesce($4::jsonb, task_map), updated_at = now() where tenant_id = $1`,
+      [tenantId, meta.emailsWriteback ?? null, meta.tasksWriteback ?? null, meta.taskMap ? JSON.stringify(meta.taskMap) : null]
+    ));
+  }
   await runAsSystem(() =>
     query(
       `update intouch_connection set account_id = coalesce($2, account_id), account_name = coalesce($3, account_name),
@@ -172,7 +183,8 @@ export async function setInTouchConnectionMeta(tenantId: string, meta: { account
 /** Stop reading and pushing. The saved address, key and webhook key stay, so reconnecting is one click. */
 export async function disconnectInTouch(tenantId: string): Promise<void> {
   const set = "status = 'DISCONNECTED', status_detail = 'Disconnected by the firm', milestones_enabled = false, updated_at = now()";
-  await runAsSystem(() => query(`update intouch_connection set ${set}, documents_writeback = false, notes_writeback = false where tenant_id = $1`, [tenantId])
+  await runAsSystem(() => query(`update intouch_connection set ${set}, documents_writeback = false, notes_writeback = false, emails_writeback = false, tasks_writeback = false where tenant_id = $1`, [tenantId])
+    .catch((err: { code?: string }) => (err?.code === '42703' ? query(`update intouch_connection set ${set}, documents_writeback = false, notes_writeback = false where tenant_id = $1`, [tenantId]) : Promise.reject(err)))
     .catch((err: { code?: string }) => (err?.code === '42703' ? query(`update intouch_connection set ${set} where tenant_id = $1`, [tenantId]) : Promise.reject(err))));
 }
 
@@ -192,9 +204,21 @@ const CONTACT_ROLE: Record<InTouchParty['role'], string> = {
 
 /** Write-back's store (writeback.ts): the firm's switches, what is left to send, and what was sent. */
 export class PgInTouchWritebackStore implements InTouchWritebackStore {
-  async writebackOptions(tenantId: string): Promise<{ documents: boolean; notes: boolean }> {
-    const r = await runAsSystem(() => queryOne<{ documents_writeback: boolean; notes_writeback: boolean; status: string }>(`select documents_writeback, notes_writeback, status from intouch_connection where tenant_id = $1`, [tenantId]).catch(() => null));
-    return r?.status === 'CONNECTED' ? { documents: !!r.documents_writeback, notes: !!r.notes_writeback } : { documents: false, notes: false };
+  async writebackOptions(tenantId: string): Promise<{ documents: boolean; notes: boolean; emails: boolean; tasks: boolean; taskMap: Record<string, string> }> {
+    // Emails and tasks from migration 132; before it, the first two alone.
+    const r = await runAsSystem(() => queryOne<{ documents_writeback: boolean; notes_writeback: boolean; emails_writeback?: boolean; tasks_writeback?: boolean; task_map?: Record<string, string> | null; status: string }>(`select * from intouch_connection where tenant_id = $1`, [tenantId]).catch(() => null));
+    return r?.status === 'CONNECTED'
+      ? { documents: !!r.documents_writeback, notes: !!r.notes_writeback, emails: !!r.emails_writeback, tasks: !!r.tasks_writeback, taskMap: r.task_map ?? {} }
+      : { documents: false, notes: false, emails: false, tasks: false, taskMap: {} };
+  }
+  async outgoingEmails(tenantId: string, matterId: string) {
+    const rows = await runAsSystem(() => query<{ id: string; at: Date; subject: string | null; body: string | null; address: string | null; from_email: string | null; from_name: string | null }>(
+      `select c.id, c.created_at as at, c.subject, c.body, c.address, u.email as from_email, u.display_name as from_name
+         from client_message c left join matter m on m.id = c.matter_id left join app_user u on u.id = m.assigned_to
+        where c.tenant_id = $1 and c.matter_id = $2 and c.direction = 'OUT' and c.channel = 'email' and c.status not like 'FAILED%'
+          and not exists (select 1 from intouch_applied a where a.tenant_id = $1 and a.kind = 'email_out' and a.external_id = c.id::text)
+        order by c.created_at limit 25`, [tenantId, matterId]));
+    return rows.map((r) => ({ id: r.id, at: r.at.toISOString(), subject: r.subject ?? '', text: r.body ?? '', to: r.address, from: r.from_email ? { email: r.from_email, name: r.from_name } : null }));
   }
   async outgoingDocuments(tenantId: string, matterId: string): Promise<Array<{ id: string; fileName: string; docType: string | null }>> {
     return runAsSystem(() => query<{ id: string; fileName: string; docType: string | null }>(
@@ -211,16 +235,16 @@ export class PgInTouchWritebackStore implements InTouchWritebackStore {
     await runAsSystem(() => query(`update document set intouch_document_id = $3 where id = $2 and tenant_id = $1 and intouch_document_id is null`, [tenantId, documentId, intouchId]));
     await runAsSystem(() => query(`insert into intouch_applied (tenant_id, matter_id, kind, external_id, detail) values ($1,$2,'document_out',$3,$4) on conflict do nothing`, [tenantId, matterId, documentId, intouchId]));
   }
-  async unnotedEvents(tenantId: string, matterId: string, types: string[]): Promise<EngineEvent[]> {
+  async unnotedEvents(tenantId: string, matterId: string, types: string[], kind: 'note_out' | 'task_out' = 'note_out'): Promise<EngineEvent[]> {
     const rows = await runAsSystem(() => query<{ id: string; seq: string; type: string; actor: string; payload: Record<string, unknown>; created_at: Date }>(
       `select e.id, e.seq::text as seq, e.type, e.actor, e.payload, e.created_at from matter_event e
         where e.tenant_id = $1 and e.matter_id = $2 and e.type = any($3::text[])
-          and not exists (select 1 from intouch_applied a where a.tenant_id = $1 and a.kind = 'note_out' and a.external_id = e.id::text)
-        order by e.seq limit 50`, [tenantId, matterId, types]));
+          and not exists (select 1 from intouch_applied a where a.tenant_id = $1 and a.kind = $4 and a.external_id = e.id::text)
+        order by e.seq limit 50`, [tenantId, matterId, types, kind]));
     return rows.map((r) => ({ id: r.id, seq: Number(r.seq), type: r.type, actor: r.actor, payload: r.payload, createdAt: r.created_at.toISOString(), tenantId, matterId }) as unknown as EngineEvent);
   }
-  async eventNoted(tenantId: string, matterId: string, eventId: string): Promise<void> {
-    await runAsSystem(() => query(`insert into intouch_applied (tenant_id, matter_id, kind, external_id) values ($1,$2,'note_out',$3) on conflict do nothing`, [tenantId, matterId, eventId]));
+  async eventNoted(tenantId: string, matterId: string, eventId: string, kind: 'note_out' | 'task_out' | 'email_out' = 'note_out'): Promise<void> {
+    await runAsSystem(() => query(`insert into intouch_applied (tenant_id, matter_id, kind, external_id) values ($1,$2,$4,$3) on conflict do nothing`, [tenantId, matterId, eventId, kind]));
   }
 }
 
@@ -405,3 +429,20 @@ export const inTouchWebhookUrl = (tenantId: string, key: string) =>
   `${config.appUrl}/api/v1/integrations/intouch/webhook?firm=${encodeURIComponent(tenantId)}&key=${encodeURIComponent(key)}`;
 /** Where a firm manages the connection. */
 export const inTouchSettingsPath = () => `${paths.leap.replace('/leap', '/intouch')}`;
+
+/**
+ * Write-back as it happens: after the engine records something on a case mirrored from InTouch, what the firm has turned
+ * on (documents, notes, emails, tasks) goes to InTouch at once, not at the next sync (which still catches up whatever
+ * this misses). Best-effort; never throws.
+ */
+export async function writeBackNow(tenantId: string, matterId: string): Promise<void> {
+  const m = await runAsSystem(() => queryOne<{ intouch_case_id: string | null }>(`select intouch_case_id from matter where id = $1 and tenant_id = $2`, [matterId, tenantId])).catch(() => null);
+  if (!m?.intouch_case_id) return;
+  const store = new PgInTouchWritebackStore();
+  const opts = await store.writebackOptions(tenantId);
+  if (!opts.documents && !opts.notes && !opts.emails && !opts.tasks) return;
+  const { writeBackToInTouch } = await import('./writeback');
+  const api = await inTouchClient(tenantId);
+  const state = await engine().getState(tenantId, matterId).catch(() => null);
+  await writeBackToInTouch(api, store, tenantId, { matterId, intouchCaseId: m.intouch_case_id }, state, (msg, d) => console.warn(`[intouch] ${msg}`, d instanceof Error ? d.message : d ?? ''));
+}

@@ -139,6 +139,10 @@ export interface InTouchConnectionRow {
   /** Write-back switches (writeback.ts): documents and case notes into InTouch. */
   documentsWriteback?: boolean;
   notesWriteback?: boolean;
+  /** The emails CONVEYi sends filed in InTouch, and steps done here completing InTouch tasks (task-steps.ts), with the firm's mapping. */
+  emailsWriteback?: boolean;
+  tasksWriteback?: boolean;
+  taskMap?: Record<string, string>;
 }
 
 export interface InTouchSyncSummary {

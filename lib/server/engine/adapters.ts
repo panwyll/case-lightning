@@ -194,6 +194,8 @@ export function productionPorts(): EnginePorts {
         // The case is counted when its ID / AML check comes back; then whatever the backend does with conclusions.
         await billOnIdResolved(input).catch((err) => console.warn('[case-billing] reaction failed', (err as Error).message));
         if (be.conclusions) await be.conclusions.onEvents(input);
+        // A case mirrored from InTouch: what the firm writes back goes now (documents, notes, emails, tasks).
+        await (await import('../integrations/intouch/adapters')).writeBackNow(input.tenantId, input.matterId).catch((err) => console.warn('[intouch] write-back after events failed', (err as Error).message));
       },
       extractor,
       classifier,
