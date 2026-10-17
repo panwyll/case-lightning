@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { HEALTH_LABEL, type CaseToken, type HealthBand } from './types';
-import { FileText, Mail, Minus, Plus, Search } from '@/app/shared/icons';
+import { FileText, Home, Mail, Minus, Plus, Search } from '@/app/shared/icons';
 
 /**
  * The caseload map (docs/caseload-ux.md §1): every matter as a house on a sheet of paper,
@@ -73,8 +73,9 @@ export const CASELOAD_CSS = `
 .cm-names .cm-lab{border-right:1px solid #ece7da}
 .cm-corner{padding:6px 10px;letter-spacing:normal;text-transform:none}
 .cm-name{padding:6px 12px;font-size:11.5px;font-weight:800;color:#5b5646;border-left:1px solid #ece7da;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:10px}
-.cm-name .who{overflow:hidden;text-overflow:ellipsis}
-.cm-load{margin-left:auto;display:inline-flex;gap:10px;color:#475569;font-weight:700}
+.cm-name{flex-wrap:wrap;row-gap:3px}
+.cm-name .who{flex:1 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.cm-load{margin-left:auto;flex:none;display:inline-flex;gap:10px;color:#475569;font-weight:700}
 .cm-load span{display:inline-flex;align-items:center;gap:4px}
 .cm-name:first-child{border-left:0}
 .cm-name .n{margin-left:6px;font-weight:600;color:#b8b1a0;font-variant-numeric:tabular-nums}
@@ -236,8 +237,8 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, comp
             <div className="cm-cols" style={{ gridTemplateColumns: `repeat(${Math.max(1, byHandler ? handlers.length : 1)}, minmax(0, 1fr))` }}>
               {byHandler && handlers.map((h) => (
                 <div key={h} className="cm-name">
-                  <span className="who">{h}<span className="n">{visible.filter((r) => (r.assignedToName ?? 'Unassigned') === h).length}</span></span>
-                  {load && <span className="cm-load"><span title="Quick Tasks: Acknowledgements, Replies, Admin"><Mail size={16} />{load[h]?.quick ?? 0}</span><span title="Legal Tasks"><FileText size={16} />{load[h]?.legal ?? 0}</span></span>}
+                  <span className="who">{h}</span>
+                  <span className="cm-load"><span title="Open Cases"><Home size={16} />{visible.filter((r) => (r.assignedToName ?? 'Unassigned') === h).length}</span>{load && <><span title="Quick Tasks: Acknowledgements, Replies, Admin"><Mail size={16} />{load[h]?.quick ?? 0}</span><span title="Legal Tasks"><FileText size={16} />{load[h]?.legal ?? 0}</span></>}</span>
                 </div>
               ))}
             </div>
