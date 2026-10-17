@@ -42,7 +42,7 @@ export async function workItems(user: SessionUser, opts: { all?: boolean; who?: 
     const full = matterWork(state, now, { ...meta, levels: subflows }).items;
     seen.push({ matterId: state.matterId, items: full, ownerOf: (i) => (i.ref.type === 'decision' ? state.decisions[i.ref.id]?.assignedTo : null) ?? meta.assignedTo ?? null, finished: !!(state.postCompletion.ap1ConfirmedAt ?? state.abandoned?.at) });
     const list = full.filter((i) => all || theirs(i));
-    items.push(...list.map((i) => ({ ...i, caseBand })));
+    items.push(...list.map((i) => ({ ...i, caseBand, ownerId: (i.ref.type === 'decision' ? state.decisions[i.ref.id]?.assignedTo : null) ?? meta.assignedTo ?? null })));
   }
   // A case waiting on our own linked file says which file and how far it has got (its own tasks are on this list).
   const byId = new Map(states.map((x) => [x.state.matterId, x]));

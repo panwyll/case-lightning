@@ -249,7 +249,7 @@ test('stale issue timer: an issue nobody touches for 10 working days is raised o
   let s = await h.svc.getState(TENANT, MATTER);
   const esc = pendingDecisions(s).find((d) => d.kind === 'escalation' && d.subject === due[0].subject);
   assert.ok(esc, 'the stale issue is a decision for a person, with a dossier');
-  assert.match(esc.summary, /no movement for \d+ working days/);
+  assert.match(esc.summary, /has not moved for \d+ working days/);
   const t2 = await h.svc.tick(TENANT, MATTER);
   assert.equal(t2.escalations, 0, 'raised once per period of silence');
   await h.svc.run(TENANT, MATTER, { type: 'update_issue', actor: USER, issueId: id, status: 'negotiating', note: 'Donor letter received; bank statements promised by Friday' });

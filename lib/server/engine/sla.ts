@@ -269,7 +269,7 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
     const subject = `issue:${i.id}:stale:${i.updatedAt.slice(0, 10)}`;
     if (raised.has(subject)) continue;
     const label = ISSUE_KIND_SPEC[i.kind]?.label ?? i.kind;
-    out.push({ kind: 'stale_issue', dueDate: i.updatedAt.slice(0, 10), workingDaysLeft: -age, summary: `Issue "${i.title}" (${label}, holds ${i.gate === 'none' ? 'nothing' : i.gate}) has had no movement for ${age} working days since ${i.updatedAt.slice(0, 10)}. Chase whoever owes the next step, record progress on the issue, or decide whether it is fatal.`, subject });
+    out.push({ kind: 'stale_issue', dueDate: i.updatedAt.slice(0, 10), workingDaysLeft: -age, summary: `"${i.title}" has not moved for ${age} working days. ${label}, holding ${i.gate === 'none' ? 'nothing' : i.gate}; last moved ${new Date(i.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' })}. Chase whoever owes the next step, record progress on the issue, or decide whether it is fatal.`, subject });
   }
   return out;
 }

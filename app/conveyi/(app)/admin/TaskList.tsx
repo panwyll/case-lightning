@@ -73,6 +73,8 @@ const CSS = `
 .tl-task{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 14px;align-items:center;padding:9px 14px 9px 40px}
 .tl-item + .tl-item .tl-task{border-top:1px solid #eceef3}
 .tl-task .what{font-size:13.5px;font-weight:600;line-height:1.35;color:#0f172a}
+.tl-hang{display:flex;align-items:flex-start}
+.tl-hang .tl-chip{flex:none;margin-top:1px}
 .tl-chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;background:#f1f5f9;border-radius:999px;padding:2px 8px;margin-right:8px;vertical-align:1px}
 .tl-chip.prop{color:#5A27E0;background:#f5f3ff}
 .tl-chip.sev-critical{color:#b91c1c;background:#fee2e2}
@@ -328,7 +330,7 @@ export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort
               <div key={key} className={`tl-item${isOpen ? ' open' : ''}`} data-tour="task-row">
                 <div className="tl-task">
                   <div>
-                    <div className="what">{i.kind && <span className={`tl-chip${i.bucket === 'escalate' || i.kind.startsWith('escalation') ? ` esc${due != null && due < 0 ? ' late' : ''}` : i.kind.startsWith('proposal') ? ' prop' : i.severity ? ` sev-${i.severity}` : ''}`} title={i.severity ? `${SEVERITY_LABEL[i.severity]} severity` : undefined}>{i.chip ?? chipLabel(i.kind)}</span>}{sentence(i.what)}</div>
+                    <div className="what tl-hang">{i.kind && <span className={`tl-chip${i.bucket === 'escalate' || i.kind.startsWith('escalation') ? ` esc${due != null && due < 0 ? ' late' : ''}` : i.kind.startsWith('proposal') ? ' prop' : i.severity ? ` sev-${i.severity}` : ''}`} title={i.severity ? `${SEVERITY_LABEL[i.severity]} severity` : undefined}>{i.chip ?? chipLabel(i.kind)}</span>}<span>{sentence(i.what)}</span></div>
                     {quickErr?.id === i.ref?.id && <div className="sub" style={{ color: '#b91c1c' }}>{quickErr.text}</div>}
                     {stepMsg[key] && <div className={`tl-msg${stepMsg[key].ok ? ' ok' : ''}`}>{stepMsg[key].text}</div>}
                   </div>

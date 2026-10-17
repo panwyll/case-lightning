@@ -10,6 +10,9 @@ import { LIFECYCLE_LABEL } from '@/lib/server/engine/graph';
 import { untrackedCaseRows } from '@/lib/server/engine/untracked';
 import { query } from '@/lib/server/db';
 import { fromTask, isQuickWork } from '@/lib/server/epa/taxonomy';
+import { workItems, canCover } from '@/lib/server/engine/my-work';
+import { dismissedRefs } from '@/lib/server/task-dismissal';
+import { actionable } from '@/lib/server/engine/work';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -75,17 +78,20 @@ export async function GET(req: NextRequest) {
     for (const x of done) years.set(x.month.slice(0, 4), (years.get(x.month.slice(0, 4)) ?? 0) + x.n);
     const bestYear = [...years.entries()].reduce<{ year: string; n: number } | null>((b, [year, n]) => (!b || n > b.n ? { year, n } : b), null);
     const completions = { month: done.find((x) => x.month === nowLondon.slice(0, 7))?.n ?? 0, year: done.filter((x) => x.month.startsWith(nowLondon.slice(0, 4))).reduce((t, x) => t + x.n, 0), best, bestYear };
-    // Each handler's Tasks list, at a glance: quick tasks (acknowledgements, replies, admin) and legal ones.
-    const live = rows.filter((r) => r.tracked).map((r) => r.matterId);
-    const open = live.length ? await query<{ matter_id: string; kind: string | null; chip: string | null }>(
-      `select matter_id, kind, chip from task_record where tenant_id = $1 and closed_at is null and bucket in ('do', 'escalate') and matter_id = any($2::uuid[])`, [user.tenantId, live]
-    ).catch(() => []) : [];
-    const handlerOf = new Map(rows.map((r) => [r.matterId, r.assignedToName ?? 'Unassigned']));
+    // Each handler's Tasks list, at a glance: the same items, counted the same way, as their Tasks badge (quick tasks:
+    // acknowledgements, replies, admin; and legal ones). Only where the caller may see the whole team's lists.
     const load: Record<string, { quick: number; legal: number }> = {};
-    for (const t of open) {
-      const who = handlerOf.get(t.matter_id) ?? 'Unassigned';
-      const l = (load[who] ??= { quick: 0, legal: 0 });
-      if (isQuickWork(fromTask({ kind: t.kind, chip: t.chip }).kind)) l.quick += 1; else l.legal += 1;
+    if (canCover(user)) {
+      const [{ items }, gone] = await Promise.all([workItems(user, { all: true }), dismissedRefs(user.tenantId)]).catch((): [{ items: Awaited<ReturnType<typeof workItems>>['items'] }, Set<string>] => [{ items: [] }, new Set<string>()]);
+      const listed = new Set(rows.map((r) => r.matterId));
+      for (const i of actionable(items)) {
+        if (!listed.has(i.matterId) || gone.has(`${i.matterId}|${i.ref.type}:${i.ref.id}`)) continue;
+        // Escalated to someone with no column of their own: not counted under anyone else's name.
+        if (i.ownerId && !nameOf.has(i.ownerId)) continue;
+        const who = i.ownerId ? nameOf.get(i.ownerId)! : 'Unassigned';
+        const l = (load[who] ??= { quick: 0, legal: 0 });
+        if (isQuickWork(fromTask({ kind: i.kind ?? null, chip: i.chip ?? null }).kind)) l.quick += 1; else l.legal += 1;
+      }
     }
     return ok({
       load,

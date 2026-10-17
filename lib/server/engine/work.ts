@@ -49,6 +49,8 @@ function addressFor(title: string): { role: string; who: string } | null {
 }
 
 export interface WorkItem {
+  /** Whose list it is on: the person it was escalated to, else the case's handler (set by my-work.ts). */
+  ownerId?: string | null;
   /** Emails about this issue still to deal with (newest first): opened from the issue's row, not listed again. */
   emails?: string[];
   /** A send that failed for want of an address: whose, so the task can take it. */
@@ -287,7 +289,9 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
   // An escalation's subject is an internal key ("deadline:mortgage_offer_expiry:…"), so
   // it is described by the first line of what the timer actually said.
   // One sentence, not the whole dossier — the detail is on the case.
-  const firstLine = ((d.summary ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '').split(/(?<=\.)\s/)[0].slice(0, 120);
+  const sentence1 = ((d.summary ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '').split(/(?<=\.)\s/)[0];
+  // Never cut mid-word: a long sentence ends at a word, with an ellipsis.
+  const firstLine = sentence1.length <= 160 ? sentence1 : `${sentence1.slice(0, 160).replace(/\s+\S*$/, '')}…`;
   // The task in a conveyancer's sentence: what is in front of them, not the engine's name for it.
   const cleanSubject = d.subject && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? d.subject.replace(/^[a-z_]+:/, '') : null;
   const flagsOf = (): number => {
