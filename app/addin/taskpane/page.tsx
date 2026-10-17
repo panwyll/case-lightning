@@ -3538,7 +3538,7 @@ export default function Taskpane() {
                 )}.
               </p>
               <p style={{ fontSize: 13, color: '#475569', margin: '0 0 16px', lineHeight: 1.5 }}>
-                Add payment details for <strong>unlimited</strong> emails — new mail keeps being triaged, matched and drafted with no monthly cap. You only pay £100 per case you work on.
+                Add payment details for <strong>unlimited</strong> emails — new mail keeps being triaged, matched and drafted with no monthly cap. You only pay £80 + VAT per case you work on.
               </p>
               <button style={{ ...S.primary, marginTop: 0 }} onClick={() => { setQuotaModal(null); openAdmin('billing'); }}>
                 Add payment details
@@ -3641,7 +3641,7 @@ export default function Taskpane() {
               <div style={{ flex: 1, background: '#F8FAFC', border: '1px solid #eef2f7', borderRadius: 10, padding: '9px 11px' }}>
                 <div style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4 }}>Plan</div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
-                  {plan?.status === 'trialing' ? 'Trial' : plan?.plan ? '£100 / case' : 'Free'}
+                  {plan?.status === 'trialing' ? 'Trial' : plan?.plan ? '£80 + VAT / case' : 'Free'}
                 </div>
                 {plan?.status && plan.status !== 'active' && (
                   <div style={{ fontSize: 11, color: plan.status === 'past_due' ? '#b91c1c' : '#64748b', marginTop: 1, textTransform: 'capitalize' }}>

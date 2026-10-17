@@ -138,7 +138,7 @@ export const config = {
   // Billing + referrals (Stripe)
   stripeSecretKey: env('STRIPE_SECRET_KEY'),
   stripeWebhookSecret: env('STRIPE_WEBHOOK_SECRET'),
-  // Usage-based billing: one metered recurring price — £100 per case. The price is
+  // Usage-based billing: one metered recurring price — £80 + VAT per case (the price is tax-exclusive in Stripe). The price is
   // attached to a Stripe Billing Meter; we report one meter event per case the first
   // time CONVEYi does chargeable work on it (see lib/server/case-billing.ts). Stripe
   // sums the events and invoices monthly. Optional: when unset the checkout route 503s.
@@ -150,7 +150,9 @@ export const config = {
   teamMaxMembers: Number(env('TEAM_MAX_MEMBERS') ?? '100'),
   // Advertised price per case, in pennies. Display only — Stripe's price object is
   // the source of truth for what's charged; keep the two in step.
-  casePricePennies: Number(env('CASE_PRICE_PENNIES') ?? '10000'),
+  casePricePennies: Number(env('CASE_PRICE_PENNIES') ?? '8000'),
+  // UK VAT (Stripe → Tax rates: 20%, exclusive) added to every new subscription's invoices. Unset: no VAT is charged.
+  stripeTaxRateVat: env('STRIPE_TAX_RATE_VAT'),
   // Trial firms get the full product, but expensive AI work (doc fills, matter
   // reconciliation) is capped to a few attempts so they get a flavour without running
   // up cost — a trial case is never charged, so this is the only brake. Trial backlog/onboarding lookback is also clamped (days).

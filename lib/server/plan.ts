@@ -1,7 +1,7 @@
 /**
  * Entitlement & capability gates.
  *
- * Billing is USAGE-BASED: one plan, £100 per case. There is no tier ladder any more —
+ * Billing is USAGE-BASED: one plan, £80 + VAT per case. There is no tier ladder any more —
  * every entitled firm gets the whole product (auto-rules, unlimited onboarding lookback,
  * AI doc fills, team/multi-seat) and pays per case CONVEYi does chargeable work on (see
  * lib/server/case-billing.ts for what counts as a case and when it's charged).

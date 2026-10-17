@@ -179,7 +179,7 @@ export default function AccountPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Your plan</p>
-            <h2 className="mt-1 font-serif text-2xl text-ink">{perCase} per case</h2>
+            <h2 className="mt-1 font-serif text-2xl text-ink">{perCase} + VAT per case</h2>
           </div>
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${status.cls}`}>{status.label}</span>
         </div>

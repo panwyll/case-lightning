@@ -1,12 +1,12 @@
 /**
- * Per-case billing — the metering behind "£100 per case".
+ * Per-case billing — the metering behind "£80 + VAT per case".
  *
  * A firm is charged once per matter, the first time CONVEYi does CHARGEABLE work on
  * it. Chargeable = a user-initiated piece of work product: a drafted reply or status
  * update, a document review or fill, a generated doc pack, a matter reconcile. It is
  * deliberately NOT background triage — matching, classifying and summarising incoming
  * mail runs on every email the moment auto-triage is armed, and a backlog scan can
- * touch every matter in the mailbox; charging on that would bill a firm £100 × its
+ * touch every matter in the mailbox; charging on that would bill a firm £80 × its
  * whole caseload for having installed the add-in. The firm pays when it uses the
  * product on a case, not when the product notices a case.
  *

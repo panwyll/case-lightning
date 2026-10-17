@@ -946,7 +946,7 @@ function AdminPageInner() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                   <div>
                     <div style={overline}>Your plan</div>
-                    <div style={{ fontSize: 26, fontWeight: 800, marginTop: 2 }}>{money(billing.pricePerCasePennies ?? 10000, billing.currency ?? 'gbp')} per case</div>
+                    <div style={{ fontSize: 26, fontWeight: 800, marginTop: 2 }}>{money(billing.pricePerCasePennies ?? 8000, billing.currency ?? 'gbp')} + VAT per case</div>
                   </div>
                   {(() => {
                     const s = STATUS_STYLE[billing.status] ?? { label: billing.status, bg: '#f1f5f9', color: '#64748b' };
@@ -1084,7 +1084,7 @@ function AdminPageInner() {
                   ['What does auto-triage do?', 'On each incoming email it matches the message to a case, tags it in Outlook, and pre-analyses it (thread summary + a drafted reply) so the email opens ready. It’s always on and never sends.'],
                   ['How are emails matched to a case?', 'By hard signals first — a thread already linked to a case, or your case-ref token in the subject — then corroborating ones like the property postcode, party names and known participants. A match needs more than one signal to be confident.'],
                   ['How do document templates work?', 'Upload (or AI-generate) Word .docx templates in Automation → Doc packs using {{placeholders}} for case data and, on premium plans, [[AI sections]]. On any case, a conveyancer clicks Generate and the file is filled and saved to the case folder.'],
-                  ['How is billing handled?', 'You pay per case — £100 the first time CONVEYi does work on a case, invoiced monthly. The card, invoices and cancellation are handled securely by Stripe via “Manage subscription”.'],
+                  ['How is billing handled?', 'You pay per case — £80 + VAT the first time CONVEYi does work on a case, invoiced monthly. The card, invoices and cancellation are handled securely by Stripe via “Manage subscription”.'],
                   ['Where is our data stored?', 'Case data lives in your firm’s own Microsoft 365 (OneDrive) plus CONVEYi’s database for matching and analysis. AI drafting uses Claude; nothing is sent to third parties beyond what’s needed to draft and never auto-sent.'],
                 ].map(([q, a]) => (
                   <details key={q} style={{ borderTop: '1px solid #f1f5f9', padding: '10px 0' }}>

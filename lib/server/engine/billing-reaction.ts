@@ -1,5 +1,5 @@
 /**
- * When a case is counted (docs: "£100 per case"): the moment its ID / AML check comes back
+ * When a case is counted (docs: "£80 + VAT per case"): the moment its ID / AML check comes back
  * resolved — cleared by the rules or reviewed by a person — the matter is opened for billing.
  * That is the first point at which the engine has done the work a firm pays for on a case;
  * enrolment alone, and background triage, never count. The charge is once-only and best

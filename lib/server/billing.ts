@@ -9,7 +9,7 @@
  *      (update card, switch plan, view invoices, cancel). We deliberately do NOT
  *      build those screens ourselves; Stripe maintains them.
  *
- * Billing is usage-based — one plan, £100 per case (see case-billing.ts for the
+ * Billing is usage-based — one plan, £80 + VAT per case (see case-billing.ts for the
  * meter). Cancellation and card changes happen in the Stripe Billing Portal and flow
  * back via customer.subscription.* webhooks, so this module is read-mostly.
  */
@@ -209,11 +209,16 @@ export async function startSubscription(
     success_url: `${appUrl}${paths.account}?upgraded=1`,
     cancel_url: `${appUrl}${paths.account}`,
     allow_promotion_codes: true,
+    // VAT invoices: the firm's billing address, and its own VAT number where it has one.
+    billing_address_collection: 'required',
+    tax_id_collection: { enabled: true },
+    ...(account.stripe_customer_id ? { customer_update: { name: 'auto' as const, address: 'auto' as const } } : {}),
     // Stripe owns the trial clock from here — it emits customer.subscription.updated as
     // the trial converts (trialing → active) or lapses, and the webhook writes that
     // status straight through. Cases opened while trialing are never reported (see
     // case-billing.ts), so a card-on-file trial is still free.
-    ...(trialLeft > 0 ? { subscription_data: { trial_period_days: trialLeft } } : {}),
+    // £80 a case plus VAT: the tax rate on every invoice the subscription raises.
+    ...(trialLeft > 0 || config.stripeTaxRateVat ? { subscription_data: { ...(trialLeft > 0 ? { trial_period_days: trialLeft } : {}), ...(config.stripeTaxRateVat ? { default_tax_rates: [config.stripeTaxRateVat] } : {}) } } : {}),
   });
   return { url: session.url! };
 }

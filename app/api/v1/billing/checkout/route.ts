@@ -8,7 +8,7 @@ import { ok, fail } from '@/lib/server/http';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Put the signed-in firm on the per-case plan (£100 per case). New subscribers get a
+// Put the signed-in firm on the per-case plan (£80 + VAT per case). New subscribers get a
 // Checkout URL to redirect to ({ url }); an already-subscribed firm gets
 // ({ updated: true }) — there is only one plan, so there's nothing to switch to. A
 // referrer code in the cl_ref cookie is forwarded so a first subscription via /account

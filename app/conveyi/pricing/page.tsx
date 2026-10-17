@@ -6,7 +6,7 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'Pricing — CONVEYi',
   description:
-    'One price: £100 per case. No seats, no tiers, no monthly fee. Pay only for the cases CONVEYi works on. 30-day money-back guarantee.',
+    'One price: £80 + VAT per case. No seats, no tiers, no monthly fee. Pay only for the cases CONVEYi works on. 30-day money-back guarantee.',
 };
 
 const PAGE_SOURCE = 'pricing';
@@ -25,7 +25,7 @@ const included = [
 ];
 
 const whatCounts = [
-  ['Charged once per case', 'The first time CONVEYi drafts a reply, reviews or generates a document, or reconciles a case, that case is opened and £100 goes on the month’s invoice. Never again for that case.'],
+  ['Charged once per case', 'The first time CONVEYi drafts a reply, reviews or generates a document, or reconciles a case, that case is opened and £80 + VAT goes on the month’s invoice. Never again for that case.'],
   ['Free: everything before that', 'Triage, matching, summaries and the knowledge base run on every email at no charge. A case you never draft on costs nothing.'],
   ['Free: your trial', 'Cases you open during the free trial are never charged — not then, and not when you subscribe.'],
 ];
@@ -39,7 +39,7 @@ export default function PricingPage() {
         <div className="mx-auto max-w-3xl">
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">Pricing</p>
           <h1 className="mt-4 font-serif text-5xl font-semibold leading-tight tracking-tight md:text-6xl">
-            £100 per case. That’s the pricing.
+            £80 per case. That’s the pricing.
           </h1>
           <p className="mt-5 max-w-xl text-lg text-ink-soft">
             Start with {config.trialDays} days free — no card, no sales call. Then pay only for the
@@ -58,8 +58,8 @@ export default function PricingPage() {
             </span>
             <h2 className="text-lg font-bold uppercase tracking-widest text-ink-soft">Per case</h2>
             <div className="mt-3 flex items-end gap-2">
-              <span className="font-serif text-6xl font-semibold">£100</span>
-              <span className="mb-2 text-ink-soft">/case</span>
+              <span className="font-serif text-6xl font-semibold">£80</span>
+              <span className="mb-2 text-ink-soft">/case + VAT</span>
             </div>
             <p className="mt-2 text-sm font-semibold text-violet">Unlimited seats · invoiced monthly</p>
             <p className="mt-3 text-ink-soft">The whole product for the whole firm. You pay for the cases you use it on.</p>
