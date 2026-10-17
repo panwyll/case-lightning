@@ -25,6 +25,7 @@
  * puts the connection on the conveyi_automation role: the database refuses human-gated
  * events from there whatever this code does.
  */
+import { recipientOf, unansweredFrom } from './loop-guard';
 import { deathPlaybook } from './people';
 import { pounds } from './money';
 import { chargeableConsideration } from './sdlt-facts';
@@ -321,9 +322,13 @@ export class EngineService {
     if (state.placement?.status === 'placing') return true;
     // Manual handling: whatever would have gone out on its own is proposed instead, for the person who has the case.
     const manual = state.manualHandling.required;
+    // No loops: someone whose email is still waiting on a person is sent nothing unasked (loop-guard.ts).
+    const role = recipientOf(action, detail);
+    const waiting = role ? unansweredFrom(state, role) : null;
     // `always`: a person approves it whatever the trust level (a death notice is never sent unread).
-    if (!manual && !always && actsUnasked(levelFor(levels, action, subject), action)) return false;
+    if (!manual && !always && !waiting && actsUnasked(levelFor(levels, action, subject), action)) return false;
     if (manual) detail = { ...detail, manualMode: true };
+    if (waiting && !manual && !always) detail = { ...detail, heldForReply: { noteId: waiting.id, at: waiting.at } };
     if (pendingProposal(state, action, dedupKey)) return true;
     const quietUntil = this.ports.now().getTime() - REJECTED_QUIET_MS;
     if (Object.values(state.proposals).some((p) => p.action === action && p.dedupKey === dedupKey && p.status === 'rejected' && new Date(p.resolvedAt ?? p.proposedAt).getTime() > quietUntil)) return true;

@@ -45,7 +45,8 @@ function context(h: ReturnType<typeof harness>, flagged: boolean, MATTER = MAIN,
 for (const scenario of SCENARIOS) {
   for (const flagged of [false, true]) {
     test(`scenario ${scenario.id}${flagged ? ' (flagged)' : ''} runs every step to a closed matter`, async () => {
-      const h = harness();
+      // The scenario fixtures date from today (scenarios/fixtures.ts), so the case's clock does too.
+      const h = harness(new Date());
       const ctx = context(h, flagged);
       for (const step of stepsFor(scenario, flagged)) {
         try {

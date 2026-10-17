@@ -51,12 +51,14 @@ const statusOf = (r: CaseToken): Exclude<Status, 'all'> =>
 /** The date the "When" filter reads: when it ended for a finished case, when it completed, else when it was opened. */
 const whenOf = (r: CaseToken, status: Status) => (status === 'completed' ? r.completedAt : status === 'abandoned' || status === 'closed' ? r.endedAt : r.endedAt ?? r.openedAt) ?? null;
 
+type Load = Record<string, { quick: number; legal: number }>;
 type Completions = { month: number; year: number; best: { month: string; n: number } | null; bestYear?: { year: string; n: number } | null };
 
 export default function CaseViewPage() {
   const [rows, setRows] = useState<CaseToken[] | null>(null);
   const [rollup, setRollup] = useState<CaseloadRollup | null>(null);
   const [completions, setCompletions] = useState<Completions | null>(null);
+  const [taskLoad, setTaskLoad] = useState<Load | null>(null);
   const [scope, setScope] = useState<Scope>('all');
   const [q, setQ] = useState('');
   const [f, setF] = useState<Filters>(NO_FILTERS);
@@ -71,15 +73,16 @@ export default function CaseViewPage() {
   const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
-      let r = await api<{ rows: CaseToken[]; rollup: CaseloadRollup; completions?: Completions }>(`/engine/caseload?mine=${scope === 'mine' ? 1 : 0}`);
+      let r = await api<{ rows: CaseToken[]; rollup: CaseloadRollup; completions?: Completions; load?: Load }>(`/engine/caseload?mine=${scope === 'mine' ? 1 : 0}`);
       // Every open case is tracked. One that is not gets enrolled now, then the board re-reads.
       if ((r.rollup.untracked ?? 0) > 0) {
         await api('/admin/enrol-all', { method: 'POST', body: '{}' }).catch(() => {});
-        r = await api<{ rows: CaseToken[]; rollup: CaseloadRollup; completions?: Completions }>(`/engine/caseload?mine=${scope === 'mine' ? 1 : 0}`);
+        r = await api<{ rows: CaseToken[]; rollup: CaseloadRollup; completions?: Completions; load?: Load }>(`/engine/caseload?mine=${scope === 'mine' ? 1 : 0}`);
       }
       setRows(r.rows);
       setRollup(r.rollup);
       setCompletions(r.completions ?? null);
+      setTaskLoad(r.load ?? null);
       setErr(null);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not load the cases.');
@@ -126,6 +129,7 @@ export default function CaseViewPage() {
           corner={scope === 'all' ? <button type="button" className={`cv-toggle${byHandler ? ' on' : ''}`} role="switch" aria-checked={byHandler} onClick={() => setByHandler(!byHandler)}><i />Assignee</button> : undefined}
           rows={rows}
           rollup={rollup}
+          load={taskLoad}
           completions={completions}
           byHandler={scope === 'all' && byHandler}
           onOpen={(id) => { window.location.href = paths.matter(id); }}

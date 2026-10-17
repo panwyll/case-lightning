@@ -9,6 +9,7 @@ import { rollup, HEALTH_LABEL } from '@/lib/server/engine/health';
 import { LIFECYCLE_LABEL } from '@/lib/server/engine/graph';
 import { untrackedCaseRows } from '@/lib/server/engine/untracked';
 import { query } from '@/lib/server/db';
+import { fromTask, isQuickWork } from '@/lib/server/epa/taxonomy';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -74,7 +75,20 @@ export async function GET(req: NextRequest) {
     for (const x of done) years.set(x.month.slice(0, 4), (years.get(x.month.slice(0, 4)) ?? 0) + x.n);
     const bestYear = [...years.entries()].reduce<{ year: string; n: number } | null>((b, [year, n]) => (!b || n > b.n ? { year, n } : b), null);
     const completions = { month: done.find((x) => x.month === nowLondon.slice(0, 7))?.n ?? 0, year: done.filter((x) => x.month.startsWith(nowLondon.slice(0, 4))).reduce((t, x) => t + x.n, 0), best, bestYear };
+    // Each handler's Tasks list, at a glance: quick tasks (acknowledgements, replies, admin) and legal ones.
+    const live = rows.filter((r) => r.tracked).map((r) => r.matterId);
+    const open = live.length ? await query<{ matter_id: string; kind: string | null; chip: string | null }>(
+      `select matter_id, kind, chip from task_record where tenant_id = $1 and closed_at is null and bucket in ('do', 'escalate') and matter_id = any($2::uuid[])`, [user.tenantId, live]
+    ).catch(() => []) : [];
+    const handlerOf = new Map(rows.map((r) => [r.matterId, r.assignedToName ?? 'Unassigned']));
+    const load: Record<string, { quick: number; legal: number }> = {};
+    for (const t of open) {
+      const who = handlerOf.get(t.matter_id) ?? 'Unassigned';
+      const l = (load[who] ??= { quick: 0, legal: 0 });
+      if (isQuickWork(fromTask({ kind: t.kind, chip: t.chip }).kind)) l.quick += 1; else l.legal += 1;
+    }
     return ok({
+      load,
       completions,
       rows,
       finished: visible.filter((r) => finishedIds.has(r.matterId)),

@@ -216,6 +216,9 @@ const REVIEW: Record<string, EpaKind> = {
 };
 
 /** A Tasks-list item (work.ts WorkItem: kind, chip) as a kind of work. */
+/** Quick work (a few minutes: acknowledgements, replies, chasers, admin) as against legal work (green, or anything longer than ten minutes). */
+export const isQuickWork = (k: EpaKind): boolean => EPA_SPEC[k].rag !== 'green' && (TYPICAL_MINUTES[k] ?? 0) <= 10;
+
 export function fromTask(item: { kind: string | null; chip?: string | null }): EpaWork {
   const chip = (item.chip ?? '').replace(/^Manual Mode · /, '');
   const kind = item.kind ?? '';

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { HEALTH_LABEL, type CaseToken, type HealthBand } from './types';
-import { Minus, Plus, Search } from '@/app/shared/icons';
+import { FileText, Mail, Minus, Plus, Search } from '@/app/shared/icons';
 
 /**
  * The caseload map (docs/caseload-ux.md §1): every matter as a house on a sheet of paper,
@@ -72,7 +72,10 @@ export const CASELOAD_CSS = `
 .cm-names{min-height:0;background:#faf8f3}
 .cm-names .cm-lab{border-right:1px solid #ece7da}
 .cm-corner{padding:6px 10px;letter-spacing:normal;text-transform:none}
-.cm-name{padding:6px 12px;font-size:11.5px;font-weight:800;color:#5b5646;border-left:1px solid #ece7da;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cm-name{padding:6px 12px;font-size:11.5px;font-weight:800;color:#5b5646;border-left:1px solid #ece7da;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:10px}
+.cm-name .who{overflow:hidden;text-overflow:ellipsis}
+.cm-load{margin-left:auto;display:inline-flex;gap:10px;color:#475569;font-weight:700}
+.cm-load span{display:inline-flex;align-items:center;gap:4px}
 .cm-name:first-child{border-left:0}
 .cm-name .n{margin-left:6px;font-weight:600;color:#b8b1a0;font-variant-numeric:tabular-nums}
 .cm-compact .cm-board{background:#fff}
@@ -129,7 +132,9 @@ const isTracked = (t: CaseToken) => t.tracked !== false;
 /** House sizes on the board, as a multiple of normal: a fifth to double. */
 const ZOOM_STEPS = [0.2, 0.3, 0.45, 0.6, 0.8, 1, 1.25, 1.5, 1.75, 2];
 
-export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, compact = false, hideBoard = false, byHandler = false, completions = null }: {
+export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, compact = false, hideBoard = false, byHandler = false, completions = null, load = null }: {
+  /** Each handler's open tasks: quick (acknowledgements, replies, admin) and legal. */
+  load?: Record<string, { quick: number; legal: number }> | null;
   completions?: { month: number; year: number; best: { month: string; n: number } | null; bestYear?: { year: string; n: number } | null } | null;
   /** A control for the board's top-left cell (the Assignee toggle). */
   corner?: React.ReactNode;
@@ -229,7 +234,12 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, comp
           <div className="cm-row cm-names">
             <div className="cm-lab cm-corner">{corner}</div>
             <div className="cm-cols" style={{ gridTemplateColumns: `repeat(${Math.max(1, byHandler ? handlers.length : 1)}, minmax(0, 1fr))` }}>
-              {byHandler && handlers.map((h) => <div key={h} className="cm-name">{h}<span className="n">{visible.filter((r) => (r.assignedToName ?? 'Unassigned') === h).length}</span></div>)}
+              {byHandler && handlers.map((h) => (
+                <div key={h} className="cm-name">
+                  <span className="who">{h}<span className="n">{visible.filter((r) => (r.assignedToName ?? 'Unassigned') === h).length}</span></span>
+                  {load && <span className="cm-load"><span title="Quick Tasks: Acknowledgements, Replies, Admin"><Mail size={16} />{load[h]?.quick ?? 0}</span><span title="Legal Tasks"><FileText size={16} />{load[h]?.legal ?? 0}</span></span>}
+                </div>
+              ))}
             </div>
           </div>
         )}

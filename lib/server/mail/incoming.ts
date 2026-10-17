@@ -18,6 +18,7 @@ import { enqueueMessage } from './queue';
 import { autoFileToCase } from './auto-file';
 import type { SessionUser } from '../types';
 import { recordEmail } from '../epa/live';
+import { markBounced } from './bounce';
 
 export async function processIncomingMessage(user: SessionUser, messageId: string): Promise<void> {
   const message = await getMessage(user.userId, messageId);
@@ -31,6 +32,9 @@ export async function processIncomingMessage(user: SessionUser, messageId: strin
   const selfAddr = (user.email || '').toLowerCase();
   const fromAddr = (message.from?.emailAddress?.address || '').toLowerCase();
   const outbound = !!selfAddr && fromAddr === selfAddr;
+
+  // A bounce of something CONVEYi sent: marked failed in the log (mail/bounce.ts). Best-effort; the notice is handled as usual.
+  await markBounced(user, message).catch(() => false);
 
   const triage = await runTriage(user, message);
 

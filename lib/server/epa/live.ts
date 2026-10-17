@@ -58,9 +58,14 @@ export async function recordEmail(user: SessionUser, message: any, direction: 'o
   if (!x || !allowed.includes(x.category)) return false;
   const roles = (x.roles ?? []).filter((role) => (ROLES as readonly string[]).includes(role));
   await query(
-    `insert into epa_action (tenant_id, user_id, source, ref, at, drafted_at, category, roles, kind, case_id, classified_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict (user_id, source, ref) do nothing`,
-    [user.tenantId, user.userId, direction === 'out' ? 'sent' : 'received', s.id, s.sentAt, s.draftedAt, x.category, roles, origin, opts.matterId ?? null, r.model]
-  );
+    `insert into epa_action (tenant_id, user_id, source, ref, at, drafted_at, category, roles, kind, case_id, classified_by, conversation_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) on conflict (user_id, source, ref) do nothing`,
+    [user.tenantId, user.userId, direction === 'out' ? 'sent' : 'received', s.id, s.sentAt, s.draftedAt, x.category, roles, origin, opts.matterId ?? null, r.model, s.conversationId]
+  ).catch((e: { code?: string }) => {
+    // Before migration 130: without the conversation.
+    if (e?.code !== '42703') throw e;
+    return query(`insert into epa_action (tenant_id, user_id, source, ref, at, drafted_at, category, roles, kind, case_id, classified_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict (user_id, source, ref) do nothing`,
+      [user.tenantId, user.userId, direction === 'out' ? 'sent' : 'received', s.id, s.sentAt, s.draftedAt, x.category, roles, origin, opts.matterId ?? null, r.model]);
+  });
   return true;
 }
 

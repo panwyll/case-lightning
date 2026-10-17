@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/app/shared/engine/api';
 import { AnalyticsView } from '@/app/shared/engine/Analytics';
 import { TimeView, WeekByWeek } from '@/app/shared/epa/TimeView';
+import { MessagingCard } from '@/app/shared/epa/MessagingCard';
 import { paths } from '@/lib/paths';
 import type { AnalyticsReport } from '@/lib/server/analytics/kpis';
 
@@ -89,6 +90,7 @@ function Cases({ tabs }: { tabs: React.ReactNode }) {
         caseHref={(id) => paths.matter(id)}
         feesHref={res.admin ? `${paths.admin}?tab=firm` : null}
       />
+      <MessagingCard />
       <WeekByWeek />
     </div>
   );

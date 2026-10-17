@@ -1482,7 +1482,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       }
       // A completion months away: the offer, the insurance and the searches all have to last that long (exchange.md 5.7).
       const far = (Date.parse(cmd.completionDate) - exchangeDay.getTime()) / 86_400_000 > 90;
-      const delayed = far ? [issue(s, issueIds(s)(), s.hasLender ? 'lender_approval' : 'chain_dependency', `Completion is more than three months after exchange (${cmd.completionDate})`, `${s.hasLender ? `Check the mortgage offer runs past ${cmd.completionDate} and the searches will not be too old for the lender at completion. ` : ''}Buildings insurance must be in place for the whole period. Consider a larger deposit if the seller asked for the delay.`, 'completion')] : [];
+      const delayed = far ? [issue(s, issueIds(s)(), s.hasLender ? 'lender_approval' : 'chain_dependency', `Completion is more than three months after exchange (${prettyDate(cmd.completionDate)})`, `${s.hasLender ? `Check the mortgage offer runs past ${prettyDate(cmd.completionDate)} and the searches will not be too old for the lender at completion. ` : ''}Buildings insurance must be in place for the whole period. Consider a larger deposit if the seller asked for the delay.`, 'completion')] : [];
       return [{ type: 'contracts_exchanged', actor: cmd.actor, payload: { completionDate: cmd.completionDate, exchangedAt: cmd.exchangedAt ?? null, formula: formula as 'A' | 'B' | 'C' | null, spokeWith: cmd.spokeWith?.trim() || null, depositRoute: cmd.depositRoute ?? null } }, ...delayed];
     }
 
