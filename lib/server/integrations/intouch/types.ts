@@ -97,6 +97,8 @@ export interface InTouchListOptions {
   /** Only things changed since this ISO timestamp — the incremental sync's watermark. InTouch has no
    *  such filter: the list is read newest-changed first and stops at the first older matter. */
   updatedSince?: string | null;
+  /** Newest first, one page: what a frequent poll reads (InTouch's folder may not sort; then unsorted). */
+  newestFirst?: boolean;
 }
 
 export interface InTouchPage<T> {

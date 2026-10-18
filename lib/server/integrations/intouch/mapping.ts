@@ -234,6 +234,22 @@ export function toDocument(raw: unknown, caseId: string): InTouchDocument | null
  * A folder item as activity: what kind of record it is, when it was filed and whether the firm filed it. For the measurement
  * phase's counts (docs/epa-categories.md), so nothing is downloaded. Field names to confirm on a live account.
  */
+/** An email record in a matter's folder (filed there, e.g. by InTouch's Outlook add-in): what it is, to find it in the mailbox. Field names to confirm on a live account. */
+export function toFolderEmail(raw: unknown): { id: string; at: string | null; subject: string | null; from: string | null } | null {
+  const type = norm(pick(raw, ['type', 'itemType', 'kind']));
+  if (!/^emails?$/.test(type)) return null;
+  const f = (pick(raw, ['fields']) as Raw | undefined) ?? {};
+  const id = str(pick(raw, ['guid', 'id'])) ?? '';
+  if (!id) return null;
+  const from = pick(f, ['from', 'sender']) ?? pick(raw, ['from', 'sender']);
+  return {
+    id,
+    at: iso(pick(f, ['emailDateTime', 'sentOn', 'receivedOn', 'date']) ?? pick(raw, ['emailDateTime', 'createdOn', 'createdAt', 'date'])),
+    subject: str(pick(f, ['subject', 'title', 'name']) ?? pick(raw, ['subject', 'title', 'name', 'description'])),
+    from: (typeof from === 'string' ? from : str(pick(from, ['email', 'emailAddress', 'address'])))?.toLowerCase() ?? null,
+  };
+}
+
 export function toFolderActivity(raw: unknown): { kind: 'email' | 'note' | 'call' | 'document'; at: string | null; byFirm: boolean | null; name: string | null } {
   const type = norm(pick(raw, ['type', 'itemType', 'kind']));
   const f = (pick(raw, ['fields']) as Raw | undefined) ?? {};

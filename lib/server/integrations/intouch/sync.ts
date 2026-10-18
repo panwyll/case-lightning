@@ -146,13 +146,14 @@ export async function syncInTouch(deps: InTouchSyncDeps, tenantId: string, opts:
 }
 
 /** Every file in the matter's folder, mirrored and read. Idempotent per InTouch id. */
-export async function applyCaseFacts(deps: InTouchSyncDeps, tenantId: string, ref: InTouchMirrorRef, out: InTouchSyncSummary): Promise<void> {
+export async function applyCaseFacts(deps: InTouchSyncDeps, tenantId: string, ref: InTouchMirrorRef, out: InTouchSyncSummary, opts: { newestOnly?: boolean } = {}): Promise<void> {
   // ── every file in the matter's folder: the ID report, completed forms, the client's uploads ──
   // Oldest first, so a case read from its history reaches each step in the order it happened.
   const fresh: InTouchDocument[] = [];
   let cursor: string | null = null;
   do {
-    const page = await deps.api.listDocuments(ref.intouchCaseId, { cursor, limit: 100 });
+    // The frequent poll reads the newest page only; the daily sync, the whole folder.
+    const page = await deps.api.listDocuments(ref.intouchCaseId, opts.newestOnly ? { limit: 50, newestFirst: true } : { cursor, limit: 100 });
     cursor = page.next;
     for (const d of page.items) {
       if (await deps.store.seen(tenantId, 'document', d.id)) continue;

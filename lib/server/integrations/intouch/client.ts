@@ -14,7 +14,7 @@
  * knows about retries, pagination and downloads, and nothing about field names.
  */
 import { INTOUCH_API_TOKEN_HEADER, INTOUCH_ENDPOINTS, MILESTONE_WORDS, type InTouchMilestone } from './endpoints';
-import { pick, primaryClient, taskForMilestone, toCase, toDocument, toFolderActivity, toHtml, toTask, toWebhookEvent, unwrap } from './mapping';
+import { pick, primaryClient, taskForMilestone, toCase, toDocument, toFolderActivity, toFolderEmail, toHtml, toTask, toWebhookEvent, unwrap } from './mapping';
 import { InTouchError, type InTouchAccount, type InTouchCase, type InTouchDocument, type InTouchListOptions, type InTouchPage, type InTouchParty, type InTouchTask, type InTouchWebhookEvent } from './types';
 
 /**
@@ -217,10 +217,26 @@ export class InTouchHttpClient implements InTouchApi {
   async listDocuments(caseId: string, opts?: InTouchListOptions): Promise<InTouchPage<InTouchDocument>> {
     const pageSize = this.pageSize(opts);
     const page = Number(opts?.cursor ?? 1) || 1;
-    const data = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.folder(caseId), undefined, { query: { page, pageSize } });
-    const raws = (pick(data, ['items']) as unknown[] | undefined) ?? (Array.isArray(data) ? data : []);
+    const raws = await this.folderPage(caseId, page, pageSize, !!opts?.newestFirst);
     const items = raws.map((r) => toDocument(r, caseId)).filter((d): d is InTouchDocument => !!d && !!d.id);
-    return { items, next: raws.length >= pageSize && page < (this.cfg.maxPages ?? 50) ? String(page + 1) : null };
+    // Newest first is one page: a frequent poll reads only what is new.
+    return { items, next: !opts?.newestFirst && raws.length >= pageSize && page < (this.cfg.maxPages ?? 50) ? String(page + 1) : null };
+  }
+
+  /** One page of a matter's folder, newest first where asked and InTouch will sort it (else as it comes). */
+  private async folderPage(caseId: string, page: number, pageSize: number, newestFirst: boolean): Promise<unknown[]> {
+    const read = (ordered: boolean) => this.request<unknown>('GET', INTOUCH_ENDPOINTS.folder(caseId), undefined, { query: { page, pageSize, ...(ordered ? { orderBy: 'createdOn', orderByDirection: 'desc' } : {}) } });
+    let data: unknown;
+    try { data = await read(newestFirst); } catch (err) {
+      if (!newestFirst || !(err instanceof InTouchError) || err.status !== 400) throw err;
+      data = await read(false);
+    }
+    return (pick(data, ['items']) as unknown[] | undefined) ?? (Array.isArray(data) ? data : []);
+  }
+
+  /** The email records newest in a matter's folder (one page): filed by a person, e.g. with InTouch's Outlook add-in. */
+  async folderEmails(caseId: string): Promise<Array<{ id: string; at: string | null; subject: string | null; from: string | null }>> {
+    return (await this.folderPage(caseId, 1, 50, true)).map(toFolderEmail).filter((e): e is NonNullable<ReturnType<typeof toFolderEmail>> => !!e);
   }
 
   /**

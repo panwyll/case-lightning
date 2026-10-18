@@ -24,6 +24,14 @@
     {
       "path": "/api/v1/cron/intouch-sync",
       "schedule": "45 6 * * *"
+    },
+    {
+      "path": "/api/v1/cron/intouch-poll?folders=1",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/v1/cron/intouch-poll",
+      "schedule": "* * * * *"
     }
   ]
 }
