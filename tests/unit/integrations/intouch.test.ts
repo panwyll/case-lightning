@@ -514,3 +514,19 @@ test('an event InTouch has not documented is skipped', async () => {
   assert.equal(out.skipped, 1);
   assert.equal(out.cases, 0);
 });
+
+test('no double work: a case is created, a task ticked off, a file uploaded and an email filed, as InTouch takes them', async () => {
+  const h = harness();
+  const created = await h.client.saveMatter({ 'matter.firmReference': 'CL-0042', 'client.name': 'Ann Smith', 'property.address': '14 Oak Street' });
+  assert.ok(created.matterGuid);
+  assert.match(created.matterLink ?? '', /matters\//);
+  assert.deepEqual(h.itouch.saved[0].data, { 'matter.firmReference': 'CL-0042', 'client.name': 'Ann Smith', 'property.address': '14 Oak Street' });
+  const caseId = h.itouch.seed({ tasks: ['Exchange contracts'] });
+  const task = (await h.client.tasks(caseId))[0];
+  await h.client.completeTask(task.id);
+  assert.equal((await h.client.tasks(caseId))[0].completed, true);
+  await h.client.uploadDocument(caseId, { fileName: 'Report on title.pdf', mimeType: 'application/pdf', bytes: Buffer.from('report') });
+  assert.ok(h.itouch.calls.some((c) => c.method === 'POST' && c.path.endsWith('/files')));
+  await h.client.fileEmail(caseId, { at: '2026-10-18T09:00:00Z', subject: 'Your searches', text: 'Searches are back.' });
+  assert.ok(h.itouch.calls.some((c) => c.method === 'POST' && c.path.endsWith('/folder/emails')));
+});

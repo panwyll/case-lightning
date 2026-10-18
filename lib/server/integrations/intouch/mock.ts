@@ -64,6 +64,9 @@ export class MockInTouch {
     return `${prefix}-0000-4000-8000-${String(this.seq).padStart(12, '0')}`;
   }
 
+  /** Matters created through the API, with the data markers they were sent. */
+  saved: Array<{ guid: string; data: Record<string, string> }> = [];
+
   seed(seed: MockCaseSeed = {}): string {
     const guid = seed.guid ?? this.id('aaaaaaaa');
     const raw: Record<string, unknown> = {
@@ -152,6 +155,15 @@ export class MockInTouch {
       let all = [...this.cases.values()].map((c) => c.raw);
       if (query.orderBy?.[0] === 'lastUpdated') all = all.sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)) * (query.orderByDirection?.[0] === 'asc' ? -1 : 1));
       return envelope(200, { matters: all.slice((page - 1) * size, page * size) });
+    }
+
+    // Create or update a matter by data markers: a new matter for a body without one, its guid and link back.
+    if (path === INTOUCH_ENDPOINTS.saveMatter && init.method === 'POST') {
+      const data = (body as { data?: Record<string, string> })?.data;
+      if (!data || !Object.keys(data).length) return envelope(400, undefined, 'no data markers');
+      const guid = this.seed({});
+      this.saved.push({ guid, data });
+      return envelope(200, { matterGuid: guid, matterLink: `https://go.intouchapp.co.uk/matters/${guid}` });
     }
 
     const tm = /^\/api\/v2\/public\/mattertasks\/([^/]+)\/complete$/.exec(path);
