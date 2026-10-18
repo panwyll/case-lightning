@@ -1,5 +1,5 @@
 import { query } from '../db';
-import { readQueue, queueCounts, sweepForRead, recheckSenderAddress, QUEUE_PAGE, type QueueUser } from './queue';
+import { readQueue, queueCounts, sweepForRead, recheckSenderAddress, enqueueMessage, QUEUE_PAGE, type QueueUser, type QueueRow } from './queue';
 import { caseCards, explainMatch, senderOnCase } from './case-cards';
 import { liveMatterIds } from '../matching';
 
@@ -21,13 +21,19 @@ export async function filingQueue(user: QueueUser, q: { cursor?: string | null; 
     if (changed) ({ rows, nextCursor } = await readQueue(user, { cursor: q.cursor, limit: q.limit ?? QUEUE_PAGE }));
   }
 
+  const items = await shapeRows(user, rows);
+  return { items, nextCursor, toFile: counts.toFile, bulk: counts.bulk };
+}
+
+/** Queue rows as the Email page shows them: live cases only, each with its case card and the words that explain the match. */
+export async function shapeRows(user: QueueUser, rows: QueueRow[]) {
   // Suggestions are stored when the email is matched; a case abandoned or closed since is no longer offered.
   const allIds = rows.flatMap((r) => r.candidates.map((c) => c.matterId));
   const live = await liveMatterIds(user.tenantId, allIds).catch(() => new Set(allIds));
-  rows = rows.map((r) => ({ ...r, candidates: r.candidates.filter((c) => live.has(c.matterId)) }));
-  const matterIds = rows.flatMap((r) => r.candidates.map((c) => c.matterId));
+  const kept = rows.map((r) => ({ ...r, candidates: r.candidates.filter((c) => live.has(c.matterId)) }));
+  const matterIds = kept.flatMap((r) => r.candidates.map((c) => c.matterId));
   const cards = await caseCards(user.tenantId, matterIds);
-  const senders = [...new Set(rows.map((r) => r.from_address?.toLowerCase()).filter(Boolean))] as string[];
+  const senders = [...new Set(kept.map((r) => r.from_address?.toLowerCase()).filter(Boolean))] as string[];
   const roles =
     matterIds.length && senders.length
       ? await query<{ matter_id: string; email: string; role: string }>(
@@ -37,7 +43,7 @@ export async function filingQueue(user: QueueUser, q: { cursor?: string | null; 
       : [];
   const roleOf = (matterId: string, email: string | null) => roles.find((r) => r.matter_id === matterId && r.email === email?.toLowerCase())?.role ?? null;
 
-  const items = rows.map((r) => {
+  const items = kept.map((r) => {
     // Equal scores: an open case before a closed one.
     const candidates = [...r.candidates].sort((a, b) => b.score - a.score || Number(!!cards.get(a.matterId)?.closed) - Number(!!cards.get(b.matterId)?.closed));
     return {
@@ -66,7 +72,34 @@ export async function filingQueue(user: QueueUser, q: { cursor?: string | null; 
     };
   });
 
-  return { items, nextCursor, toFile: counts.toFile, bulk: counts.bulk };
+  return items;
+}
+
+/**
+ * One email as the Email page would show it, for Outlook's pane: filed already (to which case), or its suggestions. An
+ * email not in the queue yet is matched now (deterministically, no model call) and queued.
+ */
+export async function queueItemFor(user: QueueUser, messageId: string, fetchMessage: () => Promise<any>) {
+  const filed = async (conversationId: string | null) => (conversationId
+    ? (await query<{ matter_id: string; matter_ref: string; property_address: string | null }>(
+        `select t.matter_id, m.matter_ref, m.property_address from email_thread t join matter m on m.id = t.matter_id where t.tenant_id = $1 and t.graph_conversation_id = $2 limit 1`, [user.tenantId, conversationId]
+      ))[0] ?? null
+    : null);
+  const row = async () => (await query<QueueRow>(
+    `select id, graph_message_id, graph_conversation_id, subject, from_name, from_address, received_at, body_preview, forwarded_from, has_attachments, web_link, not_case_mail, sender, candidates
+       from email_queue where tenant_id = $1 and mailbox_user_id = $2 and graph_message_id = $3 order by created_at desc limit 1`, [user.tenantId, user.userId, messageId]
+  ))[0] ?? null;
+  let r = await row();
+  if (r?.graph_conversation_id) { const f = await filed(r.graph_conversation_id); if (f) return { filed: { matterId: f.matter_id, matterRef: f.matter_ref, propertyAddress: f.property_address }, item: null }; }
+  if (!r) {
+    const m = await fetchMessage();
+    const f = await filed(m?.conversationId ?? null);
+    if (f) return { filed: { matterId: f.matter_id, matterRef: f.matter_ref, propertyAddress: f.property_address }, item: null };
+    await enqueueMessage(user, m).catch(() => false);
+    r = await row();
+  }
+  if (!r) return { filed: null, item: null };
+  return { filed: null, item: (await shapeRows(user, [r]))[0] };
 }
 
 /**
