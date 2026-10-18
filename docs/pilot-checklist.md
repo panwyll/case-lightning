@@ -34,6 +34,8 @@ Tick each item as it is done; add what the pilot teaches us.
 - [ ] List paging, ordering, matter states, template names (docs/intouch-integration.md "Still to confirm").
 - [ ] Upload body, folder item types.
 - [ ] Task State Change carries the task id; completed tasks reach the Time page.
+- [ ] Files uploaded in InTouch reach CONVEYi within 15 minutes (the folder poll), and the folder accepts `orderBy=createdOn`.
+- [ ] An email filed with InTouch's Outlook add-in: what its folder record carries (subject, date, sender), and that CONVEYi files the same email to the same case within a minute. Whether its attachments also land as separate files.
 
 ## Weekly through the pilot
 - [ ] Analytics → Time: red falling; Week By Week against the scan bar.
