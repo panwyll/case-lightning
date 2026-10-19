@@ -477,6 +477,8 @@ function AdminPageInner() {
   const [mergeAway, setMergeAway] = useState<MatterHit | null>(null);
   const [mergeBusy, setMergeBusy] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
+  const [devForm, setDevForm] = useState({ name: '', email: '' });
+  const [devBusy, setDevBusy] = useState(false);
   // Everyone in the firm, for the "Assigned to" picker — not just the people who happen to
   // have work, and not gated on the admin check (which resolves after the first load).
   const [members, setMembers] = useState<Array<{ id: string; display_name: string | null; email: string }>>([]);
@@ -636,6 +638,31 @@ function AdminPageInner() {
   async function setUserRole(userId: string, role: string) {
     try {
       await api(`/admin/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) });
+      await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    }
+  }
+
+  async function addDeveloper() {
+    setDevBusy(true);
+    try {
+      await api('/admin/users', { method: 'POST', body: JSON.stringify({ name: devForm.name.trim(), email: devForm.email.trim() }) });
+      setDevForm({ name: '', email: '' });
+      setStatus('');
+      await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setDevBusy(false);
+    }
+  }
+
+  async function removeDeveloper(u: { id: string; display_name: string | null; email: string }) {
+    if (!window.confirm(`Remove ${u.display_name || u.email}'s access? They are signed out at once. What they did stays in the history.`)) return;
+    try {
+      await api(`/admin/users/${u.id}/remove-access`, { method: 'POST', body: '{}' });
+      if (u.id === me?.userId) { window.location.href = '/api/v1/auth/logout'; return; }
       await load();
     } catch (e) {
       setStatus((e as Error).message);
@@ -1262,29 +1289,53 @@ function AdminPageInner() {
           </div>
         )}
 
-        {tab === 'team' && (
-          <div style={card}>
-            <h3 style={{ marginTop: 0 }}>Team members</h3>
-            <p style={{ fontSize: 13, color: '#64748b' }}>
-              The first person to sign in is the firm Admin; everyone else joins as a Conveyancer. Change roles here.
-            </p>
-            {users.map((u) => (
-              <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', padding: '8px 0' }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{u.display_name || u.email}</div>
-                  <div style={{ fontSize: 12, color: '#64748b' }}>{u.email}</div>
+        {tab === 'team' && (() => {
+          const firm = users.filter((u: any) => !u.is_developer);
+          const devs = users.filter((u: any) => u.is_developer);
+          const iAmDeveloper = !!me && users.some((u: any) => u.id === me.userId && u.is_developer);
+          return (
+          <>
+            <div style={card}>
+              <h3 style={{ marginTop: 0 }}>Team members</h3>
+              {firm.map((u: any) => (
+                <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', padding: '8px 0' }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{u.display_name || u.email}</div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>{u.email}</div>
+                  </div>
+                  <select value={u.role} onChange={(e) => setUserRole(u.id, e.target.value)} style={{ ...input, width: 'auto', marginBottom: 0 }}>
+                    <option value="ADMIN">Admin</option>
+                    <option value="CONVEYANCER">Conveyancer</option>
+                    <option value="ASSISTANT">Assistant</option>
+                    <option value="READ_ONLY">Read only</option>
+                  </select>
                 </div>
-                <select value={u.role} onChange={(e) => setUserRole(u.id, e.target.value)} style={{ ...input, width: 'auto', marginBottom: 0 }}>
-                  <option value="ADMIN">Admin</option>
-                  <option value="CONVEYANCER">Conveyancer</option>
-                  <option value="ASSISTANT">Assistant</option>
-                  <option value="READ_ONLY">Read only</option>
-                </select>
-              </div>
-            ))}
-          </div>
-        )}
-
+              ))}
+            </div>
+            <div style={card}>
+              <h3 style={{ marginTop: 0 }}>Developers</h3>
+              {devs.map((u: any) => (
+                <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, borderTop: '1px solid #e2e8f0', padding: '8px 0' }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{u.display_name || u.email}</div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>{[u.email, u.added_by_name ? `added by ${u.added_by_name}` : null, `since ${new Date(u.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`].filter(Boolean).join(' · ')}</div>
+                  </div>
+                  {(!iAmDeveloper || u.id === me?.userId) && (
+                    <button style={{ ...btnGhost, color: '#b91c1c', borderColor: '#fecaca', padding: '6px 12px', fontSize: 13 }} onClick={() => removeDeveloper(u)}>Remove access</button>
+                  )}
+                </div>
+              ))}
+              {!iAmDeveloper && (
+                <form onSubmit={(e) => { e.preventDefault(); void addDeveloper(); }} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderTop: devs.length ? '1px solid #e2e8f0' : 0, paddingTop: devs.length ? 12 : 0 }}>
+                  <input id="dev-name" placeholder="Name" value={devForm.name} onChange={(e) => setDevForm((f) => ({ ...f, name: e.target.value }))} style={{ ...input, width: 200, marginBottom: 0 }} />
+                  <input id="dev-email" type="email" placeholder="Email" value={devForm.email} onChange={(e) => setDevForm((f) => ({ ...f, email: e.target.value }))} style={{ ...input, width: 260, marginBottom: 0 }} />
+                  <button type="submit" style={btnPrimary} disabled={devBusy || !devForm.name.trim() || !devForm.email.trim()}>{devBusy ? 'Adding…' : 'Add developer'}</button>
+                </form>
+              )}
+            </div>
+          </>
+          );
+        })()}
 
         {tab === 'actions' && (
           <>

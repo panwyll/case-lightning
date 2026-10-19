@@ -17,17 +17,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ us
     const { userId } = z.object({ userId: z.string().uuid() }).parse(await params);
     const { role } = z.object({ role: z.enum(['ADMIN', 'CONVEYANCER', 'ASSISTANT', 'READ_ONLY']) }).parse(await req.json());
 
-    // Don't allow removing the last admin in a tenant.
-    if (role !== 'ADMIN') {
+    const target = await queryOne<{ role: string; is_developer: boolean }>(`select role, is_developer from app_user where id = $1 and tenant_id = $2 and access_removed_at is null`, [
+      userId,
+      admin.tenantId,
+    ]);
+    if (!target) return fail(new Error('User not found'));
+    // A developer account is an admin account (080); it is removed, not demoted.
+    if (target.is_developer) return fail(Object.assign(new Error('A developer account is always an admin. Remove their access instead.'), { status: 400 }));
+    // Don't allow removing the firm's last admin. Developers don't count: the firm must
+    // always keep an admin of its own.
+    if (role !== 'ADMIN' && target.role === 'ADMIN') {
       const admins = await queryOne<{ n: string }>(
-        `select count(*)::text as n from app_user where tenant_id = $1 and role = 'ADMIN'`,
+        `select count(*)::text as n from app_user where tenant_id = $1 and role = 'ADMIN' and not is_developer and access_removed_at is null`,
         [admin.tenantId]
       );
-      const target = await queryOne<{ role: string }>(`select role from app_user where id = $1 and tenant_id = $2`, [
-        userId,
-        admin.tenantId,
-      ]);
-      if (target?.role === 'ADMIN' && Number(admins?.n ?? '0') <= 1) {
+      if (Number(admins?.n ?? '0') <= 1) {
         return fail(new Error('Cannot remove the last admin — promote another admin first.'));
       }
     }

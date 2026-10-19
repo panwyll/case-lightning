@@ -82,8 +82,9 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!verified) return null;
 
   const user = await queryOne<SessionUser>(
-    `select id as "userId", tenant_id as "tenantId", role, email, display_name as "displayName"
-     from app_user where id = $1`,
+    // An account whose access was removed (080) has no session, wherever the token came from.
+    `select id as "userId", tenant_id as "tenantId", role, email, display_name as "displayName", is_developer as "isDeveloper"
+     from app_user where id = $1 and access_removed_at is null`,
     [verified.userId]
   );
   // Every query from here on carries this user for the database's ethical-wall check.

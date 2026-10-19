@@ -16,7 +16,7 @@ import { Mail, ClipboardList, Building, Home, MailPlus, FileText, Users, Shield,
  */
 export type AdminTab = 'mywork' | 'billing' | 'workload' | 'templates' | 'docpacks' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
-export interface Me { role: string; displayName: string | null; email: string }
+export interface Me { role: string; displayName: string | null; email: string; isDeveloper?: boolean }
 
 interface NavItem {
   key: string;
@@ -101,6 +101,7 @@ export const SHELL_CSS = `
 .sh-item.on .sh-badge.soft{background:#ddd6fe;color:#4c1d95}
 .sh-me{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:#475569}
 .sh-av{width:30px;height:30px;border-radius:999px;background:#ede9fe;color:#5A27E0;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.sh-dev{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#92400e;background:#fef3c7;border-radius:999px;padding:2px 8px}
 .sh-out{background:none;border:none;color:#94a3b8;font-size:12.5px;font-weight:600;cursor:pointer;padding:4px 6px;font-family:inherit}
 .sh-out:hover{color:#0f172a}
 @media (max-width:820px){.sh-side{display:none}.sh-main{padding:16px}}
@@ -169,6 +170,8 @@ export function AppShell({ me, children }: { me: Me | null; children: React.Reac
         {me && (
           <div className="sh-me">
             <span>{me.displayName || me.email}</span>
+            {/* Whoever is looking over the shoulder can see this is a setup account. */}
+            {me.isDeveloper && <span className="sh-dev">Developer</span>}
             <span className="sh-av" title={me.email}>{(me.displayName || me.email).slice(0, 2).toUpperCase()}</span>
             <button className="sh-out" onClick={() => { window.location.href = '/api/v1/auth/logout'; }}>Sign out</button>
           </div>

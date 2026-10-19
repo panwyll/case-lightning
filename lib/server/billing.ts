@@ -163,10 +163,13 @@ export function planForPriceIds(priceIds: (string | null | undefined)[]): PlanKe
   return 'plus';
 }
 
-/** Billable seats = everyone who can actually use the product; READ_ONLY viewers are free. */
+/**
+ * Billable seats = the firm's own people who can use the product. READ_ONLY viewers are
+ * free; so are developer accounts added for setup (080), and anyone whose access was removed.
+ */
 export async function billableSeatCount(tenantId: string): Promise<number> {
   const row = await queryOne<{ n: string }>(
-    `select count(*)::text as n from app_user where tenant_id = $1 and role <> 'READ_ONLY'`,
+    `select count(*)::text as n from app_user where tenant_id = $1 and role <> 'READ_ONLY' and not is_developer and access_removed_at is null`,
     [tenantId]
   );
   return Number(row?.n ?? '0');
