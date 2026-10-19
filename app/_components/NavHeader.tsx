@@ -22,7 +22,7 @@ export function NavHeader({
   homeHref = ROUTES.conveyi,
   links = CONVEYI_NAV,
   brand = 'conveyi',
-  signupLabel = 'Get started',
+  signupLabel = 'Get Started',
 }: NavHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const burgerRef = useRef<HTMLButtonElement>(null);

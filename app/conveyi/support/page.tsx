@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { NavHeader, SiteFooter, ctaHref, ROUTES } from '../../_components/shared';
+import { NavHeader, SiteFooter, ctaHref, ROUTES, APPSOURCE_URL } from '../../_components/shared';
 
 export const metadata: Metadata = {
   title: 'Support — CONVEYi',
@@ -26,6 +26,16 @@ const TARGETS: Array<[string, string, string]> = [
   ['High', 'One case or one person is affected; there is a workaround.', 'Next working day'],
   ['Normal', 'A question, a document read wrongly, a change you would like.', 'Two working days'],
   ['Security', 'A suspected vulnerability or a data incident.', 'Within 24 hours, any day'],
+];
+
+// Install → find → pin → sign in. Outlook hides add-ins behind the Apps button and opens the pane unpinned, so it
+// closes the moment you open the next email: the most common reason a new install looks broken.
+const INSTALL: Array<[string, React.ReactNode]> = [
+  ['Install it', <><a className="text-violet underline" href={APPSOURCE_URL} target="_blank" rel="noopener noreferrer" data-cta="support_appsource">Get it on Microsoft AppSource</a>, or in Outlook: Apps → Get Add-ins → search CONVEYi. Nothing downloads to your machine.</>],
+  ['Open an email', 'Any client email, in Outlook on Windows, Mac or the web.'],
+  ['Find it under Apps', 'Click Apps in the email’s toolbar (the ⋯ menu on some versions), then CONVEYi.'],
+  ['Pin the pane', 'Click the pin at the top of the pane. Unpinned, it closes every time you open a different email.'],
+  ['Sign in once', 'With the same Microsoft 365 account. From then on the pane follows you from email to email.'],
 ];
 
 function H2({ children }: { children: React.ReactNode }) {
@@ -59,6 +69,16 @@ export default function SupportPage() {
           <div className="mt-1 text-xl font-semibold"><Mail address={SUPPORT_EMAIL} /></div>
           <div className="mt-2 text-sm text-ink/70">{HOURS}. Security reports are read every day — see below.</div>
         </div>
+
+        <H2>Installing The Outlook Add-in</H2>
+        <ol className="mt-4 space-y-3 text-ink/75">
+          {INSTALL.map(([name, body], i) => (
+            <li key={name} className="flex gap-3">
+              <span className="w-5 shrink-0 font-semibold text-violet">{i + 1}</span>
+              <span><strong className="text-ink">{name}.</strong> {body}</span>
+            </li>
+          ))}
+        </ol>
 
         <H2>What to send</H2>
         <P>Four things get you an answer in one round rather than three:</P>

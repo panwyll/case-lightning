@@ -50,7 +50,7 @@ export const APPSOURCE_URL = 'https://appsource.microsoft.com/en-gb/product/offi
 
 // Nav links for the CONVEYi product site.
 export const CONVEYI_NAV = [
-  { href: ROUTES.howItWorks, label: 'How it works' },
+  { href: ROUTES.howItWorks, label: 'How It Works' },
   { href: ROUTES.pricing, label: 'Pricing' },
   { href: ROUTES.faq, label: 'FAQ' },
 ] as const;
@@ -82,23 +82,23 @@ export function SiteFooter() {
             by <a href={ROUTES.home} className="font-medium hover:text-ink">{PARENT_BRAND}</a>
           </span>
           <p className="mt-2 max-w-sm text-sm text-ink-soft">
-            AI for conveyancers. Inside Outlook. Your cases live in the Microsoft tools you already pay for — nothing new to install.
+            Every case keeps moving. Works with LEAP, InTouch and Outlook.
           </p>
         </div>
         <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-ink-soft">
-          <a href={ROUTES.howItWorks} className="hover:text-ink">How it works</a>
+          <a href={ROUTES.howItWorks} className="hover:text-ink">How It Works</a>
           <a href={ROUTES.pricing} className="hover:text-ink">Pricing</a>
           <a href={ROUTES.faq} className="hover:text-ink">FAQ</a>
           <a href={ROUTES.support} className="hover:text-ink">Support</a>
           <a href="/conveyi/security" className="hover:text-ink">Security</a>
           <a href="/conveyi/privacy" className="hover:text-ink">Privacy</a>
           <a href="/conveyi/terms" className="hover:text-ink">Terms</a>
-          <a href={ROUTES.signup} className="hover:text-ink">Get started</a>
+          <a href={ROUTES.signup} className="hover:text-ink">Get Started</a>
           <a href={ROUTES.home} className="hover:text-ink">{PARENT_BRAND}</a>
         </nav>
       </div>
       <p className="mx-auto mt-8 max-w-6xl text-xs text-ink-soft/70">
-        © {new Date().getFullYear()} {BRAND} — a {PARENT_BRAND} product. GDPR-compliant. Your data stays in your own Microsoft 365 tenant.
+        © {new Date().getFullYear()} {BRAND} — a {PARENT_BRAND} product. GDPR-compliant. Your emails and documents stay in your own Microsoft 365 tenant.
       </p>
     </footer>
   );
@@ -118,8 +118,8 @@ export function CaseLightningFooter() {
         <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-ink-soft">
           <a href={ROUTES.conveyi} className="hover:text-ink">CONVEYi</a>
           <a href="#products" className="hover:text-ink">Products</a>
-          <a href="#custom" className="hover:text-ink">Custom builds</a>
-          <a href={ROUTES.signup} className="hover:text-ink">Get started</a>
+          <a href="#custom" className="hover:text-ink">Custom Builds</a>
+          <a href={ROUTES.signup} className="hover:text-ink">Get Started</a>
         </nav>
       </div>
       <p className="mx-auto mt-8 max-w-6xl text-xs text-ink-soft/70">
