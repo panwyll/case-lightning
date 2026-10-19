@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
-  const me = user ? { role: user.role, displayName: user.displayName ?? null, email: user.email, actor: user.actor ? { displayName: user.actor.displayName, email: user.actor.email } : null } : null;
+  const me = user ? { role: user.role, displayName: user.displayName ?? null, email: user.email, isDeveloper: !!user.isDeveloper, actor: user.actor ? { displayName: user.actor.displayName, email: user.actor.email } : null } : null;
   // A failed payment or a suspension is said on every page, with the way to pay.
   const billing = user ? await getTenantBilling(user.tenantId).catch(() => null) : null;
   const banner = billing?.grace ? 'grace' : billing?.suspended && !billing.pilot ? 'suspended' : null;

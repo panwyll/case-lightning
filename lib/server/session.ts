@@ -96,8 +96,9 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     return user;
   }
   const user = await queryOne<SessionUser>(
-    `select id as "userId", tenant_id as "tenantId", role, email, display_name as "displayName", case_access as "caseAccess", mailbox_access as "mailboxAccess"
-     from app_user where id = $1`,
+    // An account whose access was removed (135) has no session, wherever the token came from.
+    `select id as "userId", tenant_id as "tenantId", role, email, display_name as "displayName", case_access as "caseAccess", mailbox_access as "mailboxAccess", is_developer as "isDeveloper"
+     from app_user where id = $1 and access_removed_at is null`,
     [verified.userId]
   );
   if (!user) return null;
@@ -105,7 +106,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   // the same firm. A demoted or removed admin's view-as session dies with their role.
   if (verified.actorId) {
     const actor = await queryOne<{ id: string; email: string; display_name: string | null }>(
-      `select id, email, display_name from app_user where id = $1 and tenant_id = $2 and role = 'ADMIN'`,
+      `select id, email, display_name from app_user where id = $1 and tenant_id = $2 and role = 'ADMIN' and access_removed_at is null`,
       [verified.actorId, user.tenantId]
     );
     if (!actor) return null;

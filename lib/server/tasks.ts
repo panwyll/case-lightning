@@ -48,7 +48,8 @@ const COLS = 'id, ref, type, detail, assignee, assignee_user_id, due, status, st
 
 export async function listAssignees(tenantId: string): Promise<Array<{ id: string; email: string; display_name: string | null }>> {
   return query(
-    `select id, email, display_name from app_user where tenant_id = $1 order by display_name nulls last, email`,
+    // Developer accounts (135) are not fee earners, and removed accounts are gone.
+    `select id, email, display_name from app_user where tenant_id = $1 and not is_developer and access_removed_at is null order by display_name nulls last, email`,
     [tenantId]
   );
 }

@@ -305,8 +305,12 @@ const PERSON_CSS = `
 `;
 
 /** One person's account and access, in a dialog: role, whose cases they may see, whose inboxes they may file from. */
-function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, toggleIn }: {
+function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, toggleIn, canAddDeveloper = false, onRemove }: {
   person: PersonPanelProps;
+  /** The firm's own admins may add a developer; a developer may not. */
+  canAddDeveloper?: boolean;
+  /** Developers only: remove their access. */
+  onRemove?: () => void;
   setPerson: (p: PersonPanelProps) => void;
   users: any[];
   isNew: boolean;
@@ -357,7 +361,18 @@ function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, t
           )}
           <div className="pp-set">
             <label>Role</label>
-            {seg(person.role, [['ADMIN', 'Admin', 'Everything, including this page.'], ['CONVEYANCER', 'Conveyancer', 'Cases and decisions.'], ['ASSISTANT', 'Assistant', 'Files email and works cases; no decisions on money or reports.']], (v) => setPerson({ ...person, role: v }))}
+            {seg(
+              person.role,
+              person.role === 'DEVELOPER' && !isNew
+                ? [['DEVELOPER', 'Developer', 'Admin rights for setting the firm up. Removed, not demoted.']]
+                : [
+                    ['ADMIN', 'Admin', 'Everything, including this page.'],
+                    ['CONVEYANCER', 'Conveyancer', 'Cases and decisions.'],
+                    ['ASSISTANT', 'Assistant', 'Files email and works cases; no decisions on money or reports.'],
+                    ...(isNew && canAddDeveloper ? [['DEVELOPER', 'Developer', "Admin rights for setting the firm up. Labelled as a developer, never a case's handler, and removable in one step."] as [string, string, string]] : []),
+                  ],
+              (v) => setPerson({ ...person, role: v }),
+            )}
           </div>
           <div className="pp-set">
             <label>Cases</label>
@@ -371,6 +386,7 @@ function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, t
           </div>
         </div>
         <div className="pp-foot">
+          {onRemove && <button type="button" className="pp-btn" style={{ marginRight: 'auto', color: '#b91c1c', borderColor: '#fecaca' }} disabled={busy} onClick={onRemove}>Remove Access</button>}
           <button type="button" className="pp-btn" disabled={busy} onClick={onClose}>Cancel</button>
           <button type="button" className="pp-btn primary" disabled={!canSave} onClick={onSave} title={isNew ? 'Creates the account and emails a sign-in link.' : 'Saves role and access. Logged.'}>{busy ? <Spin>Saving…</Spin> : isNew ? 'Create Account' : 'Save'}</button>
         </div>
@@ -717,7 +733,7 @@ function AdminPageInner() {
   async function openPerson(u: any) {
     try {
       const a = await api<Access>(`/admin/users/${u.id}/access`);
-      setPerson({ name: u.display_name || '', email: u.email, role: u.role, ...a });
+      setPerson({ name: u.display_name || '', email: u.email, role: u.is_developer ? 'DEVELOPER' : u.role, ...a });
       setEditing(u.id);
     } catch (e) {
       setStatus((e as Error).message);
@@ -736,10 +752,24 @@ function AdminPageInner() {
         setStatus(r.signInLinkSent ? `Account created. A sign-in link has been emailed to ${person.email}.` : `Account created. Email is not configured here, so send ${person.email} the sign-in page yourself.`);
       } else if (editing) {
         const u = users.find((x) => x.id === editing);
-        if (u && u.role !== person.role) await api(`/admin/users/${editing}`, { method: 'PATCH', body: JSON.stringify({ role: person.role }) });
+        if (u && !u.is_developer && u.role !== person.role) await api(`/admin/users/${editing}`, { method: 'PATCH', body: JSON.stringify({ role: person.role }) });
         await api(`/admin/users/${editing}/access`, { method: 'PUT', body: JSON.stringify(access) });
       }
       setEditing(null);
+      await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setPersonBusy(false);
+    }
+  }
+  async function removeAccess(u: any) {
+    if (!window.confirm(`Remove ${u.display_name || u.email}'s access? They are signed out within seconds. What they did stays in the history.`)) return;
+    setPersonBusy(true);
+    try {
+      await api(`/admin/users/${u.id}/remove-access`, { method: 'POST', body: '{}' });
+      setEditing(null);
+      if (u.email === me?.email) { window.location.href = '/api/v1/auth/logout'; return; }
       await load();
     } catch (e) {
       setStatus((e as Error).message);
@@ -913,7 +943,7 @@ function AdminPageInner() {
           <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, lineHeight: 1.2, color: '#0f172a', display: 'flex', alignItems: 'center' }}>{(tab === 'policy' || tab === 'actions' || tab === 'audit') && <BackLink href={paths.integrations} label="Back to Tools" />}{TAB_META[tab].label}</h1>
           {tab === 'mywork' && <RefreshButton label="Refresh Tasks" onRefresh={() => new Promise<void>((done) => window.dispatchEvent(new CustomEvent('conveyi:refresh-tasks', { detail: { done } })))} />}
           {tab === 'team' && (<>
-            <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{users.length} of 100</span>
+            <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{users.filter((u) => !u.is_developer).length} of 100</span>
             <button style={{ ...btnGhost, marginLeft: 'auto', height: 34, padding: '0 14px', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }} title="The page your IT admin opens to approve CONVEYi for everyone at the firm" onClick={() => { void navigator.clipboard.writeText(`${window.location.origin}/conveyi/it-admin`).then(() => { setItCopied(true); setTimeout(() => setItCopied(false), 2000); }); }}>{itCopied ? <><Check size={16} />Link Copied</> : 'Copy IT Approval Link'}</button>
             <button style={{ ...btnPrimary, height: 34, padding: '0 14px', fontSize: 13, display: 'inline-flex', alignItems: 'center' }} onClick={openNew} title="Create the account now — name, role and access — and email them a sign-in link.">New</button>
           </>)}
@@ -1229,7 +1259,7 @@ function AdminPageInner() {
         {tab === 'team' && (
           <div style={card}>
             {editing === 'new' && (
-              <PersonPanel person={person} setPerson={setPerson} users={users} isNew busy={personBusy} onSave={() => void savePerson()} onClose={() => setEditing(null)} toggleIn={toggleIn} />
+              <PersonPanel person={person} setPerson={setPerson} users={users.filter((x) => !x.is_developer)} isNew busy={personBusy} onSave={() => void savePerson()} onClose={() => setEditing(null)} toggleIn={toggleIn} canAddDeveloper={!users.some((x) => x.is_developer && x.email === me?.email)} />
             )}
             {users.map((u) => (
               <div key={u.id} style={{ borderTop: '1px solid #e2e8f0' }}>
@@ -1238,9 +1268,10 @@ function AdminPageInner() {
                     <div style={{ fontWeight: 600, fontSize: 13 }}>
                       {u.display_name || u.email}
                       {u.email === me?.email ? <span style={{ color: '#94a3b8', fontWeight: 500 }}> · you</span> : null}
+                      {u.is_developer ? <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#92400e', background: '#fef3c7', borderRadius: 999, padding: '1px 8px' }}>Developer</span> : null}
                       {u.signed_in === false ? <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#78350f', background: '#fef3c7', borderRadius: 999, padding: '1px 8px' }} title="The account exists; they have not signed in yet.">Not signed in yet</span> : null}
                     </div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>{u.email} · {String(u.role).toLowerCase().replace('_', ' ')} · {u.case_access === 'all' ? 'all cases' : 'selected cases'} · {u.mailbox_access === 'all' ? 'all inboxes' : u.mailbox_access === 'selected' ? 'selected inboxes' : 'own inbox'}</div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>{u.email} · {u.is_developer ? `developer${u.added_by_name ? `, added by ${u.added_by_name}` : ''}` : String(u.role).toLowerCase().replace('_', ' ')} · {u.case_access === 'all' ? 'all cases' : 'selected cases'} · {u.mailbox_access === 'all' ? 'all inboxes' : u.mailbox_access === 'selected' ? 'selected inboxes' : 'own inbox'}</div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     {u.email !== me?.email && (
@@ -1250,7 +1281,8 @@ function AdminPageInner() {
                   </div>
                 </div>
                 {editing === u.id && (
-                  <PersonPanel person={person} setPerson={setPerson} users={users.filter((x) => x.id !== u.id)} isNew={false} busy={personBusy} onSave={() => void savePerson()} onClose={() => setEditing(null)} toggleIn={toggleIn} />
+                  <PersonPanel person={person} setPerson={setPerson} users={users.filter((x) => x.id !== u.id && !x.is_developer)} isNew={false} busy={personBusy} onSave={() => void savePerson()} onClose={() => setEditing(null)} toggleIn={toggleIn}
+                    onRemove={u.is_developer && (!users.some((x) => x.is_developer && x.email === me?.email) || u.email === me?.email) ? () => void removeAccess(u) : undefined} />
                 )}
               </div>
             ))}

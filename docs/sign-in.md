@@ -87,6 +87,32 @@ What makes that safe:
 In development with no mail provider configured, the API returns the link in `devLink` so
 the flow can be walked without Resend. That branch is `NODE_ENV === 'development'` only.
 
+* **One address, more than one firm.** A developer or a locum can have an account at
+  several firms under one address. Each gets its own link, and the email names the firm.
+* **Removed means removed.** An account whose access was removed has no session (the
+  session lookup refuses it, so the web app, the Outlook add-in and bearer tokens all stop
+  within 15 seconds), gets no new links, and an unused link issued before removal is refused.
+
+## Developer accounts
+
+For setting a firm up (migration 135). An admin adds one under **Team → New Team Member**,
+role **Developer**; the developer signs in by emailed link, so they need no account in the
+firm's Microsoft tenant.
+
+* **Admin privileges, nothing more.** A developer account is an admin account flagged as a
+  developer (a database check keeps it an admin).
+* **Not one of the firm's people.** Labelled "Developer" in the top bar and on the Team page,
+  never offered as a handler, task assignee, or in anyone's case and inbox choices, and not
+  counted against the team limit.
+* **The firm keeps control.** Only the firm's own admins add or remove developers; a
+  developer cannot add others. Developers do not count as the firm's admin, so the last
+  real admin cannot be demoted, even by a developer.
+* **Removing access** is one button (in the developer's settings) and takes effect within
+  the session cache's 15 seconds; an unused sign-in link is refused at once. The account is kept, not
+  deleted, so everything the developer did stays attributed to them. Re-adding the same
+  address restores the same account. Both are in the audit log (`DEVELOPER_ADDED`,
+  `DEVELOPER_ACCESS_REMOVED`).
+
 ## What is deliberately not here
 
 * **No passwords.** Storing credentials for law firms means owning hashing, resets,

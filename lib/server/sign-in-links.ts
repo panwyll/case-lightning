@@ -61,27 +61,33 @@ export async function requestSignInLink(emailRaw: string, opts: { next?: string 
       throw Object.assign(new Error('Too many sign-in links requested. Try again in a few minutes.'), { status: 429 });
     }
 
-    const user = await queryOne<{ id: string; email: string; display_name: string | null }>(
-      `select id, email, display_name from app_user where lower(email) = $1 limit 1`,
+    // One address can have an account at more than one firm (a developer setting several
+    // up, a locum): each gets its own link, and the email says which firm it opens.
+    const users = await query<{ id: string; email: string; display_name: string | null; firm: string | null }>(
+      `select u.id, u.email, u.display_name, t.name as firm from app_user u left join tenant t on t.id = u.tenant_id
+        where lower(u.email) = $1 and u.access_removed_at is null order by u.created_at limit 5`,
       [email]
-    ).catch(() => null);
+    ).catch(() => []);
     // No user: stop here, silently. The caller cannot tell this branch from the other.
-    if (!user) return { accepted: true as const };
+    if (!users.length) return { accepted: true as const };
 
-    const token = randomBytes(32).toString('base64url');
     const next = opts.next && opts.next.startsWith('/') && !opts.next.startsWith('//') ? opts.next : null;
-    await query(
-      `insert into sign_in_link (user_id, email, token_hash, expires_at, next_path, requested_ip)
-       values ($1,$2,$3, now() + ($4 || ' minutes')::interval, $5, $6)`,
-      [user.id, email, hash(token), String(TTL_MINUTES), next, opts.ip ?? null]
-    );
-
-    const link = `${config.appUrl}/api/v1/auth/sign-in-link/verify?token=${token}`;
-    await sendLinkEmail(user.email, user.display_name, link).catch(() => {
-      /* The row stands; the person can ask for another. Never fail loudly here — the
-         error would tell the browser that this address exists. */
-    });
-    return { accepted: true as const, ...(process.env.NODE_ENV === 'development' ? { devLink: link } : {}) };
+    let devLink: string | null = null;
+    for (const user of users) {
+      const token = randomBytes(32).toString('base64url');
+      await query(
+        `insert into sign_in_link (user_id, email, token_hash, expires_at, next_path, requested_ip)
+         values ($1,$2,$3, now() + ($4 || ' minutes')::interval, $5, $6)`,
+        [user.id, email, hash(token), String(TTL_MINUTES), next, opts.ip ?? null]
+      );
+      const link = `${config.appUrl}/api/v1/auth/sign-in-link/verify?token=${token}`;
+      devLink ??= link;
+      await sendLinkEmail(user.email, user.display_name, link, users.length > 1 ? user.firm : null).catch(() => {
+        /* The row stands; the person can ask for another. Never fail loudly here — the
+           error would tell the browser that this address exists. */
+      });
+    }
+    return { accepted: true as const, ...(process.env.NODE_ENV === 'development' && devLink ? { devLink } : {}) };
   });
 }
 
@@ -92,8 +98,8 @@ export async function requestSignInLink(emailRaw: string, opts: { next?: string 
 export async function redeemSignInLink(token: string): Promise<{ userId: string; tenantId: string | null; next: string }> {
   if (!token || token.length < 20) throw Object.assign(new Error('That sign-in link is not valid.'), { status: 400 });
   return runAsSystem(async () => {
-    const row = await queryOne<{ id: string; user_id: string; tenant_id: string | null; token_hash: string; next_path: string | null; used_at: string | null; expired: boolean }>(
-      `select l.id, l.user_id, u.tenant_id, l.token_hash, l.next_path, l.used_at, (l.expires_at <= now()) as expired
+    const row = await queryOne<{ id: string; user_id: string; tenant_id: string | null; token_hash: string; next_path: string | null; used_at: string | null; expired: boolean; removed: boolean | null }>(
+      `select l.id, l.user_id, u.tenant_id, l.token_hash, l.next_path, l.used_at, (l.expires_at <= now()) as expired, (u.access_removed_at is not null) as removed
          from sign_in_link l left join app_user u on u.id = l.user_id where l.token_hash = $1`,
       [hash(token)]
     );
@@ -103,6 +109,7 @@ export async function redeemSignInLink(token: string): Promise<{ userId: string;
     const b = Buffer.from(hash(token));
     if (a.length !== b.length || !timingSafeEqual(a, b)) throw Object.assign(new Error('That sign-in link is not valid.'), { status: 400 });
     if (row.used_at) throw Object.assign(new Error('That sign-in link has already been used. Ask for a new one.'), { status: 400 });
+    if (row.removed) throw Object.assign(new Error('This account no longer has access. Ask the firm\'s admin.'), { status: 403 });
     if (row.expired) throw Object.assign(new Error(`That sign-in link has expired — they last ${TTL_MINUTES} minutes. Ask for a new one.`), { status: 400 });
 
     // Single use: claim it, and only accept the claim we won.
@@ -122,7 +129,7 @@ export async function purgeSignInLinks(): Promise<number> {
   return rows.length;
 }
 
-async function sendLinkEmail(to: string, name: string | null, link: string): Promise<void> {
+async function sendLinkEmail(to: string, name: string | null, link: string, firm: string | null = null): Promise<void> {
   if (!config.resendApiKey || !config.resendFromEmail) {
     if (process.env.NODE_ENV === 'development') return; // the dev link is returned to the caller instead
     throw new Error('No email provider is configured.');
@@ -132,11 +139,11 @@ async function sendLinkEmail(to: string, name: string | null, link: string): Pro
   await resend.emails.send({
     from: config.resendFromEmail,
     to,
-    subject: 'Your CONVEYi sign-in link',
-    text: `${hello}\n\nHere is your sign-in link. It works once and lasts ${TTL_MINUTES} minutes:\n\n${link}\n\nIf you did not ask for this, you can ignore it — nobody can sign in as you without this email.\n`,
+    subject: firm ? `Your CONVEYi sign-in link — ${firm}` : 'Your CONVEYi sign-in link',
+    text: `${hello}\n\nHere is your sign-in link${firm ? ` for ${firm}` : ''}. It works once and lasts ${TTL_MINUTES} minutes:\n\n${link}\n\nIf you did not ask for this, you can ignore it — nobody can sign in as you without this email.\n`,
     html: `
       <p>${escapeHtml(hello)}</p>
-      <p>Here is your sign-in link. It works once and lasts ${TTL_MINUTES} minutes.</p>
+      <p>Here is your sign-in link${firm ? ` for <strong>${escapeHtml(firm)}</strong>` : ''}. It works once and lasts ${TTL_MINUTES} minutes.</p>
       <p><a href="${link}" style="display:inline-block;padding:11px 20px;background:#5A27E0;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Sign in to CONVEYi</a></p>
       <p style="color:#64748b;font-size:13px">If the button doesn’t work, paste this into your browser:<br>${link}</p>
       <p style="color:#64748b;font-size:13px">If you did not ask for this, you can ignore it — nobody can sign in as you without this email.</p>`,
