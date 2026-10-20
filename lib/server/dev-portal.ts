@@ -25,6 +25,10 @@ export async function devPortalContext() {
     handler: { name: 'Peter Anwyll', email: 'peter@yourfirm.test', phone: '0113 496 0000' },
     firmPhone: '0113 496 0000',
     view,
+    history: [
+      { id: 'dev-m2', subject: 'Your purchase of 14 Oak Street: your report on title', body: 'Dear Priya,\n\nYour report on title is attached. It sets out what we have found about the property and the contract. Please read it and tell us if anything is unclear.\n\nKind regards,\nPeter', at: new Date(Date.now() - 3 * 86_400_000).toISOString() },
+      { id: 'dev-m1', subject: 'Your purchase of 14 Oak Street: welcome', body: 'Dear Priya,\n\nThank you for asking us to act for you. Peter Anwyll will look after your purchase. The first thing we need is your ID check.\n\nKind regards,\nPeter', at: new Date(Date.now() - 12 * 86_400_000).toISOString() },
+    ],
     documents: [...devPortalUploads(), { id: 'dev-1', name: 'Report on title.docx', at: new Date(Date.now() - 3 * 86_400_000).toISOString(), from: 'us' as const }, { id: 'dev-2', name: 'Completion statement.docx', at: new Date(Date.now() - 86_400_000).toISOString(), from: 'us' as const }],
   };
 }

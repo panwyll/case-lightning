@@ -11,7 +11,7 @@ import { engine } from '@/lib/server/engine/adapters';
 import { clientPortalView } from '@/lib/server/engine/client-portal';
 import { clientHelp } from '@/lib/server/engine/client-faq';
 import { infotrackClientFor } from '@/lib/server/integrations/infotrack-adapters';
-import { PORTAL_HOURS, feedbackDue, countPortalOpen, openPortal, portalAccess, portalCookie, portalCookieName, portalDocuments, sendPortalCode, verifyPortalCode } from '@/lib/server/client-portal';
+import { PORTAL_HOURS, feedbackDue, countPortalOpen, openPortal, portalAccess, portalCookie, portalCookieName, portalDocuments, portalHistory, sendPortalCode, verifyPortalCode } from '@/lib/server/client-portal';
 import { DEV_PORTAL_CODE, devPortalContext, isDevPortal } from '@/lib/server/dev-portal';
 
 export const runtime = 'nodejs';
@@ -38,11 +38,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       return ok({ status: 'locked', firmName: info.firmName, propertyAddress: info.propertyAddress, codeTo: (await runAsSystem(() => codeRecipients(row))).map(maskEmail) });
     }
     const svc = engine();
-    const [state, firm, person, documents, enrolled] = await Promise.all([
+    const [state, firm, person, documents, history, enrolled] = await Promise.all([
       runAsSystem(() => svc.getState(row.tenant_id, row.matter_id)),
       runAsSystem(() => getFirmProfile(row.tenant_id)),
       runAsSystem(() => getSignaturePerson(row.tenant_id, info.feeEarnerUserId)),
       portalDocuments(row),
+      portalHistory(row),
       runAsSystem(() => queryOne<{ id: string }>(`select matter_id as id from matter_engine_state where matter_id = $1`, [row.matter_id])),
     ]);
     await countPortalOpen(row.id);
@@ -61,6 +62,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       // A case the engine does not run has no status to show yet: documents and contact only.
       view,
       documents,
+      history,
     });
   } catch (error) {
     return fail(error);

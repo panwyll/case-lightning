@@ -22,7 +22,25 @@ export type PortalAction =
   | { type: 'reply'; label: string }
   | { type: 'questions'; label: string; kind: 'sdlt' | 'cgt'; questions: Array<{ key: string; q: string }> };
 export interface PortalTask { id: string; title: string; detail: string; since: string; action: PortalAction }
-export interface PortalProgress { id: string; label: string; state: 'done' | 'in_progress' | 'with_you' | 'not_started' }
+export interface PortalProgress {
+  id: string;
+  label: string;
+  state: 'done' | 'in_progress' | 'with_you' | 'not_started';
+  /** What this part of the work is, in one sentence for the client. */
+  about: string;
+  /** Who has it now, in the client's words ("You", "Your lender", "Us"); null once done or before it starts. */
+  withWho: string | null;
+  /** How long it usually takes, in words. */
+  usually: string | null;
+  /** When it went to whoever has it (the request, ISO), if it is waiting on someone. */
+  since: string | null;
+  /** When we expect it back (ISO date), from when it went and how long it usually takes; null when it cannot fairly be said. */
+  expected: string | null;
+  /** Past the usual time. */
+  longerThanUsual: boolean;
+  /** How many times we have chased it. */
+  chased: number;
+}
 export interface ClientPortalView {
   side: 'buyer' | 'seller' | 'owner';
   transaction: string;
@@ -61,6 +79,50 @@ const CLIENT_WS: Partial<Record<Workstream, string>> = {
   survey: 'Survey', leasehold: 'Leasehold Information', contract: 'Contract', deposit: 'Deposit', report_on_title: 'Report On Title', co_ownership: 'How You Will Own It',
   property_forms: 'Property Forms', redemption: 'Paying Off Your Mortgage', lender_consent: "Lender's Consent", completion: 'Completion', registration: 'Land Registry', discharge: 'Old Mortgage Removed',
 };
+/**
+ * What each part of the work is and how long it usually takes, for the client. The days are calendar days from the
+ * request to the thing arriving, at the long end of usual, so "expected by" is a date we are rarely late against; a
+ * part with no days has no fair date of its own (it waits on other parts, or on a date the parties agree).
+ */
+const ABOUT: Partial<Record<Workstream, { about: string; usually: string; days?: number }>> = {
+  id_aml: { about: 'Confirming who you are, as the law requires before we can act.', usually: 'A few minutes for you, then a day or two for the result', days: 3 },
+  source_of_funds: { about: 'Where the money for the purchase comes from, as the law requires.', usually: 'A few days once you have sent the form and statements', days: 7 },
+  title: { about: 'The legal ownership of the property, from HM Land Registry and the seller’s solicitor.', usually: 'One to two weeks', days: 14 },
+  searches: { about: 'Checks with the council, water company and others on the property and the area.', usually: 'Two to three weeks; some councils take longer', days: 21 },
+  enquiries: { about: 'Questions to the other side about what the papers do not answer.', usually: 'About two weeks for each round of replies; most cases need more than one', days: 14 },
+  mortgage: { about: 'Your lender’s offer, which we check before exchange.', usually: 'Two to four weeks from your application, depending on your lender', days: 28 },
+  survey: { about: 'Your surveyor’s report on the condition of the property.', usually: 'One to two weeks to book and report', days: 14 },
+  leasehold: { about: 'The lease, and information from the landlord or managing agent.', usually: 'Two to four weeks from the managing agent', days: 28 },
+  contract: { about: 'The contract, agreed and signed, ready to exchange.', usually: 'Agreed once the other parts are done' },
+  deposit: { about: 'The deposit, paid to us before exchange.', usually: 'Needed a few days before exchange' },
+  report_on_title: { about: 'Our report to you on the property and the contract.', usually: 'Sent once the searches and replies are back' },
+  co_ownership: { about: 'How you will own the property together.', usually: 'A short conversation with us' },
+  property_forms: { about: 'Your forms about the property and what is included in the sale.', usually: 'About a week to fill in', days: 10 },
+  redemption: { about: 'The figure from your lender to pay off your mortgage on completion.', usually: 'About a week from your lender', days: 10 },
+  lender_consent: { about: 'Your lender’s agreement to the change.', usually: 'One to three weeks', days: 21 },
+  completion: { about: 'The money moves and the keys are released, on the day agreed at exchange.', usually: 'One to four weeks after exchange' },
+  registration: { about: 'Registering the change of ownership at HM Land Registry. Nothing changes for you meanwhile.', usually: 'Several weeks to a few months', days: 120 },
+  discharge: { about: 'Your old mortgage taken off the register.', usually: 'Two to four weeks after completion', days: 28 },
+};
+/** Which wait belongs to which part of the work, for who has it and since when. */
+const WAIT_WS: Record<string, Workstream[]> = {
+  id_check: ['id_aml'], proof_of_funds: ['source_of_funds'], search: ['searches'], enquiry: ['enquiries'], management_pack: ['leasehold'], property_forms: ['property_forms'],
+  redemption: ['redemption'], lender_consent: ['lender_consent'], discharge: ['discharge'], seller_discharge: ['discharge'], registration: ['registration'],
+  contract_pack: ['title', 'contract'], transfer_deed: ['contract'], signed_documents: ['contract'], mortgage_offer: ['mortgage'], survey: ['survey'], deposit: ['deposit'],
+  funds: ['completion'], insurance: ['completion'], retention_release: ['completion'],
+};
+/** Where the seller's side reads differently. */
+const ABOUT_SELLER: Partial<Record<Workstream, { about: string; usually: string; days?: number }>> = {
+  title: { about: 'The legal ownership of the property, from HM Land Registry, for the buyer’s solicitor.', usually: 'A few days', days: 7 },
+  enquiries: { about: 'Questions from the buyer’s solicitor, which we answer, with you where only you know.', usually: 'We aim to answer within a week of each round' },
+  contract: { about: 'The contract, agreed with the buyer’s solicitor and signed, ready to exchange.', usually: 'Agreed once the buyer’s side is ready' },
+};
+/** A remortgage or transfer: no other side. */
+const ABOUT_OWNER: Partial<Record<Workstream, { about: string; usually: string; days?: number }>> = {
+  title: { about: 'The legal ownership of the property, from HM Land Registry.', usually: 'A day or two', days: 3 },
+};
+const sentence = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
+
 /** Which of the client's waits belongs to which workstream, so it reads "With You". */
 const CLIENT_WAIT_WS: Record<string, Workstream> = { id_check: 'id_aml', proof_of_funds: 'source_of_funds', property_forms: 'property_forms', mortgage_offer: 'mortgage', survey: 'survey', deposit: 'deposit', signed_documents: 'contract', funds: 'completion', insurance: 'completion' };
 
@@ -125,7 +187,8 @@ export const CGT_QUESTIONS: Array<{ key: string; q: string }> = [
 ];
 function taxTask(s: MatterState, side: ClientPortalView['side']): PortalTask[] {
   if (s.exchange.exchangedAt) return [];
-  const since = s.waits[0]?.openedAt ?? new Date().toISOString();
+  // Asked from the start of the case: the questions are on the page from the day it opens.
+  const since = s.stageHistory[0]?.at ?? '';
   if ((side === 'buyer' || s.transactionType === 'transfer_of_equity') && !s.sdltFacts) return [{ id: 'tax:sdlt', title: 'Tax Questions', detail: 'A few questions that decide how much Stamp Duty you pay. Answer for everyone buying.', since, action: { type: 'questions', label: 'Answer The Questions', kind: 'sdlt', questions: SDLT_QUESTIONS } }];
   if (side === 'seller' && !s.cgtFacts) return [{ id: 'tax:cgt', title: 'Tax Questions', detail: 'Two questions about the property, so we can tell you if you need to report the sale to HMRC.', since, action: { type: 'questions', label: 'Answer The Questions', kind: 'cgt', questions: CGT_QUESTIONS } }];
   return [];
@@ -147,7 +210,28 @@ export function clientPortalView(s: MatterState, now: Date = new Date(), opts: P
   const withYou = new Set(onClient.map((w) => CLIENT_WAIT_WS[w.key]).filter(Boolean));
   const progress: PortalProgress[] = workstreams(s, now)
     .filter((w) => w.status !== 'not_applicable' && CLIENT_WS[w.id])
-    .map((w) => ({ id: w.id, label: CLIENT_WS[w.id]!, state: w.status === 'complete' ? 'done' : withYou.has(w.id) ? 'with_you' : w.status === 'not_started' ? 'not_started' : 'in_progress' }));
+    .map((w) => {
+      const state: PortalProgress['state'] = w.status === 'complete' ? 'done' : withYou.has(w.id) ? 'with_you' : w.status === 'not_started' ? 'not_started' : 'in_progress';
+      const t = (side === 'seller' ? ABOUT_SELLER[w.id] : side === 'owner' ? ABOUT_OWNER[w.id] : undefined) ?? ABOUT[w.id];
+      // Who has it: the oldest thing still owed on it (the client's own first), else us while it is under way.
+      const owed = b.waiting.filter((x) => WAIT_WS[x.key]?.includes(w.id)).sort((a, z) => (a.role === 'client' ? -1 : 0) - (z.role === 'client' ? -1 : 0) || z.sinceCalendarDays - a.sinceCalendarDays);
+      const first = owed[0];
+      const opened = first ? s.waits.find((x) => x.key === first.key && x.subject === first.subject && !x.closedAt)?.openedAt ?? null : null;
+      const late = !!(first && t?.days !== undefined && first.sinceCalendarDays > t.days);
+      const expected = opened && t?.days !== undefined && !late && first?.role !== 'client' ? new Date(new Date(opened).getTime() + t.days * 86_400_000).toISOString().slice(0, 10) : null;
+      return {
+        id: w.id,
+        label: CLIENT_WS[w.id]!,
+        state,
+        about: t?.about ?? '',
+        withWho: state === 'done' ? null : first ? sentence(first.who) : state === 'in_progress' ? 'Us' : null,
+        usually: t?.usually ?? null,
+        since: state === 'done' ? null : opened,
+        expected: state === 'done' ? null : expected,
+        longerThanUsual: state !== 'done' && late,
+        chased: state === 'done' || !first || first.role === 'client' ? 0 : first.chasesSent,
+      };
+    });
 
   const byWho = new Map<string, string[]>();
   for (const w of b.waiting.filter((x) => x.role !== 'client')) byWho.set(w.who, Array.from(new Set([...(byWho.get(w.who) ?? []), w.what])));

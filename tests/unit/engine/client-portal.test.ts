@@ -81,3 +81,36 @@ test('the completion message on every kind of case asks how we did, linking to t
   assert.ok(sent[0].text.includes(`${SURVEY_LINE.completed}\nhttps://app.test/portal/abc`), sent[0].text);
   assert.ok(sent[1].text.includes(PORTAL_LINE) && !sent[1].text.includes(SURVEY_LINE.completed));
 });
+
+test('progress is the parts of the work side by side, each saying what it is, who has it and how long it usually takes', async () => {
+  const h = await purchase();
+  const v = clientPortalView(await h.svc.getState(TENANT, MATTER), h.ports.now());
+  const id = v.progress.find((p) => p.label === 'Identity Check')!;
+  assert.equal(id.withWho, 'You');
+  assert.ok(id.about && id.usually, 'every part says what it is and how long it usually takes');
+  assert.ok(id.since, 'when it was asked for');
+  assert.equal(id.expected, null, 'no "expected by" for what is waiting on the client');
+  const searches = v.progress.find((p) => p.label === 'Searches');
+  assert.ok(searches?.usually && /week/.test(searches.usually), JSON.stringify(searches));
+  for (const p of v.progress) if (p.state === 'done') assert.equal(p.withWho, null);
+});
+
+test('a part past its usual time says so calmly, with the chases, and no longer promises a date', async () => {
+  const h = await purchase();
+  const s = await h.svc.getState(TENANT, MATTER);
+  const open = s.waits.find((w) => !w.closedAt)!;
+  s.waits.push({ ...open, key: 'search', subject: 'LLC1', openedAt: new Date(h.ports.now().getTime() - 40 * 86_400_000).toISOString(), chasesSentAt: [h.ports.now().toISOString(), h.ports.now().toISOString()] });
+  const v = clientPortalView(s, h.ports.now());
+  const p = v.progress.find((x) => x.label === 'Searches')!;
+  assert.equal(p.longerThanUsual, true, JSON.stringify(p));
+  assert.equal(p.expected, null);
+  assert.equal(p.chased, 2);
+  assert.ok(p.withWho && !/^you$/i.test(p.withWho));
+});
+
+test('history shows the message as the client got it, without the portal line at its foot', async () => {
+  const { withoutPortalLine } = await import('../../../lib/server/client-portal');
+  const sent = withPortal('Dear Priya,\n\nYour searches are back.\n\nKind regards,\nPeter', 'https://app.test/portal/abcdefghijklmnopqrstuv');
+  assert.match(sent, /\/portal\//);
+  assert.equal(withoutPortalLine(sent), 'Dear Priya,\n\nYour searches are back.\n\nKind regards,\nPeter');
+});

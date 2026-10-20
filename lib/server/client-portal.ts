@@ -94,6 +94,33 @@ export async function portalDocuments(row: { tenant_id: string; matter_id: strin
   });
 }
 
+export interface PortalMessage { id: string; subject: string; body: string; at: string }
+
+/**
+ * What we have sent the client: every message that went to them (email or WhatsApp), newest first. Only messages
+ * to the client: never what went to the other side, the agent or the lender, and nothing internal. The portal
+ * line at the foot of each message is left off; they are already here.
+ */
+export async function portalHistory(row: { tenant_id: string; matter_id: string }): Promise<PortalMessage[]> {
+  const rows = await runAsSystem(() => query<{ id: string; subject: string | null; body: string; at: Date }>(
+    `select cm.id, cm.subject, cm.body, cm.created_at as at
+       from client_message cm
+      where cm.tenant_id = $1 and cm.matter_id = $2 and cm.direction = 'OUT' and cm.status = 'SENT' and cm.channel in ('email', 'whatsapp')
+        and exists (
+          select 1 from matter_contact c
+           where c.tenant_id = cm.tenant_id and c.matter_id = cm.matter_id and c.role = 'CLIENT'
+             and ((c.email is not null and position(lower(c.email) in lower(coalesce(cm.address, ''))) > 0)
+               or (cm.channel = 'whatsapp' and c.phone is not null and regexp_replace(c.phone, '[^0-9]', '', 'g') = regexp_replace(coalesce(cm.address, ''), '[^0-9]', '', 'g')))
+        )
+      order by cm.created_at desc limit 100`,
+    [row.tenant_id, row.matter_id]
+  )).catch(() => []);
+  return rows.map((r) => ({ id: r.id, subject: r.subject?.trim() || 'Message from us', body: withoutPortalLine(r.body), at: r.at.toISOString() }));
+}
+
+/** A message as the client got it, less the portal line (withPortal: a lead line, then the link). */
+export const withoutPortalLine = (body: string): string => body.replace(/\n*[^\n]*\n[^\n]*\/portal\/[A-Za-z0-9_-]+[^\n]*/g, '').replace(/\n{3,}/g, '\n\n').trim();
+
 /** A file the client gives us through the portal: an ordinary document on the case, its bytes kept, counted. */
 export async function storePortalUpload(row: PortalRow, input: { fileName: string; mimeType: string; bytes: Buffer }): Promise<{ id: string; fileName: string }> {
   const safeName = input.fileName.replace(/[^\w.\- ()]/g, '_').slice(0, 120) || 'Document';

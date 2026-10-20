@@ -40,14 +40,20 @@
 - The page shows how often the client has opened the portal and how many files they have uploaded.
 
 **What the client sees** (phone first, plain words):
-- **For You:** each thing waiting on them, with the way to do it:
+- **For You:** each thing waiting on them, when it was asked for, and the way to do it:
   - the ID check link;
   - the proof-of-funds form;
   - an upload for property forms, mortgage offer, survey, signed papers or insurance;
   - **Call Us** for any money. Bank details are never shown, with the "we never change bank details by email" warning.
-- **Progress:** the workflow's macro stages as their steps (Instruction → … → Registration), each workstream as Done, In Progress, With You or Not Started, what we are waiting on from others, and the key dates.
+- **Progress:** the parts of the work side by side, because they run at the same time and take very different lengths of time; never a step-by-step bar.
+  - A bar with one segment per part, coloured Done, With You, In Progress or Not Started, with the count of each. Each segment names its part and who has it, and opens its row.
+  - A row per part (`PortalProgress`), opening to: what it is, how long it usually takes (`ABOUT` in `engine/client-portal.ts`), who has it now ("With your lender", "With you", "With us"), since when, and when we expect it back.
+  - "Expected" is the request date plus the long end of usual. It is never given for what is waiting on the client, nor for a part with no fair duration of its own (the contract, completion).
+  - Past its usual time, a part says "Taking longer than usual" and how many times we have chased, and gives no date.
+  - The key dates (exchange, completion) below.
 - **Documents:** what we have sent them by secure link, and what they have given us. Only listed files can be downloaded.
-- **Help:** organised by the workflow's macro stages (`engine/client-faq.ts`). These are the flowchart's sections, which are also the client's steps in Progress: Instruction, Investigation, Enquiries, Contract & Exchange, Completion, Registration. A remortgage or transfer has Instruction, Investigation, Completion and Registration.
+- **History:** every message we sent the client (email or WhatsApp), newest first, each opening to the message as they got it, less the portal line (`portalHistory`). Never what went to anyone else.
+- **Help:** organised by the workflow's macro stages (`engine/client-faq.ts`). These are the flowchart's sections: Instruction, Investigation, Enquiries, Contract & Exchange, Completion, Registration. A remortgage or transfer has Instruction, Investigation, Completion and Registration.
   - **Each stage answers, for the client's side:** "What happens at {stage}?", "How long does {stage} take?", and the one or two questions clients ask then (the deposit at Contract & Exchange, the keys or moving out at Completion).
   - **Current stage first, marked Now:** it adds "What do I need to do?", answered from the case. Its How Long uses the case's own dates.
   - **The rest:** the other stages, in order, behind Other Stages, then General (paying safely, cost, documents, security, contact details, concerns). Search covers everything.

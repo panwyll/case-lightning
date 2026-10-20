@@ -39,29 +39,35 @@ const CSS = `
 .cp .yn .btn{min-width:84px}
 .cp .task .d{font-size:15px;color:#475569;line-height:1.5;margin:0 0 10px}
 .cp .none{font-size:15px;color:#166534;display:flex;align-items:center;gap:8px}
-.cp .steps{display:flex;gap:0;margin:0 0 18px;overflow-x:auto}
-.cp .step{flex:1;min-width:92px;text-align:center;position:relative;font-size:13px;color:#94a3b8;font-weight:600;padding-top:30px}
-.cp .step:before{content:'';position:absolute;top:11px;left:-50%;right:50%;height:3px;background:#e2e8f0}
-.cp .step:first-child:before{display:none}
-.cp .step.done:before,.cp .step.current:before{background:#5A27E0}
-.cp .step i{position:absolute;top:0;left:50%;transform:translateX(-50%);width:24px;height:24px;border-radius:999px;background:#fff;border:3px solid #e2e8f0;display:flex;align-items:center;justify-content:center}
-.cp .step.done i{background:#5A27E0;border-color:#5A27E0;color:#fff}
-.cp .step.current i{border-color:#5A27E0}
-.cp .step.current{color:#4c1d95}
-.cp .step.done{color:#475569}
-.cp .ws{display:flex;flex-wrap:wrap;gap:8px}
-.cp .chip{display:inline-flex;align-items:center;gap:6px;font-size:14px;border-radius:99px;padding:6px 12px;background:#f1f5f9;color:#475569}
-.cp .chip b{font-size:12px;font-weight:800;margin-left:2px}
-.cp .chip.done{background:#dcfce7;color:#14532d}
-.cp .chip.with_you{background:#ede9fe;color:#4c1d95}
-.cp .chip.in_progress{background:#fef3c7;color:#78350f}
-.cp .steps-m{display:none}
-.cp .steps-m .seg{display:flex;gap:4px;margin-bottom:8px}
-.cp .steps-m .seg i{flex:1;height:8px;border-radius:99px;background:#e2e8f0}
-.cp .steps-m .seg i.done,.cp .steps-m .seg i.current{background:#5A27E0}
-.cp .steps-m b{font-size:16px;margin-right:8px}
-.cp .steps-m span{font-size:13px;color:#64748b}
-.cp .others{margin-top:14px;font-size:15px;color:#475569;line-height:1.6}
+.cp h2 .sum{margin-left:auto;font-size:14px;font-weight:600;color:#64748b}
+.cp .bar{display:flex;gap:3px;height:14px;margin:2px 0 10px}
+.cp .bar button{flex:1;border:0;padding:0;border-radius:4px;cursor:pointer;background:#e2e8f0}
+.cp .bar button:focus-visible{outline:2px solid #5A27E0;outline-offset:2px}
+.cp .bar .done,.cp .key .done{background:#16a34a}
+.cp .bar .with_you,.cp .key .with_you{background:#5A27E0}
+.cp .bar .in_progress,.cp .key .in_progress{background:#f59e0b}
+.cp .bar .not_started,.cp .key .not_started{background:#e2e8f0}
+.cp .key{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:#475569;margin-bottom:10px}
+.cp .key span{display:inline-flex;align-items:center;gap:6px}
+.cp .key i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.cp .strand summary{font-size:15px;font-weight:600;padding:12px 0}
+.cp .strand summary .st{display:inline-flex;color:#94a3b8}
+.cp .strand summary .st svg{color:inherit}
+.cp .strand.done summary .st{color:#16a34a}
+.cp .strand.with_you summary .st{color:#5A27E0}
+.cp .strand.in_progress summary .st{color:#d97706}
+.cp .strand summary .holder{margin-left:auto;line-height:1.2;font-size:13px;font-weight:600;color:#64748b;text-align:right}
+.cp .strand.with_you summary .holder{color:#4c1d95}
+.cp .strand.done summary .holder{color:#166534}
+.cp .strand dl{margin:0 0 14px 26px;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px;color:#334155;line-height:1.5}
+.cp .strand dt{color:#64748b;font-weight:600}
+.cp .strand dd{margin:0}
+.cp .strand .about{margin:0 0 10px 26px;font-size:15px;color:#334155;line-height:1.5}
+.cp .msg summary{display:block;padding:12px 0}
+.cp .msg summary b{display:block;font-size:15px}
+.cp .msg summary small{font-size:13px;color:#64748b;font-weight:500}
+.cp .msg .body{white-space:pre-wrap;font-size:15px;color:#334155;line-height:1.55;margin:0 0 14px;padding:12px 14px;background:#f8fafc;border-radius:10px}
+.cp .asked{font-size:13px;color:#64748b;margin:-2px 0 6px}
 .cp .dates{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:14px;font-size:15px}
 .cp .dates b{display:block;font-size:13px;color:#64748b;font-weight:600}
 .cp .doc{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid #f1f5f9;font-size:15px}
@@ -93,10 +99,7 @@ const CSS = `
 .cp .ends{display:flex;justify-content:space-between;font-size:13px;color:#64748b;max-width:540px}
 @keyframes cp-spin{to{transform:rotate(360deg)}}
 .cp .spin{animation:cp-spin .8s linear infinite}
-@media (max-width:560px){
-.cp .steps{display:none}
-.cp .steps-m{display:block;margin-bottom:16px}
-}
+@media (max-width:560px){.cp .bar{height:12px}}
 `;
 
 type Action = { type: 'link'; url: string; label: string } | { type: 'upload'; label: string; role: string | null } | { type: 'call'; label: string } | { type: 'reply'; label: string } | { type: 'questions'; label: string; kind: 'sdlt' | 'cgt'; questions: Array<{ key: string; q: string }> };
@@ -104,22 +107,26 @@ interface View {
   closed: boolean;
   journey: Array<{ key: string; label: string; state: 'done' | 'current' | 'next' }>;
   stageLabel: string;
-  progress: Array<{ id: string; label: string; state: 'done' | 'in_progress' | 'with_you' | 'not_started' }>;
+  progress: Array<{ id: string; label: string; state: 'done' | 'in_progress' | 'with_you' | 'not_started'; about: string; withWho: string | null; usually: string | null; since: string | null; expected: string | null; longerThanUsual: boolean; chased: number }>;
   tasks: Array<{ id: string; title: string; detail: string; since: string; action: Action }>;
   waitingOnOthers: Array<{ who: string; what: string[] }>;
   dates: { targetExchange: string | null; exchanged: string | null; completion: string | null; targetCompletion: string | null; completed: string | null };
 }
 interface Doc { id: string; name: string; at: string; from: 'us' | 'you' }
+interface Msg { id: string; subject: string; body: string; at: string }
 interface Faq { id: string; q: string; a: string }
 interface HelpSection { stage: string; label: string; current: boolean; faqs: Faq[] }
 type Ctx =
   | { status: 'locked'; firmName: string; propertyAddress: string; codeTo: string[] }
-  | { status: 'open'; firmName: string; propertyAddress: string; clientNames: string | null; handler: { name: string | null; email: string | null; phone: string | null }; firmPhone: string | null; view: View | null; documents: Doc[]; help: HelpSection[]; feedback: { milestone: string; kind: 'csat' | 'nps' } | null }
+  | { status: 'open'; firmName: string; propertyAddress: string; clientNames: string | null; handler: { name: string | null; email: string | null; phone: string | null }; firmPhone: string | null; view: View | null; documents: Doc[]; history: Msg[]; help: HelpSection[]; feedback: { milestone: string; kind: 'csat' | 'nps' } | null }
   | { status: 'gone' }
   | { status: 'error' };
 
 const day = (iso: string | null) => (iso ? new Date(iso.length === 10 ? `${iso}T12:00:00` : iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
 const STATE_LABEL: Record<string, string> = { done: 'Done', in_progress: 'In Progress', with_you: 'With You', not_started: 'Not Started' };
+const STATES = ['done', 'with_you', 'in_progress', 'not_started'] as const;
+/** "With your lender", "With you", "Done": who has a strand, as its row and its bar segment say. */
+const holder = (p: View['progress'][number]) => (p.state === 'done' ? 'Done' : p.state === 'not_started' ? 'Not Started' : p.withWho ? `With ${p.withWho === 'You' || p.withWho === 'Us' ? p.withWho : p.withWho.charAt(0).toLowerCase() + p.withWho.slice(1)}` : STATE_LABEL[p.state]);
 
 /** Photos from a phone are often over the upload limit: shrink them to a sharp JPEG first. */
 async function fitForUpload(file: File): Promise<File> {
@@ -148,6 +155,8 @@ export default function ClientPortal() {
   const [over, setOver] = useState(false);
   const [q, setQ] = useState('');
   const [allFaqs, setAllFaqs] = useState(false);
+  const [strand, setStrand] = useState<string | null>(null);
+  const [allHistory, setAllHistory] = useState(false);
   const [contact, setContact] = useState(false);
   const [msg, setMsg] = useState('');
   const [sent, setSent] = useState(false);
@@ -320,6 +329,7 @@ export default function ClientPortal() {
           ) : tasks.map((t) => (
             <div key={t.id} className="task">
               <p className="t">{t.title}</p>
+              {t.since && <p className="asked">Asked {day(t.since)}</p>}
               <p className="d">{t.detail}</p>
               {actionFor(t)}
             </div>
@@ -327,35 +337,35 @@ export default function ClientPortal() {
         </div>
       )}
 
-      {v && (
+      {v && v.progress.length > 0 && (
         <div className="card">
-          <h2>Progress</h2>
-          <div className="steps">
-            {v.journey.map((s) => (
-              <div key={s.key} className={`step ${s.state}`}><i>{s.state === 'done' ? <Check size={16} /> : null}</i>{s.label}</div>
-            ))}
-          </div>
-          {(() => {
-            const at = Math.max(0, v.journey.findIndex((s) => s.state === 'current'));
-            const all = v.journey.every((s) => s.state === 'done');
-            return (
-              <div className="steps-m">
-                <div className="seg">{v.journey.map((s) => <i key={s.key} className={s.state} />)}</div>
-                <b>{all ? v.journey[v.journey.length - 1].label : v.journey[at].label}</b><span>{all ? '' : `Step ${at + 1} Of ${v.journey.length}`}</span>
-              </div>
-            );
-          })()}
-          <div className="ws">
+          <h2>Progress<span className="sum">{v.progress.filter((p) => p.state === 'done').length} Of {v.progress.length} Done</span></h2>
+          {/* One segment per part of the work, side by side: they run at the same time, not one after another. */}
+          <div className="bar">
             {v.progress.map((p) => (
-              <span key={p.id} className={`chip ${p.state}`} title={STATE_LABEL[p.state]}>
-                {p.state === 'done' ? <CheckCircle size={16} /> : p.state === 'not_started' ? <Circle size={16} /> : p.state === 'with_you' ? <CircleDot size={16} /> : <Clock size={16} />}
-                {p.label}{p.state === 'with_you' && <b>With You</b>}
-              </span>
+              <button key={p.id} className={p.state} title={`${p.label}: ${holder(p)}${p.usually ? `. Usually ${p.usually.charAt(0).toLowerCase()}${p.usually.slice(1)}` : ''}`} aria-label={`${p.label}: ${holder(p)}`}
+                onClick={() => { setStrand(p.id); document.getElementById(`strand-${p.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }} />
             ))}
           </div>
-          {v.waitingOnOthers.length > 0 && (
-            <div className="others">{v.waitingOnOthers.map((w) => <div key={w.who}>Waiting for {w.who}: {w.what.join(', ')}.</div>)}</div>
-          )}
+          <div className="key">
+            {STATES.filter((st) => v.progress.some((p) => p.state === st)).map((st) => <span key={st}><i className={st} />{v.progress.filter((p) => p.state === st).length} {STATE_LABEL[st]}</span>)}
+          </div>
+          {v.progress.map((p) => (
+            <details key={p.id} id={`strand-${p.id}`} className={`strand ${p.state}`} open={strand === p.id} onToggle={(e) => { const open = (e.currentTarget as HTMLDetailsElement).open; if (open) setStrand(p.id); else if (strand === p.id) setStrand(null); }}>
+              <summary>
+                <span className="st">{p.state === 'done' ? <CheckCircle size={18} /> : p.state === 'not_started' ? <Circle size={18} /> : p.state === 'with_you' ? <CircleDot size={18} /> : <Clock size={18} />}</span>
+                {p.label}
+                <span className="holder">{holder(p)}</span>
+              </summary>
+              {p.about && <p className="about">{p.about}</p>}
+              <dl>
+                {p.usually && <><dt>Usually</dt><dd>{p.usually}</dd></>}
+                {p.since && <><dt>{p.state === 'with_you' ? 'Asked' : 'Since'}</dt><dd>{day(p.since)}</dd></>}
+                {p.expected && <><dt>Expected</dt><dd>By around {day(p.expected)}</dd></>}
+                {p.longerThanUsual && <><dt>Timing</dt><dd>Taking longer than usual.{p.chased > 0 ? ` We have chased ${p.chased === 1 ? 'once' : `${p.chased} times`} and will keep at it.` : ' We are following it up.'}</dd></>}
+              </dl>
+            </details>
+          ))}
           {(v.dates.exchanged || v.dates.targetExchange || v.dates.completion || v.dates.targetCompletion || v.dates.completed) && (
             <div className="dates">
               {v.dates.exchanged ? <div><b>Exchanged</b>{day(v.dates.exchanged)}</div> : v.dates.targetExchange ? <div><b>Aiming To Exchange</b>{day(v.dates.targetExchange)}</div> : null}
@@ -388,6 +398,19 @@ export default function ClientPortal() {
           </div>
         ))}
       </div>
+
+      {ctx.history.length > 0 && (
+        <div className="card">
+          <h2>History</h2>
+          {(allHistory ? ctx.history : ctx.history.slice(0, 5)).map((m) => (
+            <details key={m.id} className="msg">
+              <summary><b>{m.subject}</b><small>{day(m.at)}</small></summary>
+              <div className="body">{m.body}</div>
+            </details>
+          ))}
+          {!allHistory && ctx.history.length > 5 && <button className="link more" onClick={() => setAllHistory(true)}>Show All {ctx.history.length}</button>}
+        </div>
+      )}
 
       {ctx.help.length > 0 && (() => {
         const term = q.trim().toLowerCase();
