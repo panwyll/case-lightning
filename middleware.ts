@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 import { isProtectedPath, paths } from './lib/paths';
+import { ASSET_PATHS, CLIENT_PATHS, isOwnHost } from './lib/client-host';
 
 const SESSION_COOKIE = 'cl_session';
 
@@ -37,6 +38,11 @@ async function hasValidSession(req: NextRequest): Promise<boolean> {
 
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
+  // A firm's own address (portal.theirfirm.co.uk) serves its clients' pages and nothing else of ours.
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '';
+  if (host && !isOwnHost(host, process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL)) {
+    return CLIENT_PATHS.test(pathname) || ASSET_PATHS.test(pathname) ? NextResponse.next() : new NextResponse('Not found', { status: 404, headers: { 'content-type': 'text/plain' } });
+  }
   if (!isProtectedPath(pathname)) return NextResponse.next();
   if (await hasValidSession(req)) return NextResponse.next();
   const url = req.nextUrl.clone();
@@ -47,7 +53,8 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Only the app's own pages. API routes answer 401 as they always did — a fetch wants a
-  // status, not a redirect to HTML — and the client turns that into a trip to sign-in.
-  matcher: ['/conveyi/:path*'],
+  // Every path, so a firm's own address can be held to its clients' pages; the sign-in wall itself still covers only
+  // the app's own pages. API routes answer 401 as they always did — a fetch wants a status, not a redirect to HTML —
+  // and the client turns that into a trip to sign-in.
+  matcher: ['/((?!_next/static|_next/image).*)'],
 };

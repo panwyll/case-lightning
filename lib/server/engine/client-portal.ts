@@ -217,7 +217,8 @@ export function clientPortalView(s: MatterState, now: Date = new Date(), opts: P
       const owed = b.waiting.filter((x) => WAIT_WS[x.key]?.includes(w.id)).sort((a, z) => (a.role === 'client' ? -1 : 0) - (z.role === 'client' ? -1 : 0) || z.sinceCalendarDays - a.sinceCalendarDays);
       const first = owed[0];
       const opened = first ? s.waits.find((x) => x.key === first.key && x.subject === first.subject && !x.closedAt)?.openedAt ?? null : null;
-      const late = !!(first && t?.days !== undefined && first.sinceCalendarDays > t.days);
+      // Late is ours to say of others; what is with the client is For You, not "taking longer than usual".
+      const late = !!(first && first.role !== 'client' && t?.days !== undefined && first.sinceCalendarDays > t.days);
       const expected = opened && t?.days !== undefined && !late && first?.role !== 'client' ? new Date(new Date(opened).getTime() + t.days * 86_400_000).toISOString().slice(0, 10) : null;
       return {
         id: w.id,

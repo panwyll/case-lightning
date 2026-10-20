@@ -13,6 +13,8 @@ All read in [`lib/server/config.ts`](../lib/server/config.ts). Set for **Product
 
 ### Core
 - [ ] `APP_URL` — the live HTTPS domain (e.g. `https://www.caselightning.co.uk`). Drives OAuth callback, Stripe return URLs, and the Graph notification URL. Must be public (not localhost) or auto-triage refuses to arm.
+- [ ] `VERCEL_API_TOKEN`, `VERCEL_PROJECT_ID` (and `VERCEL_TEAM_ID` if the project is under a team) — lets a firm put the client portal on its own address (Firm > Client Portal Address). The token needs access to the project's domains. Without them the card says to ask us.
+- [ ] `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (e.g. `CONVEYi <no-reply@caselightning.co.uk>`) — the portal and file-link codes and sign-in links. Without them, in production a client cannot open their portal.
 - [ ] `DATABASE_URL` — Supabase **pooler** connection string (pgvector needs pooling).
 - [ ] `SESSION_JWT_SECRET` — long random string; signs the session token.
 - [ ] `APP_ENCRYPTION_KEY` — AES key; encrypts per-user BYOK AI keys at rest. **If this changes, every stored BYOK key becomes undecryptable.**

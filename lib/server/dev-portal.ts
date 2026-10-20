@@ -1,5 +1,5 @@
 /** Local development only: the client portal over the dev harness's in-memory case, on /portal/dev-preview-portal-000000 (code 123456). */
-import { devHarness, DEV_MATTER, DEV_TENANT } from './dev-harness';
+import { devHistory, devPurchase, DEV_CASE } from './dev-portal-case';
 import { clientPortalView } from './engine/client-portal';
 import { clientHelp } from './engine/client-faq';
 
@@ -14,24 +14,29 @@ export const devFeedbackGiven = () => { g.__devFeedback = true; };
 export const devPortalUploads = () => (g.__devPortalUploads ??= []);
 
 export async function devPortalContext() {
-  const h = await devHarness();
-  const state = await h.svc.getState(DEV_TENANT, DEV_MATTER);
+  // A purchase part-way through, run by the real engine in memory, with the messages it sent rendered by the real templates.
+  const h = await devPurchase();
+  const state = await h.svc.getState(h.tenantId, h.matterId);
   const view = clientPortalView(state, new Date(), { idProviderSendsLink: false });
+  const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
   return {
     help: clientHelp(view),
-    feedback: g.__devFeedback ? null : { milestone: 'exchanged' as const, kind: 'csat' as const },
+    feedback: null,
     status: 'open',
-    firmName: 'Your Firm LLP',
+    firmName: DEV_CASE.firmName,
     brand: DEV_BRAND,
-    propertyAddress: '14 Oak Street, Leeds LS1 2AB',
-    clientNames: 'Priya',
-    handler: { name: 'Peter Anwyll', email: 'peter@yourfirm.test', phone: '0113 496 0000' },
-    firmPhone: '0113 496 0000',
+    propertyAddress: DEV_CASE.propertyAddress,
+    clientNames: DEV_CASE.clientFirstName,
+    handler: DEV_CASE.handler,
+    firmPhone: DEV_CASE.handler.phone,
     view,
-    history: [
-      { id: 'dev-m2', subject: 'Your purchase of 14 Oak Street: your report on title', body: 'Dear Priya,\n\nYour report on title is attached. It sets out what we have found about the property and the contract. Please read it and tell us if anything is unclear.\n\nKind regards,\nPeter', at: new Date(Date.now() - 3 * 86_400_000).toISOString() },
-      { id: 'dev-m1', subject: 'Your purchase of 14 Oak Street: welcome', body: 'Dear Priya,\n\nThank you for asking us to act for you. Peter Anwyll will look after your purchase. The first thing we need is your ID check.\n\nKind regards,\nPeter', at: new Date(Date.now() - 12 * 86_400_000).toISOString() },
+    history: await devHistory(),
+    documents: [
+      ...devPortalUploads(),
+      { id: 'dev-4', name: 'Survey report.pdf', at: ago(8), from: 'you' as const },
+      { id: 'dev-3', name: 'Mortgage agreement in principle.pdf', at: ago(39), from: 'you' as const },
+      { id: 'dev-2', name: 'Passport.jpg', at: ago(41), from: 'you' as const },
+      { id: 'dev-1', name: 'Client care letter.pdf', at: ago(42), from: 'us' as const },
     ],
-    documents: [...devPortalUploads(), { id: 'dev-1', name: 'Report on title.docx', at: new Date(Date.now() - 3 * 86_400_000).toISOString(), from: 'us' as const }, { id: 'dev-2', name: 'Completion statement.docx', at: new Date(Date.now() - 86_400_000).toISOString(), from: 'us' as const }],
   };
 }

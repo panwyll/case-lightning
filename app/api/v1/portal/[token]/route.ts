@@ -13,6 +13,7 @@ import { clientHelp } from '@/lib/server/engine/client-faq';
 import { infotrackClientFor } from '@/lib/server/integrations/infotrack-adapters';
 import { PORTAL_HOURS, feedbackDue, countPortalOpen, openPortal, portalAccess, portalCookie, portalCookieName, portalDocuments, portalHistory, sendPortalCode, verifyPortalCode } from '@/lib/server/client-portal';
 import { DEV_BRAND, DEV_PORTAL_CODE, devPortalContext, isDevPortal } from '@/lib/server/dev-portal';
+import { DEV_CASE } from '@/lib/server/dev-portal-case';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   try {
     const { token } = await params;
     if (isDevPortal(token)) {
-      if ((await cookies()).get('cp_dev')?.value !== '1') return ok({ status: 'locked', firmName: 'Your Firm LLP', propertyAddress: '14 Oak Street, Leeds LS1 2AB', codeTo: ['p••••••@hotmail.com'], brand: DEV_BRAND });
+      if ((await cookies()).get('cp_dev')?.value !== '1') return ok({ status: 'locked', firmName: DEV_CASE.firmName, propertyAddress: DEV_CASE.propertyAddress, codeTo: ['p••••@demo.test'], brand: DEV_BRAND });
       return ok(await devPortalContext());
     }
     const row = await openPortal(token);
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     const { token } = await params;
     const body = z.discriminatedUnion('action', [z.object({ action: z.literal('code') }), z.object({ action: z.literal('verify'), code: z.string().regex(/^\s*\d{6}\s*$/, 'The code is six digits.') })]).parse(await req.json());
     if (isDevPortal(token)) {
-      if (body.action === 'code') return ok({ sentTo: ['p••••••@hotmail.com'], devCode: DEV_PORTAL_CODE });
+      if (body.action === 'code') return ok({ sentTo: ['p••••@demo.test'], devCode: DEV_PORTAL_CODE });
       if (body.code.trim() !== DEV_PORTAL_CODE) return fail(Object.assign(new Error(WRONG), { status: 400 }));
       const res = NextResponse.json({ ok: true });
       res.cookies.set('cp_dev', '1', { path: '/', maxAge: 3600 });

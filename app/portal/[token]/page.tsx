@@ -45,7 +45,7 @@ const CSS = `
 .cp .bar button{flex:1;border:0;padding:0;border-radius:4px;cursor:pointer;background:#e2e8f0}
 .cp .bar button:focus-visible{outline:2px solid var(--a);outline-offset:2px}
 .cp .bar .done,.cp .key .done{background:#16a34a}
-.cp .bar .with_you,.cp .key .with_you{background:var(--a)}
+.cp .bar .with_you,.cp .key .with_you{background:#2563eb}
 .cp .bar .in_progress,.cp .key .in_progress{background:#f59e0b}
 .cp .bar .not_started,.cp .key .not_started{background:#e2e8f0}
 .cp .key{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:#475569;margin-bottom:10px}
@@ -53,12 +53,12 @@ const CSS = `
 .cp .key i{width:10px;height:10px;border-radius:3px;display:inline-block}
 .cp .strand summary{font-size:15px;font-weight:600;padding:12px 0}
 .cp .strand summary .st{display:inline-flex;color:#94a3b8}
-.cp .strand summary .st svg{color:inherit}
+.cp .strand summary .st svg{color:inherit;transform:none!important}
 .cp .strand.done summary .st{color:#16a34a}
-.cp .strand.with_you summary .st{color:var(--a-text)}
+.cp .strand.with_you summary .st{color:#2563eb}
 .cp .strand.in_progress summary .st{color:#d97706}
 .cp .strand summary .holder{margin-left:auto;line-height:1.2;font-size:13px;font-weight:600;color:#64748b;text-align:right}
-.cp .strand.with_you summary .holder{color:var(--a-ink)}
+.cp .strand.with_you summary .holder{color:#1d4ed8}
 .cp .strand.done summary .holder{color:#166534}
 .cp .strand dl{margin:0 0 14px 26px;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px;color:#334155;line-height:1.5}
 .cp .strand dt{color:#64748b;font-weight:600}
@@ -138,6 +138,8 @@ type Ctx =
 const day = (iso: string | null) => (iso ? new Date(iso.length === 10 ? `${iso}T12:00:00` : iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
 const STATE_LABEL: Record<string, string> = { done: 'Done', in_progress: 'In Progress', with_you: 'With You', not_started: 'Not Started' };
 const STATES = ['done', 'with_you', 'in_progress', 'not_started'] as const;
+/** "Your purchase of 27 Clarendon Road — proof of funds" reads "Proof of funds" here: the whole page is that property. */
+const topic = (subject: string) => { const t = subject.includes(' — ') ? subject.slice(subject.lastIndexOf(' — ') + 3).trim() : subject; return t ? t.charAt(0).toUpperCase() + t.slice(1) : subject; };
 /** "With your lender", "With you", "Done": who has a strand, as its row and its bar segment say. */
 const holder = (p: View['progress'][number]) => (p.state === 'done' ? 'Done' : p.state === 'not_started' ? 'Not Started' : p.withWho ? `With ${p.withWho === 'You' || p.withWho === 'Us' ? p.withWho : p.withWho.charAt(0).toLowerCase() + p.withWho.slice(1)}` : STATE_LABEL[p.state]);
 
@@ -472,7 +474,7 @@ export default function ClientPortal() {
         <div className="card">
           {(allHistory ? ctx.history : ctx.history.slice(0, 5)).map((m) => (
             <details key={m.id} className="msg">
-              <summary><b>{m.subject}</b><small>{day(m.at)}</small></summary>
+              <summary><b>{topic(m.subject)}</b><small>{day(m.at)}</small></summary>
               <div className="body">{m.body}</div>
             </details>
           ))}

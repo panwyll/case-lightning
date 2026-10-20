@@ -7,10 +7,11 @@
 import crypto from 'node:crypto';
 import { query, queryOne, runAsSystem } from './db';
 import { config } from './config';
+import { clientBase, servedHere } from './portal-domain';
 import { accessCookieValue, cookieGrantsAccess, sendAccessCode, verifyAccessCode } from './access-code';
 
 const hash = (x: string) => crypto.createHash('sha256').update(x).digest('hex');
-export const fileShareUrl = (token: string) => `${config.appUrl.replace(/\/$/, '')}/f/${token}`;
+export const fileShareUrl = (token: string, base: string = config.appUrl) => `${base.replace(/\/$/, '')}/f/${token}`;
 /** A verified browser keeps the files open for this long. */
 export const ACCESS_HOURS = 24;
 
@@ -25,7 +26,7 @@ export class PgFileShares {
   async create(input: { tenantId: string; matterId: string; files: Array<{ id: string; fileName: string }> }): Promise<{ url: string }> {
     const token = crypto.randomBytes(24).toString('base64url');
     await query(`insert into file_share (tenant_id, matter_id, token_hash, document_ids, file_names) values ($1, $2, $3, $4::uuid[], $5::text[])`, [input.tenantId, input.matterId, hash(token), input.files.map((f) => f.id), input.files.map((f) => f.fileName)]);
-    return { url: fileShareUrl(token) };
+    return { url: fileShareUrl(token, await clientBase(input.tenantId)) };
   }
   async latest(tenantId: string, matterId: string): Promise<Array<{ id: string; fileName: string }>> {
     const r = await queryOne<{ document_ids: string[]; file_names: string[] }>(`select document_ids, file_names from file_share where tenant_id = $1 and matter_id = $2 order by created_at desc limit 1`, [tenantId, matterId]);
@@ -38,7 +39,7 @@ export async function openShare(token: string): Promise<ShareRow | null> {
   if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return null;
   return runAsSystem(async () => {
     const row = await queryOne<ShareRow>(`select * from file_share where token_hash = $1`, [hash(token)]);
-    return row && new Date(row.expires_at) > new Date() ? row : null;
+    return row && new Date(row.expires_at) > new Date() && (await servedHere(row.tenant_id)) ? row : null;
   });
 }
 

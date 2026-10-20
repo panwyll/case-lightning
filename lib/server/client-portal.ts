@@ -10,10 +10,11 @@ import { config } from './config';
 import { decryptSecret, encryptSecret } from './crypto';
 import { putBlob } from './blob-store';
 import { featureOn } from './features';
+import { clientBase, servedHere } from './portal-domain';
 import { sendAccessCode, verifyAccessCode, accessCookieValue, cookieGrantsAccess, type CodeRow } from './access-code';
 
 const hash = (x: string) => crypto.createHash('sha256').update(x).digest('hex');
-export const portalUrl = (token: string) => `${config.appUrl.replace(/\/$/, '')}/portal/${token}`;
+export const portalUrl = (token: string, base: string = config.appUrl) => `${base.replace(/\/$/, '')}/portal/${token}`;
 /** A verified browser stays signed in to the portal for this long. */
 export const PORTAL_HOURS = 24 * 7;
 /** The hosting platform refuses a request body over 4.5 MB: the page shrinks photos to fit, and says so for anything larger. */
@@ -25,11 +26,12 @@ export interface PortalRow extends CodeRow { token_enc: string; revoked_at: stri
 /** The case's live link, made the first time it is needed. Concurrent callers get the same one. */
 export async function ensurePortal(tenantId: string, matterId: string): Promise<string> {
   const live = await queryOne<{ token_enc: string }>(`select token_enc from client_portal where tenant_id = $1 and matter_id = $2 and revoked_at is null`, [tenantId, matterId]);
-  if (live) return portalUrl(decryptSecret(live.token_enc));
+  const base = await clientBase(tenantId);
+  if (live) return portalUrl(decryptSecret(live.token_enc), base);
   const token = crypto.randomBytes(24).toString('base64url');
   await query(`insert into client_portal (tenant_id, matter_id, token_hash, token_enc) values ($1, $2, $3, $4) on conflict do nothing`, [tenantId, matterId, hash(token), encryptSecret(token)]);
   const now = await queryOne<{ token_enc: string }>(`select token_enc from client_portal where tenant_id = $1 and matter_id = $2 and revoked_at is null`, [tenantId, matterId]);
-  return portalUrl(decryptSecret(now!.token_enc));
+  return portalUrl(decryptSecret(now!.token_enc), base);
 }
 
 /** A new link; the old one stops working at once (a forwarded email, a shared computer). */
@@ -41,7 +43,7 @@ export async function resetPortal(tenantId: string, matterId: string): Promise<s
 /** For the conveyancer: the link and whether the client has used it. Null until one exists. */
 export async function portalSummary(tenantId: string, matterId: string): Promise<{ url: string; createdAt: string; firstOpenedAt: string | null; lastOpenedAt: string | null; opens: number; uploads: number } | null> {
   const r = await queryOne<PortalRow>(`select * from client_portal where tenant_id = $1 and matter_id = $2 and revoked_at is null`, [tenantId, matterId]);
-  return r ? { url: portalUrl(decryptSecret(r.token_enc)), createdAt: new Date(r.created_at).toISOString(), firstOpenedAt: r.first_opened_at ? new Date(r.first_opened_at).toISOString() : null, lastOpenedAt: r.last_opened_at ? new Date(r.last_opened_at).toISOString() : null, opens: r.opens, uploads: r.uploads } : null;
+  return r ? { url: portalUrl(decryptSecret(r.token_enc), await clientBase(tenantId)), createdAt: new Date(r.created_at).toISOString(), firstOpenedAt: r.first_opened_at ? new Date(r.first_opened_at).toISOString() : null, lastOpenedAt: r.last_opened_at ? new Date(r.last_opened_at).toISOString() : null, opens: r.opens, uploads: r.uploads } : null;
 }
 
 /** The live portal behind a link, or null (unknown or reset). */
@@ -50,6 +52,8 @@ export async function openPortal(token: string): Promise<PortalRow | null> {
   const row = await runAsSystem(() => queryOne<PortalRow>(`select * from client_portal where token_hash = $1 and revoked_at is null`, [hash(token)])).catch(() => null);
   // A firm that has turned the portal off: its links stop working too.
   if (!row || !(await runAsSystem(() => featureOn(row.tenant_id, 'clientPortal')).catch(() => true))) return null;
+  // Another firm's address: as if the link did not exist.
+  if (!(await servedHere(row.tenant_id))) return null;
   return row;
 }
 

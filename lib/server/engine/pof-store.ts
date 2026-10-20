@@ -6,6 +6,7 @@
 import crypto from 'node:crypto';
 import { query, queryOne } from '../db';
 import { config } from '../config';
+import { clientBase, servedHere } from '../portal-domain';
 import type { ProofOfFundsForms } from './ports';
 import type { ProofOfFundsSubmission } from './proof-of-funds';
 
@@ -25,7 +26,7 @@ export interface PofRequestRow {
 }
 
 export const hashToken = (token: string): string => crypto.createHash('sha256').update(token).digest('hex');
-export const formUrlFor = (token: string): string => `${config.appUrl.replace(/\/$/, '')}/pof/${token}`;
+export const formUrlFor = (token: string, base: string = config.appUrl): string => `${base.replace(/\/$/, '')}/pof/${token}`;
 
 export class PgProofOfFundsForms implements ProofOfFundsForms {
   readonly name = 'pg-pof-forms';
@@ -37,7 +38,7 @@ export class PgProofOfFundsForms implements ProofOfFundsForms {
        values ($1, $2, $3, $4, $5, $6) returning id`,
       [input.tenantId, input.matterId, hashToken(token), requestedBy, input.followUpOf && /^[0-9a-f-]{36}$/i.test(input.followUpOf) ? input.followUpOf : null, input.noteToClient ?? null]
     );
-    return { requestId: row!.id, formUrl: formUrlFor(token) };
+    return { requestId: row!.id, formUrl: formUrlFor(token, await clientBase(input.tenantId)) };
   }
 }
 
@@ -45,7 +46,7 @@ export class PgProofOfFundsForms implements ProofOfFundsForms {
 export async function openRequestByToken(token: string): Promise<PofRequestRow | null> {
   if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return null;
   const row = await queryOne<PofRequestRow>(`select * from proof_of_funds_request where token_hash = $1`, [hashToken(token)]);
-  if (!row) return null;
+  if (!row || !(await servedHere(row.tenant_id))) return null;
   if (row.status !== 'requested') return row; // caller shows "already submitted"
   if (new Date(row.expires_at) < new Date()) {
     await query(`update proof_of_funds_request set status = 'expired' where id = $1 and status = 'requested'`, [row.id]);

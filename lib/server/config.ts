@@ -102,6 +102,10 @@ export const config = {
   /** Signing secret of the Resend webhook (delivered / bounced / complained): a bounce becomes a task on the case. */
   resendWebhookSecret: env('RESEND_WEBHOOK_SECRET'),
   resendFromEmail: env('RESEND_FROM_EMAIL'),
+  /** Firms' own portal addresses are added to the hosting project through Vercel's API (lib/server/portal-domain.ts). */
+  vercelApiToken: env('VERCEL_API_TOKEN'),
+  vercelProjectId: env('VERCEL_PROJECT_ID'),
+  vercelTeamId: env('VERCEL_TEAM_ID'),
   // Third-party chases: 'draft' leaves an Outlook draft + worklist item for a human to
   // send (default, safest); 'send' sends the template chase automatically from the
   // matter's fee-earner mailbox (spec #5: automated template chases).

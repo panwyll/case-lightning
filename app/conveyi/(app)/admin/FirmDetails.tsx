@@ -62,6 +62,73 @@ export function FirmDetails({ canEdit }: { canEdit: boolean }) {
   );
 }
 
+type DomainStatus = { domain: string | null; live: boolean; records: Array<{ type: string; name: string; value: string }>; available: boolean };
+
+/** The firm's own address for its clients' pages (portal.yourfirm.co.uk): type it, add the DNS record shown, and it goes live. */
+export function PortalDomainCard({ canEdit }: { canEdit: boolean }) {
+  const [st, setSt] = useState<DomainStatus | null>(null);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  useEffect(() => { api<DomainStatus>('/admin/portal-domain').then(setSt).catch(() => setSt(null)); }, []);
+  if (!st) return null;
+  const act = async (label: string, fn: () => Promise<DomainStatus>) => {
+    setBusy(label); setErr(null);
+    try { setSt(await fn()); } catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not do that.'); } finally { setBusy(null); }
+  };
+  const connect = () => act('connect', () => api<DomainStatus>('/admin/portal-domain', { method: 'POST', body: JSON.stringify({ domain: input }) }));
+  const check = () => act('check', () => api<DomainStatus>('/admin/portal-domain'));
+  const remove = () => act('remove', () => api<DomainStatus>('/admin/portal-domain', { method: 'DELETE' }));
+  const copy = (v: string) => { void navigator.clipboard.writeText(v).then(() => { setCopied(v); setTimeout(() => setCopied(null), 1500); }); };
+  return (
+    <div className="fd">
+      <style>{CSS + '.pd-st{display:inline-flex;align-items:center;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700;margin-left:8px}.pd-st.live{background:#dcfce7;color:#166534}.pd-st.wait{background:#fef3c7;color:#92400e}.pd-tbl{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}.pd-tbl th{text-align:left;font-size:11.5px;color:#64748b;font-weight:700;padding:4px 8px 4px 0}.pd-tbl td{padding:6px 8px 6px 0;border-top:1px solid #f1f5f9;vertical-align:middle}.pd-tbl code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;word-break:break-all}'}</style>
+      <div className="fd-h">Client Portal Address</div>
+      {!st.domain ? (
+        <div className="fd-grid">
+          <label className="fd-row"><span>Your Address</span>
+            <span style={{ display: 'flex', gap: 8 }}>
+              <input className="fd-in" value={input} onChange={(e) => setInput(e.target.value)} placeholder="portal.yourfirm.co.uk" disabled={!canEdit || !st.available} style={{ maxWidth: 320 }} />
+              {canEdit && <button className="fd-btn" disabled={!!busy || !st.available || input.trim().length < 4} onClick={() => void connect()}>{busy === 'connect' ? <Spin>Connecting…</Spin> : 'Connect'}</button>}
+            </span>
+          </label>
+          {!st.available && <span className="fd-meta">Ask us to turn this on.</span>}
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+            {st.live ? <a href={`https://${st.domain}`} target="_blank" rel="noreferrer" style={{ color: '#0f172a' }}>{st.domain}</a> : st.domain}
+            <span className={`pd-st ${st.live ? 'live' : 'wait'}`}>{st.live ? 'Live' : 'Waiting For DNS'}</span>
+          </div>
+          {!st.live && st.records.length > 0 && (
+            <table className="pd-tbl">
+              <thead><tr><th>Type</th><th>Name</th><th>Value</th><th /></tr></thead>
+              <tbody>
+                {st.records.map((r) => (
+                  <tr key={`${r.type}${r.name}`}>
+                    <td>{r.type}</td>
+                    <td><code>{r.name}</code></td>
+                    <td><code>{r.value}</code></td>
+                    <td style={{ textAlign: 'right' }}><button className="fd-btn2" onClick={() => copy(r.value)}>{copied === r.value ? 'Copied' : 'Copy'}</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {canEdit && (
+            <div className="fd-a">
+              {!st.live && <button className="fd-btn" disabled={!!busy} onClick={() => void check()}>{busy === 'check' ? <Spin>Checking…</Spin> : 'Check Again'}</button>}
+              <button className="fd-btn2" disabled={!!busy} onClick={() => void remove()}>{busy === 'remove' ? <Spin>Removing…</Spin> : 'Use Our Address Instead'}</button>
+            </div>
+          )}
+        </>
+      )}
+      {err && <div className="fd-a"><span className="fd-note" style={{ color: '#b91c1c' }}>{err}</span></div>}
+    </div>
+  );
+}
+
 /** Your own signature: paste a rendered one (from Gmail, Outlook, a signature generator) or write it here; empty means the firm's standard. */
 export function MySignature() {
   const ref = useRef<HTMLDivElement | null>(null);
