@@ -25,15 +25,25 @@ export async function codeRecipients(row: { tenant_id: string; matter_id: string
 }
 export const maskEmail = (e: string) => e.replace(/^(.)(.*)(.@.*)$/, (_m, a: string, mid: string, b: string) => `${a}${'•'.repeat(Math.min(6, mid.length))}${b}`);
 
+/** The sending address under another name: "Anwyll & Co <no-reply@…>" from "CONVEYi <no-reply@…>". Quotes and angle brackets are dropped from the name. */
+export function fromAs(name: string | null, from: string): string {
+  const address = from.match(/<([^>]+)>/)?.[1] ?? from.trim();
+  const clean = name?.replace(/["<>\r\n]/g, '').trim();
+  return clean ? `"${clean}" <${address}>` : from;
+}
+
 /** Email a fresh code. Returns it in development (no mail provider) so the flow can be walked. */
 export async function sendAccessCode(table: CodeTable, row: CodeRow, what: string): Promise<{ sentTo: string[]; devCode?: string }> {
   if (row.codes_sent >= CODES_PER_HOUR && row.code_sent_at && Date.now() - Date.parse(row.code_sent_at) < 3_600_000) throw Object.assign(new Error('Too many codes asked for. Try again in an hour, or call us.'), { status: 429 });
-  const to = await codeRecipients(row);
+  const info = await contactInfo(row.tenant_id, row.matter_id);
+  const to = info.clientEmails ?? (info.clientEmail ? [info.clientEmail] : []);
   if (!to.length) throw Object.assign(new Error('We have no email address for you on file. Please call us.'), { status: 400 });
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
   await runAsSystem(() => query(`update ${table} set code_hash = $2, code_expires_at = now() + ($3 || ' minutes')::interval, code_attempts = 0, codes_sent = case when code_sent_at < now() - interval '1 hour' then 1 else codes_sent + 1 end, code_sent_at = now() where id = $1`, [row.id, hash(`${row.id}:${code}`), String(CODE_MINUTES)]));
   if (config.resendApiKey && config.resendFromEmail) {
-    await new Resend(config.resendApiKey).emails.send({ from: config.resendFromEmail, to, subject: `Your code: ${code}`, text: `Your code to open ${what} is ${code}.\n\nIt works for ${CODE_MINUTES} minutes. If you did not ask for it, you can ignore this email.` });
+    // From the firm, in its name: the client is opening their solicitor's page, not ours.
+    const firm = info.firmName?.trim() || null;
+    await new Resend(config.resendApiKey).emails.send({ from: fromAs(firm, config.resendFromEmail), to, subject: `Your code: ${code}`, text: `Your code to open ${what}${info.propertyAddress ? ` for ${info.propertyAddress}` : ''} is ${code}.\n\nIt works for ${CODE_MINUTES} minutes. If you did not ask for it, you can ignore this email.${firm ? `\n\n${firm}` : ''}` });
     return { sentTo: to.map(maskEmail) };
   }
   if (process.env.NODE_ENV === 'production') throw Object.assign(new Error('We could not send the code. Please call us.'), { status: 503 });

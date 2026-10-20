@@ -32,6 +32,7 @@ export async function PATCH(req: NextRequest) {
       phone: z.string().max(30).regex(/^[0-9 +()-]*$/).nullish(), sraNumber: z.string().max(12).regex(/^[0-9]*$/).nullish(), website: text(200),
       logoUrl: z.string().max(500).regex(/^(https:\/\/\S+)?$/, 'An https:// link to the logo image').nullish(),
       signatureNotice: text(400),
+      brandColour: z.string().regex(/^(#[0-9a-fA-F]{6})?$/, 'A colour like #1f4e79').nullish(),
       signingProvider: z.enum(['none', 'infotrack', 'intouch', 'leap', 'mock']).optional(),
     }).parse(await req.json());
     const { signingProvider, ...firm } = b;

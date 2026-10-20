@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { CLIENT_LINK } from './SiteAnalytics';
 
 // Don't track the product add-in, the internal dashboard, admin, or API routes —
 // the funnel is about the marketing site / acquisition only.
@@ -17,7 +18,7 @@ export default function Track() {
   const search = useSearchParams();
 
   useEffect(() => {
-    if (!pathname || SKIP.test(pathname)) return;
+    if (!pathname || SKIP.test(pathname) || CLIENT_LINK.test(pathname)) return;
     const payload = {
       path: pathname,
       referrer: typeof document !== 'undefined' && document.referrer ? document.referrer : undefined,

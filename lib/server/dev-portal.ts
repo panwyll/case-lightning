@@ -5,6 +5,8 @@ import { clientHelp } from './engine/client-faq';
 
 export const DEV_PORTAL_TOKEN = 'dev-preview-portal-000000';
 export const DEV_PORTAL_CODE = '123456';
+/** Preview a firm's look with DEV_PORTAL_COLOUR=#1f4e79 and DEV_PORTAL_LOGO=https://… */
+export const DEV_BRAND = { logoUrl: process.env.DEV_PORTAL_LOGO ?? null, colour: process.env.DEV_PORTAL_COLOUR ?? null };
 export const isDevPortal = (token: string) => process.env.NODE_ENV === 'development' && token === DEV_PORTAL_TOKEN;
 
 const g = globalThis as unknown as { __devPortalUploads?: Array<{ id: string; name: string; at: string; from: 'you' }>; __devFeedback?: boolean };
@@ -20,6 +22,7 @@ export async function devPortalContext() {
     feedback: g.__devFeedback ? null : { milestone: 'exchanged' as const, kind: 'csat' as const },
     status: 'open',
     firmName: 'Your Firm LLP',
+    brand: DEV_BRAND,
     propertyAddress: '14 Oak Street, Leeds LS1 2AB',
     clientNames: 'Priya',
     handler: { name: 'Peter Anwyll', email: 'peter@yourfirm.test', phone: '0113 496 0000' },

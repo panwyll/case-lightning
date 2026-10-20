@@ -12,7 +12,7 @@ import { clientPortalView } from '@/lib/server/engine/client-portal';
 import { clientHelp } from '@/lib/server/engine/client-faq';
 import { infotrackClientFor } from '@/lib/server/integrations/infotrack-adapters';
 import { PORTAL_HOURS, feedbackDue, countPortalOpen, openPortal, portalAccess, portalCookie, portalCookieName, portalDocuments, portalHistory, sendPortalCode, verifyPortalCode } from '@/lib/server/client-portal';
-import { DEV_PORTAL_CODE, devPortalContext, isDevPortal } from '@/lib/server/dev-portal';
+import { DEV_BRAND, DEV_PORTAL_CODE, devPortalContext, isDevPortal } from '@/lib/server/dev-portal';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,19 +28,21 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   try {
     const { token } = await params;
     if (isDevPortal(token)) {
-      if ((await cookies()).get('cp_dev')?.value !== '1') return ok({ status: 'locked', firmName: 'Your Firm LLP', propertyAddress: '14 Oak Street, Leeds LS1 2AB', codeTo: ['p••••••@hotmail.com'] });
+      if ((await cookies()).get('cp_dev')?.value !== '1') return ok({ status: 'locked', firmName: 'Your Firm LLP', propertyAddress: '14 Oak Street, Leeds LS1 2AB', codeTo: ['p••••••@hotmail.com'], brand: DEV_BRAND });
       return ok(await devPortalContext());
     }
     const row = await openPortal(token);
     if (!row) return ok({ status: 'gone' });
     const info = await runAsSystem(() => contactInfo(row.tenant_id, row.matter_id));
+    // The firm's own look, from the first screen: their logo and colour, never ours.
+    const profile = await runAsSystem(() => getFirmProfile(row.tenant_id));
+    const brand = { logoUrl: profile.logoUrl ?? null, colour: profile.brandColour ?? null };
     if (!portalAccess(row.id, (await cookies()).get(portalCookieName(row.id))?.value)) {
-      return ok({ status: 'locked', firmName: info.firmName, propertyAddress: info.propertyAddress, codeTo: (await runAsSystem(() => codeRecipients(row))).map(maskEmail) });
+      return ok({ status: 'locked', firmName: info.firmName, propertyAddress: info.propertyAddress, codeTo: (await runAsSystem(() => codeRecipients(row))).map(maskEmail), brand });
     }
     const svc = engine();
-    const [state, firm, person, documents, history, enrolled] = await Promise.all([
+    const [state, person, documents, history, enrolled] = await Promise.all([
       runAsSystem(() => svc.getState(row.tenant_id, row.matter_id)),
-      runAsSystem(() => getFirmProfile(row.tenant_id)),
       runAsSystem(() => getSignaturePerson(row.tenant_id, info.feeEarnerUserId)),
       portalDocuments(row),
       portalHistory(row),
@@ -55,10 +57,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       help: view ? clientHelp(view) : [],
       feedback: view ? await feedbackDue(row, view.lifecycle) : null,
       firmName: info.firmName,
+      brand,
       propertyAddress: info.propertyAddress,
       clientNames: info.clientFirstName,
       handler: { name: person.name, email: person.email, phone: person.phone },
-      firmPhone: firm.phone ?? null,
+      firmPhone: profile.phone ?? null,
       // A case the engine does not run has no status to show yet: documents and contact only.
       view,
       documents,

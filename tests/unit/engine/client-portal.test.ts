@@ -114,3 +114,10 @@ test('history shows the message as the client got it, without the portal line at
   assert.match(sent, /\/portal\//);
   assert.equal(withoutPortalLine(sent), 'Dear Priya,\n\nYour searches are back.\n\nKind regards,\nPeter');
 });
+
+test('the code email comes in the firm\'s name, from our sending address', async () => {
+  const { fromAs } = await import('../../../lib/server/access-code');
+  assert.equal(fromAs('Anwyll & Co', 'CONVEYi <no-reply@caselightning.co.uk>'), '"Anwyll & Co" <no-reply@caselightning.co.uk>');
+  assert.equal(fromAs('Smith "The Law" <Firm>', 'no-reply@caselightning.co.uk'), '"Smith The Law Firm" <no-reply@caselightning.co.uk>');
+  assert.equal(fromAs(null, 'CONVEYi <no-reply@caselightning.co.uk>'), 'CONVEYi <no-reply@caselightning.co.uk>');
+});

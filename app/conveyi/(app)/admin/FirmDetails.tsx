@@ -3,7 +3,7 @@ import { BusyButton, Spin } from '@/app/shared/engine/BusyButton';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 
-type Firm = { name: string; addressLine1: string | null; addressLine2: string | null; town: string | null; postcode: string | null; phone: string | null; sraNumber: string | null; website: string | null; logoUrl?: string | null; signatureNotice?: string | null };
+type Firm = { name: string; addressLine1: string | null; addressLine2: string | null; town: string | null; postcode: string | null; phone: string | null; sraNumber: string | null; website: string | null; logoUrl?: string | null; signatureNotice?: string | null; brandColour?: string | null };
 const PROVIDERS: Array<[string, string]> = [['none', 'Wet Ink Only'], ['infotrack', 'InfoTrack'], ['intouch', 'InTouch'], ['leap', 'LEAP']];
 
 /** The firm's details (where signed originals come back, what an email footer says) and how it signs deeds. */
@@ -43,6 +43,13 @@ export function FirmDetails({ canEdit }: { canEdit: boolean }) {
         {field('SRA Number', 'sraNumber', { width: 160, inputMode: 'numeric' })}
         {field('Website', 'website', { inputMode: 'url' })}
         {field('Logo', 'logoUrl', { placeholder: 'https:// link to the logo image', inputMode: 'url' })}
+        <label className="fd-row"><span>Client Portal Colour</span>
+          <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input type="color" aria-label="Pick the colour" value={/^#[0-9a-fA-F]{6}$/.test(f.brandColour ?? '') ? f.brandColour! : '#5a27e0'} onChange={(e) => setF({ ...f, brandColour: e.target.value })} disabled={!canEdit} style={{ width: 40, height: 32, padding: 0, border: '1px solid #cbd5e1', borderRadius: 8, background: '#fff' }} />
+            <input className="fd-in" value={f.brandColour ?? ''} onChange={set('brandColour')} disabled={!canEdit} placeholder="#5a27e0" style={{ maxWidth: 120 }} />
+            {f.brandColour && canEdit && <button type="button" className="fd-btn2" onClick={() => setF({ ...f, brandColour: '' })}>Use The Standard</button>}
+          </span>
+        </label>
         <label className="fd-row"><span>Signature Notice</span><textarea className="fd-in" rows={2} value={f.signatureNotice ?? ''} onChange={(e) => setF({ ...f, signatureNotice: e.target.value })} disabled={!canEdit} placeholder="We will never change our bank details by email. Call us before sending money." /></label>
         <label className="fd-row"><span>Electronic Signing</span>
           <select className="fd-in" value={provider} onChange={(e) => setProvider(e.target.value)} disabled={!canEdit} style={{ maxWidth: 240 }}>

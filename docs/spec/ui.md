@@ -39,6 +39,8 @@
 - On the case page, **Client Portal** has Copy Link and Reset Link. Reset revokes the old link at once.
 - The page shows how often the client has opened the portal and how many files they have uploaded.
 
+**The firm's, not ours:** the page carries the firm's logo (or its name) and colour (Firm > Client Portal Colour, migration 136), the tab reads "<property> · <firm>" with the logo as its icon, and the code email comes in the firm's name. Text in the firm's colour is darkened until it reads on white; text on it is black or white, whichever reads. No analytics or tag manager loads on a client's link (`/portal`, `/f`, `/pof`: `SiteAnalytics.tsx`), so its secret never reaches a third party.
+
 **What the client sees** (phone first, plain words):
 - **One section at a time:** tabs on a wide screen, a menu button on a phone, For You first. The section is in the address (`#progress`). A section with nothing in it is not offered (History before anything is sent; For You on a closed case).
 - **For You:** each thing waiting on them, when it was asked for, and the way to do it:
