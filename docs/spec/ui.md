@@ -40,6 +40,7 @@
 - The page shows how often the client has opened the portal and how many files they have uploaded.
 
 **What the client sees** (phone first, plain words):
+- **One section at a time:** tabs on a wide screen, a menu button on a phone, For You first. The section is in the address (`#progress`). A section with nothing in it is not offered (History before anything is sent; For You on a closed case).
 - **For You:** each thing waiting on them, when it was asked for, and the way to do it:
   - the ID check link;
   - the proof-of-funds form;

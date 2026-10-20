@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Check, CheckCircle, ChevronRight, Circle, CircleDot, Clock, FileText, Loader, Lock, Mail, Phone, Search, Upload } from '@/app/shared/icons';
+import { Check, CheckCircle, ChevronRight, Circle, CircleDot, Clock, FileText, Loader, Lock, Mail, Menu, Phone, Search, Upload, X } from '@/app/shared/icons';
 
 /**
  * The client's portal (lib/server/client-portal.ts): where the case is, what we need from them, and
@@ -39,7 +39,7 @@ const CSS = `
 .cp .yn .btn{min-width:84px}
 .cp .task .d{font-size:15px;color:#475569;line-height:1.5;margin:0 0 10px}
 .cp .none{font-size:15px;color:#166534;display:flex;align-items:center;gap:8px}
-.cp h2 .sum{margin-left:auto;font-size:14px;font-weight:600;color:#64748b}
+.cp .sum{font-size:14px;font-weight:600;color:#64748b;margin:0 0 8px}
 .cp .bar{display:flex;gap:3px;height:14px;margin:2px 0 10px}
 .cp .bar button{flex:1;border:0;padding:0;border-radius:4px;cursor:pointer;background:#e2e8f0}
 .cp .bar button:focus-visible{outline:2px solid #5A27E0;outline-offset:2px}
@@ -68,6 +68,17 @@ const CSS = `
 .cp .msg summary small{font-size:13px;color:#64748b;font-weight:500}
 .cp .msg .body{white-space:pre-wrap;font-size:15px;color:#334155;line-height:1.55;margin:0 0 14px;padding:12px 14px;background:#f8fafc;border-radius:10px}
 .cp .asked{font-size:13px;color:#64748b;margin:-2px 0 6px}
+.cp .tabs{display:flex;gap:4px;border-bottom:1px solid #e2e8f0;margin:0 0 16px}
+.cp .tabs button{border:0;background:none;font:inherit;font-size:15px;font-weight:600;color:#64748b;padding:10px 14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;display:inline-flex;align-items:center;gap:8px}
+.cp .tabs button.on{color:#4c1d95;border-bottom-color:#5A27E0}
+.cp .tabs button:focus-visible,.cp .mnav button:focus-visible,.cp .menu button:focus-visible{outline:2px solid #5A27E0;outline-offset:2px}
+.cp .mnav{display:none;position:sticky;top:0;z-index:5;background:#f6f7fb;align-items:center;gap:12px;padding:8px 0;margin:0 0 12px}
+.cp .mnav button{border:1px solid #cbd5e1;background:#fff;border-radius:10px;width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#0f172a}
+.cp .mnav b{font-size:18px;display:inline-flex;align-items:center;gap:8px}
+.cp .menu{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:6px;margin:-4px 0 14px;display:grid}
+.cp .menu button{border:0;background:none;font:inherit;font-size:17px;font-weight:600;text-align:left;padding:13px 14px;border-radius:10px;cursor:pointer;color:#0f172a;display:flex;align-items:center;gap:8px}
+.cp .menu button.on{background:#f5f3ff;color:#4c1d95}
+@media (max-width:640px){.cp .tabs{display:none}.cp .mnav{display:flex}}
 .cp .dates{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:14px;font-size:15px}
 .cp .dates b{display:block;font-size:13px;color:#64748b;font-weight:600}
 .cp .doc{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid #f1f5f9;font-size:15px}
@@ -157,6 +168,10 @@ export default function ClientPortal() {
   const [allFaqs, setAllFaqs] = useState(false);
   const [strand, setStrand] = useState<string | null>(null);
   const [allHistory, setAllHistory] = useState(false);
+  const [tab, setTab] = useState<string>('');
+  const [menu, setMenu] = useState(false);
+  // The section in the address (#progress), so a refresh or a link from an email opens it.
+  useEffect(() => { const h = window.location.hash.slice(1); if (h) setTab(h); }, []);
   const [contact, setContact] = useState(false);
   const [msg, setMsg] = useState('');
   const [sent, setSent] = useState(false);
@@ -286,15 +301,39 @@ export default function ClientPortal() {
     return ctx.handler.email ? <a className="btn" href={`mailto:${ctx.handler.email}?subject=${encodeURIComponent(`${ctx.propertyAddress}: ${t.title}`)}`}><Mail size={18} />{a.label}</a> : null;
   };
 
+  // One section at a time: tabs on a wide screen, a menu on a phone. A section with nothing in it is not offered.
+  const sections: Array<{ key: string; label: string; count?: number }> = [
+    ...(v && !v.closed ? [{ key: 'you', label: 'For You', count: tasks.length }] : []),
+    ...(v && v.progress.length > 0 ? [{ key: 'progress', label: 'Progress' }] : []),
+    { key: 'documents', label: 'Documents' },
+    ...(ctx.history.length > 0 ? [{ key: 'history', label: 'History' }] : []),
+    { key: 'help', label: 'Help' },
+  ];
+  const cur = sections.some((x) => x.key === tab) ? tab : sections[0].key;
+  const go = (k: string) => { setTab(k); setMenu(false); window.history.replaceState(null, '', `#${k}`); window.scrollTo({ top: 0 }); };
+  const here = sections.find((x) => x.key === cur)!;
+
   return shell(
     <>
       <p className="firm">{ctx.firmName}</p>
       <h1 style={{ marginBottom: 18 }}>{ctx.propertyAddress}</h1>
       <input ref={picker} type="file" multiple hidden accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.doc,.docx" onChange={(e) => { const { role, task } = pickRole.current; void upload(e.target.files, role, task); e.target.value = ''; }} />
+      <nav className="tabs" aria-label="Your case">
+        {sections.map((x) => <button key={x.key} className={x.key === cur ? 'on' : ''} aria-current={x.key === cur ? 'page' : undefined} onClick={() => go(x.key)}>{x.label}{!!x.count && <span className="count">{x.count}</span>}</button>)}
+      </nav>
+      <div className="mnav">
+        <button aria-label={menu ? 'Close menu' : 'Open menu'} aria-expanded={menu} aria-controls="cp-menu" onClick={() => setMenu(!menu)}>{menu ? <X size={22} /> : <Menu size={22} />}</button>
+        <b>{here.label}{!!here.count && <span className="count">{here.count}</span>}</b>
+      </div>
+      {menu && (
+        <div id="cp-menu" className="menu">
+          {sections.map((x) => <button key={x.key} className={x.key === cur ? 'on' : ''} aria-current={x.key === cur ? 'page' : undefined} onClick={() => go(x.key)}>{x.label}{!!x.count && <span className="count">{x.count}</span>}</button>)}
+        </div>
+      )}
       {err && <div className="err">{err}</div>}
       {done && <div className="ok"><Check size={18} />{done}</div>}
 
-      {ctx.feedback && (
+      {cur === 'you' && ctx.feedback && (
         <div className="card">
           {rated ? (
             <>
@@ -321,9 +360,8 @@ export default function ClientPortal() {
         </div>
       )}
 
-      {v && !v.closed && (
+      {cur === 'you' && v && !v.closed && (
         <div className="card">
-          <h2>For You{tasks.length > 0 && <span className="count">{tasks.length}</span>}</h2>
           {tasks.length === 0 ? (
             <div className="none"><CheckCircle size={18} />Nothing for you to do right now.</div>
           ) : tasks.map((t) => (
@@ -337,9 +375,9 @@ export default function ClientPortal() {
         </div>
       )}
 
-      {v && v.progress.length > 0 && (
+      {cur === 'progress' && v && v.progress.length > 0 && (
         <div className="card">
-          <h2>Progress<span className="sum">{v.progress.filter((p) => p.state === 'done').length} Of {v.progress.length} Done</span></h2>
+          <div className="sum">{v.progress.filter((p) => p.state === 'done').length} Of {v.progress.length} Done</div>
           {/* One segment per part of the work, side by side: they run at the same time, not one after another. */}
           <div className="bar">
             {v.progress.map((p) => (
@@ -362,6 +400,7 @@ export default function ClientPortal() {
                 {p.usually && <><dt>Usually</dt><dd>{p.usually}</dd></>}
                 {p.since && <><dt>{p.state === 'with_you' ? 'Asked' : 'Since'}</dt><dd>{day(p.since)}</dd></>}
                 {p.expected && <><dt>Expected</dt><dd>By around {day(p.expected)}</dd></>}
+                {p.state === 'with_you' && sections.some((x) => x.key === 'you') && <><dt /><dd><button className="link" onClick={() => go('you')}>See What To Do</button></dd></>}
                 {p.longerThanUsual && <><dt>Timing</dt><dd>Taking longer than usual.{p.chased > 0 ? ` We have chased ${p.chased === 1 ? 'once' : `${p.chased} times`} and will keep at it.` : ' We are following it up.'}</dd></>}
               </dl>
             </details>
@@ -375,8 +414,8 @@ export default function ClientPortal() {
         </div>
       )}
 
+      {cur === 'documents' && (
       <div className="card">
-        <h2>Documents</h2>
         <div
           className={`drop${over ? ' over' : ''}`}
           role="button"
@@ -399,9 +438,10 @@ export default function ClientPortal() {
         ))}
       </div>
 
-      {ctx.history.length > 0 && (
+      )}
+
+      {cur === 'history' && ctx.history.length > 0 && (
         <div className="card">
-          <h2>History</h2>
           {(allHistory ? ctx.history : ctx.history.slice(0, 5)).map((m) => (
             <details key={m.id} className="msg">
               <summary><b>{m.subject}</b><small>{day(m.at)}</small></summary>
@@ -412,7 +452,7 @@ export default function ClientPortal() {
         </div>
       )}
 
-      {ctx.help.length > 0 && (() => {
+      {cur === 'help' && ctx.help.length > 0 && (() => {
         const term = q.trim().toLowerCase();
         const hits = term ? ctx.help.flatMap((sec) => sec.faqs).filter((f) => `${f.q} ${f.a}`.toLowerCase().includes(term)) : [];
         const qa = (f: Faq) => (
@@ -430,7 +470,6 @@ export default function ClientPortal() {
         );
         return (
           <div className="card">
-            <h2>Help</h2>
             <div style={{ position: 'relative' }}>
               <input className="search" placeholder="Search questions" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search questions" style={{ paddingLeft: 40 }} />
               <Search size={18} style={{ position: 'absolute', left: 14, top: 14, color: '#94a3b8' }} />
@@ -447,6 +486,7 @@ export default function ClientPortal() {
         );
       })()}
 
+      {cur === 'help' && (
       <div className="card">
         <h2>Still Need Help?</h2>
         {!contact ? (
@@ -469,6 +509,7 @@ export default function ClientPortal() {
           </>
         )}
       </div>
+      )}
     </>
   );
 }
