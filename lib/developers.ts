@@ -4,7 +4,7 @@
  * only these, and the server refuses any other address for the role.
  */
 export const CASE_LIGHTNING_DEVELOPERS: ReadonlyArray<{ name: string; email: string }> = [
-  { name: 'Pete Anwyll', email: 'peteranwyll@hotmail.com' },
+  { name: 'Pete Anwyll', email: 'pete@caselightning.co.uk' },
 ];
 
 export const caseLightningDeveloper = (email: string) =>
