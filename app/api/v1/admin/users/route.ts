@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { paths } from '@/lib/paths';
 import { z } from 'zod';
+import { caseLightningDeveloper } from '@/lib/developers';
 import { randomUUID } from 'node:crypto';
 import { assertFeature, config } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
@@ -39,7 +40,8 @@ export async function GET() {
  * Role DEVELOPER adds a developer account for setting the firm up (migration 135): an
  * admin account flagged is_developer — admin privileges, labelled, never a handler, not
  * counted against the team limit, removable in one step. Only the firm's own admins add
- * one; a developer cannot bring in others.
+ * one; a developer cannot bring in others. Only Case Lightning's own people (lib/developers.ts)
+ * can be added as one.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -58,6 +60,9 @@ export async function POST(req: NextRequest) {
       .parse(await req.json());
     const email = input.email.toLowerCase();
     const developer = input.role === 'DEVELOPER';
+    const ours = developer ? caseLightningDeveloper(email) : null;
+    if (developer && !ours) throw Object.assign(new Error('A developer account is for someone from Case Lightning.'), { status: 400 });
+    if (ours) input.name = ours.name;
     if (developer && admin.isDeveloper) throw Object.assign(new Error("Only one of the firm's own admins can add a developer."), { status: 403 });
     if (!developer) {
       const n = await queryOne<{ n: string }>(`select count(*)::text as n from app_user where tenant_id = $1 and not is_developer and access_removed_at is null`, [admin.tenantId]);

@@ -18,6 +18,7 @@ import { Inbox, PenLine, FolderKanban, Settings, Target, Calendar, CheckCircle, 
 import { decisionTask } from './EngineWork';
 import TaskList, { TaskTools, type TaskSort } from './TaskList';
 import DocPacks from './DocPacks';
+import { CASE_LIGHTNING_DEVELOPERS, caseLightningDeveloper } from '@/lib/developers';
 
 interface MatterHit {
   id: string;
@@ -285,8 +286,9 @@ const PERSON_CSS = `
 .pp-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .pp-field{display:grid;gap:6px}
 .pp-field label,.pp-set > label{font-size:12px;font-weight:700;color:#475569;letter-spacing:.02em;text-transform:uppercase}
-.pp-field input{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;font-size:14px;font-family:inherit;box-sizing:border-box;background:#fff}
-.pp-field input:focus{outline:none;border-color:#5A27E0;box-shadow:0 0 0 3px rgba(90,39,224,.15)}
+.pp-field input,.pp-field select{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;font-size:14px;font-family:inherit;box-sizing:border-box;background:#fff}
+.pp-field input:focus,.pp-field select:focus{outline:none;border-color:#5A27E0;box-shadow:0 0 0 3px rgba(90,39,224,.15)}
+.pp-field select{appearance:none;cursor:pointer;padding-right:36px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E") no-repeat right 12px center}
 .pp-set{display:grid;gap:8px;justify-items:start}
 .pp-chips{justify-self:stretch}
 .pp-seg{display:inline-flex;border:1px solid #cbd5e1;border-radius:9px;overflow:hidden;background:#fff}
@@ -347,7 +349,15 @@ function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, t
           {!isNew && <span>{person.email}</span>}
         </div>
         <div className="pp-body">
-          {isNew && (
+          {isNew && person.role === 'DEVELOPER' && (
+            <div className="pp-field">
+              <label htmlFor="pp-dev">Developer</label>
+              <select id="pp-dev" value={person.email} onChange={(e) => { const d = caseLightningDeveloper(e.target.value); if (d) setPerson({ ...person, name: d.name, email: d.email }); }}>
+                {CASE_LIGHTNING_DEVELOPERS.map((d) => <option key={d.email} value={d.email}>{d.name}</option>)}
+              </select>
+            </div>
+          )}
+          {isNew && person.role !== 'DEVELOPER' && (
             <div className="pp-row">
               <div className="pp-field">
                 <label htmlFor="pp-name">Name</label>
@@ -371,7 +381,13 @@ function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, t
                     ['ASSISTANT', 'Assistant', 'Files email and works cases; no decisions on money or reports.'],
                     ...(isNew && canAddDeveloper ? [['DEVELOPER', 'Developer', "Admin rights for setting the firm up. Labelled as a developer, never a case's handler, and removable in one step."] as [string, string, string]] : []),
                   ],
-              (v) => setPerson({ ...person, role: v }),
+              // A developer is picked from Case Lightning's people, not typed in; leaving the role clears the pick.
+              (v) => {
+                const dev = CASE_LIGHTNING_DEVELOPERS[0];
+                if (v === 'DEVELOPER' && isNew) setPerson({ ...person, role: v, name: dev.name, email: dev.email });
+                else if (person.role === 'DEVELOPER' && isNew) setPerson({ ...person, role: v, name: '', email: '' });
+                else setPerson({ ...person, role: v });
+              },
             )}
           </div>
           <div className="pp-set">
