@@ -20,6 +20,9 @@ const STREETS = ['Clarendon Road', 'Kirkgate', 'Westfield Avenue', 'Ash Grove', 
 const TOWNS = ['Leeds LS2', 'Leeds LS6', 'Harrogate HG2', 'York YO10', 'Wakefield WF1', 'Ilkley LS29', 'Otley LS21', 'Leeds LS8'];
 const CLIENTS = ['Amira Hussain', 'Joe Whitaker', 'Hannah Brook', 'Daniel Okafor', 'Lucy Marsh', 'Ravi Nair', 'Ellie Turner', 'Marcus Webb', 'Sophie Laing', 'Owen Pryce', 'Nadia Khan', 'George Hall', 'Isla Murray', 'Kwame Mensah', 'Beth Sutton', 'Tom Fielding', 'Zara Ahmed', 'Callum Reid', 'Freya Dale', 'Adam Novak'];
 const TYPES = ['freehold_purchase', 'freehold_purchase', 'leasehold_purchase', 'freehold_purchase', 'freehold_sale', 'freehold_purchase', 'leasehold_sale', 'remortgage'];
+/** A made-up address in a real postcode format ("27 Clarendon Road, Leeds LS2 7QH"). */
+const POSTCODE_LETTERS = 'ABDEFGHJLNPQRSTUWXY';
+export const demoAddress = (k: number) => `${(k * 7) % 98 + 2} ${STREETS[k % STREETS.length]}, ${TOWNS[(k * 3) % TOWNS.length]} ${(k % 9) + 1}${POSTCODE_LETTERS[(k * 5) % POSTCODE_LETTERS.length]}${POSTCODE_LETTERS[(k * 11 + 3) % POSTCODE_LETTERS.length]}`;
 const COUNT = Number(process.argv.slice(2).find((a) => /^\d+$/.test(a)) ?? 40);
 /** After the book: a few cases whose task has waited on us for a week (Delayed - Us). */
 const LATE = ['id_done,todo,ourslate', 'title,todo,ourslate', 'id_done,todo,ourslate', 'searches_done,todo,ourslate', 'id_done,todo,ourslate'];
@@ -39,7 +42,7 @@ async function main() {
     const k = n0 + added++;
     const type = TYPES[k % TYPES.length];
     const client = CLIENTS[k % CLIENTS.length];
-    const address = `${(k * 7) % 98 + 2} ${STREETS[k % STREETS.length]}, ${TOWNS[(k * 3) % TOWNS.length]} ${String.fromCharCode(65 + (k % 26))}${(k % 9) + 1}`;
+    const address = demoAddress(k);
     const handler = people[k % people.length].id;
     const sale = type.endsWith('_sale');
     const price = type === 'remortgage' ? null : `£${(180 + ((k * 37) % 420)).toLocaleString('en-GB')},000`;

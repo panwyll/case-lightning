@@ -1,12 +1,11 @@
 import { REFERRALS_ENABLED } from '@/lib/flags';
 import type { Metadata } from 'next';
-import { config } from '@/lib/server/config';
 import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/shared';
 
 export const metadata: Metadata = {
   title: 'Pricing — CONVEYi',
   description:
-    'One price: £80 + VAT per case. No seats, no tiers, no monthly fee. Pay only for the cases CONVEYi works on. 30-day money-back guarantee.',
+    'Pay nothing until we double your fee earners’ caseload. Then one price: £80 + VAT per case. No seats, no tiers, no monthly fee.',
 };
 
 const PAGE_SOURCE = 'pricing';
@@ -27,7 +26,7 @@ const included = [
 const whatCounts = [
   ['Charged once per case', 'The first time CONVEYi drafts a reply, reviews or generates a document, or reconciles a case, that case is opened and £80 + VAT goes on the month’s invoice. Never again for that case.'],
   ['Free: everything before that', 'Triage, matching, summaries and the knowledge base run on every email at no charge. A case you never draft on costs nothing.'],
-  ['Free: your trial', 'Cases you open during the free trial are never charged — not then, and not when you subscribe.'],
+  ['Free: until your caseload has doubled', 'Cases CONVEYi works on before completions per fee earner have doubled against your baseline are never charged — not then, and not after.'],
 ];
 
 export default function PricingPage() {
@@ -42,10 +41,9 @@ export default function PricingPage() {
             £80 per case. That’s the pricing.
           </h1>
           <p className="mt-5 max-w-xl text-lg text-ink-soft">
-            Start with {config.trialDays} days free — no card, no sales call. Then pay only for the
-            cases CONVEYi actually works on: no seats, no tiers, no monthly fee. Everyone in the firm
-            gets the whole product. No setup fees and no lock-in, and if it doesn’t save you time in
-            the first 30 days, get your money back.
+            Before you start, we measure each fee earner’s caseload. You pay nothing until completions per fee earner
+            have doubled against that baseline. Then you pay only for the cases CONVEYi works on: no seats, no tiers,
+            no monthly fee, no setup fee and no lock-in. Everyone in the firm gets the whole product.
           </p>
         </div>
       </section>
@@ -73,7 +71,7 @@ export default function PricingPage() {
             </ul>
             <div className="mt-8">
               <Cta
-                label="Get started"
+                label="Get Started"
                 href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'pricing_case')}
                 dataCta="pricing_case"
                 variant="primary"
@@ -105,7 +103,7 @@ export default function PricingPage() {
         )}
 
         <p className="mx-auto mt-8 max-w-6xl text-center text-sm text-ink-soft">
-          30-day money-back guarantee. ·{' '}
+          Pay nothing until we double your caseload. ·{' '}
           <a href={ctaHref(ROUTES.faq, PAGE_SOURCE, 'pricing_faq')} className="text-violet underline underline-offset-4">Read the FAQ</a>
         </p>
       </section>
@@ -113,9 +111,9 @@ export default function PricingPage() {
       <section className="bg-ink px-6 py-20 text-paper md:py-24">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">One case at a time.</h2>
-          <p className="mx-auto mt-4 max-w-xl text-lg text-paper/70">Try it on a live case for free. Add the whole team when you’re ready — it costs nothing until they open a case.</p>
+          <p className="mx-auto mt-4 max-w-xl text-lg text-paper/70">Free until your caseload has doubled. Then £80 + VAT per case.</p>
           <div className="mt-8 flex justify-center">
-            <Cta label="Get started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'cta_signup')} dataCta="cta_signup" size="lg" />
+            <Cta label="Get Started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'cta_signup')} dataCta="cta_signup" size="lg" />
           </div>
         </div>
       </section>

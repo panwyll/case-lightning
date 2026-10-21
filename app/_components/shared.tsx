@@ -36,6 +36,8 @@ export const ROUTES = {
   // more, because a paid visitor landing on a waitlist form converts nobody.
   signup: '/get-started',
   contact: '/waitlist',
+  /** A 15-minute demo, booked from the landing page (app/conveyi/demo). */
+  demo: '/conveyi/demo',
   conveyi: '/conveyi',
   pricing: '/conveyi/pricing',
   howItWorks: '/conveyi/how-it-works',

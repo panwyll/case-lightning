@@ -185,7 +185,7 @@ export default function WaitlistPage() {
           </div>
 
           <p className="mt-6 text-sm text-ink-soft">
-            £80 + VAT per case · 30-day money-back guarantee · nothing to download
+            Pay nothing until we double your caseload · then £80 + VAT per case
           </p>
         </div>
       </div>

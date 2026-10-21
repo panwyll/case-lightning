@@ -4,7 +4,7 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'FAQ — CONVEYi',
   description:
-    'Common questions about CONVEYi: GDPR, where your data lives, onboarding, the 30-day money-back guarantee, and the Go, Pro and Firm plans.',
+    'Common questions about CONVEYi: GDPR, where your data lives, onboarding, pricing and our guarantee: pay nothing until your caseload has doubled.',
 };
 
 const PAGE_SOURCE = 'faq';
@@ -32,11 +32,11 @@ const faqs = [
   },
   {
     q: 'How does £80 per case work?',
-    a: 'There is one plan and one price. Everyone in the firm gets the whole product — the Outlook add-in, case-aware drafting, auto-triage, auto-rules, AI document packs, the OneDrive knowledge base, the case board and the team layer (workload dashboard, assignment, admin oversight). A case is charged once, the first time CONVEYi drafts a reply, reviews or generates a document, or reconciles that matter: £80 + VAT goes on that month’s invoice and that case is never charged again. Triage, matching and summaries run free on every email, so a case you never draft on costs nothing, and cases you open during the free trial are never charged. There are no seats, no monthly fee and no tiers.',
+    a: 'There is one plan and one price. Everyone in the firm gets the whole product — the Outlook add-in, case-aware drafting, auto-triage, auto-rules, AI document packs, the OneDrive knowledge base, the case board and the team layer (workload dashboard, assignment, admin oversight). A case is charged once, the first time CONVEYi drafts a reply, reviews or generates a document, or reconciles that matter: £80 + VAT goes on that month’s invoice and that case is never charged again. Triage, matching and summaries run free on every email, so a case you never draft on costs nothing, and cases it works on before your caseload has doubled are never charged. There are no seats, no monthly fee and no tiers.',
   },
   {
     q: 'What if it doesn’t work for us?',
-    a: 'You’re covered by a 30-day money-back guarantee. If it doesn’t save your team time, ask for a refund — no awkward conversations, no lock-in.',
+    a: 'You pay nothing until it does. Before you start we measure each fee earner’s caseload, and CONVEYi is free until completions per fee earner have doubled against that baseline. No lock-in either way.',
   },
   {
     q: 'Does it work with Gmail?',
