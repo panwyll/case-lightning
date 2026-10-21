@@ -85,6 +85,9 @@ async function main() {
   const { DeterministicNoteReader } = await import('../lib/server/engine/notes');
   const { textPdf } = await import('../lib/server/engine/text-pdf');
   const { counterpartyTypeOf } = await import('../lib/server/engine/counterparty');
+  const { addWorkingDays } = await import('../lib/server/engine/working-days');
+  /** Completion two working weeks out: never a weekend or bank holiday (no CHAPS, no Land Registry). */
+  const completionDay = () => addWorkingDays(new Date(), 10).toISOString().slice(0, 10);
 
   const tenant = await runAsSystem(() => queryOne<{ id: string; name: string }>(`select id, name from tenant where id::text = $1 or name = $1`, [tenantArg]));
   if (!tenant) throw new Error(`No firm called or with id "${tenantArg}".`);
@@ -325,7 +328,7 @@ async function main() {
       });
       await reload();
       if (!s.readiness.signedContractHeldAt) await svc.run(T, m.id, { type: 'signed_contract_held', actor, documentId: await sample('Signed contract', 'CONTRACT', { signed: true }) } as never);
-      await svc.run(T, m.id, { type: 'contracts_exchanged', actor, completionDate: new Date(now + 10 * 86_400_000).toISOString().slice(0, 10) });
+      await svc.run(T, m.id, { type: 'contracts_exchanged', actor, completionDate: completionDay() });
       await svc.run(T, m.id, { type: 'completion_statement_generated', actor });
     }
     if (target === 'exchanged') return;
@@ -356,7 +359,7 @@ async function main() {
       await done({ type: 'buildings_insurance_confirmed', insurer: 'Sample insurer', fromDate: s.exchange.exchangedAt?.slice(0, 10) ?? clock.toISOString().slice(0, 10) });
       await done({ type: 'funds_requested', fromRole: 'client', bankDetailsId: firm.id });
       await done({ type: 'funds_received', fromRole: 'client' });
-      await done({ type: 'certificate_of_title_sent', completionDate: s.exchange.completionDate ?? new Date(now + 10 * 86_400_000).toISOString().slice(0, 10) });
+      await done({ type: 'certificate_of_title_sent', completionDate: s.exchange.completionDate ?? completionDay() });
     }
     if (firm) {
       await svc.run(T, m.id, { type: 'funds_requested', actor, fromRole: s.hasLender ? 'lender' : 'client', bankDetailsId: firm.id });
