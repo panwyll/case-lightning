@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { Resend } from 'resend';
 import { ok, fail } from '@/lib/server/http';
-import { query, queryOne, runAsSystem } from '@/lib/server/db';
+import { query, runAsSystem } from '@/lib/server/db';
+import { firstTouch, firstTouchTags } from '@/lib/server/first-touch';
 import { config } from '@/lib/server/config';
 
 export const runtime = 'nodejs';
@@ -12,12 +13,20 @@ export const dynamic = 'force-dynamic';
 const NOTIFY = process.env.DEMO_REQUEST_NOTIFY ?? 'pete@caselightning.co.uk';
 
 /**
- * A firm asking for a demo (migration 138). Saved first; then we are told by email, and the person gets a short
+ * A firm asking for a demo (migration 138), or a demo booked in the calendar (139). Saved first; then we are told by email, and the person gets a short
  * confirmation. Either email failing never loses the request. A filled-in hidden field (`website`) is a bot: it
  * is thanked and dropped.
  */
 export async function POST(req: NextRequest) {
   try {
+    const raw = await req.json();
+    // A demo booked in the calendar (139): the calendar emails us and holds who booked; we keep the booking and where they came from.
+    if (raw && typeof raw === 'object' && 'bookingEventUri' in raw) {
+      const k = z.object({ bookingEventUri: z.string().url().max(300).regex(/^https:\/\/api\.calendly\.com\//), bookingInviteeUri: z.string().url().max(300).regex(/^https:\/\/api\.calendly\.com\//).optional() }).parse(raw);
+      const source = firstTouchTags(await firstTouch(req.cookies.get('cl_vid')?.value));
+      await runAsSystem(() => query(`insert into demo_request (booking_event_uri, booking_invitee_uri, source) values ($1, $2, $3::jsonb)`, [k.bookingEventUri, k.bookingInviteeUri ?? null, JSON.stringify(source)]));
+      return ok({ ok: true });
+    }
     const b = z.object({
       name: z.string().trim().min(2).max(120),
       email: z.string().trim().email().max(200),
@@ -27,17 +36,10 @@ export async function POST(req: NextRequest) {
       note: z.string().trim().max(2000).optional().default(''),
       website: z.string().optional().default(''),
       source: z.record(z.string(), z.string().max(200)).optional().default({}),
-    }).parse(await req.json());
+    }).parse(raw);
     if (b.website) return ok({ ok: true });
-    // Where they first came from (the ad, the email, a search), from this visitor's first tagged page view: the
-    // buttons on our own pages carry our own tags, so the ad's are only on the address they landed on.
-    const visitor = req.cookies.get('cl_vid')?.value ?? null;
-    const first = visitor ? await runAsSystem(() => queryOne<{ path: string; referrer: string | null; utm_source: string | null; utm_medium: string | null; utm_campaign: string | null }>(
-      `select path, referrer, utm_source, utm_medium, utm_campaign from pageview_event
-        where visitor_id = $1 and coalesce(utm_medium, '') <> 'cta' order by created_at asc limit 1`,
-      [visitor]
-    )).catch(() => null) : null;
-    if (first) b.source = { ...b.source, first_path: first.path, ...(first.referrer ? { first_referrer: first.referrer.slice(0, 200) } : {}), ...(first.utm_source ? { first_utm_source: first.utm_source } : {}), ...(first.utm_medium ? { first_utm_medium: first.utm_medium } : {}), ...(first.utm_campaign ? { first_utm_campaign: first.utm_campaign } : {}) };
+    // Where they first came from (the ad, the email, a search): our own buttons carry our own tags.
+    b.source = { ...b.source, ...firstTouchTags(await firstTouch(req.cookies.get('cl_vid')?.value)) };
     await runAsSystem(() => query(
       `insert into demo_request (name, email, firm, phone, fee_earners, note, source) values ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
       [b.name, b.email.toLowerCase(), b.firm, b.phone || null, b.feeEarners || null, b.note || null, JSON.stringify(b.source)]

@@ -1,80 +1,42 @@
-'use client';
-import { useState } from 'react';
+import { cookies } from 'next/headers';
 import { NavHeader, SiteFooter, ctaHref, ROUTES } from '../../_components/shared';
+import { firstTouch } from '@/lib/server/first-touch';
+import { DemoCalendar } from './DemoCalendar';
+import { DemoForm } from './DemoForm';
 
+export const dynamic = 'force-dynamic';
 const PAGE_SOURCE = 'demo';
-const input = 'w-full rounded-xl border border-line bg-paper-soft px-4 py-3 text-ink placeholder-ink-soft/50 transition focus:border-violet focus:outline-none focus:ring-1 focus:ring-violet';
-const SIZES = ['1–2', '3–5', '6–10', '11–25', 'More than 25'];
 
-/** Ask for a 15-minute demo: the request is saved and we are emailed (app/api/v1/demo-request). */
-export default function DemoPage() {
-  const [f, setF] = useState({ name: '', email: '', firm: '', phone: '', feeEarners: '', note: '', website: '' });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true); setErr(null);
-    // Where they came from: the ad's tags on this page's address, if any.
-    const params = new URLSearchParams(window.location.search);
-    const source = Object.fromEntries([...params.entries()].filter(([k]) => /^(utm_|gclid|fbclid|li_fat_id)/.test(k)).map(([k, v]) => [k, v.slice(0, 200)]));
-    try {
-      const r = await fetch('/api/v1/demo-request', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...f, source }) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j?.error?.message ?? j?.error ?? 'It did not send. Please try again, or email pete@caselightning.co.uk.');
-      setDone(true);
-      const w = window as unknown as { gtag?: (...a: unknown[]) => void };
-      w.gtag?.('event', 'demo_request', { page_location: window.location.href });
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'It did not send. Please try again.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
+/**
+ * Book a demo. With a booking calendar set up (DEMO_BOOKING_URL, a Calendly event link), the visitor picks a time
+ * here; the link carries where they first came from, so the booking does too. Without one, they leave their
+ * details and we email them (DemoForm).
+ */
+export default async function DemoPage() {
+  const configured = process.env.DEMO_BOOKING_URL ?? process.env.NEXT_PUBLIC_DEMO_BOOKING_URL ?? '';
+  let url: string | null = null;
+  if (/^https:\/\/calendly\.com\/[\w./-]+$/.test(configured.split('?')[0])) {
+    const u = new URL(configured);
+    const t = await firstTouch((await cookies()).get('cl_vid')?.value);
+    u.searchParams.set('hide_gdpr_banner', '1');
+    u.searchParams.set('primary_color', '5a27e0');
+    if (t?.utm_source) u.searchParams.set('utm_source', t.utm_source);
+    if (t?.utm_medium) u.searchParams.set('utm_medium', t.utm_medium);
+    if (t?.utm_campaign) u.searchParams.set('utm_campaign', t.utm_campaign);
+    u.searchParams.set('utm_content', 'demo_page');
+    url = u.toString();
+  }
   return (
     <main className="bg-paper text-ink antialiased">
       <NavHeader signupHref={ctaHref(ROUTES.signup, PAGE_SOURCE, 'nav_signup')} />
       <section className="px-6 py-16 md:py-24">
-        <div className="mx-auto grid max-w-5xl gap-12 md:grid-cols-[1fr_1.1fr] md:gap-16">
+        <div className={`mx-auto grid gap-12 md:gap-16 ${url ? 'max-w-6xl md:grid-cols-[1fr_1.6fr]' : 'max-w-5xl md:grid-cols-[1fr_1.1fr]'}`}>
           <div>
             <h1 className="font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">Book A 15-Minute Demo</h1>
             <p className="mt-5 text-lg text-ink-soft">We show you CONVEYi on the kind of cases your firm runs, and how we measure your fee earners’ caseload before you start.</p>
             <p className="mt-4 text-lg text-ink-soft">You pay nothing until that caseload has doubled.</p>
           </div>
-          <div className="rounded-3xl border border-line bg-paper-soft p-7 shadow-card md:p-8">
-            {done ? (
-              <div>
-                <h2 className="font-serif text-3xl font-semibold tracking-tight">Thank you.</h2>
-                <p className="mt-3 text-ink-soft">We will email you within one working day to find a time.</p>
-                <a href={ROUTES.conveyi} className="mt-6 inline-block font-semibold text-violet underline underline-offset-4">Back To CONVEYi</a>
-              </div>
-            ) : (
-              <form onSubmit={(e) => void submit(e)} className="grid gap-4">
-                <label className="grid gap-1.5 text-sm font-semibold">Your Name<input id="demo-name" className={input} required minLength={2} value={f.name} onChange={set('name')} autoComplete="name" /></label>
-                <label className="grid gap-1.5 text-sm font-semibold">Work Email<input id="demo-email" className={input} type="email" required value={f.email} onChange={set('email')} autoComplete="email" /></label>
-                <label className="grid gap-1.5 text-sm font-semibold">Firm<input id="demo-firm" className={input} required minLength={2} value={f.firm} onChange={set('firm')} autoComplete="organization" /></label>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="grid gap-1.5 text-sm font-semibold"><span>Phone <span className="font-normal text-ink-soft">(optional)</span></span><input id="demo-phone" className={`${input} h-12`} type="tel" value={f.phone} onChange={set('phone')} autoComplete="tel" /></label>
-                  <label className="grid gap-1.5 text-sm font-semibold"><span>Fee Earners <span className="font-normal text-ink-soft">(optional)</span></span>
-                    <select id="demo-size" className={`${input} h-12`} value={f.feeEarners} onChange={set('feeEarners')}>
-                      <option value="" />
-                      {SIZES.map((x) => <option key={x} value={x}>{x}</option>)}
-                    </select>
-                  </label>
-                </div>
-                <label className="grid gap-1.5 text-sm font-semibold"><span>Anything We Should Know <span className="font-normal text-ink-soft">(optional)</span></span><textarea id="demo-note" className={input} rows={3} value={f.note} onChange={set('note')} placeholder="Case management system, when suits you…" /></label>
-                {/* A field people never see: a bot fills it in. */}
-                <input id="demo-website" tabIndex={-1} autoComplete="off" aria-hidden="true" className="hidden" value={f.website} onChange={set('website')} />
-                {err && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</p>}
-                <button type="submit" disabled={busy} className="mt-1 inline-flex items-center justify-center rounded-full bg-violet px-7 py-3.5 text-base font-semibold text-white shadow-violet transition hover:bg-violet-dark disabled:opacity-60" data-cta="demo_submit">
-                  {busy ? 'Sending…' : 'Request A Demo'}
-                </button>
-              </form>
-            )}
-          </div>
+          {url ? <DemoCalendar url={url} /> : <DemoForm />}
         </div>
       </section>
       <SiteFooter />
