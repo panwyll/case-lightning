@@ -51,7 +51,9 @@ export type HealthBand = (typeof HEALTH_BANDS)[number];
  *   attention (blue)  something waiting on us, all on time;
  *   delayed (yellow)  someone else is late;
  *   blocked (red)     we are late;
- *   critical (black)  both, or the transaction is in jeopardy.
+ *   critical (black)  both, or the transaction is in jeopardy. "Both" means someone else past escalation (overdue,
+ *                     escalated, their issue overdue, the stage overrun): a wait merely past its chase point is
+ *                     yellow on its own, but next to our own lateness it is routine, not a crisis, and the case is red.
  */
 function colourOf(s: MatterState, reasons: HealthReason[], now: Date): HealthBand {
   const issueOf = (r: HealthReason) => (r.ref.type === 'issue' ? s.issues[r.ref.id] : undefined);
@@ -76,7 +78,12 @@ function colourOf(s: MatterState, reasons: HealthReason[], now: Date): HealthBan
   const oursPending = due.length > 0 || reasons.some((r) =>
     r.code === 'manual_handling' || r.code === 'decision_pending' || r.code === 'deadline_near' || r.code === 'expiry_warning'
     || (r.code === 'issue_blocking' && oursIssue(r)));
-  if (jeopardy || (oursLate && theirsLate)) return 'critical';
+  const theirsSeriouslyLate = theirsLate && reasons.some((r) =>
+    r.code === 'wait_overdue' || r.code === 'wait_escalated'
+    || (r.code === 'issue_overdue' && !oursIssue(r))
+    || (r.code === 'issue_blocking' && r.band === 'blocked' && !oursIssue(r))
+    || (r.code === 'stage_overrun' && r.band === 'delayed'));
+  if (jeopardy || (oursLate && theirsSeriouslyLate)) return 'critical';
   if (oursLate) return 'blocked';
   if (theirsLate) return 'delayed';
   if (oursPending) return 'attention';

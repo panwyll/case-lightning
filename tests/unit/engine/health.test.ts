@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, offerClear, titleClear, titleWithCharge, contractClear } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, idRefer, searchClear, offerClear, titleClear, titleWithCharge, contractClear } from './helpers';
 import { caseHealth, rollup, summariseHealth, HEALTH_RANK } from '../../../lib/server/engine/health';
 import { matterWork, buckets } from '../../../lib/server/engine/work';
 import { DEFAULT_SLA } from '../../../lib/server/engine/sla';
@@ -174,7 +174,7 @@ test('health: a matter that is abandoned or closed says so instead of showing re
   await h.svc.run(TENANT, MATTER, { type: 'abandon_matter', actor: USER, reason: 'chain_collapsed', detail: 'Buyer above pulled out' });
   const s = await h.svc.getState(TENANT, MATTER);
   const health = caseHealth(s, h.advanceDays(60));
-  assert.equal(health.band, 'blocked');
+  assert.equal(health.band, 'blocked', health.reasons.map((r) => `${r.band}:${r.code}:${r.headline}`).join(' | '));
   assert.equal(health.reasons.length, 1);
   assert.match(health.reasons[0].headline, /Abortive — chain collapsed/);
 });
@@ -337,4 +337,26 @@ test('health: critical means jeopardy or our own delay — a survey needing revi
   await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'transaction_at_risk', title: 'The seller has pulled out', gate: 'exchange' });
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(caseHealth(s, h.ports.now()).band, 'critical');
+});
+
+test('health: our own lateness next to a chase that is merely due is red (Delayed - Us), not critical; next to someone past escalation it is critical', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, transactionType: 'freehold_purchase', hasLender: true, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false } as never);
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  // Back needing a look (an address that does not match), not a risk to the deal in itself.
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc({ ...idRefer(), flags: [{ code: 'ADDRESS_MISMATCH', severity: 'medium', description: 'The address on the ID does not match the one given', locator: { page: 1 } }] }));
+  // A week and a half on: the ID review has sat with us, and the contract pack is past its chase point but not its escalation.
+  const rule = DEFAULT_SLA.contract_pack!;
+  h.advanceDays(11);
+  let s = await h.svc.getState(TENANT, MATTER);
+  let health = caseHealth(s, h.ports.now());
+  assert.ok(health.reasons.some((r) => r.code === 'decision_pending' && r.band !== 'attention'), 'ours is late');
+  const pack = health.reasons.find((r) => r.ref.type === 'wait' && r.ref.id.startsWith('contract_pack'));
+  assert.equal(pack?.code, 'chase_due', `the pack is only past its chase point (escalates at ${rule.escalateAfter} working days)`);
+  assert.equal(health.band, 'blocked', health.reasons.map((r) => `${r.band}:${r.code}:${r.headline}`).join(' | '));
+  // Past escalation as well: both late, critical.
+  h.advanceDays(Math.ceil(rule.escalateAfter * 1.5));
+  s = await h.svc.getState(TENANT, MATTER);
+  health = caseHealth(s, h.ports.now());
+  assert.equal(health.band, 'critical', health.reasons.map((r) => `${r.band}:${r.code}`).join(', '));
 });

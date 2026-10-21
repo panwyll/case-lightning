@@ -10,7 +10,7 @@ A wait is opened by the request that asks for the thing, chased on its SLA, esca
   - a document → **Upload …** (read with the right role; the row says what it was read as, and why the wait stays if it is not what was asked for);
   - a fact → **Record …** (its completion form opens in place, with the scan where the form asks).
 - **Chase Now** from the row, with a spinner and "Sent".
-- **Overdue colours the case**: theirs late → Delayed - Others; escalations surface as tasks.
+- **Overdue colours the case**: theirs late → Delayed - Others; escalations surface as tasks. Critical is the transaction in jeopardy, or ours late *and* theirs past escalation (overdue, escalated): a wait merely past its chase point beside our own lateness is Delayed - Us, not Critical (`health.ts colourOf`).
 - Client expectations (mortgage, survey) are timer-opened waits: we check in rather than let them drift.
 
 ## Adding one

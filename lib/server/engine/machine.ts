@@ -911,6 +911,12 @@ function verdictEvents<C extends EventType, F extends EventType>(input: {
 /** Issues that say something is on its way: its arrival closes them (service reactions). */
 export const CLOSED_BY_ARRIVAL: IssueKind[] = ['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding'];
 
+/** Pending client-update proposals whose request has just gone another way: withdrawn by the system, already done. */
+function withdrawDone(s: MatterState, same: (detail: { kind?: string; party?: string | null; followUpOf?: string | null }) => boolean, reason: string): NewEvent[] {
+  return Object.values(s.proposals)
+    .filter((p) => p.status === 'pending' && p.action === 'client_update' && same((p.detail ?? {}) as { kind?: string }))
+    .map((p) => ({ type: 'action_rejected', actor: SYSTEM, payload: { proposalEventId: p.eventId, action: p.action, detail: p.detail, note: `Withdrawn by the system: ${reason}` } }) as NewEvent);
+}
 const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', contract: 'title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase', requisition: 'chase', proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: 'chase', proposal: 'chase' };
 
 // ───────────────────────────── decide ─────────────────────────────
@@ -1159,7 +1165,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const status = pc ? pc.status : s.idCheck.status;
       if (status === 'requested') reject(`An ID check${pc ? ` for ${pc.label}` : ''} is already in progress.`);
       if (isResolved(status)) reject(`The ID check${pc ? ` for ${pc.label}` : ''} is already resolved.`);
-      return [{ type: 'id_check_requested', actor: cmd.actor, payload: { provider: cmd.provider, reference: cmd.reference ?? null, party: cmd.party ?? null, ...(cmd.link ? { link: cmd.link } : {}) } }];
+      // A proposal to send this same request is done now, however the request went: withdrawn, so it can never be approved later
+      // and ask the client a second time for a check already under way (or back, and waiting on our review).
+      return [
+        { type: 'id_check_requested', actor: cmd.actor, payload: { provider: cmd.provider, reference: cmd.reference ?? null, party: cmd.party ?? null, ...(cmd.link ? { link: cmd.link } : {}) } },
+        ...withdrawDone(s, (d) => d.kind === 'id_check_request' && (d.party ?? null) === (cmd.party ?? null), 'the ID check has been requested.'),
+      ];
     }
     case 'id_check_result': {
       requireEnrolled(s);
@@ -2339,7 +2350,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.proofOfFunds.status === 'submitted') reject('A proof-of-funds submission is awaiting sign-off; resolve that decision (request further re-opens the form).');
       if (s.proofOfFunds.status === 'reviewed' && s.proofOfFunds.resolution === 'approve' && !cmd.followUpOf) reject('Proof of funds is already approved on this matter. Send a follow-up round only from the decision (request further).');
       const queryIds = (cmd.queryIds ?? []).filter((id) => s.proofOfFunds.queries[id]?.status === 'draft');
-      return [{ type: 'proof_of_funds_requested', actor: cmd.actor, payload: { requestId: cmd.requestId, channel: cmd.channel, messageId: cmd.messageId ?? null, to: cmd.to ?? null, formUrl: cmd.formUrl ?? null, sendError: cmd.sendError ?? null, followUpOf: cmd.followUpOf ?? null, noteToClient: cmd.noteToClient ?? null, queryIds } }];
+      return [
+        { type: 'proof_of_funds_requested', actor: cmd.actor, payload: { requestId: cmd.requestId, channel: cmd.channel, messageId: cmd.messageId ?? null, to: cmd.to ?? null, formUrl: cmd.formUrl ?? null, sendError: cmd.sendError ?? null, followUpOf: cmd.followUpOf ?? null, noteToClient: cmd.noteToClient ?? null, queryIds } },
+        // The same round, proposed earlier and still waiting: done now.
+        ...withdrawDone(s, (d) => d.kind === 'proof_of_funds_request' && (d.followUpOf ?? null) === (cmd.followUpOf ?? null), 'the proof-of-funds form has been sent.'),
+      ];
     }
     case 'proof_of_funds_submitted': {
       requireEnrolled(s);
