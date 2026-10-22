@@ -82,9 +82,9 @@ function Icon({ name }: { name: IconName }) {
 
 // Captured from the running app with the local firm the dev seed creates (scripts/dev-seed.ts, dev-book.ts, dev-measure.ts).
 const CASEVIEW_SHOT = {
-  src: '/product/app-caseview.webp',
-  width: 2760,
-  height: 1270,
+  src: '/product/app-caseview-wide.webp',
+  width: 2300,
+  height: 1158,
   alt: 'Case View: every live case as a house on a map of stages (instruction, pre-exchange, ready, exchanged, completion) by fee earner, coloured On Track, With Us, Delayed - Others, Delayed - Us or Critical, with the count of each along the top.',
 };
 
@@ -124,9 +124,9 @@ const day: Array<{ title: string; line?: string } & Screen> = [
   },
   {
     title: 'What’s done and what’s next',
-    src: '/product/app-case.webp',
-    width: 2760,
-    height: 1600,
+    src: '/product/app-case-wide.webp',
+    width: 2300,
+    height: 1488,
     alt: 'A purchase at pre-completion: identity, source of funds, title, searches, mortgage and contract and exchange done, signing and completion in progress, beside the property, buyer, price, lender, target dates and handler.',
   },
   {
@@ -187,7 +187,7 @@ export default function Page() {
               <Actions where="hero" />
             </div>
           </div>
-          <Vsl sources={[{ src: '/product/vsl-v4.mp4', type: 'video/mp4' }, { src: '/product/vsl-v4.webm', type: 'video/webm' }]} poster="/product/vsl-poster.webp" label="CONVEYi in 43 seconds" />
+          <Vsl sources={[{ src: '/product/vsl-v5.mp4', type: 'video/mp4' }, { src: '/product/vsl-v5.webm', type: 'video/webm' }]} poster="/product/vsl-poster-2.webp" label="CONVEYi in 43 seconds" />
         </div>
       </section>
 
