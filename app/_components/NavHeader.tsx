@@ -33,26 +33,26 @@ export function NavHeader({
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-line/80 bg-paper/85 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-ink text-paper">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <a href={homeHref} className="flex items-baseline gap-2 transition hover:opacity-80">
           {brand === 'caselightning' ? (
-            <span className="text-xl font-extrabold tracking-tight text-ink">
-              Case<span className="text-violet"> Lightning</span>
+            <span className="text-xl font-extrabold tracking-tight text-paper">
+              Case<span className="text-[#9B7BFF]"> Lightning</span>
             </span>
           ) : (
             <>
-              <span className="text-xl font-extrabold tracking-tight text-ink">
-                CONVE<span className="text-violet">Yi</span>
+              <span className="text-xl font-extrabold tracking-tight text-paper">
+                CONVE<span className="text-[#9B7BFF]">Yi</span>
               </span>
-              <span className="hidden text-xs font-medium text-ink-soft sm:inline">by Case Lightning</span>
+              <span className="hidden text-xs font-medium text-paper/60 sm:inline">by Case Lightning</span>
             </>
           )}
         </a>
 
-        <nav className="hidden items-center gap-8 text-sm font-medium text-ink-soft md:flex">
+        <nav className="hidden items-center gap-8 text-sm font-medium text-paper/70 md:flex">
           {links.map(({ href, label }) => (
-            <a key={href} href={href} className="transition-colors hover:text-ink">{label}</a>
+            <a key={href} href={href} className="transition-colors hover:text-white">{label}</a>
           ))}
         </nav>
 
@@ -62,7 +62,7 @@ export function NavHeader({
           </div>
           <button
             ref={burgerRef}
-            className="rounded-lg p-2 text-ink-soft transition-colors hover:bg-ink/5 hover:text-ink md:hidden"
+            className="rounded-lg p-2 text-paper/80 transition-colors hover:bg-white/10 hover:text-white md:hidden"
             onClick={() => setMenuOpen((v) => !v)}
             aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
             aria-expanded={menuOpen}
@@ -85,10 +85,10 @@ export function NavHeader({
       </div>
 
       {menuOpen && (
-        <div id="mobile-menu" className="border-t border-line bg-paper px-6 pb-5 pt-4 md:hidden">
-          <nav className="flex flex-col gap-1 text-base font-medium text-ink">
+        <div id="mobile-menu" className="border-t border-white/10 bg-ink px-6 pb-5 pt-4 md:hidden">
+          <nav className="flex flex-col gap-1 text-base font-medium text-paper">
             {links.map(({ href, label }) => (
-              <a key={href} href={href} className="rounded-lg px-3 py-2.5 transition-colors hover:bg-ink/5" onClick={closeMenu}>
+              <a key={href} href={href} className="rounded-lg px-3 py-2.5 transition-colors hover:bg-white/10" onClick={closeMenu}>
                 {label}
               </a>
             ))}
