@@ -82,9 +82,9 @@ function Icon({ name }: { name: IconName }) {
 
 // Captured from the running app with the local firm the dev seed creates (scripts/dev-seed.ts, dev-book.ts, dev-measure.ts).
 const CASEVIEW_SHOT = {
-  src: '/product/app-caseview-wide.webp',
+  src: '/product/app-board.webp',
   width: 2300,
-  height: 1158,
+  height: 792,
   alt: 'Case View: every live case as a house on a map of stages (instruction, pre-exchange, ready, exchanged, completion) by fee earner, coloured On Track, With Us, Delayed - Others, Delayed - Us or Critical, with the count of each along the top.',
 };
 
@@ -117,21 +117,20 @@ const how: Array<{ icon: IconName; title: string; line: string; shot: Screen }> 
   },
 ];
 
-const day: Array<{ title: string; line?: string } & Screen> = [
+const day: Array<{ title: string } & Screen> = [
   {
-    title: 'Every live case, and who it’s waiting on',
+    title: 'Firm-wide',
     ...CASEVIEW_SHOT,
   },
   {
-    title: 'What’s done and what’s next',
-    src: '/product/app-case-wide.webp',
+    title: 'On every case',
+    src: '/product/app-case-flow.webp',
     width: 2300,
-    height: 1488,
+    height: 1288,
     alt: 'A purchase at pre-completion: identity, source of funds, title, searches, mortgage and contract and exchange done, signing and completion in progress, beside the property, buyer, price, lender, target dates and handler.',
   },
   {
-    title: 'A portal in your firm’s name',
-    line: 'Your logo, your colours, your address.',
+    title: 'For your clients',
     src: '/product/app-portal.webp',
     width: 1170,
     height: 2500,
@@ -187,7 +186,7 @@ export default function Page() {
               <Actions where="hero" />
             </div>
           </div>
-          <Vsl sources={[{ src: '/product/vsl-v6.mp4', type: 'video/mp4' }, { src: '/product/vsl-v6.webm', type: 'video/webm' }]} poster="/product/vsl-poster-2.webp" label="CONVEYi in 43 seconds" />
+          <Vsl sources={[{ src: '/product/vsl-v7.mp4', type: 'video/mp4' }, { src: '/product/vsl-v7.webm', type: 'video/webm' }]} poster="/product/vsl-poster-3.webp" label="CONVEYi in 43 seconds" />
         </div>
       </section>
 
@@ -230,14 +229,16 @@ export default function Page() {
 
       {/* ── THE PRODUCT ── */}
       <section className="border-t border-line bg-paper-soft px-6 py-20 md:py-24">
-        <div className="mx-auto grid max-w-6xl items-start gap-16 md:grid-cols-[2fr_1fr] md:gap-12">
-          {day.map((d, i) => (
-            <div key={d.title} className={i === 0 ? 'md:col-span-2' : ''}>
-              <h2 className="font-serif text-3xl font-semibold leading-tight tracking-tight md:text-4xl">{d.title}</h2>
-              {d.line && <p className="mt-3 text-lg text-ink-soft">{d.line}</p>}
-              <div className="mt-6"><Shot src={d.src} alt={d.alt} width={d.width} height={d.height} phone={d.phone} /></div>
-            </div>
-          ))}
+        <div className="mx-auto max-w-6xl">
+          <h2 className="font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">Updates at a glance</h2>
+          <div className="mt-12 grid items-start gap-14 md:grid-cols-[2fr_1fr] md:gap-12">
+            {day.map((d, i) => (
+              <div key={d.title} className={i === 0 ? 'md:col-span-2' : ''}>
+                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">{d.title}</h3>
+                <div className="mt-4"><Shot src={d.src} alt={d.alt} width={d.width} height={d.height} phone={d.phone} /></div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
