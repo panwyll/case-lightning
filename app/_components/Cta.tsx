@@ -3,7 +3,8 @@ export type CtaProps = {
   label: string;
   href: string;
   dataCta: string;
-  variant?: 'primary' | 'secondary' | 'ghost';
+  /** `onColour` and `outlineOnColour` sit on an ink or violet band. */
+  variant?: 'primary' | 'secondary' | 'ghost' | 'onColour' | 'outlineOnColour';
   size?: 'md' | 'lg';
   className?: string;
 };
@@ -21,6 +22,8 @@ export function Cta({ label, href, dataCta, variant = 'primary', size = 'md', cl
     primary: 'bg-violet text-white hover:bg-violet-dark shadow-violet active:scale-[0.98]',
     secondary: 'border border-ink/20 bg-transparent text-ink hover:border-ink hover:bg-ink hover:text-paper active:scale-[0.98]',
     ghost: 'text-violet hover:text-violet-dark underline underline-offset-4 decoration-violet/40',
+    onColour: 'bg-paper text-ink hover:bg-white shadow-card active:scale-[0.98]',
+    outlineOnColour: 'border border-white/40 bg-transparent text-white hover:border-white hover:bg-white/10 active:scale-[0.98]',
   };
 
   return (

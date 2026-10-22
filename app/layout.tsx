@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { Fraunces, Manrope } from 'next/font/google';
+import { Manrope, Schibsted_Grotesk } from 'next/font/google';
 import RefCapture from './_components/RefCapture';
 import Track from './_components/Track';
 import SiteAnalytics from './_components/SiteAnalytics';
@@ -8,8 +8,8 @@ import './globals.css';
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
 
-// Editorial display serif + clean grotesk-ish sans — deliberately not Inter/Roboto.
-const fraunces = Fraunces({ subsets: ['latin'], variable: '--font-fraunces', display: 'swap' });
+// A newspaper grotesk for headings (with a true italic) + a clean sans for text — deliberately not Inter/Roboto.
+const display = Schibsted_Grotesk({ subsets: ['latin'], style: ['normal', 'italic'], variable: '--font-display', display: 'swap' });
 const manrope = Manrope({ subsets: ['latin'], variable: '--font-manrope', display: 'swap' });
 
 export const metadata: Metadata = {
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${manrope.variable}`}>
+    <html lang="en" className={`${display.variable} ${manrope.variable}`}>
       <body>
         <Suspense fallback={null}>
           <RefCapture />

@@ -156,11 +156,11 @@ function Shot({ src, alt, width, height, phone = false }: { src: string; alt: st
   );
 }
 
-function Actions({ where, dark = false }: { where: string; dark?: boolean }) {
+function Actions({ where, onColour = false }: { where: string; onColour?: boolean }) {
   return (
     <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-      <Cta label="Book A 15-Minute Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} size="lg" />
-      <Cta label="Get Started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, `${where}_signup`)} dataCta={`${where}_signup`} variant="secondary" size="lg" className={dark ? 'border-paper/30 text-paper hover:bg-paper hover:text-ink' : ''} />
+      <Cta label="Book A 15-Minute Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size="lg" />
+      <Cta label="Get Started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, `${where}_signup`)} dataCta={`${where}_signup`} variant={onColour ? 'outlineOnColour' : 'secondary'} size="lg" />
     </div>
   );
 }
@@ -175,13 +175,14 @@ export default function Page() {
         <div className="mx-auto grid max-w-6xl items-center gap-8 md:grid-cols-[1fr_1.15fr] md:gap-12">
           <div>
             <h1 className="font-serif text-[2.6rem] font-semibold leading-[1.04] tracking-tight sm:text-6xl md:text-[3.4rem] lg:text-6xl">
-              Handle double the cases without double the work.
+              Double the cases
+              <span className="block font-medium italic text-violet [text-wrap:balance]">without double the work.</span>
             </h1>
             <div className="mt-7 flex">
               <Cta label="Book A 15-Minute Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, 'hero_demo')} dataCta="hero_demo" size="lg" />
             </div>
           </div>
-          <Vsl sources={[{ src: '/product/vsl-v10.mp4', type: 'video/mp4' }, { src: '/product/vsl-v10.webm', type: 'video/webm' }]} poster="/product/vsl-poster-3.webp" label="CONVEYi in 43 seconds" />
+          <Vsl sources={[{ src: '/product/vsl-v11.mp4', type: 'video/mp4' }, { src: '/product/vsl-v11.webm', type: 'video/webm' }]} poster="/product/vsl-poster-4.webp" label="CONVEYi in 43 seconds" />
         </div>
         {/* The promise is a big one: say so, and take them to the explanation. */}
         <div className="mx-auto mt-8 flex max-w-6xl flex-col items-center text-center md:mt-12">
@@ -194,13 +195,13 @@ export default function Page() {
       </section>
 
       {/* ── WHAT WE HEAR ── */}
-      <section id="explain" className="scroll-mt-4 border-t border-line bg-paper-soft px-6 py-14 md:py-16">
+      <section id="explain" className="scroll-mt-4 bg-ink px-6 py-14 text-paper md:py-16">
         <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[auto_1fr] md:items-center md:gap-16">
           <h2 className="font-serif text-3xl font-semibold leading-tight tracking-tight md:text-4xl">What we hear</h2>
           <ul className="grid gap-6 sm:grid-cols-3">
             {heard.map((h) => (
               <li key={h.title} className="flex items-center gap-3">
-                <span className="shrink-0 text-violet"><Icon name={h.icon} /></span>
+                <span className="shrink-0 text-violet-soft"><Icon name={h.icon} /></span>
                 <span className="text-lg font-semibold leading-snug">{h.title}</span>
               </li>
             ))}
@@ -209,7 +210,7 @@ export default function Page() {
       </section>
 
       {/* ── HOW IT WORKS ── a real sequence, so it is numbered by its order. */}
-      <section className="border-t border-line px-6 py-20 md:py-24">
+      <section className="px-6 py-20 md:py-24">
         <div className="mx-auto max-w-6xl">
           <h2 className="font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">How it works</h2>
           <ol className="mt-12 grid gap-16 md:gap-20">
@@ -231,13 +232,13 @@ export default function Page() {
       </section>
 
       {/* ── THE PRODUCT ── */}
-      <section className="border-t border-line bg-paper-soft px-6 py-20 md:py-24">
+      <section className="bg-violet px-6 py-20 text-white md:py-24">
         <div className="mx-auto max-w-6xl">
           <h2 className="font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">Updates at a glance</h2>
           <div className="mt-12 grid items-start gap-14 md:grid-cols-[2fr_1fr] md:gap-12">
             {day.map((d, i) => (
               <div key={d.title} className={i === 0 ? 'md:col-span-2' : ''}>
-                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">{d.title}</h3>
+                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-white/75">{d.title}</h3>
                 <div className="mt-4"><Shot src={d.src} alt={d.alt} width={d.width} height={d.height} phone={d.phone} /></div>
               </div>
             ))}
@@ -304,12 +305,12 @@ export default function Page() {
       </section>
 
       {/* ── FINAL CTA ── */}
-      <section className="bg-ink px-6 py-20 text-paper md:py-24">
+      <section className="bg-violet px-6 py-20 text-white md:py-24">
         <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-8 md:flex-row md:items-center">
           <h2 className="max-w-2xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
             Same team. Double the cases.
           </h2>
-          <Actions where="footer" dark />
+          <Actions where="footer" onColour />
         </div>
       </section>
 

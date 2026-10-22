@@ -18,7 +18,8 @@ const config: Config = {
         },
       },
       fontFamily: {
-        serif: ['var(--font-fraunces)', 'Georgia', 'Times New Roman', 'serif'],
+        // `font-serif` is the heading face (named for history; it is a grotesk now).
+        serif: ['var(--font-display)', 'Helvetica Neue', 'Arial', 'sans-serif'],
         sans: ['var(--font-manrope)', 'system-ui', '-apple-system', 'sans-serif'],
       },
       boxShadow: {

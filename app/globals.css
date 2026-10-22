@@ -21,8 +21,7 @@ body {
 
 /* Editorial display headings */
 .font-display {
-  font-family: var(--font-fraunces), Georgia, serif;
-  font-optical-sizing: auto;
+  font-family: var(--font-display), 'Helvetica Neue', Arial, sans-serif;
   letter-spacing: -0.015em;
 }
 
