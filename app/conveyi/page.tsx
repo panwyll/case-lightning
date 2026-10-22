@@ -139,6 +139,16 @@ const day: Array<{ title: string } & Screen> = [
   },
 ];
 
+const forYou = ['Residential conveyancing firms', 'On Outlook and Microsoft 365', 'Running InTouch, LEAP, or neither'];
+const notForYou = ['Firms on Gmail or another email system', 'Firms looking to replace their case management system'];
+
+const questions: Array<{ q: string; a: string }> = [
+  { q: 'Will it send something wrong?', a: 'Nothing goes on its own until you switch that kind of message on. Exchange, completion and money always need a person.' },
+  { q: 'Do we have to change systems?', a: 'No. It works on the Outlook, InTouch and LEAP you already use. Nothing to migrate.' },
+  { q: 'Where does our data go?', a: 'Your emails and documents stay in your own Microsoft 365.' },
+  { q: 'What if our caseload doesn’t double?', a: 'Then you don’t pay. We measure each fee earner before you start, and it’s free until completions per fee earner have doubled.' },
+];
+
 const safety: Array<{ icon: IconName; title: string }> = [
   { icon: 'pound', title: 'A person signs off money' },
   { icon: 'bank', title: 'Bank details verified by phone' },
@@ -156,19 +166,15 @@ function Shot({ src, alt, width, height, phone = false }: { src: string; alt: st
   );
 }
 
-function Actions({ where, onColour = false }: { where: string; onColour?: boolean }) {
-  return (
-    <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-      <Cta label="Book A Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size="lg" />
-      <Cta label="Get Started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, `${where}_signup`)} dataCta={`${where}_signup`} variant={onColour ? 'outlineOnColour' : 'secondary'} size="lg" />
-    </div>
-  );
+/** One action on this page: book a demo. */
+function BookDemo({ where, onColour = false }: { where: string; onColour?: boolean }) {
+  return <Cta label="Book A Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size="lg" />;
 }
 
 export default function Page() {
   return (
     <main className="bg-paper text-ink antialiased">
-      <NavHeader signupHref={ctaHref(ROUTES.signup, PAGE_SOURCE, 'nav_signup')} />
+      <NavHeader signupHref={ctaHref(ROUTES.demo, PAGE_SOURCE, 'nav_demo')} signupLabel="Book A Demo" />
 
       {/* ── HERO ── the promise from the ads and the emails, word for word, beside the video. */}
       <section className="px-6 pt-8 pb-8 md:pt-16 md:pb-12">
@@ -179,7 +185,7 @@ export default function Page() {
               <span className="block uppercase italic text-violet [text-wrap:balance]">without double the work</span>
             </h1>
             <div className="mt-7 flex justify-center">
-              <Cta label="Book A Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, 'hero_demo')} dataCta="hero_demo" size="lg" />
+              <BookDemo where="hero" />
             </div>
           </div>
           <Vsl sources={[{ src: '/product/vsl-v14.mp4', type: 'video/mp4' }, { src: '/product/vsl-v14.webm', type: 'video/webm' }]} poster="/product/vsl-poster-5.webp" label="CONVEYi in 43 seconds" />
@@ -246,6 +252,34 @@ export default function Page() {
         </div>
       </section>
 
+      {/* ── WHO IT'S FOR ── and who it isn't: the right firms book, the wrong ones don't. */}
+      <section className="px-6 py-20 md:py-24">
+        <div className="mx-auto grid max-w-6xl gap-12 md:grid-cols-2 md:gap-16">
+          <div>
+            <h2 className="font-serif text-3xl font-bold leading-tight tracking-tight md:text-4xl">Who it’s for</h2>
+            <ul className="mt-6 grid gap-4">
+              {forYou.map((x) => (
+                <li key={x} className="flex items-center gap-3 text-lg font-semibold">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0 text-violet"><path d="m5 12 5 5 9-10" /></svg>
+                  {x}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h2 className="font-serif text-3xl font-bold leading-tight tracking-tight md:text-4xl">Who it isn’t for</h2>
+            <ul className="mt-6 grid gap-4">
+              {notForYou.map((x) => (
+                <li key={x} className="flex items-center gap-3 text-lg font-semibold text-ink-soft">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                  {x}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
       {/* ── SAFETY ── */}
       <section className="bg-ink px-6 py-16 text-paper md:py-20">
         <div className="mx-auto max-w-6xl">
@@ -304,13 +338,29 @@ export default function Page() {
         </div>
       </section>
 
+      {/* ── QUESTIONS ── the objections, answered in the open. */}
+      <section className="border-t border-line bg-paper-soft px-6 py-20 md:py-24">
+        <div className="mx-auto max-w-6xl">
+          <h2 className="font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">Questions</h2>
+          <dl className="mt-10 grid gap-x-12 gap-y-8 md:grid-cols-2">
+            {questions.map((x) => (
+              <div key={x.q}>
+                <dt className="text-xl font-bold">{x.q}</dt>
+                <dd className="mt-2 text-lg text-ink-soft">{x.a}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
       {/* ── FINAL CTA ── */}
       <section className="bg-violet px-6 py-20 text-white md:py-24">
         <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-8 md:flex-row md:items-center">
-          <h2 className="max-w-2xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
-            Same team. Double the cases.
-          </h2>
-          <Actions where="footer" onColour />
+          <div>
+            <h2 className="max-w-2xl font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">Same team. Double the cases.</h2>
+            <p className="mt-4 max-w-xl text-lg text-white/80">15 minutes on cases like yours, and how we would measure your baseline.</p>
+          </div>
+          <BookDemo where="footer" onColour />
         </div>
       </section>
 
