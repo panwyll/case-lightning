@@ -12,7 +12,7 @@ export function Vsl({ sources, poster, label }: { sources: Array<{ src: string; 
     w.gtag?.('event', 'vsl_play', { page_location: window.location.href });
   };
   return (
-    <figure>
+    <div>
       <div className="relative aspect-video overflow-hidden rounded-2xl border border-line bg-paper-soft shadow-card">
         <video ref={ref} poster={poster} controls={playing} playsInline preload="none" className="absolute inset-0 h-full w-full" aria-label={label}>
           {sources.map((s) => <source key={s.src} src={s.src} type={s.type} />)}
@@ -26,7 +26,6 @@ export function Vsl({ sources, poster, label }: { sources: Array<{ src: string; 
           </button>
         )}
       </div>
-      <figcaption className="mt-2 text-xs text-ink-soft">Demo firm. Names, addresses and figures are made up.</figcaption>
-    </figure>
+    </div>
   );
 }

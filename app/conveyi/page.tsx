@@ -80,8 +80,7 @@ function Icon({ name }: { name: IconName }) {
   );
 }
 
-// Captured from the running app with the demo firm the dev seed creates (scripts/dev-seed.ts, scripts/dev-book.ts),
-// so every name, address and figure on them is made up; each carries a caption saying so.
+// Captured from the running app with the local firm the dev seed creates (scripts/dev-seed.ts, dev-book.ts, dev-measure.ts).
 const CASEVIEW_SHOT = {
   src: '/product/app-caseview.webp',
   width: 2760,
@@ -102,7 +101,7 @@ const how: Array<{ icon: IconName; title: string; line: string; shot: Screen }> 
     icon: 'measure',
     title: 'Measure',
     line: 'Where each fee earner’s week goes. That is your baseline.',
-    shot: { src: '/product/app-measure.webp', width: 2304, height: 900, alt: 'Where the week goes: the firm’s hours split red, amber and green, and a Pareto chart of the kinds of work taking them, largest first.' },
+    shot: { src: '/product/app-measure.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' },
   },
   {
     icon: 'automate',
@@ -114,7 +113,7 @@ const how: Array<{ icon: IconName; title: string; line: string; shot: Screen }> 
     icon: 'optimise',
     title: 'Optimise',
     line: 'What is left, what takes it, what to switch on next.',
-    shot: { src: '/product/app-optimise.webp', width: 2304, height: 980, alt: 'Actions: each kind of work with its hours, how often and how long each, beside the setting that takes it off a person, such as Set Chases To Send or Set Client Updates To Send.' },
+    shot: { src: '/product/app-optimise.webp', width: 2140, height: 1640, alt: 'Analytics, Time: this week split red, amber and green, a Pareto of the hours still spent by hand, and beside each kind of work the action that takes it off a person, such as Set Chases To Send.' },
   },
 ];
 
@@ -154,7 +153,6 @@ function Shot({ src, alt, width, height, phone = false }: { src: string; alt: st
       <div className={`overflow-hidden border bg-white shadow-card ${phone ? 'rounded-[2rem] border-[6px] border-ink/90' : 'rounded-xl border-line'}`}>
         <img src={src} alt={alt} width={width} height={height} className="block h-auto w-full" />
       </div>
-      <figcaption className={`mt-2 text-xs text-ink-soft ${phone ? 'text-center' : ''}`}>Demo firm. Names, addresses and figures are made up.</figcaption>
     </figure>
   );
 }
@@ -188,7 +186,6 @@ export default function Page() {
             <div className="mt-7">
               <Actions where="hero" />
             </div>
-            <p className="mt-4 text-sm text-ink-soft">Then £80 + VAT per case · no seat or monthly fees</p>
           </div>
           <Vsl sources={[{ src: '/product/vsl.mp4', type: 'video/mp4' }, { src: '/product/vsl.webm', type: 'video/webm' }]} poster="/product/vsl-poster.webp" label="CONVEYi in 43 seconds" />
         </div>
@@ -299,11 +296,6 @@ export default function Page() {
               <p className="mt-3 text-ink-soft">Everyone in the firm.</p>
             </div>
           </div>
-          <p className="mt-6 text-sm text-ink-soft">
-            <a href={ctaHref(ROUTES.pricing, PAGE_SOURCE, 'pricing_details')} data-cta="pricing_details" className="underline underline-offset-4 hover:text-ink">
-              Pricing Details
-            </a>
-          </p>
         </div>
       </section>
 
