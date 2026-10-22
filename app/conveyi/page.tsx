@@ -143,7 +143,7 @@ const questions: Array<{ q: string; a: string }> = [
   { q: 'Will it send something wrong?', a: 'Nothing goes on its own until you switch that kind of message on. Exchange, completion and money always need a person.' },
   { q: 'Do we have to change systems?', a: 'No. It works on the Outlook, InTouch and LEAP you already use. Nothing to migrate.' },
   { q: 'Where does our data go?', a: 'Your emails and documents stay in your own Microsoft 365.' },
-  { q: 'What if we don’t handle double the cases?', a: 'Then you don’t pay. We measure each fee earner before you start, and it’s free until your team is handling double.' },
+  { q: 'What if we don’t double our capacity?', a: 'Then you don’t pay. We measure each fee earner before you start, and it’s free until your team is handling double.' },
 ];
 
 const safety: Array<{ icon: IconName; title: string }> = [
