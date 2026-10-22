@@ -100,7 +100,7 @@ const how: Array<{ icon: IconName; title: string; line: string; shot: Screen }> 
   {
     icon: 'measure',
     title: 'Measure',
-    line: 'Where each fee earner’s week goes. That is your baseline.',
+    line: 'Where your team’s week goes, across the firm. That is your baseline.',
     shot: { src: '/product/app-measure-issues.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' },
   },
   {
@@ -143,7 +143,7 @@ const questions: Array<{ q: string; a: string }> = [
   { q: 'Will it send something wrong?', a: 'Nothing goes on its own until you switch that kind of message on. Exchange, completion and money always need a person.' },
   { q: 'Do we have to change systems?', a: 'No. It works on the Outlook, InTouch and LEAP you already use. Nothing to migrate.' },
   { q: 'Where does our data go?', a: 'Your emails and documents stay in your own Microsoft 365.' },
-  { q: 'What if we don’t double our capacity?', a: 'Then you don’t pay. We measure each fee earner before you start, and it’s free until your team is handling double.' },
+  { q: 'What if we don’t double our capacity?', a: 'Then you don’t pay. We measure your firm’s capacity before you start, and it’s free until that has doubled.' },
 ];
 
 const safety: Array<{ icon: IconName; title: string }> = [
@@ -185,7 +185,7 @@ export default function Page() {
               <BookDemo where="hero" />
             </div>
           </div>
-          <Vsl sources={[{ src: '/product/vsl-v14.mp4', type: 'video/mp4' }, { src: '/product/vsl-v14.webm', type: 'video/webm' }]} poster="/product/vsl-poster-5.webp" label="CONVEYi in 43 seconds" />
+          <Vsl sources={[{ src: '/product/vsl-v15.mp4', type: 'video/mp4' }, { src: '/product/vsl-v15.webm', type: 'video/webm' }]} poster="/product/vsl-poster-5.webp" label="CONVEYi in 43 seconds" />
         </div>
         {/* The promise is a big one: say so, and take them to the explanation. */}
         <div className="mx-auto mt-8 flex max-w-6xl flex-col items-center text-center md:mt-12">
@@ -286,7 +286,7 @@ export default function Page() {
       <section className="px-6 py-20 md:py-24">
         <div className="mx-auto max-w-6xl">
           <h2 className="max-w-4xl font-serif text-4xl font-semibold tracking-tight md:text-5xl">Pay nothing until your team handles double the cases.</h2>
-          <p className="mt-4 max-w-2xl text-lg text-ink-soft">Measured against completions per fee earner before you start.</p>
+          <p className="mt-4 max-w-2xl text-lg text-ink-soft">Measured across the firm before you start. Never one person’s figures.</p>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
               <div className="text-sm font-semibold uppercase tracking-widest text-violet">Until it has doubled</div>

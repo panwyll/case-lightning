@@ -36,7 +36,7 @@ const faqs = [
   },
   {
     q: 'What if we don’t double our capacity?',
-    a: 'You pay nothing until it does. Before you start we measure each fee earner’s caseload, and CONVEYi is free until completions per fee earner have doubled against that baseline. No lock-in either way.',
+    a: 'You pay nothing until it does. Before you start we measure your firm’s capacity: a typical week across the team, never one person’s figures. CONVEYi is free until that has doubled. No lock-in either way.',
   },
   {
     q: 'Does it work with Gmail?',

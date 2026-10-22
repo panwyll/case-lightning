@@ -26,7 +26,7 @@ const included = [
 const whatCounts = [
   ['Charged once per case', 'The first time CONVEYi drafts a reply, reviews or generates a document, or reconciles a case, that case is opened and £80 + VAT goes on the month’s invoice. Never again for that case.'],
   ['Free: everything before that', 'Triage, matching, summaries and the knowledge base run on every email at no charge. A case you never draft on costs nothing.'],
-  ['Free: until your team handles double the cases', 'Cases CONVEYi works on before completions per fee earner have doubled against your baseline are never charged — not then, and not after.'],
+  ['Free: until your team handles double the cases', 'Cases CONVEYi works on before your firm’s capacity has doubled against your baseline are never charged — not then, and not after.'],
 ];
 
 export default function PricingPage() {
@@ -41,8 +41,8 @@ export default function PricingPage() {
             £80 per case. That’s the pricing.
           </h1>
           <p className="mt-5 max-w-xl text-lg text-ink-soft">
-            Before you start, we measure each fee earner’s caseload. You pay nothing until completions per fee earner
-            have doubled against that baseline. Then you pay only for the cases CONVEYi works on: no seats, no tiers,
+            Before you start, we measure your firm’s capacity: a typical week across the team, never one person’s
+            figures. You pay nothing until that has doubled. Then you pay only for the cases CONVEYi works on: no seats, no tiers,
             no monthly fee, no setup fee and no lock-in. Everyone in the firm gets the whole product.
           </p>
         </div>

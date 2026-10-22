@@ -15,7 +15,7 @@ export default async function DemoPage() {
         <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[1fr_1.45fr] md:gap-14">
           <div>
             <h1 className="font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">Book A 15-Minute Demo</h1>
-            <p className="mt-5 text-lg text-ink-soft">We show you CONVEYi on the kind of cases your firm runs, and how we measure your fee earners’ caseload before you start.</p>
+            <p className="mt-5 text-lg text-ink-soft">We show you CONVEYi on the kind of cases your firm runs, and how we measure your firm’s capacity before you start.</p>
             <p className="mt-4 text-lg text-ink-soft">You pay nothing until your team handles double the cases.</p>
             <p className="mt-6 text-sm text-ink-soft">With {DEMO_HOST.name}, Case Lightning</p>
           </div>
