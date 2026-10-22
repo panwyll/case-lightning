@@ -9,6 +9,7 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { queryOne } from '@/lib/server/db';
 import { fail } from '@/lib/server/http';
 import { leapDocumentBytes } from '@/lib/server/integrations/leap/adapters';
+import { statementText, type StatementFacts } from '@/lib/server/engine/proof-of-funds';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,8 +25,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
     assertFeature('auth');
     const user = await requireUser();
     const { documentId } = z.object({ documentId: z.string().uuid() }).parse(await params);
-    const doc = await queryOne<{ matter_id: string; file_name: string | null; mime_type: string | null; bytes: Buffer | null; graph_item_id: string | null; web_url: string | null; content: string | null; hash_sha256: string | null }>(
-      `select d.matter_id, d.file_name, d.mime_type, b.bytes, d.graph_item_id, d.web_url, d.extracted_facts->>'content' as content, d.hash_sha256 from document d left join document_blob b on b.document_id = d.id where d.id = $1 and d.tenant_id = $2`,
+    const doc = await queryOne<{ matter_id: string; file_name: string | null; mime_type: string | null; bytes: Buffer | null; graph_item_id: string | null; web_url: string | null; content: string | null; hash_sha256: string | null; statement: StatementFacts | null; fetched_at: string | null }>(
+      `select d.matter_id, d.file_name, d.mime_type, b.bytes, d.graph_item_id, d.web_url, d.extracted_facts->>'content' as content, d.hash_sha256, case when d.doc_type = 'OPEN_BANKING_ACCOUNT' then d.extracted_facts->'statement' end as statement, d.extracted_facts->'openBanking'->>'fetchedAt' as fetched_at from document d left join document_blob b on b.document_id = d.id where d.id = $1 and d.tenant_id = $2`,
       [documentId, user.tenantId]
     );
     if (!doc) return fail(Object.assign(new Error('Document not found.'), { status: 404 }));
@@ -46,6 +47,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
       if (twin) bytes = await getBlob(user.tenantId, twin.id).catch(() => null);
     }
     if (!bytes && doc.content) { bytes = Buffer.from(doc.content, 'utf8'); mime = mime ?? 'text/plain; charset=utf-8'; }
+    // An account connected by open banking: no file, only the lines the bank shared. Shown as a statement.
+    if (!bytes && doc.statement) { bytes = Buffer.from(statementText(doc.statement, { fetchedAt: doc.fetched_at }), 'utf8'); mime = 'text/plain; charset=utf-8'; }
     if (!bytes && doc.graph_item_id) {
       // In the case's OneDrive folder: fetched as the drive's owner, the same account that filed it.
       const owner = await driveUserFor(user.tenantId, doc.matter_id, user.userId).catch(() => user.userId);

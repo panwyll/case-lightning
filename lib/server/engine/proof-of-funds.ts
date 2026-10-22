@@ -392,6 +392,9 @@ export interface StatementTransaction {
   counterparty?: string | null;
 }
 
+/** A statement line as the review quotes it, and as a connected account's statement prints it (statementText), so the quote is found. */
+export const statementLine = (t: StatementTransaction): string => `${t.date} ${t.description} ${t.amountPennies >= 0 ? '+' : '−'}${gbp(Math.abs(t.amountPennies))}`;
+
 /** One bank statement (or a run of pages for one account) as the pipeline read it. */
 export interface StatementFacts {
   accountHolder: string | null;
@@ -550,7 +553,7 @@ export function reviewTransactions(facts: ProofOfFundsFacts, evidence: EvidenceD
     flags.push(flag);
     if (q) queries.push(q);
   };
-  const cite = (doc: EvidenceDocument, t: StatementTransaction | null) => ({ section: `${doc.fileName ?? doc.id}${t ? ` · ${t.date} "${t.description}"` : ''}`, quote: t ? `${t.date} ${t.description} ${t.amountPennies >= 0 ? '+' : '−'}${gbp(Math.abs(t.amountPennies))}` : undefined });
+  const cite = (doc: EvidenceDocument, t: StatementTransaction | null) => ({ section: `${doc.fileName ?? doc.id}${t ? ` · ${t.date} "${t.description}"` : ''}`, quote: t ? statementLine(t) : undefined });
 
   // Payslips: who was paid, by whom, how much. Income evidence that supports a salary-fed source but never replaces the account the money sits in.
   const payslips: TransactionReview['payslips'] = [];
@@ -741,3 +744,19 @@ export const FLAG_GUIDANCE: Record<string, string> = {
   POF_CASH: 'Cash is the highest-risk form of money: refuse it into client account and trace it from where it was banked.',
   QUERY_UNANSWERED: 'A query the client has not answered leaves the flag open; sign-off is not available until every query is answered or withdrawn.',
 };
+
+/**
+ * A statement we hold only as facts (an account connected by open banking: no file) as plain text, newest line first,
+ * each line printed as the review quotes it, so the decision panel can show it and highlight the line a flag is about.
+ */
+export function statementText(st: StatementFacts, meta: { fetchedAt?: string | null } = {}): string {
+  const day = (iso: string | null) => (iso ? new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '?');
+  const head = [
+    `${(st.bankName ?? 'Bank').toUpperCase()}${st.accountLast4 ? ` ····${st.accountLast4}` : ''}`,
+    st.accountHolder ? `Account holder: ${st.accountHolder}` : null,
+    `Connected by open banking${meta.fetchedAt ? `, read ${day(meta.fetchedAt)}` : ''}`,
+    `${day(st.periodFrom)} to ${day(st.periodTo)}${st.closingBalancePennies != null ? ` · closing balance ${gbp(st.closingBalancePennies)}` : ''}`,
+  ].filter(Boolean);
+  const lines = [...st.transactions].sort((a, b) => b.date.localeCompare(a.date)).map(statementLine);
+  return `${head.join('\n')}\n\n${lines.join('\n')}\n`;
+}

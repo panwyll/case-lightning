@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { analyseSourceOfFunds, categorise, incomeStreams } from '../../../lib/server/engine/source-of-funds';
-import { factsFromSubmission, type EvidenceDocument, type ProofOfFundsSubmission, type StatementFacts } from '../../../lib/server/engine/proof-of-funds';
+import { factsFromSubmission, reviewTransactions, statementText, type EvidenceDocument, type ProofOfFundsSubmission, type StatementFacts } from '../../../lib/server/engine/proof-of-funds';
 import { DemoBank, DEMO_INSTITUTIONS } from '../../../lib/server/open-banking/mock';
 import { firstDecision, harness, TENANT, MATTER, USER } from './helpers';
 
@@ -79,6 +79,16 @@ test('mixed activity: gambling spend, a new loan and money from an account not p
   const codes = a.flags.map((x) => x.code);
   for (const c of ['GAMBLING_SPEND', 'LOAN_RECENT', 'OWN_ACCOUNT_NOT_PROVIDED']) assert.ok(codes.includes(c), `${c} in ${codes.join(', ')}`);
   for (const q of a.queries) assert.doesNotMatch(q.question, /suspic|launder|fraud|report/i, 'routine wording, no tipping off');
+});
+
+test('a connected account shows as a statement, with every line the review quotes on it to highlight', async () => {
+  const st = await account('DEMO_MIXED', 'Priya Shah');
+  const f = factsFromSubmission('r', sub([{ kind: 'savings', amountPennies: 2_000_000, description: 'Savings', evidenceDocumentIds: ['m'] }]), 40_000_000);
+  const text = statementText(st, { fetchedAt: NOW.toISOString() });
+  assert.match(text, /^DEMO BANK · MIXED ACTIVITY ····4821\nAccount holder: PRIYA SHAH\n/);
+  const quotes = reviewTransactions(f, [doc('m', st, 1)], NOW.toISOString()).flags.map((x) => x.locator?.quote).filter((q): q is string => !!q);
+  assert.ok(quotes.some((q) => /COINBASE/.test(q)) && quotes.some((q) => /CASH PAID IN/.test(q)), quotes.join(' | '));
+  for (const q of quotes) assert.ok(text.includes(q), `"${q}" is on the statement`);
 });
 
 test('money moved between the client\'s own accounts is traced, and not asked about', async () => {

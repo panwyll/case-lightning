@@ -101,19 +101,19 @@ const how: Array<{ icon: IconName; title: string; line: string; shot: Screen }> 
     icon: 'measure',
     title: 'Measure',
     line: 'Where each fee earner’s week goes. That is your baseline.',
-    shot: { src: '/product/app-measure.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' },
+    shot: { src: '/product/app-measure-week.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' },
   },
   {
     icon: 'automate',
     title: 'Automate',
-    line: 'Emails filed, chasers and updates sent. One list of what needs a person.',
-    shot: { src: '/product/app-tasks.webp', width: 2760, height: 1600, alt: 'Tasks: what needs a person, grouped by case: issues to resolve, documents to sign off, enquiries to review, each with one button.' },
+    line: 'Updates, chasers and orders drafted for one click, or sent on their own.',
+    shot: { src: '/product/app-automate.webp', width: 1806, height: 1470, alt: 'Tasks on one case: four searches to order and a chaser to the seller’s solicitor, each drafted with an Approve button, and below, what the case is waiting on and when each chase goes.' },
   },
   {
     icon: 'optimise',
     title: 'Optimise',
-    line: 'What is left, what takes it, what to switch on next.',
-    shot: { src: '/product/app-optimise.webp', width: 2140, height: 1640, alt: 'Analytics, Time: this week split red, amber and green, a Pareto of the hours still spent by hand, and beside each kind of work the action that takes it off a person, such as Set Chases To Send.' },
+    line: 'Then the legal work gets faster. Every statement line that needs a question, found.',
+    shot: { src: '/product/app-funds-review.webp', width: 2304, height: 1480, alt: 'A source of funds review: cash paid in, a credit from a cryptoasset exchange and a transfer from an account not provided, each flagged with a query drafted, and the bank statement beside it with the flagged line highlighted.' },
   },
 ];
 
@@ -187,7 +187,7 @@ export default function Page() {
               <Actions where="hero" />
             </div>
           </div>
-          <Vsl sources={[{ src: '/product/vsl.mp4', type: 'video/mp4' }, { src: '/product/vsl.webm', type: 'video/webm' }]} poster="/product/vsl-poster.webp" label="CONVEYi in 43 seconds" />
+          <Vsl sources={[{ src: '/product/vsl-v3.mp4', type: 'video/mp4' }, { src: '/product/vsl-v3.webm', type: 'video/webm' }]} poster="/product/vsl-poster.webp" label="CONVEYi in 43 seconds" />
         </div>
       </section>
 

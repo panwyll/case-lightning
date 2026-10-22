@@ -2,7 +2,8 @@
  * Local development only: a full book of made-up cases for the demo firm (scripts/dev-seed.ts), so Case View, the
  * Tasks list and the case pages have something in them. Adds the cases, then stages each at a different point
  * through the real engine with nothing sent (scripts/stage-cases.ts). Run with DATABASE_URL pointing at localhost;
- * refuses otherwise. Once the firm has a book, it adds another only with --more.
+ * refuses otherwise. Once the firm has a book, it adds another only with --more. With --plan (stage-cases.ts's), only the
+ * new cases are staged, all to that plan: `npm run dev:book -- 4 --more --plan id_done,suggest`.
  */
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -57,6 +58,8 @@ async function main() {
   } };
   await add(COUNT);
   console.log(`Added ${COUNT} demo cases; staging them through the engine (nothing is sent)…`);
+  const plan = process.argv[process.argv.indexOf('--plan') + 1];
+  if (process.argv.includes('--plan')) { stage(plan); process.exit(0); }
   stage();
   for (const plan of LATE) { await add(1); stage(plan); }
   process.exit(0);

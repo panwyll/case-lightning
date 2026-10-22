@@ -49,7 +49,7 @@ const PURCHASE: Target[] = ['instructed', 'id_done', 'searches_part', 'searches_
  * funds to sign off); `stale` means the steps happened weeks ago, so the open wait is
  * overdue and the timer chases it.
  */
-interface Plan { t: Target; todo?: boolean; stale?: boolean; /** someone says the deal is in danger: the case goes Critical */ atRisk?: boolean; /** the last step was about a week ago and its task is still waiting on us: Delayed - Us */ oursLate?: boolean }
+interface Plan { t: Target; todo?: boolean; stale?: boolean; /** someone says the deal is in danger: the case goes Critical */ atRisk?: boolean; /** the last step was about a week ago and its task is still waiting on us: Delayed - Us */ oursLate?: boolean; /** what the engine proposed along the way (acknowledgements, updates, chasers) is left on the Tasks list for a person */ suggest?: boolean }
 const SPREAD: Plan[] = [
   { t: 'searches_part' }, { t: 'title', todo: true }, { t: 'instructed', stale: true }, { t: 'searches_done', todo: true },
   { t: 'ready' }, { t: 'id_done' }, { t: 'exchanged' }, { t: 'searches_part', stale: true },
@@ -58,13 +58,13 @@ const SPREAD: Plan[] = [
   { t: 'searches_done', atRisk: true }, { t: 'title' }, { t: 'instructed' }, { t: 'ready', stale: true },
 ];
 const SAMPLE_CONTRACT = (address: string | null) => ({ sellers: ['Sample seller'], buyers: ['Sample buyer'], propertyAddress: address, titleNumber: null, pricePennies: null, depositPennies: null, depositHolder: 'stakeholder', completionDate: null, chattelsPricePennies: null, vat: null, incorporatedConditions: 'Standard Conditions of Sale (5th ed.)', noticeToCompleteDays: 10, fixturesListPresent: true, specialConditions: [], indemnities: [], flags: [], confidence: 0.95 });
-const describe = (p: Plan) => [p.t.replace(/_/g, ' '), p.todo ? 'with a task for you' : '', p.stale ? 'gone quiet' : '', p.atRisk ? 'deal at risk' : '', p.oursLate ? 'waiting on us for a week' : ''].filter(Boolean).join(', ');
-/** --plan "searches_done,todo,ourslate": one plan for the cases not yet on the engine (others are left as they are). */
+const describe = (p: Plan) => [p.t.replace(/_/g, ' '), p.todo ? 'with a task for you' : '', p.stale ? 'gone quiet' : '', p.atRisk ? 'deal at risk' : '', p.oursLate ? 'waiting on us for a week' : '', p.suggest ? 'suggestions left to approve' : ''].filter(Boolean).join(', ');
+/** --plan "searches_done,todo,ourslate,suggest": one plan for the cases not yet on the engine (others are left as they are). */
 const planArg = (v: string | null): Plan | null => {
   if (!v) return null;
   const [t, ...flags] = v.split(',').map((x) => x.trim());
   if (!PURCHASE.includes(t as Target)) throw new Error(`--plan: unknown point "${t}" (one of ${PURCHASE.join(', ')})`);
-  return { t: t as Target, todo: flags.includes('todo'), stale: flags.includes('stale'), atRisk: flags.includes('atrisk'), oursLate: flags.includes('ourslate') };
+  return { t: t as Target, todo: flags.includes('todo'), stale: flags.includes('stale'), atRisk: flags.includes('atrisk'), oursLate: flags.includes('ourslate'), suggest: flags.includes('suggest') };
 };
 
 async function main() {
@@ -129,7 +129,7 @@ async function main() {
     if (dryRun) { console.log(`  ${label} → ${describe(plan)}`); continue; }
     try {
       await stage(m, plan);
-      await settleProposals(tenant.id, m.id, m.handler);
+      if (!plan.suggest) await settleProposals(tenant.id, m.id, m.handler);
       if (plan.atRisk) await svc.run(tenant.id, m.id, { type: 'raise_issue', actor: m.handler, kind: 'transaction_at_risk', title: 'Sample — the agent says the buyer may be pulling out', detail: 'Sample issue, added to stage this case for review.' } as never);
       console.log(`  ${label} → ${describe(plan)}`);
     } catch (e) {
