@@ -159,7 +159,7 @@ function Shot({ src, alt, width, height, phone = false }: { src: string; alt: st
 function Actions({ where, onColour = false }: { where: string; onColour?: boolean }) {
   return (
     <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-      <Cta label="Book A 15-Minute Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size="lg" />
+      <Cta label="Book A Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size="lg" />
       <Cta label="Get Started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, `${where}_signup`)} dataCta={`${where}_signup`} variant={onColour ? 'outlineOnColour' : 'secondary'} size="lg" />
     </div>
   );
@@ -179,7 +179,7 @@ export default function Page() {
               <span className="block uppercase italic text-violet [text-wrap:balance]">without double the work</span>
             </h1>
             <div className="mt-7 flex justify-center">
-              <Cta label="Book A 15-Minute Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, 'hero_demo')} dataCta="hero_demo" size="lg" />
+              <Cta label="Book A Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, 'hero_demo')} dataCta="hero_demo" size="lg" />
             </div>
           </div>
           <Vsl sources={[{ src: '/product/vsl-v14.mp4', type: 'video/mp4' }, { src: '/product/vsl-v14.webm', type: 'video/webm' }]} poster="/product/vsl-poster-5.webp" label="CONVEYi in 43 seconds" />
