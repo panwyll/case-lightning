@@ -188,7 +188,7 @@ export function ParetoCard({ lines }: { lines: ParetoBar[] }) {
   const top = Math.max(0.0001, ...bars.map((b) => b.hours));
   return (
     <section className="tv-card">
-      <div className="tv-cardhead"><h2>Pareto</h2></div>
+      <div className="tv-cardhead"><h2>Key Issues</h2></div>
       {!bars.length ? <p className="tv-none">No red or amber time recorded yet.</p> : (
         <div className="tv-pareto">
           {bars.map((b) => (

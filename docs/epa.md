@@ -101,7 +101,7 @@ Analytics shows the whole firm, never one person: per-person figures read as a l
 
 **Analytics → Time** is for action, this week only:
 - **This Week:** one vertical bar of this week so far, red / amber / green, with each share and its hours (last week while this one has nothing yet).
-- **Pareto:** the red and amber kinds as vertical bars, biggest first; past seven, the rest are one Other bar.
+- **Pareto** (the card is titled Key Issues): the red and amber kinds as vertical bars, biggest first; past seven, the rest are one Other bar.
 - **Actions:** every red and amber kind with its hours, how many times it happened (emails and tasks) and the average minutes each, and what to do: switch the CONVEYi action that takes it to Send, or delegate it to an assistant.
 
 **Analytics → Trend** is how the weeks compare: each week's red / amber / green, after the same split before CONVEYi (from the mailbox scans). Comparing weeks is for a monthly or quarterly look, not the weekly action page.

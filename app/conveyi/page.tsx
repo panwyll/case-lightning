@@ -101,7 +101,7 @@ const how: Array<{ icon: IconName; title: string; line: string; shot: Screen }> 
     icon: 'measure',
     title: 'Measure',
     line: 'Where each fee earner’s week goes. That is your baseline.',
-    shot: { src: '/product/app-measure-week.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' },
+    shot: { src: '/product/app-measure-issues.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' },
   },
   {
     icon: 'automate',
@@ -174,8 +174,7 @@ export default function Page() {
       <section className="px-6 pt-10 pb-14 md:pt-16 md:pb-20">
         <div className="mx-auto grid max-w-6xl items-center gap-10 md:grid-cols-[1fr_1.15fr] md:gap-12">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">For conveyancing firms</p>
-            <h1 className="mt-4 font-serif text-[2.6rem] font-semibold leading-[1.04] tracking-tight sm:text-6xl md:mt-5 md:text-[3.4rem] lg:text-6xl">
+            <h1 className="font-serif text-[2.6rem] font-semibold leading-[1.04] tracking-tight sm:text-6xl md:text-[3.4rem] lg:text-6xl">
               Double your fee earners’ caseload.
               <span className="block italic text-violet">Pay nothing until we do.</span>
             </h1>
@@ -186,7 +185,7 @@ export default function Page() {
               <Actions where="hero" />
             </div>
           </div>
-          <Vsl sources={[{ src: '/product/vsl-v7.mp4', type: 'video/mp4' }, { src: '/product/vsl-v7.webm', type: 'video/webm' }]} poster="/product/vsl-poster-3.webp" label="CONVEYi in 43 seconds" />
+          <Vsl sources={[{ src: '/product/vsl-v8.mp4', type: 'video/mp4' }, { src: '/product/vsl-v8.webm', type: 'video/webm' }]} poster="/product/vsl-poster-3.webp" label="CONVEYi in 43 seconds" />
         </div>
       </section>
 
