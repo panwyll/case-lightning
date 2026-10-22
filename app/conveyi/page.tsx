@@ -1,6 +1,7 @@
 import { REFERRALS_ENABLED } from '@/lib/flags';
 import type { Metadata } from 'next';
 import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../_components/shared';
+import { Vsl } from './Vsl';
 
 export const metadata: Metadata = {
   title: 'CONVEYi — Double your fee earners’ caseload | Case Lightning',
@@ -10,34 +11,10 @@ export const metadata: Metadata = {
 
 const PAGE_SOURCE = 'landing';
 
-type IconName = 'chase' | 'receipt' | 'update' | 'file' | 'pound' | 'bank' | 'spoof' | 'log' | 'switch' | 'inbox' | 'people' | 'measure' | 'automate' | 'optimise';
+type IconName = 'pound' | 'bank' | 'spoof' | 'log' | 'switch' | 'inbox' | 'people' | 'measure' | 'automate' | 'optimise';
 
 // Hand-rolled line icons: stroked, currentColor, 24px grid.
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
-  chase: (
-    <>
-      <circle cx="12" cy="13" r="8" />
-      <path d="M12 9v4l2.5 2.5M9 2h6" />
-    </>
-  ),
-  receipt: (
-    <>
-      <path d="M4 6h16v12H4z" />
-      <path d="m4 7 8 6 8-6" />
-    </>
-  ),
-  update: (
-    <>
-      <path d="M21 12a8 8 0 0 1-11.8 7L4 20l1-5.2A8 8 0 1 1 21 12z" />
-      <path d="M9 11h6M9 14h4" />
-    </>
-  ),
-  file: (
-    <>
-      <path d="M3 7h6l2 2h10v10H3z" />
-      <path d="m9 14 2 2 4-4" />
-    </>
-  ),
   pound: <path d="M16 6.5A4 4 0 0 0 8.5 8v12M6 13h7M6 20h11" />,
   bank: <path d="M3 10 12 4l9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18" />,
   spoof: (
@@ -112,29 +89,42 @@ const CASEVIEW_SHOT = {
   alt: 'Case View: every live case as a house on a map of stages (instruction, pre-exchange, ready, exchanged, completion) by fee earner, coloured On Track, With Us, Delayed - Others, Delayed - Us or Critical, with the count of each along the top.',
 };
 
-const heard: Array<{ icon: IconName; title: string; body: string }> = [
-  { icon: 'switch', title: 'Switching between matters all day', body: 'Every email means finding your place on another case.' },
-  { icon: 'inbox', title: 'Updating and chasing, not legal work', body: 'Most of the day goes on chasers, “any news?” replies, acknowledgements and filing.' },
-  { icon: 'people', title: 'Fewer firms, more transactions', body: 'The work per fee earner keeps growing, and hiring does not keep up.' },
+const heard: Array<{ icon: IconName; title: string }> = [
+  { icon: 'switch', title: 'Switching matters with every email' },
+  { icon: 'inbox', title: 'The day goes on chasing and updating' },
+  { icon: 'people', title: 'More cases, no more people' },
 ];
 
-const how: Array<{ icon: IconName; title: string; body: string }> = [
-  { icon: 'measure', title: 'Measure', body: 'We read the last three months of each fee earner’s inbox and case system and show where the week actually goes: the chasers, the status updates, the acknowledgements, and the hours they add up to. That is your baseline.' },
-  { icon: 'automate', title: 'Automate', body: 'CONVEYi reads and files every email and document to the right case, and sends the chasers, acknowledgements and client and agent updates when they are due. Each fee earner gets one list of only what needs them.' },
-  { icon: 'optimise', title: 'Optimise', body: 'Every week you see the time that is left, what is taking it and what to switch on next, with completions per fee earner tracked against your baseline.' },
-];
+interface Screen { src: string; width: number; height: number; alt: string; phone?: boolean }
 
-const unasked: Array<{ icon: IconName; title: string; body: string }> = [
-  { icon: 'chase', title: 'Chasing', body: 'The other side, the lender, the client. When a reply is late, the chase goes.' },
-  { icon: 'receipt', title: 'Receipt Acknowledgements', body: 'What arrives is acknowledged, so nobody rings to ask if it got through.' },
-  { icon: 'update', title: 'Client And Agent Updates', body: 'Written from the case at each milestone, in plain English.' },
-  { icon: 'file', title: 'Email Filed To The Case', body: 'Every email and attachment is read, filed to its case, and moves the case on.' },
-];
-
-const day: Array<{ title: string; body: string; src: string; width: number; height: number; alt: string; phone?: boolean }> = [
+const how: Array<{ icon: IconName; title: string; line: string; shot: Screen }> = [
   {
-    title: 'Every case at a glance',
-    body: 'What is done, what is waiting and on whom, from ID checks through searches, title and mortgage to exchange and completion.',
+    icon: 'measure',
+    title: 'Measure',
+    line: 'Where each fee earner’s week goes. That is your baseline.',
+    shot: { src: '/product/app-measure.webp', width: 2304, height: 900, alt: 'Where the week goes: the firm’s hours split red, amber and green, and a Pareto chart of the kinds of work taking them, largest first.' },
+  },
+  {
+    icon: 'automate',
+    title: 'Automate',
+    line: 'Emails filed, chasers and updates sent. One list of what needs a person.',
+    shot: { src: '/product/app-tasks.webp', width: 2760, height: 1600, alt: 'Tasks: what needs a person, grouped by case: issues to resolve, documents to sign off, enquiries to review, each with one button.' },
+  },
+  {
+    icon: 'optimise',
+    title: 'Optimise',
+    line: 'What is left, what takes it, what to switch on next.',
+    shot: { src: '/product/app-optimise.webp', width: 2304, height: 980, alt: 'Actions: each kind of work with its hours, how often and how long each, beside the setting that takes it off a person, such as Set Chases To Send or Set Client Updates To Send.' },
+  },
+];
+
+const day: Array<{ title: string; line?: string } & Screen> = [
+  {
+    title: 'Every live case, and who it’s waiting on',
+    ...CASEVIEW_SHOT,
+  },
+  {
+    title: 'What’s done and what’s next',
     src: '/product/app-case.webp',
     width: 2760,
     height: 1600,
@@ -142,28 +132,20 @@ const day: Array<{ title: string; body: string; src: string; width: number; heig
   },
   {
     title: 'A portal in your firm’s name',
-    body: 'Clients see what they need to do, where things stand, who has each part and how long it usually takes, so they stop ringing to ask. Your logo, your colours, your address.',
+    line: 'Your logo, your colours, your address.',
     src: '/product/app-portal.webp',
     width: 1170,
     height: 2500,
     phone: true,
     alt: 'A client’s portal on a phone, in a made-up firm’s logo and colour: the parts of their purchase side by side, done, with the client, or in progress, and the enquiries with the seller’s solicitor, usually two weeks a round, expected by a date.',
   },
-  {
-    title: 'The firm in numbers',
-    body: 'Completions, fee income and days to complete, against your target, last year and the industry.',
-    src: '/product/app-analytics.webp',
-    width: 2760,
-    height: 1600,
-    alt: 'Analytics: completions this month against target, fee income, instructions, days to complete, client satisfaction and a chart of completions by month.',
-  },
 ];
 
-const safety: Array<{ icon: IconName; title: string; body: string }> = [
-  { icon: 'pound', title: 'A Person Signs Off Money', body: 'Exchange, completion and client decisions are recorded by a person. The database refuses them from automation.' },
-  { icon: 'bank', title: 'Bank Details Verified Out Of Band', body: 'Bank details that arrive by email stay unverified until a person confirms them by phone.' },
-  { icon: 'spoof', title: 'Spoofed Senders Caught', body: 'Forged senders, look-alike domains and diverted replies are flagged before anyone acts on them.' },
-  { icon: 'log', title: 'Everything Recorded', body: 'Every step, who or what took it, and the document it came from.' },
+const safety: Array<{ icon: IconName; title: string }> = [
+  { icon: 'pound', title: 'A person signs off money' },
+  { icon: 'bank', title: 'Bank details verified by phone' },
+  { icon: 'spoof', title: 'Spoofed senders caught' },
+  { icon: 'log', title: 'Every step recorded' },
 ];
 
 function Shot({ src, alt, width, height, phone = false }: { src: string; alt: string; width: number; height: number; phone?: boolean }) {
@@ -191,105 +173,91 @@ export default function Page() {
     <main className="bg-paper text-ink antialiased">
       <NavHeader signupHref={ctaHref(ROUTES.signup, PAGE_SOURCE, 'nav_signup')} />
 
-      {/* ── HERO ── the promise from the ads and the emails, word for word. */}
-      <section className="px-6 pt-10 pb-14 md:pt-20 md:pb-20">
-        <div className="mx-auto max-w-6xl">
-          <div className="max-w-4xl">
+      {/* ── HERO ── the promise from the ads and the emails, word for word, beside the video. */}
+      <section className="px-6 pt-10 pb-14 md:pt-16 md:pb-20">
+        <div className="mx-auto grid max-w-6xl items-center gap-10 md:grid-cols-[1fr_1.15fr] md:gap-12">
+          <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">For conveyancing firms</p>
-            <h1 className="mt-4 font-serif text-[2.6rem] font-semibold leading-[1.04] tracking-tight sm:text-6xl md:mt-5 md:text-7xl">
+            <h1 className="mt-4 font-serif text-[2.6rem] font-semibold leading-[1.04] tracking-tight sm:text-6xl md:mt-5 md:text-[3.4rem] lg:text-6xl">
               Double your fee earners’ caseload.
               <span className="block italic text-violet">Pay nothing until we do.</span>
             </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-relaxed text-ink-soft md:mt-7 md:text-xl">
-              CONVEYi connects to Outlook, InTouch and LEAP and does everything on a case that doesn’t need a lawyer:
-              the updating, the chasing, the filing. Every case keeps moving. Only the decisions are left for you.
+            <p className="mt-5 text-lg leading-relaxed text-ink-soft md:text-xl">
+              The updating, chasing and filing on every case, done. Works with Outlook, InTouch and LEAP.
             </p>
-            <div className="mt-8 md:mt-9">
+            <div className="mt-7">
               <Actions where="hero" />
             </div>
-            <p className="mt-4 text-sm text-ink-soft">£80 + VAT per case once your caseload has doubled · no seat or monthly fees · nothing to migrate</p>
+            <p className="mt-4 text-sm text-ink-soft">Then £80 + VAT per case · no seat or monthly fees</p>
           </div>
-          <div className="mt-12 md:mt-16">
-            <Shot {...CASEVIEW_SHOT} />
-          </div>
+          <Vsl sources={[{ src: '/product/vsl.mp4', type: 'video/mp4' }, { src: '/product/vsl.webm', type: 'video/webm' }]} poster="/product/vsl-poster.webp" label="CONVEYi in 43 seconds" />
         </div>
       </section>
 
       {/* ── WHAT WE HEAR ── */}
-      <section className="border-t border-line bg-paper-soft px-6 py-20 md:py-24">
-        <div className="mx-auto max-w-6xl">
-          <h2 className="max-w-3xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">What we hear from conveyancers</h2>
-          <div className="mt-12 grid gap-10 md:grid-cols-3">
+      <section className="border-t border-line bg-paper-soft px-6 py-14 md:py-16">
+        <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[auto_1fr] md:items-center md:gap-16">
+          <h2 className="font-serif text-3xl font-semibold leading-tight tracking-tight md:text-4xl">What we hear</h2>
+          <ul className="grid gap-6 sm:grid-cols-3">
             {heard.map((h) => (
-              <div key={h.title}>
-                <span className="text-violet"><Icon name={h.icon} /></span>
-                <h3 className="mt-4 text-xl font-bold leading-tight">{h.title}</h3>
-                <p className="mt-2 text-lg text-ink-soft">{h.body}</p>
-              </div>
+              <li key={h.title} className="flex items-center gap-3">
+                <span className="shrink-0 text-violet"><Icon name={h.icon} /></span>
+                <span className="text-lg font-semibold leading-snug">{h.title}</span>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       </section>
 
       {/* ── HOW IT WORKS ── a real sequence, so it is numbered by its order. */}
       <section className="border-t border-line px-6 py-20 md:py-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="max-w-3xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">How it works</h2>
-          <ol className="mt-12 grid gap-10 md:grid-cols-3">
+          <h2 className="font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">How it works</h2>
+          <ol className="mt-12 grid gap-16 md:gap-20">
             {how.map((h, i) => (
-              <li key={h.title} className="border-t-2 border-violet pt-6">
-                <div className="flex items-center gap-3 text-violet">
-                  <Icon name={h.icon} />
-                  <span className="text-sm font-semibold uppercase tracking-[0.18em]">Step {i + 1}</span>
+              <li key={h.title} className={`grid items-center gap-8 md:gap-12 ${i % 2 ? 'md:grid-cols-[2fr_1fr]' : 'md:grid-cols-[1fr_2fr]'}`}>
+                <div className={i % 2 ? 'md:order-2' : ''}>
+                  <div className="flex items-center gap-3 text-violet">
+                    <Icon name={h.icon} />
+                    <span className="text-sm font-semibold uppercase tracking-[0.18em]">Step {i + 1}</span>
+                  </div>
+                  <h3 className="mt-3 font-serif text-3xl font-semibold tracking-tight md:text-4xl">{h.title}</h3>
+                  <p className="mt-3 text-lg text-ink-soft">{h.line}</p>
                 </div>
-                <h3 className="mt-4 font-serif text-3xl font-semibold tracking-tight">{h.title}</h3>
-                <p className="mt-3 text-lg text-ink-soft">{h.body}</p>
+                <Shot {...h.shot} />
               </li>
             ))}
           </ol>
-          <div className="mt-16 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
-            {unasked.map((u) => (
-              <div key={u.title}>
-                <span className="text-violet"><Icon name={u.icon} /></span>
-                <h3 className="mt-4 text-lg font-bold leading-tight">{u.title}</h3>
-                <p className="mt-2 text-ink-soft">{u.body}</p>
-              </div>
-            ))}
-          </div>
-          <p className="mt-10 max-w-2xl text-ink-soft">You choose, for each kind of message, whether it goes on its own or waits on your Tasks list for one click.</p>
         </div>
       </section>
 
       {/* ── THE PRODUCT ── */}
       <section className="border-t border-line bg-paper-soft px-6 py-20 md:py-24">
-        <div className="mx-auto grid max-w-6xl gap-16 md:gap-24">
+        <div className="mx-auto grid max-w-6xl items-start gap-16 md:grid-cols-[2fr_1fr] md:gap-12">
           {day.map((d, i) => (
-            <div key={d.title} className={`grid items-center gap-8 md:gap-12 ${d.phone ? 'md:grid-cols-2' : i % 2 ? 'md:grid-cols-[1.8fr_1fr]' : 'md:grid-cols-[1fr_1.8fr]'}`}>
-              <div className={i % 2 ? 'md:order-2' : ''}>
-                <h2 className="font-serif text-3xl font-semibold leading-tight tracking-tight md:text-4xl">{d.title}</h2>
-                <p className="mt-4 text-lg text-ink-soft">{d.body}</p>
-              </div>
-              <Shot src={d.src} alt={d.alt} width={d.width} height={d.height} phone={d.phone} />
+            <div key={d.title} className={i === 0 ? 'md:col-span-2' : ''}>
+              <h2 className="font-serif text-3xl font-semibold leading-tight tracking-tight md:text-4xl">{d.title}</h2>
+              {d.line && <p className="mt-3 text-lg text-ink-soft">{d.line}</p>}
+              <div className="mt-6"><Shot src={d.src} alt={d.alt} width={d.width} height={d.height} phone={d.phone} /></div>
             </div>
           ))}
         </div>
       </section>
 
       {/* ── SAFETY ── */}
-      <section className="bg-ink px-6 py-20 text-paper md:py-24">
+      <section className="bg-ink px-6 py-16 text-paper md:py-20">
         <div className="mx-auto max-w-6xl">
           <h2 className="max-w-3xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
             Built for the sector fraudsters target most
           </h2>
-          <div className="mt-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+          <ul className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
             {safety.map((s) => (
-              <div key={s.title}>
-                <span className="text-violet-soft"><Icon name={s.icon} /></span>
-                <h3 className="mt-4 text-lg font-bold leading-tight">{s.title}</h3>
-                <p className="mt-2 text-paper/70">{s.body}</p>
-              </div>
+              <li key={s.title} className="flex items-center gap-3">
+                <span className="shrink-0 text-violet-soft"><Icon name={s.icon} /></span>
+                <span className="text-lg font-semibold leading-snug">{s.title}</span>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       </section>
 
@@ -313,25 +281,22 @@ export default function Page() {
       <section className="px-6 py-20 md:py-24">
         <div className="mx-auto max-w-6xl">
           <h2 className="max-w-4xl font-serif text-4xl font-semibold tracking-tight md:text-5xl">Pay nothing until we double your caseload.</h2>
-          <p className="mt-5 max-w-2xl text-lg text-ink-soft">
-            Before you start, we measure each fee earner’s caseload. CONVEYi is free until completions per fee earner have
-            doubled against that baseline. After that, it is £80 + VAT per case, and nothing else.
-          </p>
+          <p className="mt-4 max-w-2xl text-lg text-ink-soft">Measured against completions per fee earner before you start.</p>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
               <div className="text-sm font-semibold uppercase tracking-widest text-violet">Until it has doubled</div>
               <div className="mt-3 font-serif text-5xl font-semibold">£0</div>
-              <p className="mt-3 text-ink-soft">The whole product, for the whole firm, on every case.</p>
+              <p className="mt-3 text-ink-soft">Everything, every case.</p>
             </div>
             <div className="rounded-2xl border border-line bg-paper-soft p-8">
               <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Then, per case</div>
               <div className="mt-3 font-serif text-5xl font-semibold">£80<span className="font-sans text-lg font-normal text-ink-soft">/case + VAT</span></div>
-              <p className="mt-3 text-ink-soft">Charged once, the first time CONVEYi works on a case.</p>
+              <p className="mt-3 text-ink-soft">Once per case.</p>
             </div>
             <div className="rounded-2xl border border-line bg-paper-soft p-8">
               <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Seats and monthly fee</div>
               <div className="mt-3 font-serif text-5xl font-semibold">£0</div>
-              <p className="mt-3 text-ink-soft">Everyone in the firm. A quiet month costs nothing.</p>
+              <p className="mt-3 text-ink-soft">Everyone in the firm.</p>
             </div>
           </div>
           <p className="mt-6 text-sm text-ink-soft">
