@@ -185,7 +185,7 @@ export default function WaitlistPage() {
           </div>
 
           <p className="mt-6 text-sm text-ink-soft">
-            Pay nothing until we double your caseload · then £80 + VAT per case
+            Pay nothing until your team handles twice the cases · then £80 + VAT per case
           </p>
         </div>
       </div>

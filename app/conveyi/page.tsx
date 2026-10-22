@@ -4,9 +4,9 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../_components/shar
 import { Vsl } from './Vsl';
 
 export const metadata: Metadata = {
-  title: 'CONVEYi — Double your fee earners’ caseload | Case Lightning',
+  title: 'CONVEYi — Twice the cases without twice the work | Case Lightning',
   description:
-    'CONVEYi connects to Outlook, InTouch and LEAP and does everything on a conveyancing case that doesn’t need a lawyer: the updating, the chasing, the filing. Pay nothing until your caseload has doubled.',
+    'CONVEYi connects to Outlook, InTouch and LEAP and does everything on a conveyancing case that doesn’t need a lawyer: the updating, the chasing, the filing. Pay nothing until your team handles twice the cases.',
 };
 
 const PAGE_SOURCE = 'landing';
@@ -171,12 +171,12 @@ export default function Page() {
       <NavHeader signupHref={ctaHref(ROUTES.signup, PAGE_SOURCE, 'nav_signup')} />
 
       {/* ── HERO ── the promise from the ads and the emails, word for word, beside the video. */}
-      <section className="px-6 pt-10 pb-14 md:pt-16 md:pb-20">
+      <section className="px-6 pt-10 pb-10 md:pt-16 md:pb-12">
         <div className="mx-auto grid max-w-6xl items-center gap-10 md:grid-cols-[1fr_1.15fr] md:gap-12">
           <div>
             <h1 className="font-serif text-[2.6rem] font-semibold leading-[1.04] tracking-tight sm:text-6xl md:text-[3.4rem] lg:text-6xl">
-              Double your fee earners’ caseload.
-              <span className="block italic text-violet">Pay nothing until we do.</span>
+              Handle twice the cases without twice the work.
+              <span className="block italic text-violet">Pay nothing until you do.</span>
             </h1>
             <p className="mt-5 text-lg leading-relaxed text-ink-soft md:text-xl">
               The updating, chasing and filing on every case, done. Works with Outlook, InTouch and LEAP.
@@ -185,12 +185,20 @@ export default function Page() {
               <Actions where="hero" />
             </div>
           </div>
-          <Vsl sources={[{ src: '/product/vsl-v8.mp4', type: 'video/mp4' }, { src: '/product/vsl-v8.webm', type: 'video/webm' }]} poster="/product/vsl-poster-3.webp" label="CONVEYi in 43 seconds" />
+          <Vsl sources={[{ src: '/product/vsl-v9.mp4', type: 'video/mp4' }, { src: '/product/vsl-v9.webm', type: 'video/webm' }]} poster="/product/vsl-poster-3.webp" label="CONVEYi in 43 seconds" />
+        </div>
+        {/* The promise is a big one: say so, and take them to the explanation. */}
+        <div className="mx-auto mt-10 flex max-w-6xl flex-col items-center text-center md:mt-12">
+          <p className="font-serif text-2xl italic md:text-3xl">Sounds too good to be true, right?</p>
+          <a href="#explain" className="group mt-2 inline-flex flex-col items-center font-semibold text-violet" data-cta="hero_explain">
+            Let us explain
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-1 motion-safe:animate-bounce"><path d="m6 9 6 6 6-6" /></svg>
+          </a>
         </div>
       </section>
 
       {/* ── WHAT WE HEAR ── */}
-      <section className="border-t border-line bg-paper-soft px-6 py-14 md:py-16">
+      <section id="explain" className="scroll-mt-4 border-t border-line bg-paper-soft px-6 py-14 md:py-16">
         <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[auto_1fr] md:items-center md:gap-16">
           <h2 className="font-serif text-3xl font-semibold leading-tight tracking-tight md:text-4xl">What we hear</h2>
           <ul className="grid gap-6 sm:grid-cols-3">
@@ -277,7 +285,7 @@ export default function Page() {
       {/* ── PRICING ── the guarantee first, then what it costs after. */}
       <section className="px-6 py-20 md:py-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="max-w-4xl font-serif text-4xl font-semibold tracking-tight md:text-5xl">Pay nothing until we double your caseload.</h2>
+          <h2 className="max-w-4xl font-serif text-4xl font-semibold tracking-tight md:text-5xl">Pay nothing until your team handles twice the cases.</h2>
           <p className="mt-4 max-w-2xl text-lg text-ink-soft">Measured against completions per fee earner before you start.</p>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
