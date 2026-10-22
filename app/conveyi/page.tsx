@@ -185,7 +185,7 @@ export default function Page() {
         </div>
         {/* The promise is a big one: say so, and take them to the explanation. */}
         <div className="mx-auto mt-8 flex max-w-6xl flex-col items-center text-center md:mt-12">
-          <p className="font-serif text-2xl italic md:text-3xl">Sounds too good to be true?</p>
+          <p className="font-serif text-2xl italic md:text-3xl">Sound too good to be true?</p>
           <a href="#explain" className="group mt-2 inline-flex flex-col items-center font-semibold text-violet" data-cta="hero_explain">
             Let us explain
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-1 motion-safe:animate-bounce"><path d="m6 9 6 6 6-6" /></svg>
