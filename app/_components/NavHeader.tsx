@@ -15,6 +15,8 @@ type NavHeaderProps = {
   /** Logo style: 'conveyi' (default) or 'caselightning'. */
   brand?: 'conveyi' | 'caselightning';
   signupLabel?: string;
+  /** No button: the page is where the button would go (Book A Demo). */
+  noCta?: boolean;
 };
 
 export function NavHeader({
@@ -23,6 +25,7 @@ export function NavHeader({
   links = CONVEYI_NAV,
   brand = 'conveyi',
   signupLabel = 'Get Started',
+  noCta = false,
 }: NavHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const burgerRef = useRef<HTMLButtonElement>(null);
@@ -57,9 +60,11 @@ export function NavHeader({
         </nav>
 
         <div className="flex items-center gap-3">
-          <div className="hidden md:block">
-            <Cta label={signupLabel} href={signupHref} dataCta="nav_signup" />
-          </div>
+          {!noCta && (
+            <div className="hidden md:block">
+              <Cta label={signupLabel} href={signupHref} dataCta="nav_signup" />
+            </div>
+          )}
           <button
             ref={burgerRef}
             className="rounded-lg p-2 text-paper/80 transition-colors hover:bg-white/10 hover:text-white md:hidden"
@@ -93,9 +98,11 @@ export function NavHeader({
               </a>
             ))}
           </nav>
-          <div className="mt-4">
-            <Cta label={signupLabel} href={signupHref} dataCta="nav_signup_mobile" className="w-full" />
-          </div>
+          {!noCta && (
+            <div className="mt-4">
+              <Cta label={signupLabel} href={signupHref} dataCta="nav_signup_mobile" className="w-full" />
+            </div>
+          )}
         </div>
       )}
     </header>
