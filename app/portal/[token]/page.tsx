@@ -215,7 +215,7 @@ export default function ClientPortal() {
   useEffect(() => {
     if (!ctx || (ctx.status !== 'open' && ctx.status !== 'locked')) return;
     document.title = `${ctx.propertyAddress} · ${ctx.firmName}`;
-    if (ctx.brand?.logoUrl) document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]').forEach((l) => { l.href = ctx.brand!.logoUrl!; });
+    if (ctx.brand?.logoUrl) document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"], link[rel="apple-touch-icon"]').forEach((l) => { l.href = ctx.brand!.logoUrl!; });
   }, [ctx]);
 
   const post = async (body: Record<string, unknown>) => {
