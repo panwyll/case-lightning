@@ -112,7 +112,7 @@ const how: Array<{ icon: IconName; title: string; line: string; shot: Screen }> 
   {
     icon: 'optimise',
     title: 'Optimise',
-    line: 'Then the legal work gets faster. Title, searches, contracts and funds reviewed with every point shown in the document. Reports and packs drafted.',
+    line: 'Optimise legal work with AI-powered document review and generation.',
     shot: { src: '/product/app-funds-review.webp', width: 2304, height: 1480, alt: 'A source of funds review: cash paid in, a credit from a cryptoasset exchange and a transfer from an account not provided, each flagged with a query drafted, and the bank statement beside it with the flagged line highlighted.' },
   },
 ];
@@ -187,7 +187,7 @@ export default function Page() {
               <Actions where="hero" />
             </div>
           </div>
-          <Vsl sources={[{ src: '/product/vsl-v5.mp4', type: 'video/mp4' }, { src: '/product/vsl-v5.webm', type: 'video/webm' }]} poster="/product/vsl-poster-2.webp" label="CONVEYi in 43 seconds" />
+          <Vsl sources={[{ src: '/product/vsl-v6.mp4', type: 'video/mp4' }, { src: '/product/vsl-v6.webm', type: 'video/webm' }]} poster="/product/vsl-poster-2.webp" label="CONVEYi in 43 seconds" />
         </div>
       </section>
 
