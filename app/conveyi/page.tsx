@@ -4,9 +4,9 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../_components/shar
 import { Vsl } from './Vsl';
 
 export const metadata: Metadata = {
-  title: 'CONVEYi — Twice the cases without twice the work | Case Lightning',
+  title: 'CONVEYi — Double the cases without double the work | Case Lightning',
   description:
-    'CONVEYi connects to Outlook, InTouch and LEAP and does everything on a conveyancing case that doesn’t need a lawyer: the updating, the chasing, the filing. Pay nothing until your team handles twice the cases.',
+    'CONVEYi connects to Outlook, InTouch and LEAP and does everything on a conveyancing case that doesn’t need a lawyer: the updating, the chasing, the filing. Pay nothing until your team handles double the cases.',
 };
 
 const PAGE_SOURCE = 'landing';
@@ -175,13 +175,13 @@ export default function Page() {
         <div className="mx-auto grid max-w-6xl items-center gap-8 md:grid-cols-[1fr_1.15fr] md:gap-12">
           <div>
             <h1 className="font-serif text-[2.6rem] font-semibold leading-[1.04] tracking-tight sm:text-6xl md:text-[3.4rem] lg:text-6xl">
-              Handle twice the cases without twice the work.
+              Handle double the cases without double the work.
             </h1>
             <div className="mt-7 flex">
               <Cta label="Book A 15-Minute Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, 'hero_demo')} dataCta="hero_demo" size="lg" />
             </div>
           </div>
-          <Vsl sources={[{ src: '/product/vsl-v9.mp4', type: 'video/mp4' }, { src: '/product/vsl-v9.webm', type: 'video/webm' }]} poster="/product/vsl-poster-3.webp" label="CONVEYi in 43 seconds" />
+          <Vsl sources={[{ src: '/product/vsl-v10.mp4', type: 'video/mp4' }, { src: '/product/vsl-v10.webm', type: 'video/webm' }]} poster="/product/vsl-poster-3.webp" label="CONVEYi in 43 seconds" />
         </div>
         {/* The promise is a big one: say so, and take them to the explanation. */}
         <div className="mx-auto mt-8 flex max-w-6xl flex-col items-center text-center md:mt-12">
@@ -281,7 +281,7 @@ export default function Page() {
       {/* ── PRICING ── the guarantee first, then what it costs after. */}
       <section className="px-6 py-20 md:py-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="max-w-4xl font-serif text-4xl font-semibold tracking-tight md:text-5xl">Pay nothing until your team handles twice the cases.</h2>
+          <h2 className="max-w-4xl font-serif text-4xl font-semibold tracking-tight md:text-5xl">Pay nothing until your team handles double the cases.</h2>
           <p className="mt-4 max-w-2xl text-lg text-ink-soft">Measured against completions per fee earner before you start.</p>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
@@ -307,7 +307,7 @@ export default function Page() {
       <section className="bg-ink px-6 py-20 text-paper md:py-24">
         <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-8 md:flex-row md:items-center">
           <h2 className="max-w-2xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
-            Same team. Twice the cases.
+            Same team. Double the cases.
           </h2>
           <Actions where="footer" dark />
         </div>

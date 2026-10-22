@@ -5,7 +5,7 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'Pricing — CONVEYi',
   description:
-    'Pay nothing until your team handles twice the cases. Then one price: £80 + VAT per case. No seats, no tiers, no monthly fee.',
+    'Pay nothing until your team handles double the cases. Then one price: £80 + VAT per case. No seats, no tiers, no monthly fee.',
 };
 
 const PAGE_SOURCE = 'pricing';
@@ -26,7 +26,7 @@ const included = [
 const whatCounts = [
   ['Charged once per case', 'The first time CONVEYi drafts a reply, reviews or generates a document, or reconciles a case, that case is opened and £80 + VAT goes on the month’s invoice. Never again for that case.'],
   ['Free: everything before that', 'Triage, matching, summaries and the knowledge base run on every email at no charge. A case you never draft on costs nothing.'],
-  ['Free: until your team handles twice the cases', 'Cases CONVEYi works on before completions per fee earner have doubled against your baseline are never charged — not then, and not after.'],
+  ['Free: until your team handles double the cases', 'Cases CONVEYi works on before completions per fee earner have doubled against your baseline are never charged — not then, and not after.'],
 ];
 
 export default function PricingPage() {
@@ -103,7 +103,7 @@ export default function PricingPage() {
         )}
 
         <p className="mx-auto mt-8 max-w-6xl text-center text-sm text-ink-soft">
-          Pay nothing until your team handles twice the cases. ·{' '}
+          Pay nothing until your team handles double the cases. ·{' '}
           <a href={ctaHref(ROUTES.faq, PAGE_SOURCE, 'pricing_faq')} className="text-violet underline underline-offset-4">Read the FAQ</a>
         </p>
       </section>
@@ -111,7 +111,7 @@ export default function PricingPage() {
       <section className="bg-ink px-6 py-20 text-paper md:py-24">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">One case at a time.</h2>
-          <p className="mx-auto mt-4 max-w-xl text-lg text-paper/70">Free until your team handles twice the cases. Then £80 + VAT per case.</p>
+          <p className="mx-auto mt-4 max-w-xl text-lg text-paper/70">Free until your team handles double the cases. Then £80 + VAT per case.</p>
           <div className="mt-8 flex justify-center">
             <Cta label="Get Started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'cta_signup')} dataCta="cta_signup" size="lg" />
           </div>

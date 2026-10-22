@@ -4,7 +4,7 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'FAQ — CONVEYi',
   description:
-    'Common questions about CONVEYi: GDPR, where your data lives, onboarding, pricing and our guarantee: pay nothing until your team handles twice the cases.',
+    'Common questions about CONVEYi: GDPR, where your data lives, onboarding, pricing and our guarantee: pay nothing until your team handles double the cases.',
 };
 
 const PAGE_SOURCE = 'faq';
