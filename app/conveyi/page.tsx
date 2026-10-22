@@ -174,15 +174,15 @@ export default function Page() {
       <section className="px-6 pt-8 pb-8 md:pt-16 md:pb-12">
         <div className="mx-auto grid max-w-6xl items-center gap-8 md:grid-cols-[1fr_1.15fr] md:gap-12">
           <div className="text-center">
-            <h1 className="font-serif text-[2.6rem] font-semibold leading-[1.04] tracking-tight sm:text-6xl md:text-[3.4rem] lg:text-6xl">
-              Double the cases
-              <span className="block font-medium italic text-violet [text-wrap:balance]">without double the work.</span>
+            <h1 className="font-serif text-[2.35rem] font-semibold leading-[1.06] tracking-tight sm:text-5xl md:text-[3rem] lg:text-[3.5rem]">
+              <span className="block whitespace-nowrap uppercase">Double the cases</span>
+              <span className="block font-medium italic text-violet [text-wrap:balance]">without double the work</span>
             </h1>
             <div className="mt-7 flex justify-center">
               <Cta label="Book A 15-Minute Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, 'hero_demo')} dataCta="hero_demo" size="lg" />
             </div>
           </div>
-          <Vsl sources={[{ src: '/product/vsl-v12.mp4', type: 'video/mp4' }, { src: '/product/vsl-v12.webm', type: 'video/webm' }]} poster="/product/vsl-poster-5.webp" label="CONVEYi in 43 seconds" />
+          <Vsl sources={[{ src: '/product/vsl-v13.mp4', type: 'video/mp4' }, { src: '/product/vsl-v13.webm', type: 'video/webm' }]} poster="/product/vsl-poster-5.webp" label="CONVEYi in 43 seconds" />
         </div>
         {/* The promise is a big one: say so, and take them to the explanation. */}
         <div className="mx-auto mt-8 flex max-w-6xl flex-col items-center text-center md:mt-12">
