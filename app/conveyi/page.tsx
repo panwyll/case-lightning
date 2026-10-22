@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 const PAGE_SOURCE = 'landing';
 
-type IconName = 'pound' | 'bank' | 'spoof' | 'log' | 'switch' | 'inbox' | 'people' | 'measure' | 'automate' | 'optimise';
+type IconName = 'pound' | 'bank' | 'spoof' | 'log' | 'switch' | 'inbox' | 'people';
 
 // Hand-rolled line icons: stroked, currentColor, 24px grid.
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
@@ -41,24 +41,6 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
       <circle cx="9" cy="8" r="3" />
       <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" />
       <path d="M16 5.5a3 3 0 0 1 0 5.5M18 14.5c1.8.9 3 2.9 3 5.5" />
-    </>
-  ),
-  measure: (
-    <>
-      <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
-    </>
-  ),
-  automate: (
-    <>
-      <path d="M20 12a8 8 0 1 1-2.3-5.7" />
-      <path d="M20 4v4h-4" />
-      <path d="m9 12 2 2 4-4" />
-    </>
-  ),
-  optimise: (
-    <>
-      <path d="M3 17l6-6 4 4 8-8" />
-      <path d="M15 7h6v6" />
     </>
   ),
 };
@@ -96,21 +78,18 @@ const heard: Array<{ icon: IconName; title: string }> = [
 
 interface Screen { src: string; width: number; height: number; alt: string; phone?: boolean }
 
-const how: Array<{ icon: IconName; title: string; line: string; shot: Screen }> = [
+const how: Array<{ title: string; line: string; shot: Screen }> = [
   {
-    icon: 'measure',
     title: 'Measure',
     line: 'Where your team’s week goes, across the firm. That is your baseline.',
     shot: { src: '/product/app-measure-issues.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' },
   },
   {
-    icon: 'automate',
     title: 'Automate',
     line: 'Updates, chasers and orders drafted for one click, or sent on their own.',
     shot: { src: '/product/app-automate.webp', width: 1806, height: 1470, alt: 'Tasks on one case: four searches to order and a chaser to the seller’s solicitor, each drafted with an Approve button, and below, what the case is waiting on and when each chase goes.' },
   },
   {
-    icon: 'optimise',
     title: 'Optimise',
     line: 'Optimise legal work with AI-powered document review and generation.',
     shot: { src: '/product/app-funds-review.webp', width: 2304, height: 1480, alt: 'A source of funds review: cash paid in, a credit from a cryptoasset exchange and a transfer from an account not provided, each flagged with a query drafted, and the bank statement beside it with the flagged line highlighted.' },
@@ -220,11 +199,7 @@ export default function Page() {
             {how.map((h, i) => (
               <li key={h.title} className={`grid items-center gap-8 md:gap-12 ${i % 2 ? 'md:grid-cols-[2fr_1fr]' : 'md:grid-cols-[1fr_2fr]'}`}>
                 <div className={i % 2 ? 'md:order-2' : ''}>
-                  <div className="flex items-center gap-3 text-violet">
-                    <Icon name={h.icon} />
-                    <span className="text-sm font-semibold uppercase tracking-[0.18em]">Step {i + 1}</span>
-                  </div>
-                  <h3 className="mt-3 font-serif text-3xl font-semibold tracking-tight md:text-4xl">{h.title}</h3>
+                  <h3 className="font-serif text-3xl font-bold tracking-tight md:text-4xl"><span className="text-violet">{i + 1}.</span> {h.title}</h3>
                   <p className="mt-3 text-lg text-ink-soft">{h.line}</p>
                 </div>
                 <Shot {...h.shot} />
