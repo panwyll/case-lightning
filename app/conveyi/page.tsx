@@ -139,14 +139,11 @@ const day: Array<{ title: string } & Screen> = [
   },
 ];
 
-const forYou = ['Residential conveyancing firms', 'On Outlook and Microsoft 365', 'Running InTouch, LEAP, or neither'];
-const notForYou = ['Firms on Gmail or another email system', 'Firms looking to replace their case management system'];
-
 const questions: Array<{ q: string; a: string }> = [
   { q: 'Will it send something wrong?', a: 'Nothing goes on its own until you switch that kind of message on. Exchange, completion and money always need a person.' },
   { q: 'Do we have to change systems?', a: 'No. It works on the Outlook, InTouch and LEAP you already use. Nothing to migrate.' },
   { q: 'Where does our data go?', a: 'Your emails and documents stay in your own Microsoft 365.' },
-  { q: 'What if our caseload doesn’t double?', a: 'Then you don’t pay. We measure each fee earner before you start, and it’s free until completions per fee earner have doubled.' },
+  { q: 'What if we don’t handle double the cases?', a: 'Then you don’t pay. We measure each fee earner before you start, and it’s free until your team is handling double.' },
 ];
 
 const safety: Array<{ icon: IconName; title: string }> = [
@@ -248,34 +245,6 @@ export default function Page() {
                 <div className="mt-4"><Shot src={d.src} alt={d.alt} width={d.width} height={d.height} phone={d.phone} /></div>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── WHO IT'S FOR ── and who it isn't: the right firms book, the wrong ones don't. */}
-      <section className="px-6 py-20 md:py-24">
-        <div className="mx-auto grid max-w-6xl gap-12 md:grid-cols-2 md:gap-16">
-          <div>
-            <h2 className="font-serif text-3xl font-bold leading-tight tracking-tight md:text-4xl">Who it’s for</h2>
-            <ul className="mt-6 grid gap-4">
-              {forYou.map((x) => (
-                <li key={x} className="flex items-center gap-3 text-lg font-semibold">
-                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0 text-violet"><path d="m5 12 5 5 9-10" /></svg>
-                  {x}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <h2 className="font-serif text-3xl font-bold leading-tight tracking-tight md:text-4xl">Who it isn’t for</h2>
-            <ul className="mt-6 grid gap-4">
-              {notForYou.map((x) => (
-                <li key={x} className="flex items-center gap-3 text-lg font-semibold text-ink-soft">
-                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0"><path d="M6 6l12 12M18 6 6 18" /></svg>
-                  {x}
-                </li>
-              ))}
-            </ul>
           </div>
         </div>
       </section>
