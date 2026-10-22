@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { Manrope, Schibsted_Grotesk } from 'next/font/google';
+import { Hanken_Grotesk, Manrope } from 'next/font/google';
 import RefCapture from './_components/RefCapture';
 import Track from './_components/Track';
 import SiteAnalytics from './_components/SiteAnalytics';
@@ -8,8 +8,8 @@ import './globals.css';
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
 
-// A newspaper grotesk for headings (with a true italic) + a clean sans for text — deliberately not Inter/Roboto.
-const display = Schibsted_Grotesk({ subsets: ['latin'], style: ['normal', 'italic'], variable: '--font-display', display: 'swap' });
+// A plain grotesk for headings (with a true italic) + a clean sans for text — deliberately not Inter/Roboto.
+const display = Hanken_Grotesk({ subsets: ['latin'], style: ['normal', 'italic'], variable: '--font-display', display: 'swap' });
 const manrope = Manrope({ subsets: ['latin'], variable: '--font-manrope', display: 'swap' });
 
 export const metadata: Metadata = {

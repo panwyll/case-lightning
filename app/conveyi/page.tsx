@@ -173,16 +173,16 @@ export default function Page() {
       {/* ── HERO ── the promise from the ads and the emails, word for word, beside the video. */}
       <section className="px-6 pt-8 pb-8 md:pt-16 md:pb-12">
         <div className="mx-auto grid max-w-6xl items-center gap-8 md:grid-cols-[1fr_1.15fr] md:gap-12">
-          <div>
+          <div className="text-center">
             <h1 className="font-serif text-[2.6rem] font-semibold leading-[1.04] tracking-tight sm:text-6xl md:text-[3.4rem] lg:text-6xl">
               Double the cases
               <span className="block font-medium italic text-violet [text-wrap:balance]">without double the work.</span>
             </h1>
-            <div className="mt-7 flex">
+            <div className="mt-7 flex justify-center">
               <Cta label="Book A 15-Minute Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, 'hero_demo')} dataCta="hero_demo" size="lg" />
             </div>
           </div>
-          <Vsl sources={[{ src: '/product/vsl-v11.mp4', type: 'video/mp4' }, { src: '/product/vsl-v11.webm', type: 'video/webm' }]} poster="/product/vsl-poster-4.webp" label="CONVEYi in 43 seconds" />
+          <Vsl sources={[{ src: '/product/vsl-v12.mp4', type: 'video/mp4' }, { src: '/product/vsl-v12.webm', type: 'video/webm' }]} poster="/product/vsl-poster-5.webp" label="CONVEYi in 43 seconds" />
         </div>
         {/* The promise is a big one: say so, and take them to the explanation. */}
         <div className="mx-auto mt-8 flex max-w-6xl flex-col items-center text-center md:mt-12">
