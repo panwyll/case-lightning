@@ -167,11 +167,11 @@ export default function Page() {
           <Vsl sources={[{ src: '/product/vsl-v15.mp4', type: 'video/mp4' }, { src: '/product/vsl-v15.webm', type: 'video/webm' }]} poster="/product/vsl-poster-5.webp" label="CONVEYi in 43 seconds" />
         </div>
         {/* The promise is a big one: say so, and take them to the explanation. */}
-        <div className="mx-auto mt-8 flex max-w-6xl flex-col items-center text-center md:mt-12">
-          <p className="font-serif text-2xl font-bold uppercase tracking-tight [text-wrap:balance] md:text-3xl">Sound too good to be true?</p>
-          <a href="#explain" className="group mt-2 inline-flex flex-col items-center font-semibold text-violet" data-cta="hero_explain">
+        <div className="mx-auto mt-6 flex max-w-6xl flex-col items-center text-center md:mt-10">
+          <p className="font-serif text-lg font-bold uppercase tracking-tight md:text-xl">Sound too good to be true?</p>
+          <a href="#explain" className="mt-1 inline-flex flex-col items-center text-sm font-bold uppercase tracking-[0.14em] text-violet" data-cta="hero_explain">
             Let us explain
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-1 motion-safe:animate-bounce"><path d="m6 9 6 6 6-6" /></svg>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="motion-safe:animate-bounce"><path d="m6 9 6 6 6-6" /></svg>
           </a>
         </div>
       </section>
