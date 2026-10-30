@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 const PAGE_SOURCE = 'landing';
 
-type IconName = 'pound' | 'bank' | 'spoof' | 'log' | 'switch' | 'inbox' | 'people';
+type IconName = 'pound' | 'bank' | 'spoof' | 'log' | 'inbox' | 'setup';
 
 // Hand-rolled line icons: stroked, currentColor, 24px grid.
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
@@ -29,20 +29,13 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
       <path d="M9 9h6M9 13h6M9 17h3" />
     </>
   ),
-  switch: <path d="M4 8h13l-3-3M20 16H7l3 3" />,
   inbox: (
     <>
       <path d="M3 13l3-8h12l3 8v6H3z" />
       <path d="M3 13h5l1.5 2h5L16 13h5" />
     </>
   ),
-  people: (
-    <>
-      <circle cx="9" cy="8" r="3" />
-      <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" />
-      <path d="M16 5.5a3 3 0 0 1 0 5.5M18 14.5c1.8.9 3 2.9 3 5.5" />
-    </>
-  ),
+  setup: <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z" />,
 };
 
 function Icon({ name }: { name: IconName }) {
@@ -70,10 +63,12 @@ const CASEVIEW_SHOT = {
   alt: 'Case View: every live case as a house on a map of stages (instruction, pre-exchange, ready, exchanged, completion) by fee earner, coloured On Track, With Us, Delayed - Others, Delayed - Us or Critical, with the count of each along the top.',
 };
 
-const heard: Array<{ icon: IconName; title: string }> = [
-  { icon: 'switch', title: 'Switching matters with every email' },
-  { icon: 'inbox', title: 'The day goes on chasing and updating' },
-  { icon: 'people', title: 'More cases, no more people' },
+/** The answer to "too good to be true?": why it works, who does the work of setting it up, and why it costs nothing to find out. */
+const explain: Array<{ icon: IconName; title: string; body: string }> = [
+  { icon: 'inbox', title: 'Most of the week isn’t legal work', body: 'Chasing, client updates, acknowledgements and filing take up most of a conveyancer’s day. CONVEYi does that work, so the same team can carry more cases.' },
+  { icon: 'setup', title: 'We set it up for you', body: 'We connect CONVEYi to your Outlook and case system and set it up around how your firm already works. Your team has nothing to configure.' },
+  { icon: 'pound', title: 'You don’t pay until it works', body: 'We measure your firm’s capacity before you start. CONVEYi is free until your team is handling double the cases. After that, £80 + VAT per case.' },
+  { icon: 'spoof', title: 'You stay in control', body: 'Nothing goes out on its own until you switch that kind of message on. Exchange, completion and money always need a person.' },
 ];
 
 interface Screen { src: string; width: number; height: number; alt: string; phone?: boolean }
@@ -152,22 +147,19 @@ export default function Page() {
     <main className="bg-paper text-ink antialiased">
       <NavHeader signupHref={ctaHref(ROUTES.demo, PAGE_SOURCE, 'nav_demo')} signupLabel="Book A Demo" />
 
-      {/* ── HERO ── the promise from the ads and the emails, word for word, beside the video. */}
-      <section className="px-6 pt-8 pb-8 md:pt-16 md:pb-12">
-        <div className="mx-auto grid max-w-6xl items-center gap-8 md:grid-cols-[1fr_1.15fr] md:gap-12">
-          <div className="text-center">
-            <h1 className="font-serif text-[2.35rem] font-bold leading-[1.06] tracking-tight sm:text-5xl md:text-[3rem] lg:text-[3.5rem]">
-              <span className="block whitespace-nowrap uppercase">Double the cases</span>
-              <span className="block uppercase italic text-violet [text-wrap:balance]">without double the work</span>
-            </h1>
-            <div className="mt-7 flex justify-center">
-              <BookDemo where="hero" />
-            </div>
+      {/* ── HERO ── the promise from the ads and the emails, and nothing else: the first screen is the headline, the button and the prompt. */}
+      <section className="flex min-h-[calc(100svh-69px)] flex-col px-6 pt-10 pb-6 md:pb-8">
+        <div className="mx-auto flex max-w-5xl flex-1 flex-col items-center justify-center text-center">
+          <h1 className="font-serif text-[2.35rem] font-bold leading-[1.04] tracking-tight sm:text-6xl lg:text-[5rem]">
+            <span className="block whitespace-nowrap uppercase">Double the cases</span>
+            <span className="block uppercase italic text-violet [text-wrap:balance]">without double the work</span>
+          </h1>
+          <div className="mt-8 flex justify-center md:mt-10">
+            <BookDemo where="hero" />
           </div>
-          <Vsl sources={[{ src: '/product/vsl-v15.mp4', type: 'video/mp4' }, { src: '/product/vsl-v15.webm', type: 'video/webm' }]} poster="/product/vsl-poster-5.webp" label="CONVEYi in 43 seconds" />
         </div>
         {/* The promise is a big one: say so, and take them to the explanation. */}
-        <div className="mx-auto mt-6 flex max-w-6xl flex-col items-center text-center md:mt-10">
+        <div className="mx-auto mt-10 flex flex-col items-center text-center">
           <p className="font-serif text-lg font-bold uppercase tracking-tight md:text-xl">Sound too good to be true?</p>
           <a href="#explain" className="mt-1 inline-flex flex-col items-center text-sm font-bold uppercase tracking-[0.14em] text-violet" data-cta="hero_explain">
             Let us explain
@@ -176,18 +168,31 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── WHAT WE HEAR ── */}
-      <section id="explain" className="scroll-mt-4 bg-ink px-6 py-14 text-paper md:py-16">
-        <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[auto_1fr] md:items-center md:gap-16">
-          <h2 className="font-serif text-3xl font-semibold leading-tight tracking-tight md:text-4xl">What we hear</h2>
-          <ul className="grid gap-6 sm:grid-cols-3">
-            {heard.map((h) => (
-              <li key={h.title} className="flex items-center gap-3">
-                <span className="shrink-0 text-violet-soft"><Icon name={h.icon} /></span>
-                <span className="text-lg font-semibold leading-snug">{h.title}</span>
+      {/* ── HOW IT'S POSSIBLE ── the answer to the prompt above. */}
+      <section id="explain" className="scroll-mt-16 bg-ink px-6 py-20 text-paper md:py-24">
+        <div className="mx-auto max-w-6xl">
+          <h2 className="font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">How it’s possible</h2>
+          <ul className="mt-12 grid gap-x-12 gap-y-10 md:grid-cols-2">
+            {explain.map((x) => (
+              <li key={x.title} className="flex gap-4">
+                <span className="mt-0.5 shrink-0 text-[#9B7BFF]"><Icon name={x.icon} /></span>
+                <div>
+                  <h3 className="text-xl font-bold leading-snug md:text-2xl">{x.title}</h3>
+                  <p className="mt-2 text-lg leading-relaxed text-paper/75">{x.body}</p>
+                </div>
               </li>
             ))}
           </ul>
+        </div>
+      </section>
+
+      {/* ── THE VIDEO ── below the fold, after the explanation. */}
+      <section className="border-b border-line bg-paper-soft px-6 py-20 md:py-24">
+        <div className="mx-auto max-w-4xl">
+          <h2 className="text-center font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">See it in 43 seconds</h2>
+          <div className="mt-10">
+            <Vsl sources={[{ src: '/product/vsl-v15.mp4', type: 'video/mp4' }, { src: '/product/vsl-v15.webm', type: 'video/webm' }]} poster="/product/vsl-poster-5.webp" label="CONVEYi in 43 seconds" />
+          </div>
         </div>
       </section>
 
