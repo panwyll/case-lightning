@@ -5,7 +5,7 @@ export type CtaProps = {
   dataCta: string;
   /** `onColour` and `outlineOnColour` sit on an ink or violet band. */
   variant?: 'primary' | 'secondary' | 'ghost' | 'onColour' | 'outlineOnColour';
-  size?: 'md' | 'lg';
+  size?: 'md' | 'lg' | 'xl';
   className?: string;
 };
 
@@ -16,6 +16,7 @@ export function Cta({ label, href, dataCta, variant = 'primary', size = 'md', cl
   const sizes = {
     md: 'px-5 py-2.5 text-sm',
     lg: 'px-7 py-3.5 text-base',
+    xl: 'px-9 py-4 text-lg md:px-10 md:text-xl',
   };
 
   const variants = {

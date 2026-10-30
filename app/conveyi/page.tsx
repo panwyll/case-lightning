@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 const PAGE_SOURCE = 'landing';
 
-type IconName = 'pound' | 'bank' | 'spoof' | 'log' | 'inbox' | 'setup';
+type IconName = 'pound' | 'bank' | 'spoof' | 'log';
 
 // Hand-rolled line icons: stroked, currentColor, 24px grid.
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
@@ -29,13 +29,6 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
       <path d="M9 9h6M9 13h6M9 17h3" />
     </>
   ),
-  inbox: (
-    <>
-      <path d="M3 13l3-8h12l3 8v6H3z" />
-      <path d="M3 13h5l1.5 2h5L16 13h5" />
-    </>
-  ),
-  setup: <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z" />,
 };
 
 function Icon({ name }: { name: IconName }) {
@@ -63,13 +56,6 @@ const CASEVIEW_SHOT = {
   alt: 'Case View: every live case as a house on a map of stages (instruction, pre-exchange, ready, exchanged, completion) by fee earner, coloured On Track, With Us, Delayed - Others, Delayed - Us or Critical, with the count of each along the top.',
 };
 
-/** The answer to "too good to be true?": why it works, who does the work of setting it up, and why it costs nothing to find out. */
-const explain: Array<{ icon: IconName; title: string; body: string }> = [
-  { icon: 'inbox', title: 'Most of the week isn’t legal work', body: 'Chasing, client updates, acknowledgements and filing take up most of a conveyancer’s day. CONVEYi does that work, so the same team can carry more cases.' },
-  { icon: 'setup', title: 'We set it up for you', body: 'We connect CONVEYi to your Outlook and case system and set it up around how your firm already works. Your team has nothing to configure.' },
-  { icon: 'pound', title: 'You don’t pay until it works', body: 'We measure your firm’s capacity before you start. CONVEYi is free until your team is handling double the cases. After that, £80 + VAT per case.' },
-  { icon: 'spoof', title: 'You stay in control', body: 'Nothing goes out on its own until you switch that kind of message on. Exchange, completion and money always need a person.' },
-];
 
 interface Screen { src: string; width: number; height: number; alt: string; phone?: boolean }
 
@@ -138,8 +124,8 @@ function Shot({ src, alt, width, height, phone = false }: { src: string; alt: st
 }
 
 /** One action on this page: book a demo. */
-function BookDemo({ where, onColour = false }: { where: string; onColour?: boolean }) {
-  return <Cta label="Book A Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size="lg" />;
+function BookDemo({ where, onColour = false, size = 'lg' }: { where: string; onColour?: boolean; size?: 'lg' | 'xl' }) {
+  return <Cta label="Book A Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size={size} />;
 }
 
 export default function Page() {
@@ -147,46 +133,54 @@ export default function Page() {
     <main className="bg-paper text-ink antialiased">
       <NavHeader signupHref={ctaHref(ROUTES.demo, PAGE_SOURCE, 'nav_demo')} signupLabel="Book A Demo" />
 
-      {/* ── HERO ── the promise from the ads and the emails, and nothing else: the first screen is the headline, the button and the prompt. */}
-      <section className="flex min-h-[calc(100svh-69px)] flex-col px-6 pt-10 pb-6 md:pb-8">
-        <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col items-center justify-center text-center">
-          <h1 className="font-serif text-[2.35rem] font-bold leading-[1.04] tracking-tight sm:text-6xl lg:text-[4.25rem] xl:text-[5rem]">
+      {/* ── HERO ── the promise and the button; then the doubt, said out loud, and the way down to the answer.
+          One scale: headline 72, prompt 24, button 20, link 16; one rhythm: 40 between headline and button, 80 to the prompt. */}
+      <section className="flex min-h-[calc(100svh-69px)] flex-col justify-center px-6 py-12">
+        <div className="mx-auto flex w-full max-w-7xl flex-col items-center text-center">
+          <h1 className="font-serif text-[2.35rem] font-bold leading-[1.04] tracking-tight sm:text-6xl lg:text-[4.25rem] xl:text-[4.5rem]">
             <span className="block whitespace-nowrap uppercase">Double the cases</span>
             <span className="block uppercase italic text-violet [text-wrap:balance] lg:whitespace-nowrap">without double the work</span>
           </h1>
-          <div className="mt-8 flex justify-center md:mt-10">
-            <BookDemo where="hero" />
+          <div className="mt-10">
+            <BookDemo where="hero" size="xl" />
+          </div>
+          <div className="mt-16 flex flex-col items-center md:mt-20">
+            <p className="font-serif text-xl font-bold uppercase tracking-tight md:text-2xl">Sound too good to be true?</p>
+            <a href="#explain" className="mt-3 inline-flex flex-col items-center gap-1 text-sm font-bold uppercase tracking-[0.14em] text-violet md:text-base" data-cta="hero_explain">
+              Let us explain
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="motion-safe:animate-bounce"><path d="m6 9 6 6 6-6" /></svg>
+            </a>
           </div>
         </div>
-        {/* The promise is a big one: say so, and take them to the explanation. */}
-        <div className="mx-auto mt-10 flex flex-col items-center text-center">
-          <p className="font-serif text-lg font-bold uppercase tracking-tight md:text-xl">Sound too good to be true?</p>
-          <a href="#explain" className="mt-1 inline-flex flex-col items-center text-sm font-bold uppercase tracking-[0.14em] text-violet" data-cta="hero_explain">
-            Let us explain
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="motion-safe:animate-bounce"><path d="m6 9 6 6 6-6" /></svg>
-          </a>
-        </div>
       </section>
 
-      {/* ── HOW IT'S POSSIBLE ── the answer to the prompt above. */}
-      <section id="explain" className="scroll-mt-16 bg-ink px-6 py-20 text-paper md:py-24">
+      {/* ── HOW IT WORKS ── the explanation: plugged in in an afternoon, then a real sequence, then the guarantee and the ask. */}
+      <section id="explain" className="scroll-mt-16 bg-ink px-6 py-20 text-paper md:py-28">
         <div className="mx-auto max-w-6xl">
-          <h2 className="font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">How it’s possible</h2>
-          <ul className="mt-12 grid gap-x-12 gap-y-10 md:grid-cols-2">
-            {explain.map((x) => (
-              <li key={x.title} className="flex gap-4">
-                <span className="mt-0.5 shrink-0 text-[#9B7BFF]"><Icon name={x.icon} /></span>
-                <div>
-                  <h3 className="text-xl font-bold leading-snug md:text-2xl">{x.title}</h3>
-                  <p className="mt-2 text-lg leading-relaxed text-paper/75">{x.body}</p>
+          <h2 className="font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">How it works</h2>
+          <p className="mt-4 max-w-2xl text-xl leading-relaxed text-paper/75">We plug CONVEYi into your Outlook and case system in an afternoon. No consultants, no project. Then:</p>
+          <ol className="mt-14 grid gap-16 md:gap-24">
+            {how.map((h, i) => (
+              <li key={h.title} className={`grid items-center gap-8 md:gap-12 ${i % 2 ? 'md:grid-cols-[2fr_1fr]' : 'md:grid-cols-[1fr_2fr]'}`}>
+                <div className={i % 2 ? 'md:order-2' : ''}>
+                  <h3 className="font-serif text-3xl font-bold tracking-tight md:text-4xl"><span className="text-[#9B7BFF]">{i + 1}.</span> {h.title}</h3>
+                  <p className="mt-3 text-lg leading-relaxed text-paper/75">{h.line}</p>
                 </div>
+                <Shot {...h.shot} />
               </li>
             ))}
-          </ul>
+          </ol>
+          <div className="mt-24 flex flex-col items-center border-t border-white/10 pt-20 text-center">
+            <p className="max-w-3xl font-serif text-3xl font-bold leading-tight tracking-tight [text-wrap:balance] md:text-5xl">If we don’t double your capacity, you don’t pay.</p>
+            <p className="mt-10 font-serif text-xl font-bold uppercase tracking-tight md:text-2xl">Sound good?</p>
+            <div className="mt-6">
+              <BookDemo where="guarantee" size="xl" />
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ── THE VIDEO ── below the fold, after the explanation. */}
+      {/* ── THE VIDEO ── */}
       <section className="border-b border-line bg-paper-soft px-6 py-20 md:py-24">
         <div className="mx-auto max-w-4xl">
           <h2 className="text-center font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">See it in 43 seconds</h2>
@@ -196,28 +190,10 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── a real sequence, so it is numbered by its order. */}
-      <section className="px-6 py-20 md:py-24">
-        <div className="mx-auto max-w-6xl">
-          <h2 className="font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">How it works</h2>
-          <ol className="mt-12 grid gap-16 md:gap-20">
-            {how.map((h, i) => (
-              <li key={h.title} className={`grid items-center gap-8 md:gap-12 ${i % 2 ? 'md:grid-cols-[2fr_1fr]' : 'md:grid-cols-[1fr_2fr]'}`}>
-                <div className={i % 2 ? 'md:order-2' : ''}>
-                  <h3 className="font-serif text-3xl font-bold tracking-tight md:text-4xl"><span className="text-violet">{i + 1}.</span> {h.title}</h3>
-                  <p className="mt-3 text-lg text-ink-soft">{h.line}</p>
-                </div>
-                <Shot {...h.shot} />
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
       {/* ── THE PRODUCT ── */}
       <section className="bg-violet px-6 py-20 text-white md:py-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">Updates at a glance</h2>
+          <h2 className="font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">Updates at a glance</h2>
           <div className="mt-12 grid items-start gap-14 md:grid-cols-[2fr_1fr] md:gap-12">
             {day.map((d, i) => (
               <div key={d.title} className={i === 0 ? 'md:col-span-2' : ''}>
@@ -232,7 +208,7 @@ export default function Page() {
       {/* ── SAFETY ── */}
       <section className="bg-ink px-6 py-16 text-paper md:py-20">
         <div className="mx-auto max-w-6xl">
-          <h2 className="max-w-3xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
+          <h2 className="max-w-3xl font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">
             Built for the sector fraudsters target most
           </h2>
           <ul className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
@@ -251,7 +227,7 @@ export default function Page() {
       <section className="px-6 py-20 md:py-28">
         <div className="mx-auto max-w-4xl rounded-3xl border border-violet/20 bg-violet-soft p-10 md:p-14">
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">The best referral scheme in legal software</p>
-          <h2 className="mt-4 font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
+          <h2 className="mt-4 font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">
             Refer a firm, earn <span className="italic text-violet">£10 on every case</span> they run.
           </h2>
           <p className="mt-5 max-w-2xl text-lg text-ink-soft">
@@ -265,7 +241,7 @@ export default function Page() {
       {/* ── PRICING ── the guarantee first, then what it costs after. */}
       <section className="px-6 py-20 md:py-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="max-w-4xl font-serif text-4xl font-semibold tracking-tight md:text-5xl">Pay nothing until your team handles double the cases.</h2>
+          <h2 className="max-w-4xl font-serif text-4xl font-bold tracking-tight md:text-5xl">Pay nothing until your team handles double the cases.</h2>
           <p className="mt-4 max-w-2xl text-lg text-ink-soft">Measured across the firm before you start. Never one person’s figures.</p>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
