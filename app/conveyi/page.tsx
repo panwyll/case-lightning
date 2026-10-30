@@ -149,10 +149,10 @@ export default function Page() {
 
       {/* ── HERO ── the promise from the ads and the emails, and nothing else: the first screen is the headline, the button and the prompt. */}
       <section className="flex min-h-[calc(100svh-69px)] flex-col px-6 pt-10 pb-6 md:pb-8">
-        <div className="mx-auto flex max-w-5xl flex-1 flex-col items-center justify-center text-center">
-          <h1 className="font-serif text-[2.35rem] font-bold leading-[1.04] tracking-tight sm:text-6xl lg:text-[5rem]">
+        <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col items-center justify-center text-center">
+          <h1 className="font-serif text-[2.35rem] font-bold leading-[1.04] tracking-tight sm:text-6xl lg:text-[4.25rem] xl:text-[5rem]">
             <span className="block whitespace-nowrap uppercase">Double the cases</span>
-            <span className="block uppercase italic text-violet [text-wrap:balance]">without double the work</span>
+            <span className="block uppercase italic text-violet [text-wrap:balance] lg:whitespace-nowrap">without double the work</span>
           </h1>
           <div className="mt-8 flex justify-center md:mt-10">
             <BookDemo where="hero" />
