@@ -62,7 +62,7 @@ interface Screen { src: string; width: number; height: number; alt: string; phon
 const how: Array<{ title: string; line: string; shot: Screen }> = [
   {
     title: 'Measure',
-    line: 'On the same call, see where your team’s week goes and how much time it’s losing.',
+    line: 'See where your team’s week goes, and how much of it is being lost.',
     shot: { src: '/product/app-measure-issues.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' },
   },
   {
@@ -159,7 +159,7 @@ export default function Page() {
       <section id="explain" className="scroll-mt-16 bg-ink px-6 py-20 text-paper md:py-28">
         <div className="mx-auto max-w-6xl">
           <h2 className="font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">How it works</h2>
-          <p className="mt-4 max-w-2xl text-xl leading-relaxed text-paper/75">We plug CONVEYi into your Outlook and case system on the onboarding call. No consultants, no project.</p>
+          <p className="mt-4 max-w-2xl text-xl leading-relaxed text-paper/75">Find out how much time your team could save, on a 15-minute demo.</p>
           <ol className="mt-14 grid gap-16 md:gap-24">
             {how.map((h, i) => (
               <li key={h.title} className={`grid items-center gap-8 md:gap-12 ${i % 2 ? 'md:grid-cols-[2fr_1fr]' : 'md:grid-cols-[1fr_2fr]'}`}>
@@ -172,8 +172,9 @@ export default function Page() {
             ))}
           </ol>
           <div className="mt-24 flex flex-col items-center border-t border-white/10 pt-20 text-center">
-            <p className="max-w-3xl font-serif text-3xl font-bold leading-tight tracking-tight [text-wrap:balance] md:text-5xl">If we don’t double your capacity, you don’t pay.</p>
-            <p className="mt-10 font-serif text-xl font-bold uppercase tracking-tight md:text-2xl">Sound good?</p>
+            <p className="max-w-3xl font-serif text-3xl font-bold leading-tight tracking-tight [text-wrap:balance] md:text-5xl">It’s free until we’ve doubled your capacity.</p>
+            <p className="mt-5 text-xl text-paper/75 md:text-2xl">Let us prove it first. Then we’ll talk.</p>
+            <p className="mt-12 font-serif text-xl font-bold uppercase tracking-tight md:text-2xl">Sound good?</p>
             <div className="mt-6">
               <BookDemo where="guarantee" size="xl" />
             </div>
