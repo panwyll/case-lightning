@@ -62,12 +62,12 @@ interface Screen { src: string; width: number; height: number; alt: string; phon
 const how: Array<{ title: string; line: string; shot: Screen }> = [
   {
     title: 'Measure',
-    line: 'Where your team’s week goes, across the firm. That is your baseline.',
+    line: 'On the same call, see where your team’s week goes and how much time it’s losing.',
     shot: { src: '/product/app-measure-issues.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' },
   },
   {
     title: 'Automate',
-    line: 'Updates, chasers and orders drafted for one click, or sent on their own.',
+    line: 'Set up around how you work in as little as an afternoon. Updates, chasers and orders drafted for one click, or sent on their own.',
     shot: { src: '/product/app-automate.webp', width: 1806, height: 1470, alt: 'Tasks on one case: four searches to order and a chaser to the seller’s solicitor, each drafted with an Approve button, and below, what the case is waiting on and when each chase goes.' },
   },
   {
@@ -134,19 +134,20 @@ export default function Page() {
       <NavHeader signupHref={ctaHref(ROUTES.demo, PAGE_SOURCE, 'nav_demo')} signupLabel="Book A Demo" />
 
       {/* ── HERO ── the promise and the button; then the doubt, said out loud, and the way down to the answer.
-          One scale: headline 72, prompt 24, button 20, link 16; one rhythm: 40 between headline and button, 80 to the prompt. */}
+          Measured as drawn (ink to ink), not as boxes: 64 above and below the button; 16 from the prompt to Let Us Explain,
+          20 to the arrow at rest. Type: headline 72, prompt 24, button 20, link 16. */}
       <section className="flex min-h-[calc(100svh-69px)] flex-col justify-center px-6 py-12">
         <div className="mx-auto flex w-full max-w-7xl flex-col items-center text-center">
           <h1 className="font-serif text-[2.35rem] font-bold leading-[1.04] tracking-tight sm:text-6xl lg:text-[4.25rem] xl:text-[4.5rem]">
             <span className="block whitespace-nowrap uppercase">Double the cases</span>
             <span className="block uppercase italic text-violet [text-wrap:balance] lg:whitespace-nowrap">without double the work</span>
           </h1>
-          <div className="mt-10">
+          <div className="mt-[53px]">
             <BookDemo where="hero" size="xl" />
           </div>
-          <div className="mt-16 flex flex-col items-center md:mt-20">
-            <p className="font-serif text-xl font-bold uppercase tracking-tight md:text-2xl">Sound too good to be true?</p>
-            <a href="#explain" className="mt-3 inline-flex flex-col items-center gap-1 text-sm font-bold uppercase tracking-[0.14em] text-violet md:text-base" data-cta="hero_explain">
+          <div className="mt-16 flex flex-col items-center">
+            <p className="font-serif text-xl font-bold uppercase leading-none tracking-tight md:text-2xl">Sound too good to be true?</p>
+            <a href="#explain" className="mt-[11px] inline-flex flex-col items-center gap-2.5 text-sm font-bold uppercase leading-none tracking-[0.14em] text-violet md:mt-0.5 md:gap-1.5 md:text-base" data-cta="hero_explain">
               Let us explain
               <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="motion-safe:animate-bounce"><path d="m6 9 6 6 6-6" /></svg>
             </a>
@@ -158,7 +159,7 @@ export default function Page() {
       <section id="explain" className="scroll-mt-16 bg-ink px-6 py-20 text-paper md:py-28">
         <div className="mx-auto max-w-6xl">
           <h2 className="font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">How it works</h2>
-          <p className="mt-4 max-w-2xl text-xl leading-relaxed text-paper/75">We plug CONVEYi into your Outlook and case system in an afternoon. No consultants, no project. Then:</p>
+          <p className="mt-4 max-w-2xl text-xl leading-relaxed text-paper/75">We plug CONVEYi into your Outlook and case system on the onboarding call. No consultants, no project.</p>
           <ol className="mt-14 grid gap-16 md:gap-24">
             {how.map((h, i) => (
               <li key={h.title} className={`grid items-center gap-8 md:gap-12 ${i % 2 ? 'md:grid-cols-[2fr_1fr]' : 'md:grid-cols-[1fr_2fr]'}`}>
