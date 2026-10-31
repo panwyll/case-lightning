@@ -113,13 +113,41 @@ const safety: Array<{ icon: IconName; title: string }> = [
   { icon: 'log', title: 'Every step recorded' },
 ];
 
-function Shot({ src, alt, width, height, phone = false }: { src: string; alt: string; width: number; height: number; phone?: boolean }) {
-  return (
-    <figure className={phone ? 'mx-auto w-full max-w-[300px]' : ''}>
-      <div className={`overflow-hidden border bg-white shadow-card ${phone ? 'rounded-[2rem] border-[6px] border-ink/90' : 'rounded-xl border-line'}`}>
+/**
+ * A screenshot in the page's one frame. `fit` fixes the frame's shape so a row of them lines up whatever the shots'
+ * own sizes (the top of each is kept; the rest is cropped). Without it the frame takes the shot's own shape.
+ */
+function Shot({ src, alt, width, height, phone = false, fit, dark = false }: { src: string; alt: string; width: number; height: number; phone?: boolean; fit?: 'wide' | 'tall' | 'fill'; dark?: boolean }) {
+  if (phone) {
+    return (
+      <div className="mx-auto w-full max-w-[280px] overflow-hidden rounded-[2.25rem] border-[7px] border-ink bg-white shadow-card">
         <img src={src} alt={alt} width={width} height={height} className="block h-auto w-full" />
       </div>
-    </figure>
+    );
+  }
+  const frame = `overflow-hidden rounded-2xl bg-white shadow-card ring-1 ${dark ? 'ring-white/10' : 'ring-ink/10'}`;
+  if (fit) {
+    return (
+      <div className={`${frame} ${fit === 'wide' ? 'aspect-[16/10]' : fit === 'tall' ? 'aspect-[4/5]' : 'h-full'}`}>
+        <img src={src} alt={alt} width={width} height={height} className="block h-full w-full object-cover object-left-top" />
+      </div>
+    );
+  }
+  return (
+    <div className={frame}>
+      <img src={src} alt={alt} width={width} height={height} className="block h-auto w-full" />
+    </div>
+  );
+}
+
+/** Every section opens the same way: a small violet label, the heading, and at most one line under it, centred. */
+function SectionHead({ eyebrow, title, lede, dark = false }: { eyebrow: string; title: string; lede?: string; dark?: boolean }) {
+  return (
+    <div className="mx-auto max-w-3xl text-center">
+      <p className={`text-xs font-bold uppercase tracking-[0.18em] ${dark ? 'text-[#9B7BFF]' : 'text-violet'}`}>{eyebrow}</p>
+      <h2 className="mt-3 font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">{title}</h2>
+      {lede && <p className={`mt-4 text-lg leading-relaxed md:text-xl ${dark ? 'text-paper/70' : 'text-ink-soft'}`}>{lede}</p>}
+    </div>
   );
 }
 
@@ -133,49 +161,50 @@ export default function Page() {
     <main className="bg-paper text-ink antialiased">
       <NavHeader signupHref={ctaHref(ROUTES.demo, PAGE_SOURCE, 'nav_demo')} signupLabel="Book A Demo" />
 
-      {/* ── HERO ── the promise and the button; then the doubt, said out loud, and the way down to the answer.
-          Measured as drawn (ink to ink), not as boxes: 64 above and below the button; 16 from the prompt to Let Us Explain,
-          20 to the arrow at rest. Type: headline 72, prompt 24, button 20, link 16. */}
-      <section className="flex min-h-[calc(100svh-69px)] flex-col justify-center px-6 py-12">
-        <div className="mx-auto flex w-full max-w-7xl flex-col items-center text-center">
+      {/* ── HERO ── the promise, the one action, and the doubt said out loud with the way down to its answer.
+          The first screen: the promise and button centred in it, the scroll cue pinned to its foot. */}
+      <section className="relative flex min-h-[calc(100svh-69px)] flex-col px-6">
+        <div className="flex flex-1 flex-col items-center justify-center py-16 text-center">
           <h1 className="font-serif text-[2.35rem] font-bold leading-[1.04] tracking-tight sm:text-6xl lg:text-[4.25rem] xl:text-[4.5rem]">
             <span className="block whitespace-nowrap uppercase">Double the cases</span>
             <span className="block uppercase italic text-violet [text-wrap:balance] lg:whitespace-nowrap">without double the work</span>
           </h1>
-          <div className="mt-[53px]">
+          <div className="mt-12">
             <BookDemo where="hero" size="xl" />
           </div>
-          <div className="mt-16 flex flex-col items-center">
-            <p className="font-serif text-xl font-bold uppercase leading-none tracking-tight md:text-2xl">Sound too good to be true?</p>
-            <a href="#explain" className="mt-[11px] inline-flex flex-col items-center gap-2.5 text-sm font-bold uppercase leading-none tracking-[0.14em] text-violet md:mt-0.5 md:gap-1.5 md:text-base" data-cta="hero_explain">
-              Let us explain
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="motion-safe:animate-bounce"><path d="m6 9 6 6 6-6" /></svg>
-            </a>
-          </div>
+        </div>
+        <div className="flex flex-col items-center gap-4 pb-10 text-center">
+          <p className="font-serif text-lg font-bold uppercase tracking-tight md:text-xl">Sound too good to be true?</p>
+          <a href="#explain" className="group inline-flex items-center gap-2.5 rounded-full border border-ink/20 py-3 pl-6 pr-5 text-sm font-semibold text-ink transition hover:border-ink hover:bg-ink hover:text-paper" data-cta="hero_explain">
+            Let us explain
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="transition-transform group-hover:translate-y-0.5"><path d="M12 5v14M6 13l6 6 6-6" /></svg>
+          </a>
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── the explanation: plugged in in an afternoon, then a real sequence, then the guarantee and the ask. */}
-      <section id="explain" className="scroll-mt-16 bg-ink px-6 py-20 text-paper md:py-28">
+      {/* ── HOW IT WORKS ── the explanation: a sequence of three, each in the same frame, then the terms and the ask. */}
+      <section id="explain" className="scroll-mt-0 bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
-          <h2 className="font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">How it works</h2>
-          <p className="mt-4 max-w-2xl text-xl leading-relaxed text-paper/75">Find out how much time your team could save, on a 15-minute demo.</p>
-          <ol className="mt-14 grid gap-16 md:gap-24">
+          <SectionHead dark eyebrow="How it works" title="Find out how much time your team could save" lede="On a 15-minute demo." />
+          <ol className="mt-20 grid gap-20 md:gap-24">
             {how.map((h, i) => (
-              <li key={h.title} className={`grid items-center gap-8 md:gap-12 ${i % 2 ? 'md:grid-cols-[2fr_1fr]' : 'md:grid-cols-[1fr_2fr]'}`}>
-                <div className={i % 2 ? 'md:order-2' : ''}>
-                  <h3 className="font-serif text-3xl font-bold tracking-tight md:text-4xl"><span className="text-[#9B7BFF]">{i + 1}.</span> {h.title}</h3>
-                  <p className="mt-3 text-lg leading-relaxed text-paper/75">{h.line}</p>
+              <li key={h.title} className="grid items-center gap-8 md:grid-cols-12 md:gap-12">
+                <div className="md:col-span-4">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-violet font-serif text-lg font-bold text-white">{i + 1}</span>
+                  <h3 className="mt-5 font-serif text-3xl font-bold tracking-tight md:text-4xl">{h.title}</h3>
+                  <p className="mt-3 text-lg leading-relaxed text-paper/70">{h.line}</p>
                 </div>
-                <Shot {...h.shot} />
+                <div className="md:col-span-8">
+                  <Shot {...h.shot} fit="wide" dark />
+                </div>
               </li>
             ))}
           </ol>
-          <div className="mt-24 flex flex-col items-center border-t border-white/10 pt-20 text-center">
-            <p className="max-w-3xl font-serif text-3xl font-bold leading-tight tracking-tight [text-wrap:balance] md:text-5xl">It’s free until we’ve doubled your capacity.</p>
-            <p className="mt-5 text-xl text-paper/75 md:text-2xl">Let us prove it first. Then we’ll talk.</p>
-            <p className="mt-12 font-serif text-xl font-bold uppercase tracking-tight md:text-2xl">Sound good?</p>
-            <div className="mt-6">
+          <div className="mx-auto mt-24 max-w-3xl border-t border-white/10 pt-20 text-center md:mt-32">
+            <p className="font-serif text-3xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">It’s free until we’ve doubled your capacity.</p>
+            <p className="mt-4 text-lg leading-relaxed text-paper/70 md:text-xl">Let us prove it first. Then we’ll talk.</p>
+            <p className="mt-12 font-serif text-lg font-bold uppercase tracking-tight md:text-xl">Sound good?</p>
+            <div className="mt-5">
               <BookDemo where="guarantee" size="xl" />
             </div>
           </div>
@@ -183,24 +212,37 @@ export default function Page() {
       </section>
 
       {/* ── THE VIDEO ── */}
-      <section className="border-b border-line bg-paper-soft px-6 py-20 md:py-24">
-        <div className="mx-auto max-w-4xl">
-          <h2 className="text-center font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">See it in 43 seconds</h2>
-          <div className="mt-10">
-            <Vsl sources={[{ src: '/product/vsl-v15.mp4', type: 'video/mp4' }, { src: '/product/vsl-v15.webm', type: 'video/webm' }]} poster="/product/vsl-poster-5.webp" label="CONVEYi in 43 seconds" />
+      <section className="bg-paper-soft px-6 py-24 md:py-32">
+        <div className="mx-auto max-w-6xl">
+          <SectionHead eyebrow="The product" title="See it in 43 seconds" />
+          <div className="mx-auto mt-16 max-w-4xl">
+            <Vsl sources={[{ src: '/product/vsl-v15.mp4', type: 'video/mp4' }, { src: '/product/vsl-v15.webm', type: 'video/webm' }]} poster="/product/vsl-poster-6.webp" label="CONVEYi in 43 seconds" />
           </div>
         </div>
       </section>
 
-      {/* ── THE PRODUCT ── */}
-      <section className="bg-violet px-6 py-20 text-white md:py-24">
+      {/* ── UPDATES AT A GLANCE ── the board across the top; the case and the client's phone in one row of equal height. */}
+      <section className="bg-violet px-6 py-24 text-white md:py-32">
         <div className="mx-auto max-w-6xl">
-          <h2 className="font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">Updates at a glance</h2>
-          <div className="mt-12 grid items-start gap-14 md:grid-cols-[2fr_1fr] md:gap-12">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/70">Updates at a glance</p>
+            <h2 className="mt-3 font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Firm-wide, on every case, and for your clients</h2>
+          </div>
+          <div className="mt-16 grid gap-6 md:grid-cols-3">
             {day.map((d, i) => (
-              <div key={d.title} className={i === 0 ? 'md:col-span-2' : ''}>
-                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-white/75">{d.title}</h3>
-                <div className="mt-4"><Shot src={d.src} alt={d.alt} width={d.width} height={d.height} phone={d.phone} /></div>
+              <div key={d.title} className={i === 0 ? 'md:col-span-3' : i === 1 ? 'md:col-span-2' : 'relative min-h-[360px] overflow-hidden md:min-h-0'}>
+                <p className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-white/70">{d.title}</p>
+                {d.phone ? (
+                  <>
+                    {/* The phone is taller than the row: it shows from the top and fades out at the row's foot. */}
+                    <div className="md:absolute md:inset-x-0 md:top-8">
+                      <Shot src={d.src} alt={d.alt} width={d.width} height={d.height} phone />
+                    </div>
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-violet to-transparent" />
+                  </>
+                ) : (
+                  <Shot src={d.src} alt={d.alt} width={d.width} height={d.height} />
+                )}
               </div>
             ))}
           </div>
@@ -208,57 +250,38 @@ export default function Page() {
       </section>
 
       {/* ── SAFETY ── */}
-      <section className="bg-ink px-6 py-16 text-paper md:py-20">
+      <section className="bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
-          <h2 className="max-w-3xl font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">
-            Built for the sector fraudsters target most
-          </h2>
-          <ul className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          <SectionHead dark eyebrow="Safety" title="Built for the sector fraudsters target most" />
+          <ul className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {safety.map((s) => (
-              <li key={s.title} className="flex items-center gap-3">
-                <span className="shrink-0 text-violet-soft"><Icon name={s.icon} /></span>
-                <span className="text-lg font-semibold leading-snug">{s.title}</span>
+              <li key={s.title} className="rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-violet/30 text-[#C9B8FA]"><Icon name={s.icon} /></span>
+                <p className="mt-5 text-lg font-bold leading-snug">{s.title}</p>
               </li>
             ))}
           </ul>
         </div>
       </section>
 
-      {/* ── REFERRAL ── (parked: lib/flags.ts) */}
-      {REFERRALS_ENABLED && (
-      <section className="px-6 py-20 md:py-28">
-        <div className="mx-auto max-w-4xl rounded-3xl border border-violet/20 bg-violet-soft p-10 md:p-14">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">The best referral scheme in legal software</p>
-          <h2 className="mt-4 font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">
-            Refer a firm, earn <span className="italic text-violet">£10 on every case</span> they run.
-          </h2>
-          <p className="mt-5 max-w-2xl text-lg text-ink-soft">
-            Not a one-off finder’s fee — £10 in account credit for every case a firm you refer is billed for,
-            for as long as they’re a customer. Refer a handful and your own subscription pays for itself.
-          </p>
-        </div>
-      </section>
-      )}
-
       {/* ── PRICING ── the guarantee first, then what it costs after. */}
-      <section className="px-6 py-20 md:py-24">
+      <section className="px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
-          <h2 className="max-w-4xl font-serif text-4xl font-bold tracking-tight md:text-5xl">Pay nothing until your team handles double the cases.</h2>
-          <p className="mt-4 max-w-2xl text-lg text-ink-soft">Measured across the firm before you start. Never one person’s figures.</p>
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
+          <SectionHead eyebrow="Pricing" title="Pay nothing until your team handles double the cases" lede="Measured across the firm before you start. Never one person’s figures." />
+          <div className="mt-16 grid gap-6 md:grid-cols-3">
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
-              <div className="text-sm font-semibold uppercase tracking-widest text-violet">Until it has doubled</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£0</div>
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-violet">Until it has doubled</div>
+              <div className="mt-4 font-serif text-5xl font-bold">£0</div>
               <p className="mt-3 text-ink-soft">Everything, every case.</p>
             </div>
             <div className="rounded-2xl border border-line bg-paper-soft p-8">
-              <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Then, per case</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£80<span className="font-sans text-lg font-normal text-ink-soft">/case + VAT</span></div>
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Then, per case</div>
+              <div className="mt-4 font-serif text-5xl font-bold">£80<span className="font-sans text-lg font-normal text-ink-soft"> + VAT</span></div>
               <p className="mt-3 text-ink-soft">Once per case.</p>
             </div>
             <div className="rounded-2xl border border-line bg-paper-soft p-8">
-              <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Seats and monthly fee</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£0</div>
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Seats and monthly fee</div>
+              <div className="mt-4 font-serif text-5xl font-bold">£0</div>
               <p className="mt-3 text-ink-soft">Everyone in the firm.</p>
             </div>
           </div>
@@ -266,14 +289,14 @@ export default function Page() {
       </section>
 
       {/* ── QUESTIONS ── the objections, answered in the open. */}
-      <section className="border-t border-line bg-paper-soft px-6 py-20 md:py-24">
+      <section className="border-t border-line bg-paper-soft px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
-          <h2 className="font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">Questions</h2>
-          <dl className="mt-10 grid gap-x-12 gap-y-8 md:grid-cols-2">
+          <SectionHead eyebrow="Questions" title="What firms ask us" />
+          <dl className="mx-auto mt-16 grid max-w-5xl gap-x-12 gap-y-10 md:grid-cols-2">
             {questions.map((x) => (
               <div key={x.q}>
                 <dt className="text-xl font-bold">{x.q}</dt>
-                <dd className="mt-2 text-lg text-ink-soft">{x.a}</dd>
+                <dd className="mt-2 text-lg leading-relaxed text-ink-soft">{x.a}</dd>
               </div>
             ))}
           </dl>
@@ -281,13 +304,13 @@ export default function Page() {
       </section>
 
       {/* ── FINAL CTA ── */}
-      <section className="bg-violet px-6 py-20 text-white md:py-24">
-        <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-8 md:flex-row md:items-center">
-          <div>
-            <h2 className="max-w-2xl font-serif text-4xl font-bold leading-tight tracking-tight md:text-5xl">Same team. Double the cases.</h2>
-            <p className="mt-4 max-w-xl text-lg text-white/80">15 minutes on cases like yours, and how we would measure your baseline.</p>
+      <section className="bg-violet px-6 py-24 text-white md:py-32">
+        <div className="mx-auto max-w-3xl text-center">
+          <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Same team. Double the cases.</h2>
+          <p className="mt-4 text-lg leading-relaxed text-white/80 md:text-xl">15 minutes on cases like yours, and how we would measure your baseline.</p>
+          <div className="mt-10">
+            <BookDemo where="footer" onColour size="xl" />
           </div>
-          <BookDemo where="footer" onColour />
         </div>
       </section>
 
