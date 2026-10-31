@@ -214,7 +214,7 @@ export default function Page() {
       {/* ── THE VIDEO ── */}
       <section className="bg-paper-soft px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead eyebrow="The product" title="See it in 43 seconds" />
+          <SectionHead eyebrow="The video" title="See it in 43 seconds" />
           <div className="mx-auto mt-16 max-w-4xl">
             <Vsl sources={[{ src: '/product/vsl-v15.mp4', type: 'video/mp4' }, { src: '/product/vsl-v15.webm', type: 'video/webm' }]} poster="/product/vsl-poster-6.webp" label="CONVEYi in 43 seconds" />
           </div>
@@ -225,8 +225,9 @@ export default function Page() {
       <section className="bg-violet px-6 py-24 text-white md:py-32">
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/70">Updates at a glance</p>
-            <h2 className="mt-3 font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Firm-wide, on every case, and for your clients</h2>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/70">The product</p>
+            <h2 className="mt-3 font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Updates at a glance</h2>
+            <p className="mt-4 text-lg leading-relaxed text-white/80 md:text-xl">Nothing to hold in your head. Every case, where it is and who it’s waiting on, in one place.</p>
           </div>
           <div className="mt-16 grid gap-6 md:grid-cols-3">
             {day.map((d, i) => (
@@ -291,7 +292,7 @@ export default function Page() {
       {/* ── QUESTIONS ── the objections, answered in the open. */}
       <section className="border-t border-line bg-paper-soft px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead eyebrow="Questions" title="What firms ask us" />
+          <SectionHead eyebrow="FAQ" title="Questions" />
           <dl className="mx-auto mt-16 grid max-w-5xl gap-x-12 gap-y-10 md:grid-cols-2">
             {questions.map((x) => (
               <div key={x.q}>
