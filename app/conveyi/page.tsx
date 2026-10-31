@@ -185,12 +185,11 @@ export default function Page() {
       {/* ── HOW IT WORKS ── the explanation: a sequence of three, each in the same frame, then the terms and the ask. */}
       <section id="explain" className="scroll-mt-0 bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead dark eyebrow="How it works" title="Fee earners are capped by two things" />
-          <div className="mx-auto mt-10 max-w-3xl text-center font-serif text-2xl font-bold leading-snug tracking-tight md:text-3xl">
-            <p>How many emails they can handle.</p>
-            <p className="mt-2">How much case information they can keep in their head.</p>
+          <div className="mx-auto max-w-4xl text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9B7BFF]">What we hear</p>
+            <blockquote className="mt-5 font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-6xl">“I spend all day firefighting.”</blockquote>
+            <p className="mt-10 text-xl leading-relaxed text-paper/80 [text-wrap:balance] md:text-2xl">A fee earner is capped by two things: how many emails they can handle, and how much case information they can keep in their head. CONVEYi handles the emails and remembers the case information, so your fee earners can take on more.</p>
           </div>
-          <p className="mx-auto mt-10 max-w-2xl text-center text-xl leading-relaxed text-paper/80 [text-wrap:balance] md:text-2xl">CONVEYi handles the emails and remembers the case information, so your fee earners can take on more.</p>
           <ol className="mt-24 grid gap-20 md:gap-24">
             {how.map((h, i) => (
               <li key={h.title} className="grid items-center gap-8 md:grid-cols-12 md:gap-12">
