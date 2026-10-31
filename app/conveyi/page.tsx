@@ -152,8 +152,8 @@ function SectionHead({ eyebrow, title, lede, dark = false }: { eyebrow: string; 
 }
 
 /** One action on this page: book a demo. */
-function BookDemo({ where, onColour = false, size = 'lg' }: { where: string; onColour?: boolean; size?: 'lg' | 'xl' }) {
-  return <Cta label="Book A Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size={size} />;
+function BookDemo({ where, onColour = false, size = 'lg', className = '' }: { where: string; onColour?: boolean; size?: 'lg' | 'xl'; className?: string }) {
+  return <Cta label="Book A Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size={size} className={className} />;
 }
 
 export default function Page() {
@@ -169,15 +169,15 @@ export default function Page() {
             <span className="block whitespace-nowrap uppercase">Double the cases</span>
             <span className="block uppercase italic text-violet [text-wrap:balance] lg:whitespace-nowrap">without double the work</span>
           </h1>
-          <div className="mt-12">
-            <BookDemo where="hero" size="xl" />
+          <div className="mt-12 flex w-full justify-center">
+            <BookDemo where="hero" size="xl" className="w-2/3 sm:w-auto" />
           </div>
         </div>
         <div className="flex flex-col items-center gap-4 pb-10 text-center">
-          <p className="font-serif text-lg font-bold uppercase tracking-tight md:text-xl">Sound too good to be true?</p>
-          <a href="#explain" className="group inline-flex items-center gap-2.5 rounded-full border border-ink/20 py-3 pl-6 pr-5 text-sm font-semibold text-ink transition hover:border-ink hover:bg-ink hover:text-paper" data-cta="hero_explain">
+          <p className="font-serif text-xl font-bold uppercase tracking-tight md:text-2xl">Sound too good to be true?</p>
+          <a href="#explain" className="group inline-flex flex-col items-center gap-2 text-base font-semibold text-violet underline decoration-violet/40 underline-offset-[6px] transition hover:decoration-violet md:text-lg" data-cta="hero_explain">
             Let us explain
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="transition-transform group-hover:translate-y-0.5"><path d="M12 5v14M6 13l6 6 6-6" /></svg>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="motion-safe:animate-bounce"><path d="M12 5v14M6 13l6 6 6-6" /></svg>
           </a>
         </div>
       </section>
