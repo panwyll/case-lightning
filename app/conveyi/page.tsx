@@ -185,18 +185,16 @@ export default function Page() {
       {/* ── HOW IT WORKS ── the explanation: a sequence of three, each in the same frame, then the terms and the ask. */}
       <section id="explain" className="scroll-mt-0 bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead dark eyebrow="How it works" title="Every fee earner has two ceilings" />
+          <SectionHead dark eyebrow="How it works" title="A fee earner can only do so much" />
           <div className="mx-auto mt-12 grid max-w-4xl gap-6 md:grid-cols-2">
             <div className="rounded-2xl bg-white/5 p-8 ring-1 ring-white/10">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9B7BFF]">Ceiling one</p>
-              <p className="mt-3 font-serif text-2xl font-bold leading-snug tracking-tight md:text-3xl">The emails they can get through in a day.</p>
+              <p className="font-serif text-2xl font-bold leading-snug tracking-tight md:text-3xl">There’s a limit to how many emails one person can deal with in a day.</p>
             </div>
             <div className="rounded-2xl bg-white/5 p-8 ring-1 ring-white/10">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9B7BFF]">Ceiling two</p>
-              <p className="mt-3 font-serif text-2xl font-bold leading-snug tracking-tight md:text-3xl">The case detail they can hold in their head.</p>
+              <p className="font-serif text-2xl font-bold leading-snug tracking-tight md:text-3xl">And a limit to how much case information they can keep in their head.</p>
             </div>
           </div>
-          <p className="mx-auto mt-10 max-w-2xl text-center text-xl leading-relaxed text-paper/80 [text-wrap:balance] md:text-2xl">CONVEYi lifts both. The same team takes on double the cases.</p>
+          <p className="mx-auto mt-10 max-w-2xl text-center text-xl leading-relaxed text-paper/80 [text-wrap:balance] md:text-2xl">That’s what caps a caseload. CONVEYi deals with the emails and keeps track of the detail, so the same people can run more cases.</p>
           <ol className="mt-24 grid gap-20 md:gap-24">
             {how.map((h, i) => (
               <li key={h.title} className="grid items-center gap-8 md:grid-cols-12 md:gap-12">
