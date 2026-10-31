@@ -185,8 +185,19 @@ export default function Page() {
       {/* ── HOW IT WORKS ── the explanation: a sequence of three, each in the same frame, then the terms and the ask. */}
       <section id="explain" className="scroll-mt-0 bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead dark eyebrow="How it works" title="Find out how much time your team could save" lede="On a 15-minute demo." />
-          <ol className="mt-20 grid gap-20 md:gap-24">
+          <SectionHead dark eyebrow="How it works" title="Every fee earner has two ceilings" />
+          <div className="mx-auto mt-12 grid max-w-4xl gap-6 md:grid-cols-2">
+            <div className="rounded-2xl bg-white/5 p-8 ring-1 ring-white/10">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9B7BFF]">Ceiling one</p>
+              <p className="mt-3 font-serif text-2xl font-bold leading-snug tracking-tight md:text-3xl">The emails they can get through in a day.</p>
+            </div>
+            <div className="rounded-2xl bg-white/5 p-8 ring-1 ring-white/10">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9B7BFF]">Ceiling two</p>
+              <p className="mt-3 font-serif text-2xl font-bold leading-snug tracking-tight md:text-3xl">The case detail they can hold in their head.</p>
+            </div>
+          </div>
+          <p className="mx-auto mt-10 max-w-2xl text-center text-xl leading-relaxed text-paper/80 [text-wrap:balance] md:text-2xl">CONVEYi lifts both. The same team takes on double the cases.</p>
+          <ol className="mt-24 grid gap-20 md:gap-24">
             {how.map((h, i) => (
               <li key={h.title} className="grid items-center gap-8 md:grid-cols-12 md:gap-12">
                 <div className="md:col-span-4">
@@ -308,7 +319,7 @@ export default function Page() {
       <section className="bg-violet px-6 py-24 text-white md:py-32">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Same team. Double the cases.</h2>
-          <p className="mt-4 text-lg leading-relaxed text-white/80 md:text-xl">15 minutes on cases like yours, and how we would measure your baseline.</p>
+          <p className="mt-4 text-lg leading-relaxed text-white/80 md:text-xl">Find out how much time your team could save, in 15 minutes.</p>
           <div className="mt-10">
             <BookDemo where="footer" onColour size="xl" />
           </div>
