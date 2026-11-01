@@ -53,6 +53,7 @@ export const APPSOURCE_URL = 'https://appsource.microsoft.com/en-gb/product/offi
 // Nav links for the CONVEYi product site.
 export const CONVEYI_NAV = [
   { href: ROUTES.howItWorks, label: 'How It Works' },
+  { href: `${ROUTES.conveyi}#pricing`, label: 'Pricing' },
   { href: ROUTES.faq, label: 'FAQ' },
 ] as const;
 
@@ -88,6 +89,7 @@ export function SiteFooter() {
         </div>
         <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-ink-soft">
           <a href={ROUTES.howItWorks} className="hover:text-ink">How It Works</a>
+          <a href={`${ROUTES.conveyi}#pricing`} className="hover:text-ink">Pricing</a>
           <a href={ROUTES.faq} className="hover:text-ink">FAQ</a>
           <a href={ROUTES.support} className="hover:text-ink">Support</a>
           <a href="/conveyi/security" className="hover:text-ink">Security</a>

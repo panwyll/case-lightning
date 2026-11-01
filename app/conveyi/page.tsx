@@ -179,9 +179,9 @@ export default function Page() {
               </li>
             ))}
           </ol>
-          <div className="mx-auto mt-24 max-w-3xl border-t border-white/10 pt-20 text-center md:mt-32">
+          <div id="pricing" className="mx-auto mt-24 max-w-3xl scroll-mt-24 border-t border-white/10 pt-20 text-center md:mt-32">
             <p className="font-serif text-3xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">It’s free until we’ve doubled your capacity.</p>
-            <p className="mt-4 text-lg leading-relaxed text-paper/70 md:text-xl">Let us prove it first. Then we’ll talk.</p>
+            <p className="mt-4 text-lg leading-relaxed text-paper/70 md:text-xl">Then £80 per case.</p>
             <p className="mt-12 font-serif text-lg font-bold uppercase tracking-tight md:text-xl">Sound good?</p>
             <div className="mt-5">
               <BookDemo where="guarantee" size="xl" />
