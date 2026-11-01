@@ -59,6 +59,9 @@ const CASEVIEW_SHOT = {
 
 interface Screen { src: string; width: number; height: number; alt: string; phone?: boolean }
 
+/** The measurement: a typical week across the firm, and the work taking it (Key Issues). */
+const MEASURE_SHOT: Screen = { src: '/product/app-measure-issues.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' };
+
 const how: Array<{ title: string; line: string; shot: Screen }> = [
   {
     title: 'Save time',
@@ -211,27 +214,40 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── the sequence of three, each in the same frame, then the terms and the ask. */}
-      <section className="px-6 py-24 md:py-32">
+      {/* ── THE DEMO ── what a firm gets from 15 minutes: its own week, measured. */}
+      <section className="bg-paper-soft px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead eyebrow="How it works" title="Find out how much time your team could save" lede="On the demo, we measure where your team’s week goes." />
+          <SectionHead eyebrow="The demo" title="See how much spare capacity you can win back on a demo" />
+          <div className="mx-auto mt-16 max-w-5xl">
+            <Shot {...MEASURE_SHOT} />
+          </div>
+          <div className="mt-12 flex justify-center">
+            <BookDemo where="measure" size="xl" />
+          </div>
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ── one step for each cap, then the terms and the ask. */}
+      <section className="bg-ink px-6 py-24 text-paper md:py-32">
+        <div className="mx-auto max-w-6xl">
+          <SectionHead dark eyebrow="CONVEYi" title="How it works" />
           <ol className="mt-20 grid gap-20 md:gap-24">
             {how.map((h, i) => (
               <li key={h.title} className="grid items-center gap-8 md:grid-cols-12 md:gap-12">
                 <div className="md:col-span-4">
                   <span className="flex h-10 w-10 items-center justify-center rounded-full bg-violet font-serif text-lg font-bold text-white">{i + 1}</span>
                   <h3 className="mt-5 font-serif text-3xl font-bold tracking-tight md:text-4xl">{h.title}</h3>
-                  <p className="mt-3 text-lg leading-relaxed text-ink-soft">{h.line}</p>
+                  <p className="mt-3 text-lg leading-relaxed text-paper/70">{h.line}</p>
                 </div>
                 <div className="md:col-span-8">
-                  <Shot {...h.shot} />
+                  <Shot {...h.shot} dark />
                 </div>
               </li>
             ))}
           </ol>
-          <div className="mx-auto mt-24 max-w-3xl border-t border-line pt-20 text-center md:mt-32">
+          <div className="mx-auto mt-24 max-w-3xl border-t border-white/10 pt-20 text-center md:mt-32">
             <p className="font-serif text-3xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">It’s free until we’ve doubled your capacity.</p>
-            <p className="mt-4 text-lg leading-relaxed text-ink-soft md:text-xl">Let us prove it first. Then we’ll talk.</p>
+            <p className="mt-4 text-lg leading-relaxed text-paper/70 md:text-xl">Let us prove it first. Then we’ll talk.</p>
             <p className="mt-12 font-serif text-lg font-bold uppercase tracking-tight md:text-xl">Sound good?</p>
             <div className="mt-5">
               <BookDemo where="guarantee" size="xl" />
