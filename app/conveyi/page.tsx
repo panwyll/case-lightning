@@ -12,45 +12,7 @@ export const metadata: Metadata = {
 
 const PAGE_SOURCE = 'landing';
 
-type IconName = 'pound' | 'bank' | 'spoof' | 'log';
-
-// Hand-rolled line icons: stroked, currentColor, 24px grid.
-const ICON_PATHS: Record<IconName, React.ReactNode> = {
-  pound: <path d="M16 6.5A4 4 0 0 0 8.5 8v12M6 13h7M6 20h11" />,
-  bank: <path d="M3 10 12 4l9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18" />,
-  spoof: (
-    <>
-      <path d="M12 3l7 3v5.2c0 4.4-2.9 8-7 9.8-4.1-1.8-7-5.4-7-9.8V6l7-3z" />
-      <path d="M12 8v4M12 15.5v.01" />
-    </>
-  ),
-  log: (
-    <>
-      <path d="M6 3h9l3 3v15H6z" />
-      <path d="M9 9h6M9 13h6M9 17h3" />
-    </>
-  ),
-};
-
-function Icon({ name }: { name: IconName }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-6 w-6"
-      aria-hidden="true"
-    >
-      {ICON_PATHS[name]}
-    </svg>
-  );
-}
-
 // Captured from the running app with the local firm the dev seed creates (scripts/dev-seed.ts, dev-book.ts, dev-measure.ts).
-
 
 interface Screen { src: string; width: number; height: number; alt: string; phone?: boolean }
 
@@ -73,13 +35,6 @@ const questions: Array<{ q: string; a: string }> = [
   { q: 'Do we have to change systems?', a: 'No. It works on the Outlook, InTouch and LEAP you already use. Nothing to migrate.' },
   { q: 'Where does our data go?', a: 'Your emails and documents stay in your own Microsoft 365.' },
   { q: 'What if we don’t double our capacity?', a: 'Then you don’t pay. We measure your firm’s capacity before you start, and it’s free until that has doubled.' },
-];
-
-const safety: Array<{ icon: IconName; title: string }> = [
-  { icon: 'pound', title: 'A person signs off money' },
-  { icon: 'bank', title: 'Bank details verified by phone' },
-  { icon: 'spoof', title: 'Spoofed senders caught' },
-  { icon: 'log', title: 'Every step recorded' },
 ];
 
 /**
@@ -245,30 +200,15 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── SAFETY ── */}
+      {/* ── QUESTIONS ── the objections, answered in the open. */}
       <section className="bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead dark title="Built for the sector fraudsters target most" />
-          <ul className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {safety.map((s) => (
-              <li key={s.title} className="rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-violet/30 text-[#C9B8FA]"><Icon name={s.icon} /></span>
-                <p className="mt-5 text-lg font-bold leading-snug">{s.title}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      {/* ── QUESTIONS ── the objections, answered in the open. */}
-      <section className="bg-paper-soft px-6 py-24 md:py-32">
-        <div className="mx-auto max-w-6xl">
-          <SectionHead title="Questions" />
+          <SectionHead dark title="Questions" />
           <dl className="mx-auto mt-16 grid max-w-5xl gap-x-12 gap-y-10 md:grid-cols-2">
             {questions.map((x) => (
               <div key={x.q}>
                 <dt className="text-xl font-bold">{x.q}</dt>
-                <dd className="mt-2 text-lg leading-relaxed text-ink-soft">{x.a}</dd>
+                <dd className="mt-2 text-lg leading-relaxed text-paper/70">{x.a}</dd>
               </div>
             ))}
           </dl>
