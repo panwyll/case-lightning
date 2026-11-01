@@ -2,6 +2,7 @@ import { REFERRALS_ENABLED } from '@/lib/flags';
 import type { Metadata } from 'next';
 import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../_components/shared';
 import { Vsl } from './Vsl';
+import { MINUTE_PER_CASE_VALUE, VALUE_BASIS } from '@/lib/value';
 
 export const metadata: Metadata = {
   title: 'CONVEYi — Double the cases without double the work | Case Lightning',
@@ -189,9 +190,9 @@ export default function Page() {
               <p className="mx-auto max-w-xs text-xl leading-snug text-paper/80 [text-wrap:balance] md:max-w-none md:text-2xl">Every minute saved per case is worth</p>
               <p className="mt-3 font-serif text-6xl font-bold leading-none tracking-tight text-[#9B7BFF] md:text-8xl">
                 <span className="group relative inline-block">
-                  <span tabIndex={0} aria-describedby="minute-basis" className="inline-block cursor-help underline decoration-[#9B7BFF]/50 decoration-dotted decoration-4 underline-offset-[10px] outline-none focus-visible:decoration-solid md:-translate-x-[3px]">£1,314</span>
+                  <span tabIndex={0} aria-describedby="minute-basis" className="inline-block cursor-help underline decoration-[#9B7BFF]/50 decoration-dotted decoration-4 underline-offset-[10px] outline-none focus-visible:decoration-solid md:-translate-x-[3px]">£{MINUTE_PER_CASE_VALUE.toLocaleString('en-GB')}</span>
                   <span id="minute-basis" role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-4 w-72 -translate-x-1/2 rounded-xl bg-paper px-4 py-3 text-left font-sans text-sm font-medium leading-snug tracking-normal text-ink opacity-0 shadow-card transition group-hover:opacity-100 group-focus-within:opacity-100">
-                    Based on 30 completions a month and £1,000 in average fees.
+                    Based on {VALUE_BASIS.completionsPerMonth} completions a month and £{VALUE_BASIS.averageFee.toLocaleString('en-GB')} in average fees.
                     <span className="absolute left-1/2 top-full -ml-2 border-8 border-transparent border-t-paper" aria-hidden="true" />
                   </span>
                 </span>
@@ -206,12 +207,12 @@ export default function Page() {
       <section className="bg-paper-soft px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
           <SectionHead title="See how much spare capacity you can win back on a demo" />
-          {/* The two cards from the measurement, as they are in the app: side by side on a laptop, one above the other on a phone, where Key Issues shows its top six so the labels stay readable. */}
+          {/* The two cards from the measurement, as they are in the app: side by side on a laptop, one above the other on a phone, where Key Issues shows its top six so the labels stay readable. Per conveyancer, valued on lib/value.ts. */}
           <div className="mx-auto mt-16 grid max-w-md items-start gap-5 md:max-w-5xl md:grid-cols-[1fr_2fr] md:gap-6">
-            <img src="/product/app-measure-week.webp" width={696} height={754} alt="A typical week across the firm: 56% red, 18% amber, 26% green." className="block h-auto w-full [filter:drop-shadow(0_14px_24px_rgba(21,16,31,0.12))]" />
+            <img src="/product/app-measure-week.webp" width={696} height={754} alt="A typical week per conveyancer: 56% red, 18% amber, 26% green; red and amber enough to double the cases, worth £360k a year." className="block h-auto w-full [filter:drop-shadow(0_14px_24px_rgba(21,16,31,0.12))]" />
             <picture>
               <source media="(min-width: 768px)" srcSet="/product/app-measure-issues-card.webp" width={1392} height={754} />
-              <img src="/product/app-measure-issues-narrow.webp" width={1008} height={710} alt="Key Issues: the hours a week each kind of work takes, from answering client status requests down." className="block h-auto w-full [filter:drop-shadow(0_14px_24px_rgba(21,16,31,0.12))]" />
+              <img src="/product/app-measure-issues-narrow.webp" width={1008} height={742} alt="Key Issues: the hours a week each kind of work takes a conveyancer, and what each is worth a year, from answering client status requests (5.2 hours, £58k) down." className="block h-auto w-full [filter:drop-shadow(0_14px_24px_rgba(21,16,31,0.12))]" />
             </picture>
           </div>
           <div className="mt-12 flex justify-center">

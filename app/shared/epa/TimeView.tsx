@@ -40,6 +40,8 @@ const CSS = `
 .tv-pbar{display:flex;flex-direction:column;justify-content:flex-end;height:212px;border-bottom:1px solid #e6e8ee}
 .tv-pbar i{display:block;border-radius:4px 4px 0 0;min-height:2px}
 .tv-pbar small{display:block;text-align:center;font-size:11.5px;font-weight:800;color:#0f172a;margin-bottom:4px}
+.tv-pbar small em{display:block;font-style:normal;font-weight:700;color:#64748b}
+.tv-pareto.v .tv-pbar{height:228px}
 .tv-plabel{font-size:11.5px;font-weight:700;color:#475569;text-align:center;line-height:1.25;margin-top:8px;min-height:44px}
 .tv-pcol:hover i{filter:brightness(.92)}
 .tv-pcol:hover .tv-plabel{color:#0f172a}
@@ -49,6 +51,8 @@ const CSS = `
 .tv-tipped:hover .tv-tip,.tv-tipped:focus-within .tv-tip{display:block}
 .tv-legend .tv-tip{bottom:calc(100% + 6px);left:0}
 .tv-legend .tv-tipped{cursor:default}
+.tv-cardhead .tv-tip{top:calc(100% + 6px);right:0}
+.tv-cardhead .tv-tipped{cursor:help}
 .tv-actions{margin-top:16px}
 .tv-row{display:grid;grid-template-columns:330px 64px 64px 72px minmax(0,1fr);gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid #f1f3f7;font-size:13.5px}
 .tv-row:last-child{border-bottom:0}
@@ -182,19 +186,19 @@ export function RagCard({ title: heading, right, hours, share, foot, unseen }: {
   );
 }
 
-/** The Pareto of red and amber: the biggest few as bars, labels written out. */
-export function ParetoCard({ lines }: { lines: ParetoBar[] }) {
+/** The Pareto of red and amber: the biggest few as bars, labels written out; with `value`, what each is worth under its hours. */
+export function ParetoCard({ lines, right, value }: { lines: ParetoBar[]; right?: ReactNode; value?: (hours: number) => string }) {
   const bars = lines.slice(0, PARETO_BARS);
   const top = Math.max(0.0001, ...bars.map((b) => b.hours));
   return (
     <section className="tv-card">
-      <div className="tv-cardhead"><h2>Key Issues</h2></div>
+      <div className="tv-cardhead"><h2>Key Issues</h2>{right && <span className="r">{right}</span>}</div>
       {!bars.length ? <p className="tv-none">No red or amber time recorded yet.</p> : (
-        <div className="tv-pareto">
+        <div className={`tv-pareto${value ? ' v' : ''}`}>
           {bars.map((b) => (
             <div key={b.kind} className="tv-pcol">
               <div className="tv-pbar">
-                <small>{hrs(b.hours)}</small>
+                <small>{hrs(b.hours)}{value && <em>{value(b.hours)}</em>}</small>
                 <i className={`tv-${b.rag}`} style={{ height: `${(b.hours / top) * 180}px` }} />
               </div>
               <div className="tv-plabel">{SHORT[b.kind] ?? b.label}</div>

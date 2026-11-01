@@ -9,6 +9,7 @@ import { ArrowLeft, Check, ChevronRight, Loader, X } from '@/app/shared/icons';
 import { MIN_SENT_PER_WEEK, type Measurement } from '@/lib/server/epa/measure';
 import type { ScanCounts } from '@/lib/server/workload/scan';
 import { workingDaysBetween } from '@/lib/server/engine/working-days';
+import { DOUBLING_VALUE, MINUTES_PER_CASE, minutesPerCase, pounds, VALUE_BASIS, yearValueOfWeeklyHours } from '@/lib/value';
 
 /**
  * The onboarding measurement (docs/epa-categories.md): each conveyancer scans two months of their own inbox and InTouch once,
@@ -63,6 +64,7 @@ const CSS = `
 .ms-pg{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px;font-size:13px;color:#475569;font-weight:700}
 .ms-pg button{border:0;background:#f1f5f9;border-radius:8px;padding:6px 11px;font:inherit;font-weight:700;cursor:pointer}
 .ms-warn{display:flex;align-items:center;gap:10px;margin-top:14px;background:#fef9c3;border:1px solid #fde68a;color:#713f12;border-radius:10px;padding:9px 12px;font-size:13px;font-weight:700}
+.ms-worth{display:block;color:#0f172a;font-size:18px;font-weight:800;margin:2px 0 10px}
 .ms-warn button{margin-left:auto;border:0;background:none;color:#713f12;cursor:pointer;display:inline-flex;padding:2px}
 @media (max-width:1100px){.ms-steps{grid-template-columns:1fr}}
 `;
@@ -266,14 +268,30 @@ export default function MeasurePage() {
               <button type="button" aria-label="Close" onClick={() => setHideThin(true)}><X size={16} /></button>
             </div>
           )}
-          {m && (
-            <>
+          {m && (() => {
+            // One conveyancer's week, the firm's averaged: the measurement adds everyone's together.
+            const each = (h: number) => h / m.people;
+            const hours = { red: each(m.hours.red), amber: each(m.hours.amber), green: each(m.hours.green) };
+            const worth = (h: number) => pounds(yearValueOfWeeklyHours(h));
+            // The headline: doubling the cases where the red and amber are half the week or more, else what they are worth.
+            const waste = hours.red + hours.amber;
+            const headline = minutesPerCase(waste) >= MINUTES_PER_CASE / 2
+              ? { label: 'Double The Cases', value: DOUBLING_VALUE }
+              : { label: 'Red And Amber', value: yearValueOfWeeklyHours(waste) };
+            const basis = (
+              <span className="tv-tipped" tabIndex={0}>
+                <span className="tv-tip" role="tooltip"><b>Worth A Year</b>Each on its own. Based on {VALUE_BASIS.completionsPerMonth} completions a month and £{VALUE_BASIS.averageFee.toLocaleString('en-GB')} in average fees.</span>
+                Hours A Week · Worth A Year
+              </span>
+            );
+            return (
               <div className="tv-top">
-                <RagCard title="A Typical Week" hours={m.hours} share={m.share} unseen={{ hours: m.hours.unseen, share: m.share.unseen }} foot={<>{m.people} {m.people === 1 ? 'Conveyancer' : 'Conveyancers'}<br />{m.contractedHours}h Week</>} />
-                <ParetoCard lines={m.lines} />
+                <RagCard title="A Typical Week" right="Per Conveyancer" hours={hours} share={m.share} unseen={{ hours: each(m.hours.unseen), share: m.share.unseen }}
+                  foot={<>{headline.label}<b className="ms-worth">{pounds(headline.value)} A Year</b>{m.people} {m.people === 1 ? 'Conveyancer' : 'Conveyancers'}<br />{m.contractedHours}h Week</>} />
+                <ParetoCard lines={m.lines.map((l) => ({ ...l, hours: each(l.hours) }))} right={basis} value={worth} />
               </div>
-            </>
-          )}
+            );
+          })()}
         </>
       )}
     </div>
