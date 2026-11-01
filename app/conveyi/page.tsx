@@ -112,33 +112,25 @@ const safety: Array<{ icon: IconName; title: string }> = [
  * A screenshot in the page's one frame. `fit` fixes the frame's shape so a row of them lines up whatever the shots'
  * own sizes (the top of each is kept; the rest is cropped). Without it the frame takes the shot's own shape.
  */
-function Shot({ src, alt, width, height, phone = false, fit, dark = false }: { src: string; alt: string; width: number; height: number; phone?: boolean; fit?: 'wide' | 'tall' | 'fill'; dark?: boolean }) {
-  // The screen eases out from a slight zoom as the device settles (Tilt sets --p).
-  const img = 'block w-full';
+function Shot({ src, alt, width, height, phone = false, fit, face = 'left' }: { src: string; alt: string; width: number; height: number; phone?: boolean; fit?: 'wide' | 'tall' | 'fill'; dark?: boolean; face?: 'left' | 'right' }) {
   if (phone) {
     return (
-      <Tilt className="mx-auto w-full max-w-[280px]">
-        <div className="overflow-hidden rounded-[2.25rem] border-[7px] border-ink bg-white shadow-[0_40px_80px_-30px_rgba(21,16,31,0.55)]">
-          <img src={src} alt={alt} width={width} height={height} className={`${img} h-auto`} style={SCREEN_ZOOM} />
+      <Tilt face={face} radius="2.1rem" className="mx-auto w-full max-w-[280px]">
+        <div className="rounded-[2.1rem] bg-[#15101F] p-[5px] ring-1 ring-white/15">
+          <div className="overflow-hidden rounded-[1.8rem] bg-white">
+            <img src={src} alt={alt} width={width} height={height} className="block h-auto w-full" style={SCREEN_ZOOM} />
+          </div>
         </div>
       </Tilt>
     );
   }
-  // A tablet: a dark bezel round the screen, and a soft shadow under it.
-  const bezel = `rounded-[1.6rem] p-2 md:p-2.5 ${dark ? 'bg-[#3A3348] ring-1 ring-white/25' : 'bg-ink'} shadow-[0_50px_90px_-40px_rgba(21,16,31,0.6)]`;
-  const screen = 'overflow-hidden rounded-[1.05rem] bg-white';
+  // A thin dark edge round the screen; Tilt gives it thickness and turns it.
   return (
-    <Tilt>
-      <div className={bezel}>
-        {fit ? (
-          <div className={`${screen} ${fit === 'wide' ? 'aspect-[16/10]' : fit === 'tall' ? 'aspect-[4/5]' : 'h-full'}`}>
-            <img src={src} alt={alt} width={width} height={height} className={`${img} h-full object-cover object-left-top`} style={SCREEN_ZOOM} />
-          </div>
-        ) : (
-          <div className={screen}>
-            <img src={src} alt={alt} width={width} height={height} className={`${img} h-auto`} style={SCREEN_ZOOM} />
-          </div>
-        )}
+    <Tilt face={face}>
+      <div className="rounded-[1.1rem] bg-[#15101F] p-[4px] ring-1 ring-white/15">
+        <div className={`overflow-hidden rounded-[0.85rem] bg-white ${fit === 'wide' ? 'aspect-[16/10]' : fit === 'tall' ? 'aspect-[4/5]' : fit === 'fill' ? 'h-full' : ''}`}>
+          <img src={src} alt={alt} width={width} height={height} className={`block w-full ${fit ? 'h-full object-cover object-left-top' : 'h-auto'}`} style={SCREEN_ZOOM} />
+        </div>
       </div>
     </Tilt>
   );
@@ -285,7 +277,7 @@ export default function Page() {
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-violet to-transparent" />
                   </>
                 ) : (
-                  <Shot src={d.src} alt={d.alt} width={d.width} height={d.height} />
+                  <Shot src={d.src} alt={d.alt} width={d.width} height={d.height} face="right" />
                 )}
               </div>
             ))}
