@@ -182,41 +182,11 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── the explanation: a sequence of three, each in the same frame, then the terms and the ask. */}
+      {/* ── HOW IT WORKS ── where Let Us Explain lands: the sequence of three, each in the same frame. */}
       <section id="explain" className="scroll-mt-0 bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
-          <div className="mx-auto max-w-4xl text-center">
-            <blockquote className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-6xl">“I spend all day firefighting.”</blockquote>
-            <p className="mt-10 text-xl leading-relaxed text-paper/80 [text-wrap:balance] md:text-2xl">A fee earner is capped by two things: how many emails they can handle, and how much case information they can keep in their head.</p>
-          </div>
-          {/* The arithmetic behind the promise: the firm's capacity is its fee earners' time over the minutes a case takes. */}
-          <div className="mx-auto mt-16 max-w-5xl">
-            <div className="flex flex-col items-center justify-center gap-5 font-serif text-3xl font-bold tracking-tight md:flex-row md:gap-7 md:text-4xl" role="math" aria-label="Fee earner hours per year, divided by hours per case, times average fee per case, equals your firm’s maximum revenue">
-              <div className="flex flex-col items-center text-center">
-                <span className="px-2 pb-3 [text-wrap:balance]">Fee earner hours per year</span>
-                <span className="h-[3px] w-full rounded-full bg-paper/70" aria-hidden="true" />
-                <span className="px-2 pt-3 [text-wrap:balance]">Hours per case</span>
-              </div>
-              <span className="text-[#9B7BFF]" aria-hidden="true">×</span>
-              <span className="text-center [text-wrap:balance]">Average fee per case</span>
-              <span className="text-[#9B7BFF]" aria-hidden="true">=</span>
-              <span className="text-center text-[#9B7BFF] [text-wrap:balance]">Your firm’s maximum revenue</span>
-            </div>
-            <div className="mt-16 text-center">
-              <p className="mx-auto max-w-xs text-xl leading-snug text-paper/80 [text-wrap:balance] md:max-w-none md:text-2xl">Every minute saved on a case is worth</p>
-              <p className="mt-3 font-serif text-6xl font-bold leading-none tracking-tight text-[#9B7BFF] md:text-8xl">
-                <span className="group relative inline-block">
-                  <span tabIndex={0} aria-describedby="minute-basis" className="inline-block cursor-help underline decoration-[#9B7BFF]/50 decoration-dotted decoration-4 underline-offset-[10px] outline-none focus-visible:decoration-solid md:-translate-x-[3px]">£1,314</span>
-                  <span id="minute-basis" role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-4 w-72 -translate-x-1/2 rounded-xl bg-paper px-4 py-3 text-left font-sans text-sm font-medium leading-snug tracking-normal text-ink opacity-0 shadow-card transition group-hover:opacity-100 group-focus-within:opacity-100">
-                    Based on 30 completions a month and £1,000 in average fees.
-                    <span className="absolute left-1/2 top-full -ml-2 border-8 border-transparent border-t-paper" aria-hidden="true" />
-                  </span>
-                </span>
-              </p>
-              <p className="mt-4 text-xl leading-snug text-paper/80 md:text-2xl">per fee earner, every year.</p>
-            </div>
-          </div>
-          <ol className="mt-24 grid gap-20 md:gap-24">
+          <SectionHead dark eyebrow="How it works" title="Find out how much time your team could save" />
+          <ol className="mt-20 grid gap-20 md:gap-24">
             {how.map((h, i) => (
               <li key={h.title} className="grid items-center gap-8 md:grid-cols-12 md:gap-12">
                 <div className="md:col-span-4">
@@ -230,23 +200,51 @@ export default function Page() {
               </li>
             ))}
           </ol>
-          <div className="mx-auto mt-24 max-w-3xl border-t border-white/10 pt-20 text-center md:mt-32">
+        </div>
+      </section>
+
+      {/* ── WHY IT DOUBLES ── the cap on a fee earner, the arithmetic of a firm's revenue, what a minute is worth, and the terms. */}
+      <section className="px-6 py-24 md:py-32">
+        <div className="mx-auto max-w-6xl">
+          <div className="mx-auto max-w-4xl text-center">
+            <blockquote className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-6xl">“I spend all day firefighting.”</blockquote>
+            <p className="mt-10 text-xl leading-relaxed text-ink-soft [text-wrap:balance] md:text-2xl">A fee earner’s maximum caseload is capped by how many emails they can handle and how much case information they can keep in their head.</p>
+            <p className="mt-4 font-serif text-2xl font-bold tracking-tight text-violet md:text-3xl">Until now.</p>
+          </div>
+          {/* The arithmetic behind the promise: the firm's capacity is its fee earners' time over the time a case takes. */}
+          <div className="mx-auto mt-20 max-w-5xl">
+            <div className="flex flex-col items-center justify-center gap-5 font-serif text-3xl font-bold tracking-tight md:flex-row md:gap-7 md:text-4xl" role="math" aria-label="Fee earner hours per year, divided by hours per case, times average fee per case, equals your firm’s maximum revenue">
+              <div className="flex flex-col items-center text-center">
+                <span className="px-2 pb-3 [text-wrap:balance]">Fee earner hours per year</span>
+                <span className="h-[3px] w-full rounded-full bg-ink/70" aria-hidden="true" />
+                <span className="px-2 pt-3 [text-wrap:balance]">Hours per case</span>
+              </div>
+              <span className="text-violet" aria-hidden="true">×</span>
+              <span className="text-center [text-wrap:balance]">Average fee per case</span>
+              <span className="text-violet" aria-hidden="true">=</span>
+              <span className="text-center text-violet [text-wrap:balance]">Your firm’s maximum revenue</span>
+            </div>
+            <div className="mt-16 text-center">
+              <p className="mx-auto max-w-xs text-xl leading-snug text-ink-soft [text-wrap:balance] md:max-w-none md:text-2xl">Every minute saved on a case is worth</p>
+              <p className="mt-3 font-serif text-6xl font-bold leading-none tracking-tight text-violet md:text-8xl">
+                <span className="group relative inline-block">
+                  <span tabIndex={0} aria-describedby="minute-basis" className="inline-block cursor-help underline decoration-violet/40 decoration-dotted decoration-4 underline-offset-[10px] outline-none focus-visible:decoration-solid md:-translate-x-[3px]">£1,314</span>
+                  <span id="minute-basis" role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-4 w-72 -translate-x-1/2 rounded-xl bg-ink px-4 py-3 text-left font-sans text-sm font-medium leading-snug tracking-normal text-paper opacity-0 shadow-card transition group-hover:opacity-100 group-focus-within:opacity-100">
+                    Based on 30 completions a month and £1,000 in average fees.
+                    <span className="absolute left-1/2 top-full -ml-2 border-8 border-transparent border-t-ink" aria-hidden="true" />
+                  </span>
+                </span>
+              </p>
+              <p className="mt-4 text-xl leading-snug text-ink-soft md:text-2xl">per fee earner, every year.</p>
+            </div>
+          </div>
+          <div className="mx-auto mt-24 max-w-3xl border-t border-line pt-20 text-center md:mt-32">
             <p className="font-serif text-3xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">It’s free until we’ve doubled your capacity.</p>
-            <p className="mt-4 text-lg leading-relaxed text-paper/70 md:text-xl">Let us prove it first. Then we’ll talk.</p>
+            <p className="mt-4 text-lg leading-relaxed text-ink-soft md:text-xl">Let us prove it first. Then we’ll talk.</p>
             <p className="mt-12 font-serif text-lg font-bold uppercase tracking-tight md:text-xl">Sound good?</p>
             <div className="mt-5">
               <BookDemo where="guarantee" size="xl" />
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── THE VIDEO ── */}
-      <section className="bg-paper-soft px-6 py-24 md:py-32">
-        <div className="mx-auto max-w-6xl">
-          <SectionHead eyebrow="The video" title="See it in 43 seconds" />
-          <div className="mx-auto mt-16 max-w-4xl">
-            <Vsl sources={[{ src: '/product/vsl-v15.mp4', type: 'video/mp4' }, { src: '/product/vsl-v15.webm', type: 'video/webm' }]} poster="/product/vsl-poster-6.webp" label="CONVEYi in 43 seconds" />
           </div>
         </div>
       </section>
@@ -257,7 +255,7 @@ export default function Page() {
           <div className="mx-auto max-w-3xl text-center">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/70">The product</p>
             <h2 className="mt-3 font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Updates at a glance</h2>
-            <p className="mt-4 text-lg leading-relaxed text-white/80 md:text-xl">Nothing to hold in your head. Every case, where it is and who it’s waiting on, in one place.</p>
+            <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-white/80 [text-wrap:balance] md:text-xl">Nothing to hold in your head. Every case, where it is and who it’s waiting on, in one place.</p>
           </div>
           <div className="mt-16 grid gap-6 md:grid-cols-3">
             {day.map((d, i) => (
@@ -276,6 +274,16 @@ export default function Page() {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── THE VIDEO ── */}
+      <section className="bg-paper-soft px-6 py-24 md:py-32">
+        <div className="mx-auto max-w-6xl">
+          <SectionHead eyebrow="The video" title="See it in 43 seconds" />
+          <div className="mx-auto mt-16 max-w-4xl">
+            <Vsl sources={[{ src: '/product/vsl-v15.mp4', type: 'video/mp4' }, { src: '/product/vsl-v15.webm', type: 'video/webm' }]} poster="/product/vsl-poster-6.webp" label="CONVEYi in 43 seconds" />
           </div>
         </div>
       </section>
