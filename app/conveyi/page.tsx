@@ -191,9 +191,9 @@ export default function Page() {
           </div>
           {/* The arithmetic behind the promise: the firm's capacity is its fee earners' time over the minutes a case takes. */}
           <div className="mx-auto mt-16 max-w-4xl">
-            <div className="flex flex-col items-center justify-center gap-5 font-serif text-3xl font-bold tracking-tight md:flex-row md:gap-7 md:text-4xl" role="math" aria-label="Fee earner hours a year, divided by hours per case, times average fee per case, equals maximum revenue">
+            <div className="flex flex-col items-center justify-center gap-5 font-serif text-3xl font-bold tracking-tight md:flex-row md:gap-7 md:text-4xl" role="math" aria-label="Fee earner hours per year, divided by hours per case, times average fee per case, equals maximum revenue">
               <div className="flex flex-col items-center text-center">
-                <span className="px-2 pb-3">Fee earner hours a year</span>
+                <span className="px-2 pb-3">Fee earner hours per year</span>
                 <span className="h-[3px] w-full rounded-full bg-paper/70" aria-hidden="true" />
                 <span className="px-2 pt-3">Hours per case</span>
               </div>
