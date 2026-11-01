@@ -50,17 +50,11 @@ function Icon({ name }: { name: IconName }) {
 }
 
 // Captured from the running app with the local firm the dev seed creates (scripts/dev-seed.ts, dev-book.ts, dev-measure.ts).
-const CASEVIEW_SHOT = {
-  src: '/product/app-board.webp',
-  width: 2300,
-  height: 792,
-  alt: 'Case View: every live case as a house on a map of stages (instruction, pre-exchange, ready, exchanged, completion) by fee earner, coloured On Track, With Us, Delayed - Others, Delayed - Us or Critical, with the count of each along the top.',
-};
 
 
 interface Screen { src: string; width: number; height: number; alt: string; phone?: boolean }
 
-const how: Array<{ title: string; line: string; shot: Screen }> = [
+const how: Array<{ title: string; line: string; shot: Screen; phone?: Screen }> = [
   {
     title: 'Save time',
     line: 'Emails filed to the right case. Chasers, client updates and searches drafted for one click, or sent on their own. Documents reviewed, with every point shown in the document.',
@@ -68,26 +62,9 @@ const how: Array<{ title: string; line: string; shot: Screen }> = [
   },
   {
     title: 'Save headspace',
-    line: 'Every case, what’s done, what’s next and who it’s waiting on, in one view. CONVEYi keeps track, so your fee earners don’t have to.',
-    shot: CASEVIEW_SHOT,
-  },
-];
-
-const day: Array<{ title: string } & Screen> = [
-  {
-    title: 'On every case',
-    src: '/product/app-case-flow.webp',
-    width: 2300,
-    height: 1288,
-    alt: 'A purchase at pre-completion: identity, source of funds, title, searches, mortgage and contract and exchange done, signing and completion in progress, beside the property, buyer, price, lender, target dates and handler.',
-  },
-  {
-    title: 'For your clients',
-    src: '/product/app-portal.webp',
-    width: 1170,
-    height: 2500,
-    phone: true,
-    alt: 'A client’s portal on a phone, in a made-up firm’s logo and colour: the parts of their purchase side by side, done, with the client, or in progress, and the enquiries with the seller’s solicitor, usually two weeks a round, expected by a date.',
+    line: 'Nothing to hold in your head. Every case, where it is and who it’s waiting on, in one place, and your clients see it too.',
+    shot: { src: '/product/app-case-flow.webp', width: 2300, height: 1288, alt: 'A purchase at pre-completion: identity, source of funds, title, searches, mortgage and contract and exchange done, signing and completion in progress, beside the property, buyer, price, lender, target dates and handler.' },
+    phone: { src: '/product/app-portal.webp', width: 1170, height: 2500, phone: true, alt: 'A client’s portal on a phone, in a made-up firm’s logo and colour: the parts of their purchase side by side, done, with the client, or in progress, and the enquiries with the seller’s solicitor, usually two weeks a round, expected by a date.' },
   },
 ];
 
@@ -221,7 +198,7 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── one step for each cap, then the terms and the ask. */}
+      {/* ── HOW IT WORKS ── one step for each cap (time, and what a fee earner has to keep in their head), then the terms and the ask. */}
       <section className="bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
           <SectionHead dark title="How it works" />
@@ -234,7 +211,15 @@ export default function Page() {
                   <p className="mt-3 text-lg leading-relaxed text-paper/70">{h.line}</p>
                 </div>
                 <div className="md:col-span-8">
-                  <Shot {...h.shot} dark />
+                  {h.phone ? (
+                    // The case, with the client's phone over its corner showing the top of their portal.
+                    <div className="relative pb-6">
+                      <div className="w-[84%]"><Shot {...h.shot} /></div>
+                      <div className="absolute bottom-0 right-0 w-[28%] overflow-hidden rounded-[1.4rem] border-[5px] border-[#2E2740] bg-white shadow-card ring-1 ring-white/25 md:rounded-[1.9rem] md:border-[6px]">
+                        <img src={h.phone.src} alt={h.phone.alt} width={h.phone.width} height={h.phone.height} className="block aspect-[9/16] w-full object-cover object-top" />
+                      </div>
+                    </div>
+                  ) : <Shot {...h.shot} />}
                 </div>
               </li>
             ))}
@@ -246,34 +231,6 @@ export default function Page() {
             <div className="mt-5">
               <BookDemo where="guarantee" size="xl" />
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── UPDATES AT A GLANCE ── the board across the top; the case and the client's phone in one row of equal height. */}
-      <section className="bg-violet px-6 py-24 text-white md:py-32">
-        <div className="mx-auto max-w-6xl">
-          <div className="mx-auto max-w-3xl text-center">
-            <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Updates at a glance</h2>
-            <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-white/80 [text-wrap:balance] md:text-xl">Nothing to hold in your head. Every case, where it is and who it’s waiting on, in one place.</p>
-          </div>
-          <div className="mt-16 grid gap-6 md:grid-cols-3">
-            {day.map((d, i) => (
-              <div key={d.title} className={i === 0 ? 'md:col-span-2' : 'relative min-h-[360px] overflow-hidden md:min-h-0'}>
-                <p className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-white/70">{d.title}</p>
-                {d.phone ? (
-                  <>
-                    {/* The phone is taller than the row: it shows from the top and fades out at the row's foot. */}
-                    <div className="md:absolute md:inset-x-0 md:top-8">
-                      <Shot src={d.src} alt={d.alt} width={d.width} height={d.height} phone />
-                    </div>
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-violet to-transparent" />
-                  </>
-                ) : (
-                  <Shot src={d.src} alt={d.alt} width={d.width} height={d.height} face="right" />
-                )}
-              </div>
-            ))}
           </div>
         </div>
       </section>
