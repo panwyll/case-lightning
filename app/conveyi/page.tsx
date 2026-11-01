@@ -134,12 +134,11 @@ function Shot({ src, alt, width, height, phone = false, fit, dark = false }: { s
   );
 }
 
-/** Every section opens the same way: a small violet label, the heading, and at most one line under it, centred. */
-function SectionHead({ eyebrow, title, lede, dark = false }: { eyebrow: string; title: string; lede?: string; dark?: boolean }) {
+/** Every section opens the same way: the heading, and at most one line under it, centred. */
+function SectionHead({ title, lede, dark = false }: { title: string; lede?: string; dark?: boolean }) {
   return (
     <div className="mx-auto max-w-3xl text-center">
-      <p className={`text-xs font-bold uppercase tracking-[0.18em] ${dark ? 'text-[#9B7BFF]' : 'text-violet'}`}>{eyebrow}</p>
-      <h2 className="mt-3 font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">{title}</h2>
+      <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">{title}</h2>
       {lede && <p className={`mt-4 text-lg leading-relaxed md:text-xl ${dark ? 'text-paper/70' : 'text-ink-soft'}`}>{lede}</p>}
     </div>
   );
@@ -217,7 +216,7 @@ export default function Page() {
       {/* ── THE DEMO ── what a firm gets from 15 minutes: its own week, measured. */}
       <section className="bg-paper-soft px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead eyebrow="The demo" title="See how much spare capacity you can win back on a demo" />
+          <SectionHead title="See how much spare capacity you can win back on a demo" />
           <div className="mx-auto mt-16 max-w-5xl">
             <Shot {...MEASURE_SHOT} />
           </div>
@@ -230,7 +229,7 @@ export default function Page() {
       {/* ── HOW IT WORKS ── one step for each cap, then the terms and the ask. */}
       <section className="bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead dark eyebrow="CONVEYi" title="How it works" />
+          <SectionHead dark title="How it works" />
           <ol className="mt-20 grid gap-20 md:gap-24">
             {how.map((h, i) => (
               <li key={h.title} className="grid items-center gap-8 md:grid-cols-12 md:gap-12">
@@ -260,8 +259,7 @@ export default function Page() {
       <section className="bg-violet px-6 py-24 text-white md:py-32">
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/70">The product</p>
-            <h2 className="mt-3 font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Updates at a glance</h2>
+            <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Updates at a glance</h2>
             <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-white/80 [text-wrap:balance] md:text-xl">Nothing to hold in your head. Every case, where it is and who it’s waiting on, in one place.</p>
           </div>
           <div className="mt-16 grid gap-6 md:grid-cols-3">
@@ -288,7 +286,7 @@ export default function Page() {
       {/* ── THE VIDEO ── */}
       <section className="bg-paper-soft px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead eyebrow="The video" title="See it in 43 seconds" />
+          <SectionHead title="See it in 43 seconds" />
           <div className="mx-auto mt-16 max-w-4xl">
             <Vsl sources={[{ src: '/product/vsl-v15.mp4', type: 'video/mp4' }, { src: '/product/vsl-v15.webm', type: 'video/webm' }]} poster="/product/vsl-poster-6.webp" label="CONVEYi in 43 seconds" />
           </div>
@@ -298,7 +296,7 @@ export default function Page() {
       {/* ── SAFETY ── */}
       <section className="bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead dark eyebrow="Safety" title="Built for the sector fraudsters target most" />
+          <SectionHead dark title="Built for the sector fraudsters target most" />
           <ul className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {safety.map((s) => (
               <li key={s.title} className="rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
@@ -313,7 +311,7 @@ export default function Page() {
       {/* ── PRICING ── the guarantee first, then what it costs after. */}
       <section className="px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead eyebrow="Pricing" title="Pay nothing until your team handles double the cases" lede="Measured across the firm before you start. Never one person’s figures." />
+          <SectionHead title="Pay nothing until your team handles double the cases" lede="Measured across the firm before you start. Never one person’s figures." />
           <div className="mt-16 grid gap-6 md:grid-cols-3">
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
               <div className="text-xs font-bold uppercase tracking-[0.18em] text-violet">Until it has doubled</div>
@@ -337,7 +335,7 @@ export default function Page() {
       {/* ── QUESTIONS ── the objections, answered in the open. */}
       <section className="border-t border-line bg-paper-soft px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead eyebrow="FAQ" title="Questions" />
+          <SectionHead title="Questions" />
           <dl className="mx-auto mt-16 grid max-w-5xl gap-x-12 gap-y-10 md:grid-cols-2">
             {questions.map((x) => (
               <div key={x.q}>
