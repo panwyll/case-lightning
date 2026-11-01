@@ -19,13 +19,13 @@ interface Screen { src: string; width: number; height: number; alt: string; phon
 const how: Array<{ title: string; line: string; shot: Screen; phone?: Screen }> = [
   {
     title: 'Save time',
-    line: 'Emails filed to the right case. Chasers, client updates and searches drafted for one click, or sent on their own. Documents reviewed, with every point shown in the document.',
-    shot: { src: '/product/app-automate.webp', width: 1806, height: 1470, alt: 'Tasks on one case: four searches to order and a chaser to the seller’s solicitor, each drafted with an Approve button, and below, what the case is waiting on and when each chase goes.' },
+    line: 'Tactically automate and delegate the tasks we identify as not critical for a conveyancer.',
+    shot: { src: '/product/app-automate-tasks.webp', width: 1806, height: 1160, alt: 'Tasks on one case: a search to order and a chaser to the seller’s solicitor, each drafted with an Approve button, a form to send the client and answers to record; below, what the case is waiting on and when each chase goes.' },
   },
   {
     title: 'Save headspace',
-    line: 'Nothing to hold in your head. Every case, where it is and who it’s waiting on, in one place, and your clients see it too.',
-    shot: { src: '/product/app-case-flow.webp', width: 2300, height: 1288, alt: 'A purchase at pre-completion: identity, source of funds, title, searches, mortgage and contract and exchange done, signing and completion in progress, beside the property, buyer, price, lender, target dates and handler.' },
+    line: 'Every case and who it’s waiting on, at a glance. Your clients see theirs too.',
+    shot: { src: '/product/app-board.webp', width: 2300, height: 792, alt: 'Case View: every live case as a house on a board of stages (instruction, pre-exchange, ready, exchanged, completion) by fee earner, coloured On Track, With Us, Delayed - Others, Delayed - Us or Critical, with the count of each along the top.' },
     phone: { src: '/product/app-portal.webp', width: 1170, height: 2500, phone: true, alt: 'A client’s portal on a phone, in a made-up firm’s logo and colour: the parts of their purchase side by side, done, with the client, or in progress, and the enquiries with the seller’s solicitor, usually two weeks a round, expected by a date.' },
   },
 ];
@@ -167,10 +167,10 @@ export default function Page() {
                 </div>
                 <div className="md:col-span-8">
                   {h.phone ? (
-                    // The case, with the client's phone over its corner showing the top of their portal.
-                    <div className="relative pb-6">
-                      <div className="w-[84%]"><Shot {...h.shot} /></div>
-                      <div className="absolute bottom-0 right-0 w-[28%] overflow-hidden rounded-[1.4rem] border-[5px] border-[#2E2740] bg-white shadow-card ring-1 ring-white/25 md:rounded-[1.9rem] md:border-[6px]">
+                    // The board, with the client's phone overlapping its right edge showing the top of their portal; stacked on a phone.
+                    <div className="flex flex-col items-center gap-6 md:flex-row md:gap-0">
+                      <div className="w-full md:w-[82%] md:shrink-0"><Shot {...h.shot} /></div>
+                      <div className="relative z-10 w-1/2 shrink-0 overflow-hidden md:-ml-[6%] md:w-[24%] rounded-[1.6rem] border-[5px] border-[#2E2740] bg-white shadow-card ring-1 ring-white/25 md:rounded-[1.9rem] md:border-[6px]">
                         <img src={h.phone.src} alt={h.phone.alt} width={h.phone.width} height={h.phone.height} className="block aspect-[9/16] w-full object-cover object-top" />
                       </div>
                     </div>
