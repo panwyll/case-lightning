@@ -260,32 +260,8 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── PRICING ── the guarantee first, then what it costs after. */}
-      <section className="px-6 py-24 md:py-32">
-        <div className="mx-auto max-w-6xl">
-          <SectionHead title="Pay nothing until your team handles double the cases" lede="Measured across the firm before you start. Never one person’s figures." />
-          <div className="mt-16 grid gap-6 md:grid-cols-3">
-            <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
-              <div className="text-xs font-bold uppercase tracking-[0.18em] text-violet">Until it has doubled</div>
-              <div className="mt-4 font-serif text-5xl font-bold">£0</div>
-              <p className="mt-3 text-ink-soft">Everything, every case.</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-paper-soft p-8">
-              <div className="text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Then, per case</div>
-              <div className="mt-4 font-serif text-5xl font-bold">£80<span className="font-sans text-lg font-normal text-ink-soft"> + VAT</span></div>
-              <p className="mt-3 text-ink-soft">Once per case.</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-paper-soft p-8">
-              <div className="text-xs font-bold uppercase tracking-[0.18em] text-ink-soft">Seats and monthly fee</div>
-              <div className="mt-4 font-serif text-5xl font-bold">£0</div>
-              <p className="mt-3 text-ink-soft">Everyone in the firm.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* ── QUESTIONS ── the objections, answered in the open. */}
-      <section className="border-t border-line bg-paper-soft px-6 py-24 md:py-32">
+      <section className="bg-paper-soft px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
           <SectionHead title="Questions" />
           <dl className="mx-auto mt-16 grid max-w-5xl gap-x-12 gap-y-10 md:grid-cols-2">
