@@ -275,8 +275,8 @@ export default function MeasurePage() {
             const worth = (h: number) => pounds(yearValueOfWeeklyHours(h));
             const basis = (
               <span className="tv-tipped" tabIndex={0}>
-                <span className="tv-tip" role="tooltip"><b>Worth A Year</b>Based on {VALUE_BASIS.completionsPerMonth} completions a month and £{VALUE_BASIS.averageFee.toLocaleString('en-GB')} in average fees.</span>
-                Hours A Week · Worth A Year
+                <span className="tv-tip" role="tooltip"><b>£/Year</b>Based on {VALUE_BASIS.completionsPerMonth} completions a month and £{VALUE_BASIS.averageFee.toLocaleString('en-GB')} in average fees.</span>
+                Hours A Week · £/Year
               </span>
             );
             return (

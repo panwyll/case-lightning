@@ -135,8 +135,8 @@ function SectionHead({ title, lede, dark = false }: { title: string; lede?: stri
 }
 
 /** One action on this page: book a demo. */
-function BookDemo({ where, onColour = false, size = 'lg', className = '' }: { where: string; onColour?: boolean; size?: 'lg' | 'xl'; className?: string }) {
-  return <Cta label="Book A Demo" href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size={size} className={className} />;
+function BookDemo({ where, onColour = false, size = 'lg', className = '', label = 'Book A Demo' }: { where: string; onColour?: boolean; size?: 'lg' | 'xl'; className?: string; label?: string }) {
+  return <Cta label={label} href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size={size} className={className} />;
 }
 
 export default function Page() {
@@ -216,7 +216,7 @@ export default function Page() {
             </picture>
           </div>
           <div className="mt-12 flex justify-center">
-            <BookDemo where="measure" size="xl" />
+            <BookDemo where="measure" size="xl" label="Book A 15 Min Demo" />
           </div>
         </div>
       </section>
