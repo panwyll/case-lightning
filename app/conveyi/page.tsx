@@ -204,7 +204,7 @@ export default function Page() {
               <span className="text-center text-[#9B7BFF] [text-wrap:balance]">Your firm’s maximum revenue</span>
             </div>
             <div className="mt-16 text-center">
-              <p className="mx-auto max-w-xs text-xl leading-snug text-paper/80 [text-wrap:balance] md:max-w-none md:text-2xl">Every minute saved on a case is worth</p>
+              <p className="mx-auto max-w-xs text-xl leading-snug text-paper/80 [text-wrap:balance] md:max-w-none md:text-2xl">Every minute saved per case is worth</p>
               <p className="mt-3 font-serif text-6xl font-bold leading-none tracking-tight text-[#9B7BFF] md:text-8xl">
                 <span className="group relative inline-block">
                   <span tabIndex={0} aria-describedby="minute-basis" className="inline-block cursor-help underline decoration-[#9B7BFF]/50 decoration-dotted decoration-4 underline-offset-[10px] outline-none focus-visible:decoration-solid md:-translate-x-[3px]">£1,314</span>
@@ -214,7 +214,7 @@ export default function Page() {
                   </span>
                 </span>
               </p>
-              <p className="mt-4 text-xl leading-snug text-paper/80 md:text-2xl">per fee earner, every year.</p>
+              <p className="mt-4 text-xl leading-snug text-paper/80 md:text-2xl">per fee earner, per year.</p>
             </div>
           </div>
         </div>
