@@ -206,7 +206,7 @@ export default function Page() {
               <p className="mx-auto max-w-xs text-xl leading-snug text-paper/80 [text-wrap:balance] md:max-w-none md:text-2xl">Every minute saved on a case is worth</p>
               <p className="mt-3 font-serif text-6xl font-bold leading-none tracking-tight text-[#9B7BFF] md:text-8xl">
                 <span className="group relative inline-block">
-                  <span tabIndex={0} aria-describedby="minute-basis" className="cursor-help underline decoration-[#9B7BFF]/50 decoration-dotted decoration-4 underline-offset-[10px] outline-none focus-visible:decoration-solid">£1,314</span>
+                  <span tabIndex={0} aria-describedby="minute-basis" className="inline-block cursor-help underline decoration-[#9B7BFF]/50 decoration-dotted decoration-4 underline-offset-[10px] outline-none focus-visible:decoration-solid md:-translate-x-[3px]">£1,314</span>
                   <span id="minute-basis" role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-4 w-72 -translate-x-1/2 rounded-xl bg-paper px-4 py-3 text-left font-sans text-sm font-medium leading-snug tracking-normal text-ink opacity-0 shadow-card transition group-hover:opacity-100 group-focus-within:opacity-100">
                     Based on 30 completions a month and £1,000 in average fees.
                     <span className="absolute left-1/2 top-full -ml-2 border-8 border-transparent border-t-paper" aria-hidden="true" />
