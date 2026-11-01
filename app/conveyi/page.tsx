@@ -186,8 +186,7 @@ export default function Page() {
       <section id="explain" className="scroll-mt-0 bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto max-w-4xl text-center">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9B7BFF]">What we hear</p>
-            <blockquote className="mt-5 font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-6xl">“I spend all day firefighting.”</blockquote>
+            <blockquote className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-6xl">“I spend all day firefighting.”</blockquote>
             <p className="mt-10 text-xl leading-relaxed text-paper/80 [text-wrap:balance] md:text-2xl">A fee earner is capped by two things: how many emails they can handle, and how much case information they can keep in their head.</p>
           </div>
           {/* The arithmetic behind the promise: the firm's capacity is its fee earners' time over the minutes a case takes. */}
