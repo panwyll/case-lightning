@@ -167,9 +167,11 @@ export default function Page() {
                 </div>
                 <div className="md:col-span-8">
                   {h.phone ? (
-                    // The board, with the client's phone overlapping its right edge showing the top of their portal; stacked on a phone.
-                    <div className="flex flex-col items-center gap-6 md:flex-row md:gap-0">
-                      <div className="w-full md:w-[82%] md:shrink-0"><Shot {...h.shot} /></div>
+                    // The board as tall as the client's phone, its right side cut off under the phone; on a phone, stacked, the board cropped larger.
+                    <div className="flex flex-col items-center gap-6 md:flex-row md:items-stretch md:gap-0">
+                      <div className="aspect-[16/11] w-full overflow-hidden rounded-xl border border-ink/15 bg-white shadow-card md:aspect-auto md:w-[82%] md:shrink-0">
+                        <img src={h.shot.src} alt={h.shot.alt} width={h.shot.width} height={h.shot.height} className="block h-full w-full object-cover object-left-top" />
+                      </div>
                       <div className="relative z-10 w-1/2 shrink-0 overflow-hidden md:-ml-[6%] md:w-[24%] rounded-[1.6rem] border-[5px] border-[#2E2740] bg-white shadow-card ring-1 ring-white/25 md:rounded-[1.9rem] md:border-[6px]">
                         <img src={h.phone.src} alt={h.phone.alt} width={h.phone.width} height={h.phone.height} className="block aspect-[9/16] w-full object-cover object-top" />
                       </div>
