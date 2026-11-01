@@ -2,6 +2,7 @@ import { REFERRALS_ENABLED } from '@/lib/flags';
 import type { Metadata } from 'next';
 import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../_components/shared';
 import { Vsl } from './Vsl';
+import { SCREEN_ZOOM, Tilt } from './Tilt';
 
 export const metadata: Metadata = {
   title: 'CONVEYi — Double the cases without double the work | Case Lightning',
@@ -112,25 +113,34 @@ const safety: Array<{ icon: IconName; title: string }> = [
  * own sizes (the top of each is kept; the rest is cropped). Without it the frame takes the shot's own shape.
  */
 function Shot({ src, alt, width, height, phone = false, fit, dark = false }: { src: string; alt: string; width: number; height: number; phone?: boolean; fit?: 'wide' | 'tall' | 'fill'; dark?: boolean }) {
+  // The screen eases out from a slight zoom as the device settles (Tilt sets --p).
+  const img = 'block w-full';
   if (phone) {
     return (
-      <div className="mx-auto w-full max-w-[280px] overflow-hidden rounded-[2.25rem] border-[7px] border-ink bg-white shadow-card">
-        <img src={src} alt={alt} width={width} height={height} className="block h-auto w-full" />
-      </div>
+      <Tilt className="mx-auto w-full max-w-[280px]">
+        <div className="overflow-hidden rounded-[2.25rem] border-[7px] border-ink bg-white shadow-[0_40px_80px_-30px_rgba(21,16,31,0.55)]">
+          <img src={src} alt={alt} width={width} height={height} className={`${img} h-auto`} style={SCREEN_ZOOM} />
+        </div>
+      </Tilt>
     );
   }
-  const frame = `overflow-hidden rounded-2xl bg-white shadow-card ring-1 ${dark ? 'ring-white/10' : 'ring-ink/10'}`;
-  if (fit) {
-    return (
-      <div className={`${frame} ${fit === 'wide' ? 'aspect-[16/10]' : fit === 'tall' ? 'aspect-[4/5]' : 'h-full'}`}>
-        <img src={src} alt={alt} width={width} height={height} className="block h-full w-full object-cover object-left-top" />
-      </div>
-    );
-  }
+  // A tablet: a dark bezel round the screen, and a soft shadow under it.
+  const bezel = `rounded-[1.6rem] p-2 md:p-2.5 ${dark ? 'bg-[#3A3348] ring-1 ring-white/25' : 'bg-ink'} shadow-[0_50px_90px_-40px_rgba(21,16,31,0.6)]`;
+  const screen = 'overflow-hidden rounded-[1.05rem] bg-white';
   return (
-    <div className={frame}>
-      <img src={src} alt={alt} width={width} height={height} className="block h-auto w-full" />
-    </div>
+    <Tilt>
+      <div className={bezel}>
+        {fit ? (
+          <div className={`${screen} ${fit === 'wide' ? 'aspect-[16/10]' : fit === 'tall' ? 'aspect-[4/5]' : 'h-full'}`}>
+            <img src={src} alt={alt} width={width} height={height} className={`${img} h-full object-cover object-left-top`} style={SCREEN_ZOOM} />
+          </div>
+        ) : (
+          <div className={screen}>
+            <img src={src} alt={alt} width={width} height={height} className={`${img} h-auto`} style={SCREEN_ZOOM} />
+          </div>
+        )}
+      </div>
+    </Tilt>
   );
 }
 
