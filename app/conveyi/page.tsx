@@ -190,17 +190,17 @@ export default function Page() {
             <p className="mt-10 text-xl leading-relaxed text-paper/80 [text-wrap:balance] md:text-2xl">A fee earner is capped by two things: how many emails they can handle, and how much case information they can keep in their head.</p>
           </div>
           {/* The arithmetic behind the promise: the firm's capacity is its fee earners' time over the minutes a case takes. */}
-          <div className="mx-auto mt-16 max-w-4xl">
-            <div className="flex flex-col items-center justify-center gap-5 font-serif text-3xl font-bold tracking-tight md:flex-row md:gap-7 md:text-4xl" role="math" aria-label="Fee earner hours per year, divided by hours per case, times average fee per case, equals maximum revenue">
+          <div className="mx-auto mt-16 max-w-5xl">
+            <div className="flex flex-col items-center justify-center gap-5 font-serif text-3xl font-bold tracking-tight md:flex-row md:gap-7 md:text-4xl" role="math" aria-label="Fee earner hours per year, divided by hours per case, times average fee per case, equals your firm’s maximum revenue">
               <div className="flex flex-col items-center text-center">
-                <span className="px-2 pb-3">Fee earner hours per year</span>
+                <span className="px-2 pb-3 [text-wrap:balance]">Fee earner hours per year</span>
                 <span className="h-[3px] w-full rounded-full bg-paper/70" aria-hidden="true" />
-                <span className="px-2 pt-3">Hours per case</span>
+                <span className="px-2 pt-3 [text-wrap:balance]">Hours per case</span>
               </div>
               <span className="text-[#9B7BFF]" aria-hidden="true">×</span>
-              <span className="text-center">Average fee per case</span>
+              <span className="text-center [text-wrap:balance]">Average fee per case</span>
               <span className="text-[#9B7BFF]" aria-hidden="true">=</span>
-              <span className="text-center text-[#9B7BFF]">Maximum revenue</span>
+              <span className="text-center text-[#9B7BFF] [text-wrap:balance]">Your firm’s maximum revenue</span>
             </div>
             <div className="mt-16 text-center">
               <p className="mx-auto max-w-xs text-xl leading-snug text-paper/80 [text-wrap:balance] md:max-w-none md:text-2xl">Every minute saved on a case is worth</p>
