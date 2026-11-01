@@ -61,27 +61,18 @@ interface Screen { src: string; width: number; height: number; alt: string; phon
 
 const how: Array<{ title: string; line: string; shot: Screen }> = [
   {
-    title: 'Measure',
-    line: 'See where your team’s week goes, and how much of it is being lost.',
-    shot: { src: '/product/app-measure-issues.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' },
-  },
-  {
-    title: 'Automate',
-    line: 'Set up around how you work in as little as an afternoon. Updates, chasers and orders drafted for one click, or sent on their own.',
+    title: 'Save time',
+    line: 'Emails filed to the right case. Chasers, client updates and searches drafted for one click, or sent on their own. Documents reviewed, with every point shown in the document.',
     shot: { src: '/product/app-automate.webp', width: 1806, height: 1470, alt: 'Tasks on one case: four searches to order and a chaser to the seller’s solicitor, each drafted with an Approve button, and below, what the case is waiting on and when each chase goes.' },
   },
   {
-    title: 'Optimise',
-    line: 'Optimise legal work with AI-powered document review and generation.',
-    shot: { src: '/product/app-funds-review.webp', width: 2304, height: 1480, alt: 'A source of funds review: cash paid in, a credit from a cryptoasset exchange and a transfer from an account not provided, each flagged with a query drafted, and the bank statement beside it with the flagged line highlighted.' },
+    title: 'Save headspace',
+    line: 'Every case, what’s done, what’s next and who it’s waiting on, in one view. CONVEYi keeps track, so your fee earners don’t have to.',
+    shot: CASEVIEW_SHOT,
   },
 ];
 
 const day: Array<{ title: string } & Screen> = [
-  {
-    title: 'Firm-wide',
-    ...CASEVIEW_SHOT,
-  },
   {
     title: 'On every case',
     src: '/product/app-case-flow.webp',
@@ -223,7 +214,7 @@ export default function Page() {
       {/* ── HOW IT WORKS ── the sequence of three, each in the same frame, then the terms and the ask. */}
       <section className="px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
-          <SectionHead eyebrow="How it works" title="Find out how much time your team could save" />
+          <SectionHead eyebrow="How it works" title="Find out how much time your team could save" lede="On the demo, we measure where your team’s week goes." />
           <ol className="mt-20 grid gap-20 md:gap-24">
             {how.map((h, i) => (
               <li key={h.title} className="grid items-center gap-8 md:grid-cols-12 md:gap-12">
@@ -233,7 +224,7 @@ export default function Page() {
                   <p className="mt-3 text-lg leading-relaxed text-ink-soft">{h.line}</p>
                 </div>
                 <div className="md:col-span-8">
-                  <Shot {...h.shot} fit="wide" />
+                  <Shot {...h.shot} />
                 </div>
               </li>
             ))}
@@ -259,7 +250,7 @@ export default function Page() {
           </div>
           <div className="mt-16 grid gap-6 md:grid-cols-3">
             {day.map((d, i) => (
-              <div key={d.title} className={i === 0 ? 'md:col-span-3' : i === 1 ? 'md:col-span-2' : 'relative min-h-[360px] overflow-hidden md:min-h-0'}>
+              <div key={d.title} className={i === 0 ? 'md:col-span-2' : 'relative min-h-[360px] overflow-hidden md:min-h-0'}>
                 <p className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-white/70">{d.title}</p>
                 {d.phone ? (
                   <>
