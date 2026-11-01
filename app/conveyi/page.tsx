@@ -68,6 +68,24 @@ function SectionHead({ title, lede, dark = false }: { title: string; lede?: stri
   );
 }
 
+/** A customer's review on violet: five stars over their words. A long one is set smaller. */
+function Review({ quote, long = false }: { quote: string; long?: boolean }) {
+  return (
+    <section className="bg-violet px-6 py-24 text-white md:py-28">
+      <figure className="mx-auto max-w-4xl text-center">
+        <div className="flex justify-center gap-1.5 text-[#FFC53D]" role="img" aria-label="5 out of 5 stars">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <svg key={i} viewBox="0 0 24 24" className="h-7 w-7 md:h-8 md:w-8" fill="currentColor" aria-hidden="true">
+              <path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z" />
+            </svg>
+          ))}
+        </div>
+        <blockquote className={`mt-8 font-serif font-bold tracking-tight [text-wrap:balance] ${long ? 'text-3xl leading-[1.2] md:text-5xl' : 'text-4xl leading-[1.1] md:text-6xl'}`}>“{quote}”</blockquote>
+      </figure>
+    </section>
+  );
+}
+
 /** One action on this page: book a demo. */
 function BookDemo({ where, onColour = false, size = 'lg', className = '', label = 'Book A Demo' }: { where: string; onColour?: boolean; size?: 'lg' | 'xl'; className?: string; label?: string }) {
   return <Cta label={label} href={ctaHref(ROUTES.demo, PAGE_SOURCE, `${where}_demo`)} dataCta={`${where}_demo`} variant={onColour ? 'onColour' : 'primary'} size={size} className={className} />;
@@ -155,6 +173,9 @@ export default function Page() {
         </div>
       </section>
 
+      {/* ── REVIEW ── how fast it lands, from a customer. */}
+      <Review quote="We got set up on the call and our fee earners were able to handle 150 cases at a time by the end of that week." long />
+
       {/* ── HOW IT WORKS ── one step for each cap (time, and what a fee earner has to keep in their head), then the terms and the ask. */}
       <section className="bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
@@ -194,19 +215,8 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── REVIEW ── one customer, in their words. */}
-      <section className="bg-violet px-6 py-24 text-white md:py-28">
-        <figure className="mx-auto max-w-4xl text-center">
-          <div className="flex justify-center gap-1.5 text-[#FFC53D]" role="img" aria-label="5 out of 5 stars">
-            {[0, 1, 2, 3, 4].map((i) => (
-              <svg key={i} viewBox="0 0 24 24" className="h-7 w-7 md:h-8 md:w-8" fill="currentColor" aria-hidden="true">
-                <path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z" />
-              </svg>
-            ))}
-          </div>
-          <blockquote className="mt-8 font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-6xl">“It’s like installing a second brain.”</blockquote>
-        </figure>
-      </section>
+      {/* ── REVIEW ── */}
+      <Review quote="It’s like installing a second brain." />
 
       {/* ── THE VIDEO ── */}
       <section className="bg-paper-soft px-6 py-24 md:py-32">
