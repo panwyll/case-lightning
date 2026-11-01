@@ -9,7 +9,7 @@ import { ArrowLeft, Check, ChevronRight, Loader, X } from '@/app/shared/icons';
 import { MIN_SENT_PER_WEEK, type Measurement } from '@/lib/server/epa/measure';
 import type { ScanCounts } from '@/lib/server/workload/scan';
 import { workingDaysBetween } from '@/lib/server/engine/working-days';
-import { DOUBLING_VALUE, MINUTES_PER_CASE, minutesPerCase, pounds, VALUE_BASIS, yearValueOfWeeklyHours } from '@/lib/value';
+import { pounds, VALUE_BASIS, yearValueOfWeeklyHours } from '@/lib/value';
 
 /**
  * The onboarding measurement (docs/epa-categories.md): each conveyancer scans two months of their own inbox and InTouch once,
@@ -273,21 +273,16 @@ export default function MeasurePage() {
             const each = (h: number) => h / m.people;
             const hours = { red: each(m.hours.red), amber: each(m.hours.amber), green: each(m.hours.green) };
             const worth = (h: number) => pounds(yearValueOfWeeklyHours(h));
-            // The headline: doubling the cases where the red and amber are half the week or more, else what they are worth.
-            const waste = hours.red + hours.amber;
-            const headline = minutesPerCase(waste) >= MINUTES_PER_CASE / 2
-              ? { label: 'Double The Cases', value: DOUBLING_VALUE }
-              : { label: 'Red And Amber', value: yearValueOfWeeklyHours(waste) };
             const basis = (
               <span className="tv-tipped" tabIndex={0}>
-                <span className="tv-tip" role="tooltip"><b>Worth A Year</b>Each on its own. Based on {VALUE_BASIS.completionsPerMonth} completions a month and £{VALUE_BASIS.averageFee.toLocaleString('en-GB')} in average fees.</span>
+                <span className="tv-tip" role="tooltip"><b>Worth A Year</b>Based on {VALUE_BASIS.completionsPerMonth} completions a month and £{VALUE_BASIS.averageFee.toLocaleString('en-GB')} in average fees.</span>
                 Hours A Week · Worth A Year
               </span>
             );
             return (
               <div className="tv-top">
                 <RagCard title="A Typical Week" right="Per Conveyancer" hours={hours} share={m.share} unseen={{ hours: each(m.hours.unseen), share: m.share.unseen }}
-                  foot={<>{headline.label}<b className="ms-worth">{pounds(headline.value)} A Year</b>{m.people} {m.people === 1 ? 'Conveyancer' : 'Conveyancers'}<br />{m.contractedHours}h Week</>} />
+                  foot={<>Red And Amber<b className="ms-worth">{worth(hours.red + hours.amber)} A Year</b>{m.people} {m.people === 1 ? 'Conveyancer' : 'Conveyancers'}<br />{m.contractedHours}h Week</>} />
                 <ParetoCard lines={m.lines.map((l) => ({ ...l, hours: each(l.hours) }))} right={basis} value={worth} />
               </div>
             );

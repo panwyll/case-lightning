@@ -209,10 +209,10 @@ export default function Page() {
           <SectionHead title="See how much spare capacity you can win back on a demo" />
           {/* The two cards from the measurement, as they are in the app: side by side on a laptop, one above the other on a phone, where Key Issues shows its top six so the labels stay readable. Per conveyancer, valued on lib/value.ts. */}
           <div className="mx-auto mt-16 grid max-w-md items-start gap-5 md:max-w-5xl md:grid-cols-[1fr_2fr] md:gap-6">
-            <img src="/product/app-measure-week.webp" width={696} height={754} alt="A typical week per conveyancer: 56% red, 18% amber, 26% green; red and amber enough to double the cases, worth £360k a year." className="block h-auto w-full [filter:drop-shadow(0_14px_24px_rgba(21,16,31,0.12))]" />
+            <img src="/product/app-measure-week.webp" width={696} height={754} alt="A typical week per conveyancer: 56% red, 18% amber, 26% green; the red and amber worth £311k a year." className="block h-auto w-full [filter:drop-shadow(0_14px_24px_rgba(21,16,31,0.12))]" />
             <picture>
               <source media="(min-width: 768px)" srcSet="/product/app-measure-issues-card.webp" width={1392} height={754} />
-              <img src="/product/app-measure-issues-narrow.webp" width={1008} height={742} alt="Key Issues: the hours a week each kind of work takes a conveyancer, and what each is worth a year, from answering client status requests (5.2 hours, £58k) down." className="block h-auto w-full [filter:drop-shadow(0_14px_24px_rgba(21,16,31,0.12))]" />
+              <img src="/product/app-measure-issues-narrow.webp" width={1008} height={742} alt="Key Issues: the hours a week each kind of work takes a conveyancer, and what each is worth a year, from answering client status requests (5.2 hours, £50k) down." className="block h-auto w-full [filter:drop-shadow(0_14px_24px_rgba(21,16,31,0.12))]" />
             </picture>
           </div>
           <div className="mt-12 flex justify-center">
