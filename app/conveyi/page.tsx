@@ -59,9 +59,6 @@ const CASEVIEW_SHOT = {
 
 interface Screen { src: string; width: number; height: number; alt: string; phone?: boolean }
 
-/** The measurement: a typical week across the firm, and the work taking it (Key Issues). */
-const MEASURE_SHOT: Screen = { src: '/product/app-measure-v3.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' };
-
 const how: Array<{ title: string; line: string; shot: Screen }> = [
   {
     title: 'Save time',
@@ -209,8 +206,13 @@ export default function Page() {
       <section className="bg-paper-soft px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
           <SectionHead title="See how much spare capacity you can win back on a demo" />
-          <div className="mx-auto mt-16 max-w-5xl">
-            <Shot {...MEASURE_SHOT} />
+          {/* The two cards from the measurement, as they are in the app: side by side on a laptop, one above the other on a phone, where Key Issues shows its top six so the labels stay readable. */}
+          <div className="mx-auto mt-16 grid max-w-md items-start gap-5 md:max-w-5xl md:grid-cols-[1fr_2fr] md:gap-6">
+            <img src="/product/app-measure-week.webp" width={696} height={754} alt="A typical week across the firm: 56% red, 18% amber, 26% green." className="block h-auto w-full [filter:drop-shadow(0_14px_24px_rgba(21,16,31,0.12))]" />
+            <picture>
+              <source media="(min-width: 768px)" srcSet="/product/app-measure-issues-card.webp" width={1392} height={754} />
+              <img src="/product/app-measure-issues-narrow.webp" width={1008} height={710} alt="Key Issues: the hours a week each kind of work takes, from answering client status requests down." className="block h-auto w-full [filter:drop-shadow(0_14px_24px_rgba(21,16,31,0.12))]" />
+            </picture>
           </div>
           <div className="mt-12 flex justify-center">
             <BookDemo where="measure" size="xl" />
