@@ -24,7 +24,7 @@ const how: Array<{ title: string; line: string; shot: Screen; phone?: Screen }> 
   },
   {
     title: 'Save headspace',
-    line: 'Every case and who it’s waiting on, at a glance, for you and your clients.',
+    line: 'All your case information, at a glance - for you and your clients.',
     shot: { src: '/product/app-board.webp', width: 2300, height: 792, alt: 'Case View: every live case as a house on a board of stages (instruction, pre-exchange, ready, exchanged, completion) by fee earner, coloured On Track, With Us, Delayed - Others, Delayed - Us or Critical, with the count of each along the top.' },
     phone: { src: '/product/app-portal.webp', width: 1170, height: 2500, phone: true, alt: 'A client’s portal on a phone, in a made-up firm’s logo and colour: the parts of their purchase side by side, done, with the client, or in progress, and the enquiries with the seller’s solicitor, usually two weeks a round, expected by a date.' },
   },
