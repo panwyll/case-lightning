@@ -32,7 +32,7 @@ const how: Array<{ title: string; line: string; shot: Screen; phone?: Screen }> 
 
 const questions: Array<{ q: string; a: string }> = [
   { q: 'Will it send something wrong?', a: 'Nothing goes on its own until you switch that kind of message on. Exchange, completion and money always need a person.' },
-  { q: 'Do we have to change our case management system?', a: 'No. CONVEYi works on top of the InTouch or LEAP you already use, and your Outlook. Nothing to migrate.' },
+  { q: 'Do we have to change our case management system?', a: 'No. CONVEYi works on top of InTouch, LEAP and Outlook. Nothing to migrate.' },
   { q: 'Where does our data go?', a: 'Your emails and documents stay in your own Microsoft 365.' },
   { q: 'What if we don’t double our capacity?', a: 'Then you don’t pay. We measure your firm’s capacity before you start, and it’s free until that has doubled.' },
 ];
