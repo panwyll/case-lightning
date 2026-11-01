@@ -8,6 +8,7 @@ import { paths } from '@/lib/paths';
 import { ArrowLeft, Check, ChevronRight, Loader, X } from '@/app/shared/icons';
 import { MIN_SENT_PER_WEEK, type Measurement } from '@/lib/server/epa/measure';
 import type { ScanCounts } from '@/lib/server/workload/scan';
+import { workingDaysBetween } from '@/lib/server/engine/working-days';
 
 /**
  * The onboarding measurement (docs/epa-categories.md): each conveyancer scans two months of their own inbox and InTouch once,
@@ -235,13 +236,17 @@ export default function MeasurePage() {
 
       {!isRunning && (
         <>
-          {finished && c && (
+          {finished && c && (() => {
+            const days = Math.max(1, workingDaysBetween(new Date(mine!.since), new Date(mine!.until)));
+            const perDay = (x: number) => Math.round(x / days);
+            return (
             <section className="ms-card">
               <div className="ms-read">
                 <Fig value={`${day(mine!.since)} – ${day(mine!.until)}`} label="Your Scan" />
-                <Fig value={n(c.sent)} label="Sent" />
-                <Fig value={n(c.received)} label="Received" />
-                <Fig value={n(c.setAside)} label="Set Aside" />
+                {/* A day, over the scan's working days: a person reads their own day, not a two-month total. */}
+                <Fig value={n(perDay(c.sent))} label="Sent A Day" />
+                <Fig value={n(perDay(c.received))} label="Received A Day" />
+                <Fig value={n(perDay(c.setAside))} label="Set Aside A Day" />
                 {c.intouch.state === 'read' && <Fig value={n(c.intouch.cases)} label="InTouch Cases" />}
                 {c.intouch.state === 'read' && <Fig value={n(c.intouch.items)} label="InTouch Filings" />}
                 {m && <Fig value={m.replyHours != null ? waitText(m.replyHours) : '—'} label="Average Reply Time" />}
@@ -252,7 +257,8 @@ export default function MeasurePage() {
               )}
               {showEmails && <EmailsRead intouch={c.intouch.state === 'read' && c.intouch.items > 0} />}
             </section>
-          )}
+            );
+          })()}
           {res && !m && !mine && <p className="tv-none">No mailbox scanned yet.</p>}
           {m && thin && !hideThin && (
             <div className="ms-warn" role="status">
