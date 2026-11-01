@@ -19,19 +19,19 @@ for (const file of ['.env.development.local']) {
 if (!/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL ?? '')) throw new Error('dev-measure only runs against a local database.');
 
 const WEEKS = 8;
-/** A week's sent case email for one person: category, how many, who to, minutes writing each. */
+/** A week's sent case email for one person: category, how many, who to, minutes writing each. About 70 a day in all. */
 const SENT: Array<[string, number, string[], number]> = [
-  ['chaser', 18, ['other_solicitor', 'other_solicitor', 'client', 'estate_agent', 'lender'], 3],
-  ['status_update', 22, ['client', 'client', 'estate_agent'], 4],
-  ['update_reply', 20, ['client', 'client', 'estate_agent', 'other_solicitor'], 3],
-  ['first_request', 8, ['client', 'other_solicitor'], 5],
-  ['file_send', 10, ['client', 'other_solicitor'], 3],
-  ['resend', 3, ['client'], 2],
-  ['acknowledgement', 14, ['client', 'other_solicitor', 'estate_agent'], 1],
-  ['scheduling', 5, ['client', 'other_solicitor'], 3],
-  ['process_question', 6, ['client'], 5],
-  ['client_question', 5, ['client'], 12],
-  ['legal_work', 12, ['other_solicitor', 'client'], 25],
+  ['chaser', 45, ['other_solicitor', 'other_solicitor', 'client', 'estate_agent', 'lender'], 1.5],
+  ['status_update', 35, ['client', 'client', 'estate_agent'], 2],
+  ['update_reply', 100, ['client', 'client', 'estate_agent', 'other_solicitor'], 1.5],
+  ['first_request', 20, ['client', 'other_solicitor'], 3],
+  ['file_send', 30, ['client', 'other_solicitor'], 1.5],
+  ['resend', 8, ['client'], 1],
+  ['acknowledgement', 40, ['client', 'other_solicitor', 'estate_agent'], 0.5],
+  ['scheduling', 15, ['client', 'other_solicitor'], 2],
+  ['process_question', 15, ['client'], 3],
+  ['client_question', 12, ['client'], 10],
+  ['legal_work', 25, ['other_solicitor', 'client'], 30],
 ];
 /** A week of each person's own sent email once CONVEYi is running: the legal work, and what is still theirs. */
 const RECENT: Array<[string, number, string[], number]> = [
@@ -44,15 +44,18 @@ const RECENT: Array<[string, number, string[], number]> = [
   ['chaser', 3, ['other_solicitor', 'lender'], 3],
   ['first_request', 2, ['other_solicitor'], 5],
 ];
-/** A week's received case email: category, how many, from whom. */
+/** A week's received email: category, how many, from whom. About 200 a day in all, of which some 100 are newsletters and automated mail the scan sets aside. */
 const RECEIVED: Array<[string, number, string[]]> = [
-  ['update_request', 24, ['client', 'client', 'estate_agent', 'estate_agent', 'other_solicitor']],
-  ['chaser_received', 9, ['client', 'estate_agent', 'other_solicitor']],
-  ['document_delivery', 30, ['client', 'other_solicitor', 'lender']],
-  ['question', 8, ['client']],
-  ['instruction', 5, ['client']],
-  ['enquiry', 6, ['other_solicitor']],
+  ['update_request', 45, ['client', 'client', 'estate_agent', 'estate_agent', 'other_solicitor']],
+  ['chaser_received', 20, ['client', 'estate_agent', 'other_solicitor']],
+  ['document_delivery', 120, ['client', 'other_solicitor', 'lender']],
+  ['question', 25, ['client']],
+  ['instruction', 15, ['client']],
+  ['enquiry', 15, ['other_solicitor']],
+  ['other', 330, ['other_solicitor', 'estate_agent', 'client', 'colleague']],
 ];
+/** Set aside by the scan: never classified, never timed, but counted as received. */
+const SET_ASIDE: Array<['bulk' | 'automated', number]> = [['bulk', 300], ['automated', 300]];
 
 /** What InTouch would have said: the person's live cases, and how many were opened in the window. */
 const intouch = (live: number, opened: number) => ({
@@ -93,26 +96,30 @@ async function main() {
         for (let k = 0; k < Math.round(count * scale * (0.85 + rnd() * 0.3)); k++) {
           const at = when(until, w);
           const conv = `conv-${scan}-${n}`;
-          rows.push([`in-${n++}`, conv, 'in', null, at, [pick(roles)], category]);
+          rows.push([`in-${n++}`, conv, 'in', null, at, [pick(roles)], category, null]);
           // Most status requests get an answer, a few hours later.
           if (category === 'update_request' && rnd() < 0.8) {
             const sent = new Date(at.getTime() + (1 + rnd() * 30) * 3_600_000);
-            if (sent < until) rows.push([`out-${n++}`, conv, 'out', new Date(sent.getTime() - 3 * 60_000), sent, [pick(roles)], 'update_reply']);
+            if (sent < until) rows.push([`out-${n++}`, conv, 'out', new Date(sent.getTime() - 1.5 * 60_000), sent, [pick(roles)], 'update_reply', null]);
           }
         }
       }
+      for (const [why, count] of SET_ASIDE) {
+        for (let k = 0; k < Math.round(count * scale * (0.85 + rnd() * 0.3)); k++) rows.push([`in-${n++}`, `conv-${scan}-${n}`, 'in', null, when(until, w), [], null, why]);
+      }
       for (const [category, count, roles, minutes] of SENT) {
-        const c = category === 'update_reply' ? count * 0.2 : count;
+        // Replies to status requests are added as answers above; the rest of the replies here.
+        const c = category === 'update_reply' ? count - 36 : count;
         for (let k = 0; k < Math.round(c * scale * (0.85 + rnd() * 0.3)); k++) {
           const at = when(until, w);
-          rows.push([`out-${n++}`, `conv-${scan}-${n}`, 'out', new Date(at.getTime() - minutes * (0.7 + rnd() * 0.6) * 60_000), at, [pick(roles)], category]);
+          rows.push([`out-${n++}`, `conv-${scan}-${n}`, 'out', new Date(at.getTime() - minutes * (0.7 + rnd() * 0.6) * 60_000), at, [pick(roles)], category, null]);
         }
       }
     }
     for (let k = 0; k < rows.length; k += 500) {
       const chunk = rows.slice(k, k + 500);
-      const values = chunk.map((_, j) => `($1, $2, $3, $${j * 7 + 4}, $${j * 7 + 5}, $${j * 7 + 6}, $${j * 7 + 7}, $${j * 7 + 8}, $${j * 7 + 9}, $${j * 7 + 10}, 'rule')`).join(', ');
-      await query(`insert into workload_email (scan_id, tenant_id, user_id, graph_message_id, conversation_id, direction, drafted_at, sent_at, recipient_roles, category, classified_by) values ${values}`, [scan, tenant.id, p.id, ...chunk.flat()]);
+      const values = chunk.map((_, j) => `($1, $2, $3, $${j * 8 + 4}, $${j * 8 + 5}, $${j * 8 + 6}, $${j * 8 + 7}, $${j * 8 + 8}, $${j * 8 + 9}, $${j * 8 + 10}, $${j * 8 + 11}, 'rule')`).join(', ');
+      await query(`insert into workload_email (scan_id, tenant_id, user_id, graph_message_id, conversation_id, direction, drafted_at, sent_at, recipient_roles, category, filtered, classified_by) values ${values}`, [scan, tenant.id, p.id, ...chunk.flat()]);
     }
     await query(`update workload_scan set messages_read = $2, classified = $2 where id = $1`, [scan, rows.length]);
     await query(`delete from epa_action where user_id = $1 and ref like 'dev-%'`, [p.id]);
@@ -127,7 +134,7 @@ async function main() {
         }
       }
       for (const [category, count, roles] of RECEIVED.filter(([c]) => c !== 'document_delivery')) {
-        for (let k = 0; k < Math.round(count * 0.4 * scale); k++) {
+        for (let k = 0; k < Math.round(count * 0.1 * scale); k++) {
           const at = when(until, w - 1);
           if (at > until) continue;
           await query(`insert into epa_action (tenant_id, user_id, source, ref, at, category, roles, classified_by) values ($1, $2, 'received', $3, $4, $5, $6, 'rule')`,

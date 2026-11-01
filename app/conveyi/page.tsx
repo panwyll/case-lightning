@@ -60,7 +60,7 @@ const CASEVIEW_SHOT = {
 interface Screen { src: string; width: number; height: number; alt: string; phone?: boolean }
 
 /** The measurement: a typical week across the firm, and the work taking it (Key Issues). */
-const MEASURE_SHOT: Screen = { src: '/product/app-measure-issues.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' };
+const MEASURE_SHOT: Screen = { src: '/product/app-measure-v2.webp', width: 2160, height: 1100, alt: 'The measurement: two months of email sent and received, a typical week split red, amber and green, and a Pareto chart of the work taking the hours, from proactive client updates and status requests down.' };
 
 const how: Array<{ title: string; line: string; shot: Screen }> = [
   {
