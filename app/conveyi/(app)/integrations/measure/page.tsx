@@ -282,7 +282,7 @@ export default function MeasurePage() {
             return (
               <div className="tv-top">
                 <RagCard title="A Typical Week" right="Per Conveyancer" hours={hours} share={m.share} unseen={{ hours: each(m.hours.unseen), share: m.share.unseen }}
-                  foot={<>Red And Amber<b className="ms-worth">{worth(hours.red + hours.amber)} A Year</b>{m.people} {m.people === 1 ? 'Conveyancer' : 'Conveyancers'}<br />{m.contractedHours}h Week</>} />
+                  foot={<>Red And Amber<b className="ms-worth">{worth(hours.red + hours.amber)}/Year</b>{m.people} {m.people === 1 ? 'Conveyancer' : 'Conveyancers'}<br />{m.contractedHours}h Week</>} />
                 <ParetoCard lines={m.lines.map((l) => ({ ...l, hours: each(l.hours) }))} right={basis} value={worth} />
               </div>
             );
