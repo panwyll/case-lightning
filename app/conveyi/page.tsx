@@ -2,7 +2,6 @@ import { REFERRALS_ENABLED } from '@/lib/flags';
 import type { Metadata } from 'next';
 import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../_components/shared';
 import { Vsl } from './Vsl';
-import { SCREEN_ZOOM, Tilt } from './Tilt';
 
 export const metadata: Metadata = {
   title: 'CONVEYi — Double the cases without double the work | Case Lightning',
@@ -112,27 +111,18 @@ const safety: Array<{ icon: IconName; title: string }> = [
  * A screenshot in the page's one frame. `fit` fixes the frame's shape so a row of them lines up whatever the shots'
  * own sizes (the top of each is kept; the rest is cropped). Without it the frame takes the shot's own shape.
  */
-function Shot({ src, alt, width, height, phone = false, fit, face = 'left' }: { src: string; alt: string; width: number; height: number; phone?: boolean; fit?: 'wide' | 'tall' | 'fill'; dark?: boolean; face?: 'left' | 'right' }) {
+function Shot({ src, alt, width, height, phone = false, fit }: { src: string; alt: string; width: number; height: number; phone?: boolean; fit?: 'wide' | 'tall' | 'fill'; dark?: boolean; face?: 'left' | 'right' }) {
   if (phone) {
     return (
-      <Tilt face={face} radius="2.1rem" className="mx-auto w-full max-w-[280px]">
-        <div className="rounded-[2.1rem] bg-[#15101F] p-[5px] ring-1 ring-white/15">
-          <div className="overflow-hidden rounded-[1.8rem] bg-white">
-            <img src={src} alt={alt} width={width} height={height} className="block h-auto w-full" style={SCREEN_ZOOM} />
-          </div>
-        </div>
-      </Tilt>
+      <div className="mx-auto w-full max-w-[280px] overflow-hidden rounded-[2.1rem] border-[6px] border-ink bg-white shadow-card">
+        <img src={src} alt={alt} width={width} height={height} className="block h-auto w-full" />
+      </div>
     );
   }
-  // A thin dark edge round the screen; Tilt gives it thickness and turns it.
   return (
-    <Tilt face={face}>
-      <div className="rounded-[1.1rem] bg-[#15101F] p-[4px] ring-1 ring-white/15">
-        <div className={`overflow-hidden rounded-[0.85rem] bg-white ${fit === 'wide' ? 'aspect-[16/10]' : fit === 'tall' ? 'aspect-[4/5]' : fit === 'fill' ? 'h-full' : ''}`}>
-          <img src={src} alt={alt} width={width} height={height} className={`block w-full ${fit ? 'h-full object-cover object-left-top' : 'h-auto'}`} style={SCREEN_ZOOM} />
-        </div>
-      </div>
-    </Tilt>
+    <div className={`overflow-hidden rounded-xl border border-ink/15 bg-white shadow-card ${fit === 'wide' ? 'aspect-[16/10]' : fit === 'tall' ? 'aspect-[4/5]' : fit === 'fill' ? 'h-full' : ''}`}>
+      <img src={src} alt={alt} width={width} height={height} className={`block w-full ${fit ? 'h-full object-cover object-left-top' : 'h-auto'}`} />
+    </div>
   );
 }
 
