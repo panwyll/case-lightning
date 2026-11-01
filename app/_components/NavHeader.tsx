@@ -37,7 +37,7 @@ export function NavHeader({
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-ink text-paper">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+      <div className="mx-auto grid max-w-6xl grid-cols-[1fr_auto] items-center px-6 py-4 md:grid-cols-[1fr_auto_1fr]">
         <a href={homeHref} className="flex items-baseline gap-2 transition hover:opacity-80">
           {brand === 'caselightning' ? (
             <span className="text-xl font-extrabold tracking-tight text-paper">
@@ -53,13 +53,13 @@ export function NavHeader({
           )}
         </a>
 
-        <nav className="hidden items-center gap-8 text-sm font-medium text-paper/70 md:flex">
+        <nav className="hidden items-center justify-center gap-8 text-sm font-medium text-paper/70 md:flex">
           {links.map(({ href, label }) => (
             <a key={href} href={href} className="transition-colors hover:text-white">{label}</a>
           ))}
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center justify-end gap-3">
           {!noCta && (
             <div className="hidden md:block">
               <Cta label={signupLabel} href={signupHref} dataCta="nav_signup" />
