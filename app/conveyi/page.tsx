@@ -192,21 +192,14 @@ export default function Page() {
           </div>
           {/* The arithmetic behind the promise: the firm's capacity is its fee earners' time over the minutes a case takes. */}
           <div className="mx-auto mt-16 max-w-4xl">
-            <div className="flex flex-col items-center gap-4 text-center md:flex-row md:items-stretch md:justify-center md:gap-6">
-              <div className="flex-1 rounded-2xl bg-white/5 px-6 py-7 ring-1 ring-white/10">
-                <p className="font-serif text-3xl font-bold tracking-tight md:text-4xl">Fee earner hours</p>
-                <p className="mt-2 text-xs font-bold uppercase tracking-[0.18em] text-paper/60">A year</p>
+            <div className="flex flex-col items-center justify-center gap-6 font-serif text-3xl font-bold tracking-tight md:flex-row md:gap-8 md:text-4xl" role="math" aria-label="Fee earner hours a year, divided by minutes per case, equals cases a year">
+              <div className="flex flex-col items-center text-center">
+                <span className="px-2 pb-3">Fee earner hours a year</span>
+                <span className="h-[3px] w-full rounded-full bg-paper/70" aria-hidden="true" />
+                <span className="px-2 pt-3">Minutes per case</span>
               </div>
-              <div className="flex items-center justify-center font-serif text-4xl font-bold text-[#9B7BFF] md:text-5xl" aria-label="divided by">÷</div>
-              <div className="flex-1 rounded-2xl bg-white/5 px-6 py-7 ring-1 ring-white/10">
-                <p className="font-serif text-3xl font-bold tracking-tight md:text-4xl">Minutes</p>
-                <p className="mt-2 text-xs font-bold uppercase tracking-[0.18em] text-paper/60">Per case</p>
-              </div>
-              <div className="flex items-center justify-center font-serif text-4xl font-bold text-[#9B7BFF] md:text-5xl" aria-label="equals">=</div>
-              <div className="flex-1 rounded-2xl bg-violet px-6 py-7 shadow-violet">
-                <p className="font-serif text-3xl font-bold tracking-tight md:text-4xl">Cases</p>
-                <p className="mt-2 text-xs font-bold uppercase tracking-[0.18em] text-white/70">A year</p>
-              </div>
+              <span className="text-[#9B7BFF]" aria-hidden="true">=</span>
+              <span className="text-[#9B7BFF]">Cases a year</span>
             </div>
             <p className="mx-auto mt-10 max-w-2xl text-center text-xl leading-relaxed text-paper/80 [text-wrap:balance] md:text-2xl">The hours are fixed. CONVEYi cuts the minutes, by handling the emails and remembering the case information.</p>
             <p className="mx-auto mt-6 max-w-2xl text-center font-serif text-2xl font-bold leading-snug tracking-tight [text-wrap:balance] md:text-3xl">Every minute saved is worth £1,500 per fee earner, every year.</p>
