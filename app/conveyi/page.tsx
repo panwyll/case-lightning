@@ -206,9 +206,9 @@ export default function Page() {
             <p className="mx-auto mt-12 max-w-2xl text-center font-serif text-2xl font-bold leading-snug tracking-tight [text-wrap:balance] md:text-3xl">
               Every minute saved is worth{' '}
               <span className="group relative inline-block">
-                <span tabIndex={0} aria-describedby="minute-basis" className="cursor-help underline decoration-[#9B7BFF] decoration-dotted decoration-2 underline-offset-[6px] outline-none focus-visible:decoration-solid">£1,650</span>
+                <span tabIndex={0} aria-describedby="minute-basis" className="cursor-help underline decoration-[#9B7BFF] decoration-dotted decoration-2 underline-offset-[6px] outline-none focus-visible:decoration-solid">£1,300</span>
                 <span id="minute-basis" role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-3 w-72 -translate-x-1/2 rounded-xl bg-paper px-4 py-3 text-left font-sans text-sm font-medium leading-snug text-ink opacity-0 shadow-card transition group-hover:opacity-100 group-focus-within:opacity-100">
-                  Based on 30 completions a month at an average fee of £650 per case.
+                  30 completions a month at an average fee of £1,000, on 220 working days of 7.5 hours. That is 275 minutes a case; a minute off each is 1.3 more cases a year.
                   <span className="absolute left-1/2 top-full -ml-2 border-8 border-transparent border-t-paper" aria-hidden="true" />
                 </span>
               </span>
