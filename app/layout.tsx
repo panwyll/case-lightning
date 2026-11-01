@@ -14,11 +14,11 @@ const manrope = Manrope({ subsets: ['latin'], variable: '--font-manrope', displa
 
 export const metadata: Metadata = {
   title: {
-    default: 'Case Lightning — Case management native to your OS and inbox',
+    default: 'Case Lightning: Case management native to your OS and inbox',
     template: '%s',
   },
   description:
-    'Case Lightning builds case management for finance, legal and document-heavy practices — native to the operating system and email you already use. CONVEYi for conveyancing, plus custom builds.',
+    'Case Lightning builds case management for finance, legal and document-heavy practices, native to the operating system and email you already use. CONVEYi for conveyancing, plus custom builds.',
   // The SVG where it is supported; PNG and ICO for Safari, search results and older browsers; the Apple icon for home screens.
   icons: {
     icon: [

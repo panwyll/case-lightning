@@ -100,7 +100,7 @@ export function SiteFooter() {
         </nav>
       </div>
       <p className="mx-auto mt-8 max-w-6xl text-xs text-ink-soft/70">
-        © {new Date().getFullYear()} {BRAND} — a {PARENT_BRAND} product. GDPR-compliant. Your emails and documents stay in your own Microsoft 365 tenant.
+        © {new Date().getFullYear()} {BRAND}, a {PARENT_BRAND} product. GDPR-compliant. Your emails and documents stay in your own Microsoft 365 tenant.
       </p>
     </footer>
   );
@@ -114,7 +114,7 @@ export function CaseLightningFooter() {
         <div>
           <CaseLightningWordmark className="text-2xl" />
           <p className="mt-2 max-w-sm text-sm text-ink-soft">
-            Case management that lives in the tools you already use — your operating system and your email. Built for finance, legal, and any document-heavy workflow.
+            Case management that lives in the tools you already use: your operating system and your email. Built for finance, legal, and any document-heavy workflow.
           </p>
         </div>
         <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-ink-soft">
