@@ -90,7 +90,8 @@ function invite(b: Row, method: 'REQUEST' | 'CANCEL', organizerEmail: string) {
 
 async function send(b: Row, method: 'REQUEST' | 'CANCEL', cancelUrl: string | null) {
   const s = sender();
-  if (!s) return;
+  // Without Resend the booking is kept but nobody hears of it: say so where it will be seen.
+  if (!s) { console.error(`demo ${method === 'CANCEL' ? 'cancellation' : 'booking'} ${b.id} (${b.email}, ${b.firm}) not emailed: RESEND_API_KEY / RESEND_FROM_EMAIL not set`); return; }
   const ics = invite(b, method, s.email);
   const attachment = [{ filename: method === 'CANCEL' ? 'cancel.ics' : 'invite.ics', content: Buffer.from(ics), contentType: `text/calendar; charset=utf-8; method=${method}` }];
   const at = when(new Date(b.starts_at));
