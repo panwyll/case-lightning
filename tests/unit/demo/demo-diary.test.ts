@@ -113,3 +113,20 @@ test('the invite: one event both diaries accept, and its cancellation', () => {
   assert.match(cancel, /STATUS:CANCELLED/);
   assert.match(cancel, /UID:demo-1@caselightning.co.uk/);
 });
+
+test('reminders: the day before only when booked more than a day ahead, an hour before always, each once', async () => {
+  const { reminderDue } = await import('../../../lib/server/demo/bookings');
+  const start = new Date('2026-11-10T10:00:00Z');
+  const h = (n: number) => new Date(start.getTime() - n * 3_600_000);
+  const b = { status: 'booked', starts_at: start, created_at: h(72), reminded_day_at: null as Date | null, reminded_hour_at: null as Date | null };
+  assert.equal(reminderDue(b, h(25)), null, 'not yet');
+  assert.equal(reminderDue(b, h(23.9)), 'day');
+  assert.equal(reminderDue({ ...b, reminded_day_at: h(23.9) }, h(5)), null, 'day one sent; nothing until the hour');
+  assert.equal(reminderDue({ ...b, reminded_day_at: h(23.9) }, h(0.9)), 'hour');
+  assert.equal(reminderDue({ ...b, reminded_day_at: h(23.9), reminded_hour_at: h(0.9) }, h(0.5)), null, 'each once');
+  assert.equal(reminderDue(b, h(0.5)), 'hour', 'within the hour, the day one is skipped');
+  assert.equal(reminderDue({ ...b, created_at: h(5) }, h(3)), null, 'booked less than a day ahead: no day-before reminder');
+  assert.equal(reminderDue({ ...b, created_at: h(5) }, h(0.75)), 'hour');
+  assert.equal(reminderDue({ ...b, status: 'cancelled' }, h(0.5)), null, 'cancelled');
+  assert.equal(reminderDue(b, h(-0.1)), null, 'started');
+});

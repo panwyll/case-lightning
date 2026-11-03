@@ -32,6 +32,10 @@
     {
       "path": "/api/v1/cron/intouch-poll",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/v1/cron/demo-reminders",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

@@ -57,7 +57,11 @@ export async function availableSlots(now = new Date()): Promise<SlotDay[]> {
   return demoSlots(now, [...mine, ...host]);
 }
 
+/** Wednesday 4 November, 9:30am. */
 const when = (at: Date) => new Intl.DateTimeFormat('en-GB', { timeZone: DEMO_HOURS.tz, weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit', hour12: true }).format(at).replace(' at ', ', ').replace(/\s(am|pm)/, '$1');
+
+/** 9:30am. */
+const clock = (at: Date) => new Intl.DateTimeFormat('en-GB', { timeZone: DEMO_HOURS.tz, hour: 'numeric', minute: '2-digit', hour12: true }).format(at).replace(/\s(am|pm)/, '$1');
 
 /** The address we send from, and who the invite says it is from. */
 function sender() {
@@ -70,7 +74,20 @@ function sender() {
 interface Row {
   id: string; name: string; email: string; firm: string; phone: string | null; fee_earners: string | null; note: string | null;
   starts_at: Date; ends_at: Date; status: 'booked' | 'cancelled'; sequence: number; source: Record<string, string>;
+  created_at: Date; reminded_day_at: Date | null; reminded_hour_at: Date | null;
 }
+
+/** Send one email. Resend reports a refusal (a bad sender, a bad address) as a result, not a throw: either way it is logged, and false comes back. */
+async function mail(s: NonNullable<ReturnType<typeof sender>>, what: string, msg: Parameters<Resend['emails']['send']>[0]): Promise<boolean> {
+  try {
+    const r = await s.resend.emails.send(msg);
+    if (r.error) { console.error(`${what} failed`, r.error); return false; }
+    return true;
+  } catch (e) { console.error(`${what} failed`, e); return false; }
+}
+
+/** How the demo happens, in a line. */
+const howLine = (b: Row) => (DEMO_MEETING_URL ? `Join here: ${DEMO_MEETING_URL}` : `${DEMO_HOST.name.split(' ')[0]} will call you on ${b.phone}.`);
 
 function invite(b: Row, method: 'REQUEST' | 'CANCEL', organizerEmail: string) {
   const where = DEMO_MEETING_URL ?? `Phone call: ${DEMO_HOST.name} calls ${b.phone}`;
@@ -96,7 +113,7 @@ async function send(b: Row, method: 'REQUEST' | 'CANCEL', cancelUrl: string | nu
   const attachment = [{ filename: method === 'CANCEL' ? 'cancel.ics' : 'invite.ics', content: Buffer.from(ics), contentType: `text/calendar; charset=utf-8; method=${method}` }];
   const at = when(new Date(b.starts_at));
   const first = b.name.split(/\s+/)[0];
-  const how = DEMO_MEETING_URL ? `Join here: ${DEMO_MEETING_URL}` : `${DEMO_HOST.name.split(' ')[0]} will call you on ${b.phone}.`;
+  const how = howLine(b);
   const theirs = method === 'REQUEST'
     ? { subject: `CONVEYi demo, ${at}`, text: `Hi ${first},\n\nYou are booked in for a 15-minute CONVEYi demo on ${at} (UK time). The invite is attached.\n\n${how}\n\nCan no longer make it? Cancel here: ${cancelUrl}\n\n${DEMO_HOST.name}\nCase Lightning` }
     : { subject: `Cancelled: CONVEYi demo, ${at}`, text: `Hi ${first},\n\nYour CONVEYi demo on ${at} is cancelled. Book another time whenever suits: ${config.appUrl}/conveyi/demo\n\n${DEMO_HOST.name}\nCase Lightning` };
@@ -105,8 +122,8 @@ async function send(b: Row, method: 'REQUEST' | 'CANCEL', cancelUrl: string | nu
     ? { subject: `Demo booked: ${b.firm}, ${at}`, text: [`${b.name} <${b.email}>`, b.firm, b.phone && `Phone: ${b.phone}`, b.fee_earners && `Fee earners: ${b.fee_earners}`, b.note && `\n${b.note}`, source && `\nCame from: ${source}`, `\nCancel it: ${cancelUrl}`].filter(Boolean).join('\n') }
     : { subject: `Demo cancelled: ${b.firm}, ${at}`, text: `${b.name} <${b.email}>, ${b.firm}, cancelled the demo on ${at}.` };
   await Promise.all([
-    s.resend.emails.send({ from: s.from, to: b.email, replyTo: DEMO_HOST.email, subject: theirs.subject, text: theirs.text, attachments: attachment }).catch((e) => console.error('demo email to booker failed', e)),
-    s.resend.emails.send({ from: s.from, to: DEMO_HOST.email, replyTo: b.email, subject: host.subject, text: host.text, attachments: attachment }).catch((e) => console.error('demo email to host failed', e)),
+    mail(s, `demo email to booker (${b.id})`, { from: s.from, to: b.email, replyTo: DEMO_HOST.email, subject: theirs.subject, text: theirs.text, attachments: attachment }),
+    mail(s, `demo email to host (${b.id})`, { from: s.from, to: DEMO_HOST.email, replyTo: b.email, subject: host.subject, text: host.text, attachments: attachment }),
   ]);
 }
 
@@ -159,4 +176,46 @@ export async function cancelDemo(token: string): Promise<BookingView> {
   const view = await bookingByToken(token);
   if (!view) throw new DemoBookingError('This link is not one of ours.', 404);
   return view;
+}
+
+const HOUR = 3_600_000;
+
+/**
+ * Which reminder a booked demo is due, if any: the day-before one from 24 hours ahead (only when it was booked more
+ * than a day ahead, and not once it is within the hour), the hour-before one from an hour ahead. Each is sent once.
+ */
+export function reminderDue(b: { status: string; starts_at: Date; created_at: Date; reminded_day_at: Date | null; reminded_hour_at: Date | null }, now: Date): 'day' | 'hour' | null {
+  if (b.status !== 'booked') return null;
+  const left = new Date(b.starts_at).getTime() - now.getTime();
+  if (left <= 0) return null;
+  if (left <= HOUR) return b.reminded_hour_at ? null : 'hour';
+  const lead = new Date(b.starts_at).getTime() - new Date(b.created_at).getTime();
+  if (left <= 24 * HOUR && lead > 24 * HOUR && !b.reminded_day_at) return 'day';
+  return null;
+}
+
+/** Send the reminders now due (run every quarter hour by app/api/v1/cron/demo-reminders). Each is claimed before it is sent, so two runs never send it twice; a send that fails is released for the next run. */
+export async function sendDemoReminders(now = new Date()): Promise<{ sent: number; failed: number }> {
+  const s = sender();
+  const rows = await runAsSystem(() => query<Row>(
+    `select * from demo_booking where status = 'booked' and starts_at > $1 and starts_at <= $2 and (reminded_day_at is null or reminded_hour_at is null)`,
+    [now, new Date(now.getTime() + 24 * HOUR)]));
+  let sent = 0;
+  let failed = 0;
+  for (const b of rows) {
+    const kind = reminderDue(b, now);
+    if (!kind) continue;
+    if (!s) { console.error(`demo reminder ${b.id} not emailed: RESEND_API_KEY / RESEND_FROM_EMAIL not set`); failed++; continue; }
+    const col = kind === 'day' ? 'reminded_day_at' : 'reminded_hour_at';
+    const claimed = await runAsSystem(() => queryOne<{ id: string }>(`update demo_booking set ${col} = now() where id = $1 and ${col} is null and status = 'booked' returning id`, [b.id]));
+    if (!claimed) continue;
+    const first = b.name.split(/\s+/)[0];
+    const start = new Date(b.starts_at);
+    const msg = kind === 'day'
+      ? { subject: `Reminder: CONVEYi demo, ${when(start)}`, text: `Hi ${first},\n\nA reminder of your 15-minute CONVEYi demo on ${when(start)} (UK time).\n\n${howLine(b)}\n\nNeed to move it? Reply to this email.\n\n${DEMO_HOST.name}\nCase Lightning` }
+      : { subject: `Starting soon: CONVEYi demo at ${clock(start)}`, text: `Hi ${first},\n\nYour CONVEYi demo starts at ${clock(start)} (UK time).\n\n${howLine(b)}\n\n${DEMO_HOST.name}\nCase Lightning` };
+    if (await mail(s, `demo ${kind} reminder (${b.id})`, { from: s.from, to: b.email, replyTo: DEMO_HOST.email, ...msg })) sent++;
+    else { failed++; await runAsSystem(() => query(`update demo_booking set ${col} = null where id = $1`, [b.id])); }
+  }
+  return { sent, failed };
 }
