@@ -9,6 +9,7 @@ import { Resend } from 'resend';
 import { query, queryOne, runAsSystem } from '../db';
 import { config } from '../config';
 import { busyFromIcs, inviteIcs } from './ics';
+import { googleBusy } from './google';
 import { DEMO_HOURS, demoSlots, type Busy, type SlotDay } from './slots';
 
 const env = (k: string) => process.env[k]?.trim() || undefined;
@@ -28,15 +29,26 @@ const hash = (x: string) => crypto.createHash('sha256').update(x).digest('hex');
 
 let feed: { at: number; busy: Busy[] } | null = null;
 
-/** The host's busy times from their published calendar, read at most every five minutes. */
+/**
+ * The host's busy times: from their connected Google Calendar (lib/server/demo/google.ts), else their published
+ * calendar (DEMO_BUSY_ICS_URL), read at most every five minutes. If the calendar cannot be read, the last good read
+ * is used.
+ */
 async function hostBusy(now: Date): Promise<Busy[]> {
   const url = env('DEMO_BUSY_ICS_URL');
-  if (!url) return [];
   if (feed && now.getTime() - feed.at < 5 * 60_000) return feed.busy;
+  const to = new Date(now.getTime() + (DEMO_HOURS.horizonDays + 2) * 86_400_000);
+  try {
+    const google = await googleBusy(now, to);
+    if (google) { feed = { at: now.getTime(), busy: google }; return google; }
+  } catch (e) {
+    console.error('demo busy times from Google failed', e);
+    return feed?.busy ?? [];
+  }
+  if (!url) return [];
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(6000), cache: 'no-store' });
     if (!r.ok) throw new Error(`calendar feed ${r.status}`);
-    const to = new Date(now.getTime() + (DEMO_HOURS.horizonDays + 2) * 86_400_000);
     feed = { at: now.getTime(), busy: busyFromIcs(await r.text(), now, to, DEMO_HOURS.tz) };
     return feed.busy;
   } catch (e) {
