@@ -15,14 +15,11 @@ const longDay = (iso: string) => fmt(iso, { weekday: 'long', day: 'numeric', mon
 const day = (date: string) => new Date(`${date}T12:00:00Z`);
 const addDays = (date: string, n: number) => { const d = day(date); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
-/** Monday to Friday of every week the free days fall in, so each day sits under its own weekday. */
-function weeks(days: SlotDay[]): string[][] {
+/** Every day from the first free one to the last (a few days at most), so a day with nothing free still shows, greyed. */
+function span(days: SlotDay[]): string[] {
   if (!days.length) return [];
-  const dow = day(days[0].date).getUTCDay();
-  let monday = addDays(days[0].date, -((dow + 6) % 7));
-  const last = days[days.length - 1].date;
-  const out: string[][] = [];
-  while (monday <= last) { out.push([0, 1, 2, 3, 4].map((i) => addDays(monday, i))); monday = addDays(monday, 7); }
+  const out: string[] = [];
+  for (let d = days[0].date; d <= days[days.length - 1].date; d = addDays(d, 1)) out.push(d);
   return out;
 }
 
@@ -46,7 +43,7 @@ export function DemoScheduler({ initial, phoneCall, host }: { initial: SlotDay[]
   const [err, setErr] = useState<string | null>(null);
   const [booked, setBooked] = useState<string | null>(null);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
-  const grid = useMemo(() => weeks(days), [days]);
+  const grid = useMemo(() => span(days), [days]);
   const free = useMemo(() => new Map(days.map((d) => [d.date, d.times])), [days]);
 
   const refresh = async () => {
@@ -141,8 +138,8 @@ export function DemoScheduler({ initial, phoneCall, host }: { initial: SlotDay[]
             <p className="text-ink-soft">No times are free in the next three days. Email <a className="font-semibold text-violet underline underline-offset-4" href={`mailto:pete@caselightning.co.uk?subject=CONVEYi%20demo`}>pete@caselightning.co.uk</a> and we will find one.</p>
           ) : (
             <>
-              <div className="grid grid-cols-5 gap-2" role="group" aria-label="Day">
-                {grid.flat().map((d) => {
+              <div className="grid grid-cols-4 gap-2" role="group" aria-label="Day">
+                {grid.map((d) => {
                   const open = free.has(d);
                   const on = d === date;
                   return (

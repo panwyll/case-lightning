@@ -1,5 +1,5 @@
 /**
- * When a demo can be booked: the host's working hours on working days, a fixed length with a gap after, from a
+ * When a demo can be booked: the host's hours on any day but a bank holiday, a fixed length with a gap after, from a
  * little notice ahead to 72 hours out, less anything already in the diary (bookings, and the host's own busy
  * times from their published calendar). Pure: the same inputs give the same slots.
  */
@@ -27,7 +27,7 @@ const hhmm = (v: string | undefined, d: string) => (v && /^([01]\d|2[0-3]):[0-5]
 
 export const DEMO_HOURS: DemoHours = {
   tz: 'Europe/London',
-  days: [1, 2, 3, 4, 5],
+  days: [0, 1, 2, 3, 4, 5, 6],
   first: hhmm(env('DEMO_FIRST_START'), '09:30'),
   last: hhmm(env('DEMO_LAST_START'), '16:30'),
   minutes: 15,
