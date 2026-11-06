@@ -37,7 +37,7 @@ let feed: { at: number; busy: Busy[] } | null = null;
 async function hostBusy(now: Date): Promise<Busy[]> {
   const url = env('DEMO_BUSY_ICS_URL');
   if (feed && now.getTime() - feed.at < 5 * 60_000) return feed.busy;
-  const to = new Date(now.getTime() + (DEMO_HOURS.horizonDays + 2) * 86_400_000);
+  const to = new Date(now.getTime() + (DEMO_HOURS.horizonHours + 48) * 3_600_000);
   try {
     const google = await googleBusy(now, to);
     if (google) { feed = { at: now.getTime(), busy: google }; return google; }

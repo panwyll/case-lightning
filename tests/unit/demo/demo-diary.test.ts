@@ -5,6 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { demoSlots, DEMO_HOURS } from '../../../lib/server/demo/slots';
+
+const WIDE = { ...DEMO_HOURS, horizonHours: 14 * 24 };
 import { busyFromIcs, inviteIcs } from '../../../lib/server/demo/ics';
 import { zonedTime, wallClock } from '../../../lib/server/demo/time';
 
@@ -18,12 +20,12 @@ test('London time: summer and winter both land on the right instant', () => {
 
 test('slots: working hours on working days, every half hour, after two hours notice; weekends and bank holidays are not offered', () => {
   // Thursday 22 October 2026, 08:00 in London.
-  const days = demoSlots(london('2026-10-22T08:00'), []);
+  const days = demoSlots(london('2026-10-22T08:00'), [], WIDE);
   assert.equal(days[0].date, '2026-10-22');
   assert.equal(hhmm(days[0].times[0]), '10:00', 'two hours notice from 08:00 is 10:00');
   assert.equal(hhmm(days[0].times.at(-1)!), DEMO_HOURS.last);
   assert.ok(!days.some((d) => ['2026-10-24', '2026-10-25'].includes(d.date)), 'no weekend');
-  const dec = demoSlots(london('2026-12-21T08:00'), []);
+  const dec = demoSlots(london('2026-12-21T08:00'), [], WIDE);
   assert.ok(!dec.some((d) => ['2026-12-25', '2026-12-28'].includes(d.date)), 'no bank holidays');
   // Across the clock change (25 October 2026): Monday 26th still starts at 09:30 London time.
   const mon = days.find((d) => d.date === '2026-10-26')!;
@@ -34,7 +36,7 @@ test('slots: working hours on working days, every half hour, after two hours not
 test('slots: anything in the diary takes out the slots it overlaps, and only those', () => {
   const now = london('2026-10-22T08:00');
   const busy = [{ start: london('2026-10-23T11:00'), end: london('2026-10-23T12:00') }];
-  const fri = demoSlots(now, busy).find((d) => d.date === '2026-10-23')!.times.map(hhmm);
+  const fri = demoSlots(now, busy, WIDE).find((d) => d.date === '2026-10-23')!.times.map(hhmm);
   assert.ok(!fri.includes('11:00') && !fri.includes('11:30'));
   assert.ok(fri.includes('10:30') && fri.includes('12:00'), fri.join(' '));
 });
@@ -129,4 +131,14 @@ test('reminders: the day before only when booked more than a day ahead, an hour 
   assert.equal(reminderDue({ ...b, created_at: h(5) }, h(0.75)), 'hour');
   assert.equal(reminderDue({ ...b, status: 'cancelled' }, h(0.5)), null, 'cancelled');
   assert.equal(reminderDue(b, h(-0.1)), null, 'started');
+});
+
+test('slots: nothing more than 72 hours ahead', () => {
+  // Thursday 22 October 2026, 08:00 in London: the window ends Sunday 08:00, so Thursday and Friday only.
+  const days = demoSlots(london('2026-10-22T08:00'), []);
+  assert.deepEqual(days.map((d) => d.date), ['2026-10-22', '2026-10-23']);
+  // Friday 30 October, 14:00: up to Monday 14:00, so Monday's last slot is 14:00.
+  const fri = demoSlots(london('2026-10-30T14:00'), []);
+  assert.deepEqual(fri.map((d) => d.date), ['2026-10-30', '2026-11-02']);
+  assert.equal(hhmm(fri.at(-1)!.times.at(-1)!), '14:00');
 });

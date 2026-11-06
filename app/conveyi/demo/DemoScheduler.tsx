@@ -138,7 +138,7 @@ export function DemoScheduler({ initial, phoneCall, host }: { initial: SlotDay[]
           </div>
           {err && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</p>}
           {grid.length === 0 ? (
-            <p className="text-ink-soft">No times are free in the next two weeks. Email <a className="font-semibold text-violet underline underline-offset-4" href={`mailto:pete@caselightning.co.uk?subject=CONVEYi%20demo`}>pete@caselightning.co.uk</a> and we will find one.</p>
+            <p className="text-ink-soft">No times are free in the next three days. Email <a className="font-semibold text-violet underline underline-offset-4" href={`mailto:pete@caselightning.co.uk?subject=CONVEYi%20demo`}>pete@caselightning.co.uk</a> and we will find one.</p>
           ) : (
             <>
               <div className="grid grid-cols-5 gap-2" role="group" aria-label="Day">

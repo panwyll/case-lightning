@@ -1,6 +1,6 @@
 /**
  * When a demo can be booked: the host's working hours on working days, a fixed length with a gap after, from a
- * little notice ahead to two weeks out, less anything already in the diary (bookings, and the host's own busy
+ * little notice ahead to 72 hours out, less anything already in the diary (bookings, and the host's own busy
  * times from their published calendar). Pure: the same inputs give the same slots.
  */
 import { EW_BANK_HOLIDAYS } from '../engine/working-days';
@@ -16,9 +16,9 @@ export interface DemoHours {
   /** Meeting length and the step between starts (the difference is the gap after each). */
   minutes: number;
   step: number;
-  /** How long ahead the earliest booking is, and how many days out the latest. */
+  /** How long ahead the earliest booking is, and how far ahead the latest may start. */
   noticeMinutes: number;
-  horizonDays: number;
+  horizonHours: number;
   holidays: ReadonlySet<string>;
 }
 
@@ -33,7 +33,7 @@ export const DEMO_HOURS: DemoHours = {
   minutes: 15,
   step: 30,
   noticeMinutes: 120,
-  horizonDays: 14,
+  horizonHours: 72,
   holidays: EW_BANK_HOLIDAYS,
 };
 
@@ -46,10 +46,11 @@ const overlaps = (a: Busy, b: Busy) => a.start < b.end && b.start < a.end;
 export function demoSlots(now: Date, busy: Busy[], hours: DemoHours = DEMO_HOURS): SlotDay[] {
   const out: SlotDay[] = [];
   const earliest = now.getTime() + hours.noticeMinutes * 60_000;
+  const latest = now.getTime() + hours.horizonHours * 3_600_000;
   const [fh, fm] = hours.first.split(':').map(Number);
   const [lh, lm] = hours.last.split(':').map(Number);
   const today = wallClock(now, hours.tz);
-  for (let i = 0; i <= hours.horizonDays; i++) {
+  for (let i = 0; i <= Math.ceil(hours.horizonHours / 24); i++) {
     // Noon on the day in question, so a clock change never moves us onto the wrong date.
     const noon = zonedTime(today.y, today.m, today.d + i, 12, 0, hours.tz);
     const w = wallClock(noon, hours.tz);
@@ -59,7 +60,7 @@ export function demoSlots(now: Date, busy: Busy[], hours: DemoHours = DEMO_HOURS
     for (let t = fh * 60 + fm; t <= lh * 60 + lm; t += hours.step) {
       const start = zonedTime(w.y, w.m, w.d, Math.floor(t / 60), t % 60, hours.tz);
       const slot = { start, end: new Date(start.getTime() + hours.minutes * 60_000) };
-      if (start.getTime() < earliest || busy.some((b) => overlaps(slot, b))) continue;
+      if (start.getTime() < earliest || start.getTime() > latest || busy.some((b) => overlaps(slot, b))) continue;
       times.push(start.toISOString());
     }
     if (times.length) out.push({ date, times });
