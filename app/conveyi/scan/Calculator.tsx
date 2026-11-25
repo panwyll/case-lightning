@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { hoursAndMinutes, minuteValueOf, minutesPerCaseOf, pounds, yearFeesOf, type ValueInputs } from '@/lib/value';
+import { hoursAndMinutes, minuteValueOf, minutesPerCaseOf, pounds, VALUE_BASIS, yearFeesOf, type ValueInputs } from '@/lib/value';
 
 /**
  * Time per case and what a minute of it is worth, from the firm's own figures (lib/value.ts). The figures are kept in
@@ -8,9 +8,10 @@ import { hoursAndMinutes, minuteValueOf, minutesPerCaseOf, pounds, yearFeesOf, t
  */
 export interface CalcInputs extends ValueInputs { feeEarners: number }
 
-/** 233 working days: the UK's 261 weekdays less the 28 days' statutory holiday, bank holidays included. */
-export const CALC_DEFAULTS: CalcInputs = { completionsPerMonth: 30, averageFee: 1000, workingDays: 233, hoursPerDay: 7.5, feeEarners: 1 };
-const KEY = 'cl_scan_inputs';
+/** The landing page's basis (lib/value.ts): 220 days of 7.5 hours, 30 completions a month at £1,000, so £1,314 a minute. */
+export const CALC_DEFAULTS: CalcInputs = { ...VALUE_BASIS, feeEarners: 1 };
+// v2: the defaults moved from 233 days to the landing page's 220, so figures saved under the old defaults are not reused.
+const KEY = 'cl_scan_inputs_v2';
 
 export function useCalcInputs(): [CalcInputs, (v: CalcInputs) => void] {
   const [v, setV] = useState<CalcInputs>(CALC_DEFAULTS);

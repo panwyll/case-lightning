@@ -15,6 +15,7 @@ import type { SessionUser } from '../types';
 import { fromInTouchItem } from '../epa/taxonomy';
 import { IN_CATEGORIES, IN_SPEC, OUT_CATEGORIES, OUT_SPEC, ROLES, allInternal, domainOf, filterByRule, firmDomainsOf, isForwardSubject, isReplySubject, wordCount, writtenText, type Filtered, type OutCategory } from './taxonomy';
 import { buildReport, type Report, type Row, type Settings } from './model';
+import { wholeDayWindow } from './window';
 
 export type ScanStatus = 'SCANNING_SENT' | 'SCANNING_INBOX' | 'SCANNING_INTOUCH' | 'CHECKING' | 'COMPLETE' | 'FAILED' | 'CANCELLED';
 export interface ScanRow {
@@ -74,9 +75,11 @@ export async function baselineScan(userId: string): Promise<ScanRow | null> {
 export async function startScan(user: SessionUser, opts: { weeks?: number; since?: string; until?: string } = {}): Promise<ScanRow> {
   const running = await queryOne<{ id: string }>(`select id from workload_scan where user_id = $1 and status = any($2)`, [user.userId, ACTIVE]);
   if (running) throw Object.assign(new Error('A scan is already running.'), { status: 409 });
-  const until = opts.until ? new Date(opts.until) : new Date();
   const weeks = Math.min(52, Math.max(2, opts.weeks ?? DEFAULT_WEEKS));
-  const since = opts.since ? new Date(opts.since) : new Date(until.getTime() - weeks * 7 * 86_400_000);
+  // Whole UK days ending at midnight this morning, unless a window is given (workload/window.ts).
+  const whole = wholeDayWindow(new Date(), weeks);
+  const until = opts.until ? new Date(opts.until) : whole.until;
+  const since = opts.since ? new Date(opts.since) : opts.until ? new Date(until.getTime() - weeks * 7 * 86_400_000) : whole.since;
   if (!(since < until)) throw Object.assign(new Error('The window must start before it ends.'), { status: 400 });
   const s = await queryOne<ScanRow>(
     `insert into workload_scan (tenant_id, user_id, since, until, prompt_version, max_messages) values ($1, $2, $3, $4, $5, $6) returning *`,

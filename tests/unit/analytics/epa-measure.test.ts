@@ -88,3 +88,21 @@ test('a reply wait runs from the email received to the next one sent on that con
   });
   assert.deepEqual(waits.map((w) => w / H).sort(), [2, 4]);
 });
+
+test('scan window: whole UK days ending at midnight this morning, counted by UK date, across the clock change too', async () => {
+  const { wholeDayWindow, windowWeeks } = await import('../../../lib/server/workload/window');
+  // Wednesday 25 November 2026, mid-afternoon: four weeks back is Wednesday 28 October, midnight GMT.
+  const w = wholeDayWindow(new Date('2026-11-25T15:20:00Z'), 4);
+  assert.equal(w.until.toISOString(), '2026-11-25T00:00:00.000Z');
+  assert.equal(w.since.toISOString(), '2026-10-28T00:00:00.000Z');
+  assert.equal(windowWeeks(w.since, w.until), 4, '20 working days');
+  // Across the clock change (25 October): starts at midnight BST, 23:00 UTC the night before, and still 20 days.
+  const x = wholeDayWindow(new Date('2026-11-11T10:00:00Z'), 4);
+  assert.equal(x.since.toISOString(), '2026-10-13T23:00:00.000Z');
+  assert.equal(windowWeeks(x.since, x.until), 4);
+  // Christmas: 20 weekdays less the bank holidays on 25 and 28 December and 1 January.
+  const c = wholeDayWindow(new Date('2027-01-06T09:00:00Z'), 4);
+  assert.equal(windowWeeks(c.since, c.until), 17 / 5);
+  // An older window with part-days at its ends is counted as before.
+  assert.equal(windowWeeks(new Date('2026-10-28T15:20:00Z'), new Date('2026-11-25T15:20:00Z')), 4);
+});

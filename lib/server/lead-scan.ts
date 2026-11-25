@@ -16,9 +16,10 @@ import { decryptSecret, encryptSecret } from './crypto';
 import { query, queryOne, runAsSystem } from './db';
 import { DEFAULT_LEVELS } from './engine/types';
 import { buildMeasurement, MIN_SENT_PER_WEEK, type Measurement, type PersonScan } from './epa/measure';
-import { DEFAULT_SETTINGS, workingWeeks } from './workload/model';
+import { DEFAULT_SETTINGS } from './workload/model';
 import { labelStaged, stage, type Staged } from './workload/scan';
 import { domainOf, firmDomainsOf } from './workload/taxonomy';
+import { wholeDayWindow, windowWeeks } from './workload/window';
 import { DEMO_HOST } from './demo/bookings';
 
 export const LEAD_SCAN_WEEKS = 4;
@@ -84,8 +85,8 @@ export async function startLeadScan(input: { code: string; ip: string | null; so
   if (input.ip && (limits?.ip ?? 0) >= 5) throw new LeadScanError('Too many scans from here today. Try again tomorrow.', 429, 'busy');
   if ((limits?.today ?? 0) >= Number(env('LEAD_SCAN_DAILY_MAX') ?? 60)) throw new LeadScanError('The scan is very busy today. Try again tomorrow, or book a demo and we will run it with you.', 429, 'busy');
   const token = crypto.randomBytes(24).toString('base64url');
-  const until = new Date();
-  const since = new Date(until.getTime() - LEAD_SCAN_WEEKS * 7 * 86_400_000);
+  // Whole UK days ending at midnight this morning (workload/window.ts).
+  const { since, until } = wholeDayWindow(new Date(), LEAD_SCAN_WEEKS);
   await sys(() => query(
     `insert into lead_scan (token_hash, email, name, ms_tenant_id, since, until, access_token_enc, token_expires_at, source, ip)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)`,
@@ -135,7 +136,7 @@ async function measure(scan: ScanRow): Promise<Measurement | null> {
       where scan_id = $1 and filtered is null and category is not null`, [scan.id]));
   const as = (r: (typeof rows)[number]) => ({ id: r.message_key, at: new Date(r.sent_at).getTime(), draftedAt: r.drafted_at ? new Date(r.drafted_at).getTime() : null, category: r.category, roles: r.roles ?? [], conversationId: r.conversation_id });
   const person: PersonScan = {
-    weeks: workingWeeks(new Date(scan.since).toISOString(), new Date(scan.until).toISOString()),
+    weeks: windowWeeks(new Date(scan.since), new Date(scan.until)),
     sent: rows.filter((r) => r.direction === 'out').map(as),
     received: rows.filter((r) => r.direction === 'in').map(as),
     intouch: null,

@@ -7,7 +7,8 @@ import type { SessionUser } from '../types';
 import { completionSpans, DEFAULT_LUNCH, type Completion, type Span } from './ledger';
 import { baselineSplit, buildEpaReport, emailEvidence, weekStart, type EpaReport } from './report';
 import { buildMeasurement, READ_MINUTES, type Measurement, type PersonScan } from './measure';
-import { DEFAULT_SETTINGS as WL_DEFAULTS, workingWeeks } from '../workload/model';
+import { DEFAULT_SETTINGS as WL_DEFAULTS } from '../workload/model';
+import { windowWeeks } from '../workload/window';
 import { asKind, EPA_KINDS, EPA_SPEC, LEGACY_KINDS, fromEmail, fromTask, type EpaKind } from './taxonomy';
 
 export interface SpanIn { start: string; end: string; source: 'focus' | 'reading'; item: string; matterId?: string | null; kind: string; of?: string | null; action?: string | null }
@@ -124,7 +125,7 @@ export async function firmMeasurement(tenantId: string): Promise<{ measurement: 
     );
     const as = (r: (typeof rows)[number]) => ({ id: r.id, at: r.sent_at.getTime(), draftedAt: r.drafted_at ? r.drafted_at.getTime() : null, category: r.category, roles: r.roles ?? [], conversationId: r.conversation_id });
     people.push({
-      weeks: workingWeeks(new Date(s.since).toISOString(), new Date(s.until).toISOString()),
+      weeks: windowWeeks(new Date(s.since), new Date(s.until)),
       sent: rows.filter((r) => r.direction === 'out').map(as),
       received: rows.filter((r) => r.direction === 'in').map(as),
       intouch: s.intouch ?? null,
