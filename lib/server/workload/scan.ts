@@ -91,7 +91,7 @@ export async function cancelScan(userId: string): Promise<void> {
 
 const people = (xs: any[] | undefined) => (xs ?? []).map((r) => r?.emailAddress).filter(Boolean) as Array<{ name?: string; address?: string }>;
 
-interface Staged { id: string; direction: 'out' | 'in'; subject: string; draftedAt: string | null; sentAt: string; conversationId: string | null; words: number; text: string; people: string; isReply: boolean; isForward: boolean; hasAttachments: boolean; filtered: Filtered | null; internal: boolean }
+export interface Staged { id: string; direction: 'out' | 'in'; subject: string; draftedAt: string | null; sentAt: string; conversationId: string | null; words: number; text: string; people: string; isReply: boolean; isForward: boolean; hasAttachments: boolean; filtered: Filtered | null; internal: boolean }
 
 /** A Graph message as the scan reads it: what was written, by rule what it is, and nothing else kept. */
 export function stage(m: any, direction: 'out' | 'in', firm: string[]): Staged | null {
@@ -129,8 +129,13 @@ async function inParallel<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>)
   return out;
 }
 
-/** Classify and store one page. A batch the model fails on is stored unclassified, and the report counts it as such. */
-async function classifyAndStore(user: SessionUser, scan: ScanRow, staged: Staged[]): Promise<{ classified: number; model: string | null }> {
+export type Labels = Map<string, { category: string; confidence: number; roles: string[] }>;
+
+/**
+ * Label a page of staged emails with the model: those not set aside by rule and not internal, in batches. A batch the
+ * model fails on (twice) stays unlabelled. Shared by the firm's scan and the free scan (lib/server/lead-scan.ts).
+ */
+export async function labelStaged(staged: Staged[], who: { userId: string; tenantId: string }): Promise<{ results: Labels; model: string | null }> {
   const toModel = staged.filter((m) => !m.filtered && !m.internal);
   const batches: Staged[][] = [];
   for (let i = 0; i < toModel.length; i += BATCH) batches.push(toModel.slice(i, i + BATCH));
@@ -143,7 +148,7 @@ async function classifyAndStore(user: SessionUser, scan: ScanRow, staged: Staged
     const emails = b.map((m, i) => ({ id: `m${i + 1}`, direction: m.direction, subject: m.subject.slice(0, 200), people: m.people.slice(0, 300), isReply: m.isReply, isForward: m.isForward, hasAttachments: m.hasAttachments, text: m.text.slice(0, TEXT_CHARS) }));
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const r = await classifyWorkload({ userId: user.userId, tenantId: user.tenantId, emails, outCategories: outDefs, inCategories: inDefs, roles: ROLES });
+        const r = await classifyWorkload({ userId: who.userId, tenantId: who.tenantId, emails, outCategories: outDefs, inCategories: inDefs, roles: ROLES });
         model = r.model;
         for (const x of r.results) {
           const m = b[Number(x.id.replace(/^m/, '')) - 1];
@@ -155,6 +160,12 @@ async function classifyAndStore(user: SessionUser, scan: ScanRow, staged: Staged
       } catch { /* one more try, then the batch stays unclassified */ }
     }
   });
+  return { results, model };
+}
+
+/** Classify and store one page. A batch the model fails on is stored unclassified, and the report counts it as such. */
+async function classifyAndStore(user: SessionUser, scan: ScanRow, staged: Staged[]): Promise<{ classified: number; model: string | null }> {
+  const { results, model } = await labelStaged(staged, { userId: user.userId, tenantId: user.tenantId });
   let classified = 0;
   for (const m of staged) {
     const r = results.get(m.id);

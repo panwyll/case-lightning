@@ -73,6 +73,8 @@ interface RecordInput extends UsageContext {
 }
 
 async function insertUsage(row: RecordInput): Promise<void> {
+  // No firm (the free inbox scan, lib/server/lead-scan.ts): nobody to record it against.
+  if (!row.tenantId) return;
   try {
     await query(
       `insert into usage_event

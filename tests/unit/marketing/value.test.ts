@@ -16,3 +16,13 @@ test('pounds: thousands from £10k, whole pounds below', () => {
   assert.equal(pounds(50_110), '£50k');
   assert.equal(pounds(9_636.4), '£9,636');
 });
+
+test('a firm\'s own figures: 233 days, 30 a month at £1,000 is 291 minutes a case and £1,240 a minute', async () => {
+  const { minutesPerCaseOf, minuteValueOf, yearFeesOf, hoursAndMinutes } = await import('../../../lib/value');
+  const v = { workingDays: 233, hoursPerDay: 7.5, completionsPerMonth: 30, averageFee: 1000 };
+  assert.equal(minutesPerCaseOf(v), 291.25);
+  assert.equal(Math.round(minuteValueOf(v)), 1240);
+  assert.equal(yearFeesOf(v), 360_000);
+  assert.equal(hoursAndMinutes(291.25), '4h 51m');
+  assert.equal(minuteValueOf({ ...v, completionsPerMonth: 0 }), 0, 'no cases: nothing to save');
+});
