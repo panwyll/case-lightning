@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { ctaHref, Cta, NavHeader, ROUTES, SiteFooter } from '../../_components/shared';
 import { Calculator } from './Calculator';
+import { RagLegend } from './RagLegend';
 import { LEAD_SCAN_WEEKS } from '@/lib/server/lead-scan';
 
 export const metadata: Metadata = {
@@ -36,7 +37,7 @@ const Tick = () => (
 const gets: Array<{ title: string; line: string; img: { src: string; width: number; height: number; alt: string; wide?: { src: string; width: number; height: number } } }> = [
   {
     title: 'Your week',
-    line: 'Green is the work only a conveyancer can do. Red and amber is the rest.',
+    line: 'Your hours, coloured by what they’re spent on.',
     img: { src: '/product/app-measure-week.webp', width: 696, height: 754, alt: 'Example: a typical week, 56% red, 18% amber, 26% green.' },
   },
   {
@@ -108,6 +109,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
               </div>
             ))}
           </div>
+          <div className="mt-14 flex justify-center"><RagLegend /></div>
         </div>
       </section>
 

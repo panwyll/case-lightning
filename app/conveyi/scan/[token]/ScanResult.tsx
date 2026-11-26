@@ -4,6 +4,7 @@ import { ParetoCard, RagCard, TIME_CSS } from '@/app/shared/epa/TimeView';
 import { pounds, weeklyHourValueOf } from '@/lib/value';
 import type { LeadScanView } from '@/lib/server/lead-scan';
 import { Calculator, useCalcInputs } from '../Calculator';
+import { RagLegend } from '../RagLegend';
 
 const START = '/api/v1/scan/start';
 const running = (v: LeadScanView | null) => !!v && (v.status === 'SCANNING_SENT' || v.status === 'SCANNING_INBOX');
@@ -103,8 +104,9 @@ export function ScanResult({ token, initial, demoHref }: { token: string; initia
               foot={<>Red And Amber<b style={{ display: 'block', color: '#0f172a', fontSize: 18, fontWeight: 800, margin: '2px 0 10px' }}>{worth(m.hours.red + m.hours.amber)}/Year</b>{m.contractedHours}h Week</>} />
             <ParetoCard lines={m.lines} right="Hours A Week · £/Year" value={worth} />
           </div>
+          <div className="mt-10 flex justify-center"><RagLegend /></div>
           {v.thin && <p className="mx-auto mt-6 max-w-6xl text-ink-soft">We only found {n(v.read.sent)} sent emails in four weeks, so treat these as rough.</p>}
-          <p className="mx-auto mt-6 max-w-6xl text-sm text-ink-soft">We read {n(v.read.sent)} sent and {n(v.read.received)} received emails from {new Date(v.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} to {new Date(v.until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}. Green is work that needs a conveyancer and moves a case on. Amber does one of those. Red does neither.</p>
+          <p className="mx-auto mt-6 max-w-6xl text-sm text-ink-soft">We read {n(v.read.sent)} sent and {n(v.read.received)} received emails from {new Date(v.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} to {new Date(v.until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.</p>
         </section>
       )}
 
