@@ -16,7 +16,7 @@
  * The extractor itself is a port. Without a model key the deterministic reader below
  * still catches the unambiguous phrasings, so the feature degrades to "less", not "wrong".
  */
-import { CLIENT_DECISION_OUTCOMES, CLIENT_DECISION_SUBJECTS, AVAILABILITY_PARTIES, WAIT_KEYS, type WaitKey, type AvailabilityParty, type ClientDecisionSubject, type NoteAction, type NoteActionKind, type NoteCommand, type NoteKind, type NoteSender, type SenderRelation } from './types';
+import { CLIENT_DECISION_OUTCOMES, CLIENT_DECISION_SUBJECTS, AVAILABILITY_PARTIES, WAIT_KEYS, FIRM_ACTS, FIRM_ACT_LABEL, type FirmAct, type WaitKey, type AvailabilityParty, type ClientDecisionSubject, type NoteAction, type NoteActionKind, type NoteCommand, type NoteKind, type NoteSender, type SenderRelation } from './types';
 import { ISSUE_RESOLUTIONS, RESOLUTION_LABEL } from './issues';
 import { ISSUE_KIND_SPEC, type IssueGate, type IssueKind } from './issues';
 
@@ -46,6 +46,8 @@ export interface NoteExtractionContext {
   waits?: Array<{ waitKey: string; subject: string; label: string }>;
   /** What we last told the client that this may be a reply to (the survey advice). */
   context?: string;
+  /** An email the firm SENT (from its own mailbox): who it went to, as the case knows them, and which side we act for. */
+  sent?: { to: SenderRelation[]; side: string };
 }
 
 /** Issues that word from the right person may close: waits and chain positions, never a defect or a check. */
@@ -103,6 +105,10 @@ export function senderPolicy(source: NoteSource | undefined, action: NoteAction)
   // The lender or broker reporting a problem with the offer: the confirmation goes back to them, and the client hears.
   if (action.command?.type === 'raise_issue' && action.command.kind === 'mortgage_at_risk' && relation === 'lender') {
     return [{ ...action, command: { ...action.command, detail: `Reported by the lender or broker. ${action.command.detail ?? ''}`.trim() } }];
+  }
+  // What the firm has done is the firm's to say: its own email (sent by the fee earner, or a colleague's) is the record; anyone else's word is context.
+  if (action.command?.type === 'record_firm_act' && relation !== 'colleague') {
+    return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (said by ${RELATION_LABEL[relation]}; only the firm's own email records it)` }];
   }
   // Exchange and completion happen between the solicitors: only the other side's solicitor (or a colleague) reporting it is a line to record; anyone else's word is context.
   if ((action.command?.type === 'record_exchange' || action.command?.type === 'record_completion') && relation !== 'other_side' && relation !== 'colleague') {
@@ -300,6 +306,7 @@ export function commandTitle(c: NoteCommand): string {
     case 'record_exchange': return `Record exchange${c.completionDate ? `, completion ${dayShort(c.completionDate)}` : ''}`;
     case 'record_completion': return 'Record completion';
     case 'resend_to_client': return `Send the client ${WAIT_LABEL[c.waitKey].replace(/^your /, 'their ')} again`;
+    case 'record_firm_act': return `Record: ${FIRM_ACT_LABEL[c.act]}${c.detail && c.act === 'searches_ordered' ? ` (${c.detail})` : ''}`;
   }
 }
 /**
@@ -370,6 +377,7 @@ export function nothingToActTitle(from?: NoteSender | null): string {
 /** The chip on an email's task: whose email it is. */
 export function emailChip(from?: NoteSender | null): string {
   const r = from?.relation ?? 'unknown';
+  if (from?.sent) return 'Sent Email';
   return r === 'client' ? 'Client Email' : r === 'agent' ? 'Agent Email' : r === 'other_side' ? "Other Side's Email" : r === 'lender' ? 'Lender Email' : r === 'colleague' ? 'Colleague Email' : 'Unknown Sender Email';
 }
 
@@ -400,8 +408,19 @@ export function effectText(c: NoteCommand, opts: { withMessages?: boolean } = {}
     case 'record_survey_plan': return c.plan === 'none' ? 'Records that the client has chosen not to have a survey; they are no longer asked about one' : `Records the survey as booked${c.date ? ` for ${prettyDate(c.date)}` : ''}; the client is not asked about it again until after that date`;
     case 'record_availability': return `Notes that ${AVAILABILITY_PARTY_LABEL[c.party]} is away ${prettyDate(c.from)} to ${prettyDate(c.until)}: chases to them wait, updates say so, and target dates are checked against it`;
     case 'raise_issue': return `Raises the issue "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}"${c.gate === 'none' ? '' : ` (holds ${c.gate})`}${!opts.withMessages && issueConsequence(c.kind) ? ` and ${issueConsequence(c.kind)}` : ''}`;
+    case 'record_firm_act': return FIRM_ACT_EFFECT[c.act];
   }
 }
+
+/** What recording each of the firm's own acts does (service.ts applies them through the ordinary commands). */
+const FIRM_ACT_EFFECT: Record<FirmAct, string> = {
+  searches_ordered: 'Records each search the case needs as ordered, so CONVEYi does not order them again and waits for the results',
+  enquiries_raised: "Records the enquiries as raised with the seller's solicitor, so their replies are matched to them and chased",
+  contract_pack_sent: 'Records the contract pack as sent, as Mark Complete does, so the buyer\'s enquiries are expected next',
+  report_on_title_sent: 'Records the report on title as sent to the client, as Mark Complete does',
+  sdlt_submitted: 'Records the SDLT return as submitted (refused before completion)',
+  ap1_submitted: 'Records the application to register (AP1) as lodged with HM Land Registry (refused before completion, or before the SDLT return)',
+};
 
 /** The claim put to the client, in their terms: "you are happy with the survey and want to proceed". */
 export function claimText(subject: ClientDecisionSubject, decision: string, detail?: string | null): string {
@@ -571,6 +590,7 @@ export function commandProblem(c: NoteCommand): string | null {
   if (c.type === 'record_mortgage_withdrawn') return c.reason?.trim() ? null : 'it does not say why';
   if (c.type === 'record_exchange') return c.completionDate && !/^\d{4}-\d{2}-\d{2}$/.test(c.completionDate) ? `"${c.completionDate}" is not a date (YYYY-MM-DD)` : null;
   if (c.type === 'record_completion') return null;
+  if (c.type === 'record_firm_act') return (FIRM_ACTS as readonly string[]).includes(c.act) ? null : `"${c.act}" is not a step the firm records from its email`;
   if (c.type === 'raise_issue') {
     if (!ISSUE_KIND_SPEC[c.kind as IssueKind]) return `"${c.kind}" is not an issue kind`;
     if (!c.title?.trim()) return 'the issue has no title';
@@ -584,7 +604,7 @@ export function commandProblem(c: NoteCommand): string | null {
 export function summariseNoteActions(input: { kind: NoteKind; text: string; actions: NoteAction[]; author?: string | null; from?: NoteSender | null }): string {
   const L: string[] = [];
   const who = input.from ? `${input.from.name || input.from.address} (${RELATION_LABEL[input.from.relation]})` : 'someone';
-  const source = input.kind === 'call' ? 'A call' : input.kind === 'dictated' ? 'A dictated note' : input.kind === 'meeting' ? 'A meeting note' : input.kind === 'email' ? `An email from ${who}` : 'A note';
+  const source = input.kind === 'call' ? 'A call' : input.kind === 'dictated' ? 'A dictated note' : input.kind === 'meeting' ? 'A meeting note' : input.kind === 'email' ? (input.from?.sent ? `An email ${input.from.name || input.from.address} sent` : `An email from ${who}`) : 'A note';
   L.push(`${source} on this matter appears to record ${input.actions.length} thing${input.actions.length === 1 ? '' : 's'} the case should know about. Nothing has been applied — approve to apply, or reject with a reason.`);
   L.push('');
   for (const a of input.actions) {
@@ -823,6 +843,81 @@ const DATE_RULE: Rule = {
   build: (sentence) => ({ kind: 'information', summary: sentence.trim().slice(0, 120), quote: sentence, confidence: 0.6 }),
 };
 
+/** "I have", "we've now", "we have today": the firm speaking of what it has done. */
+const WE_HAVE = String.raw`\b(?:i|we)(?:\s+have|'ve)\s+(?:now\s+|just\s+|today\s+|also\s+|this\s+(?:morning|afternoon)\s+)*`;
+/** Sending it with this email: "please find attached", "I enclose". */
+const HERE_IS = String.raw`(?:please\s+find|(?:i|we)\s+(?:attach|enclose)|attached\s+(?:is|are|please\s+find)|enclosed\s+(?:is|are|please\s+find)|(?:i|we)\s+(?:am|are)\s+(?:pleased\s+to\s+)?(?:attach|enclos|send)ing)`;
+const FIRM_ACT_RULES: Array<{ act: FirmAct; test: RegExp; not?: RegExp; to?: SenderRelation; sides?: string[]; summary: string }> = [
+  {
+    act: 'searches_ordered',
+    test: new RegExp(String.raw`${WE_HAVE}(?:ordered|applied\s+for|submitted|placed|instructed)\b[^.?!]{0,80}\bsearch(?:es)?\b|\bsearch(?:es)?\s+(?:have|has)\s+(?:now\s+|just\s+|today\s+)?been\s+(?:ordered|applied\s+for|submitted|placed)\b`, 'i'),
+    not: /\b(fees?|funds|payment|money|cost|invoice|indemnity|personal search)\b/i,
+    sides: ['buyer'],
+    summary: 'The searches have been ordered',
+  },
+  {
+    act: 'enquiries_raised',
+    test: new RegExp(String.raw`(?:${HERE_IS}|${WE_HAVE}(?:raised|sent|set\s+out|attached|enclosed))\b[^.?!]{0,60}\benquiries\b|\b(?:our|my)\s+(?:pre-?contract\s+|additional\s+|further\s+)?enquiries\s+(?:are\s+(?:as\s+follows|below|attached|set\s+out)|as\s+follows)\b|\b(?:we|i)\s+(?:raise|have\s+the\s+following)\s+(?:the\s+following\s+)?(?:pre-?contract\s+|additional\s+|further\s+)?enquir(?:y|ies)\b`, 'i'),
+    not: /\b(repl(y|ies|ied)|answer(s|ed)?|response|responded|your enquiries)\b/i,
+    to: 'other_side',
+    sides: ['buyer'],
+    summary: "Enquiries have been raised with the seller's solicitor",
+  },
+  {
+    act: 'contract_pack_sent',
+    test: new RegExp(String.raw`(?:${HERE_IS}|${WE_HAVE}(?:sent|issued|attached|enclosed|uploaded))\b[^.?!]{0,60}\b(?:(?:draft\s+)?contract\s+(?:pack|papers|bundle|documentation)|draft\s+contract)\b|\b(?:draft\s+)?contract\s+pack\s+(?:has|have)\s+(?:now\s+)?been\s+(?:sent|issued)\b`, 'i'),
+    not: /\b(sign(ed|ature|ing)?|approved|amend(ed|ments)?|engross\w*|return(ed)?|your contract pack)\b/i,
+    to: 'other_side',
+    sides: ['seller'],
+    summary: 'The contract pack has gone to the buyer\'s solicitor',
+  },
+  {
+    act: 'report_on_title_sent',
+    test: new RegExp(String.raw`(?:${HERE_IS}|${WE_HAVE}(?:sent|attached|enclosed|prepared\s+and\s+(?:sent|attached)))\b[^.?!]{0,60}\b(?:report\s+on\s+(?:the\s+)?title|title\s+report|report\s+on\s+the\s+property|property\s+report|certificate\s+of\s+title)\b`, 'i'),
+    not: /\b(draft of|your report)\b/i,
+    to: 'client',
+    sides: ['buyer', 'owner'],
+    summary: 'The report on title has gone to the client',
+  },
+  {
+    act: 'sdlt_submitted',
+    test: new RegExp(String.raw`${WE_HAVE}(?:submitted|filed|lodged|completed\s+and\s+submitted)\b[^.?!]{0,40}\b(?:sdlt|stamp\s+duty)\b|\b(?:sdlt|stamp\s+duty(?:\s+land\s+tax)?)\s+return\s+(?:has\s+(?:now\s+)?been|was)\s+(?:submitted|filed|lodged)\b`, 'i'),
+    sides: ['buyer', 'owner'],
+    summary: 'The SDLT return has been submitted',
+  },
+  {
+    act: 'ap1_submitted',
+    test: new RegExp(String.raw`${WE_HAVE}(?:submitted|lodged|sent|made)\b[^.?!]{0,60}\b(?:ap1|application\s+(?:to|with)\s+(?:hm\s+|the\s+)?land\s+registry|application\s+to\s+register)\b|\b(?:ap1|application\s+to\s+register)\s+(?:has\s+(?:now\s+)?been|was)\s+(?:submitted|lodged)\b`, 'i'),
+    not: /\b(official search|os1|oc1|official copies|priority search)\b/i,
+    sides: ['buyer', 'owner'],
+    summary: 'The application to register has been lodged',
+  },
+];
+/** Not done yet: "once the funds are in I will order the searches", "we are about to send the pack". Narrower than NOT_YET: "if you have any questions" is not. */
+const FIRM_NOT_YET = /\b(once|until|not yet|yet to|(?:hope|hoping|aim|plan|expect|ready|going|about|intend|need|want)\s+to|will\s+(?:now\s+)?(?:be\s+)?(?:order|send|rais|submit|lodg|file|issu)\w*|shall\s+(?:order|send|raise|submit|lodge|file|issue)|do you want|would you like|instruct(?:ion)?s?\s+to)\b/i;
+const SEARCH_PROVIDER = /\b(InfoTrack|Searchflow|TM\s?Group|Landmark|Groundsure|PSG|Conveyancing Data Services|Search Acumen|Index Property Information|Thames Water|the local authority|the council)\b/i;
+const UTRN = /\b(\d{9}[A-Z]{2})\b/;
+
+/**
+ * The firm's own steps its email says are done: "I have ordered the searches via InfoTrack", "please find attached our
+ * enquiries", "please find our report on title". Only done, never planned ("I will order the searches once..."); a sent
+ * email's recipients must be who the step goes to (enquiries to the other side, the report to the client).
+ */
+export function firmActsIn(sentence: string, sent?: { to: SenderRelation[]; side: string }): NoteActionDraft[] {
+  const t = sentence.trim();
+  if (FIRM_NOT_YET.test(t) || /\?\s*$/.test(t)) return [];
+  const out: NoteActionDraft[] = [];
+  for (const r of FIRM_ACT_RULES) {
+    if (!r.test.test(t) || r.not?.test(t)) continue;
+    if (sent && r.sides && !r.sides.includes(sent.side)) continue;
+    if (sent && r.to && !sent.to.includes(r.to)) continue;
+    const detail = r.act === 'searches_ordered' ? SEARCH_PROVIDER.exec(t)?.[1] ?? null : null;
+    const reference = r.act === 'sdlt_submitted' ? UTRN.exec(t)?.[1] ?? null : null;
+    out.push({ kind: 'progress', summary: r.summary, quote: t, confidence: 0.85, command: { type: 'record_firm_act', act: r.act, detail, ...(reference ? { reference } : {}) } });
+  }
+  return out;
+}
+
 export class DeterministicNoteReader {
   readonly name = 'deterministic-note-reader';
   async extract(input: NoteExtractionContext): Promise<NoteActionDraft[]> {
@@ -877,6 +972,8 @@ export class DeterministicNoteReader {
         if (EXCHANGED.test(t) && !NOT_YET.test(t)) out.push({ kind: 'progress', summary: 'Contracts are exchanged', quote: t, confidence: 0.8, command: { type: 'record_exchange', completionDate: isoDateIn(t) } });
         if (COMPLETED.test(t) && !NOT_YET.test(t)) out.push({ kind: 'progress', summary: 'Completion has taken place', quote: t, confidence: 0.8, command: { type: 'record_completion' } });
         if (OFFER_WITHDRAWN.test(t)) out.push({ kind: 'issue', summary: 'Mark the mortgage offer withdrawn', quote: t, confidence: 0.8, command: { type: 'record_mortgage_withdrawn', reason: t.slice(0, 300) } });
+        // The firm's own email saying it has done one of its own steps (in its case system, or by this email).
+        if (input.from?.relation === 'colleague') for (const d of firmActsIn(t, input.sent)) if (!out.some((o) => o.command?.type === 'record_firm_act' && o.command.act === (d.command as { act: FirmAct }).act)) out.push(d);
         const wait = waitIn(t, input.waits ?? []);
         if (wait && RESEND.test(t) && RESENDABLE.includes(wait.waitKey as WaitKey)) {
           out.push({ kind: 'resend', summary: `Send the client ${wait.label.replace(/^your /, 'their ')} again`, quote: t, confidence: 0.8, command: { type: 'resend_to_client', waitKey: wait.waitKey as WaitKey, subject: wait.subject } });

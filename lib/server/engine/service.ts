@@ -45,7 +45,7 @@ import { deferral, outsideDeferral } from './defer';
 const foldOnto = (state: MatterState, events: EngineEvent[]): MatterState => events.reduce((s, e) => applyEvent(s, e), state);
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { INTOUCH_PROVIDER, EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type NoteReply, type NoteMessage, type MessageParty, type MessageAttachment, type ManualChannel, MANUAL_CHANNELS, type IdCheckFacts, actsUnasked, levelFor, pendingProposal , isLeasehold } from './types';
+import { INTOUCH_PROVIDER, EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteCommand, type NoteSender, type SenderRelation, type NoteReply, type NoteMessage, type MessageParty, type MessageAttachment, type ManualChannel, MANUAL_CHANNELS, type IdCheckFacts, actsUnasked, levelFor, pendingProposal , isLeasehold } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -71,7 +71,7 @@ import type { Flag as PofFlag } from './types';
 import { isUserActor, isResolved, openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedsReadyToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
-import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, documentRequests, attachmentPreference, WAIT_LABEL, type NoteActionDraft } from './notes';
+import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL, isAcknowledgement, documentRequests, attachmentPreference, WAIT_LABEL, DeterministicNoteReader, type NoteActionDraft } from './notes';
 import { replyFacts, templateIssueMessage, templateMessage, templateReply } from './reply';
 import { analyseSourceOfFunds } from './source-of-funds';
 import { counterpartyNotice, dueCounterpartyNotices, renderCounterpartyFacts, templateCounterpartyUpdate } from './counterparty-status';
@@ -1023,7 +1023,7 @@ export class EngineService {
   async recordNote(
     tenantId: string,
     matterId: string,
-    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null; from?: NoteSender | null; attachments?: string[]; /** Filed without anyone looking: it always comes to a person. */ surface?: boolean; /** Both checks read it as a pure acknowledgement. */ acknowledgement?: boolean; /** The email's subject, for the reply. */ subject?: string | null }
+    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null; from?: NoteSender | null; attachments?: string[]; /** Filed without anyone looking: it always comes to a person. */ surface?: boolean; /** Both checks read it as a pure acknowledgement. */ acknowledgement?: boolean; /** The email's subject, for the reply. */ subject?: string | null; /** An email the firm SENT: only what it says the firm has done is read from it, and nobody is written to. */ sent?: { to: SenderRelation[] } | null }
   ): Promise<RunResult> {
     // A decision has to cite something a person can open. A note filed without a document
     // behind it (typed straight into the matter) becomes one — the note IS the evidence.
@@ -1051,6 +1051,7 @@ export class EngineService {
     const noteId = (recorded.events[0]?.payload as { noteId?: string } | undefined)?.noteId;
     const reader = this.ports.noteExtractor;
     if (!noteId || !reader) return recorded;
+    if (input.sent) return this.readSentNote(tenantId, matterId, recorded, noteId, input.text, input.sent.to);
     const brief = caseBrief(recorded.state, this.ports.now());
     const drafts = await reader
       .extract({ tenantId, matterId, text: input.text, kind: input.kind, from: input.from ?? null, attachments: input.attachments ?? [], waits: input.from?.relation === 'client' ? openWaits(recorded.state).filter((w) => this.owedByClient(w.key, w.subject)).map((w) => ({ waitKey: w.key, subject: w.subject ?? '', label: WAIT_LABEL[w.key] })) : [], context: await this.replyContext(tenantId, matterId, recorded.state, input.from ?? null).catch(() => undefined), now: this.ports.now().toISOString(), caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
@@ -1071,6 +1072,59 @@ export class EngineService {
     // Whoever wrote gets a reply answering every point, and anyone else who needs to hear gets a message (recipients.ts), all on this one task.
     const messages = input.kind === 'email' && input.from && !input.acknowledgement ? await this.draftMessages(tenantId, matterId, recorded.state, input.text, input.subject ?? null, input.from, kept).catch((err) => { this.ports.log('the messages could not be drafted', err); return []; }) : [];
     return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts: kept, extractor: reader.name, surface: !!input.surface || messages.length > 0, ...(input.acknowledgement ? { acknowledgement: true } : {}), ...(messages.length ? { messages } : {}) });
+  }
+
+  /**
+   * An email the firm sent, read for what it says the firm has done (notes.ts firmActsIn): searches ordered, enquiries
+   * raised, the pack or the report sent, exchange. Work done in the firm's own case system reaches the case this way when
+   * that system is not connected. Each is a line a person ticks; nothing else is proposed from our own words, and nobody
+   * is written to. The clear phrasings are always read by rule, whatever the AI reader made of the email.
+   */
+  private async readSentNote(tenantId: string, matterId: string, recorded: RunResult, noteId: string, text: string, to: SenderRelation[]): Promise<RunResult> {
+    const reader = this.ports.noteExtractor!;
+    const state = recorded.state;
+    const brief = caseBrief(state, this.ports.now());
+    const from: NoteSender = state.notes[noteId]?.from ?? { address: 'us', name: null, relation: 'colleague' };
+    const sent = { to, side: profileOf(state.transactionType).side };
+    const ctx = { tenantId, matterId, text, kind: 'email' as const, from, sent, attachments: [], waits: [], now: this.ports.now().toISOString(), caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}`, context: `SENT BY US (the firm) to ${to.length ? to.map((r) => r.replace(/_/g, ' ')).join(', ') : 'someone the case does not know'}. Read ONLY what the firm says it HAS done (record_firm_act, or record_exchange / record_completion); everything else is information.` };
+    const SENT_COMMANDS = new Set(['record_firm_act', 'record_exchange', 'record_completion']);
+    const keep = (d: NoteActionDraft) => !!d.command && SENT_COMMANDS.has(d.command.type);
+    const [read, rule] = await Promise.all([
+      reader.extract(ctx).catch((err) => { this.ports.log('sent email reading failed; the rules still read it', err); return [] as NoteActionDraft[]; }),
+      new DeterministicNoteReader().extract(ctx),
+    ]);
+    const key = (d: NoteActionDraft) => (d.command?.type === 'record_firm_act' ? `act:${d.command.act}` : d.command?.type ?? '');
+    const kept: NoteActionDraft[] = [];
+    for (const d of [...read.filter(keep), ...rule.filter(keep)]) if (!kept.some((k) => key(k) === key(d))) kept.push(d);
+    if (!kept.length) return recorded;
+    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts: kept, extractor: reader.name, surface: false });
+  }
+
+  /** One of the firm's own steps its email says is done, through the step's ordinary command, under the approver's name. Refusals are the machine's own. */
+  private async applyFirmAct(tenantId: string, matterId: string, c: Extract<NoteCommand, { type: 'record_firm_act' }>, actor: Actor, documentId: string | null, quote: string): Promise<void> {
+    const s = await this.getState(tenantId, matterId);
+    const said = `From the firm's own email: "${quote.trim().slice(0, 300)}"`;
+    if (c.act === 'searches_ordered') {
+      // Every search the case needs that is not already on order: the email rarely names each one.
+      const toOrder = s.requiredSearches.filter((t) => !s.searches[t]);
+      if (!s.requiredSearches.length) throw new Error('The case does not yet say which searches it needs: record each search from the Searches step.');
+      if (!toOrder.length) throw new Error('Every search the case needs is already on order.');
+      for (const t of toOrder) await this.run(tenantId, matterId, { type: 'record_search_ordered', actor, searchType: t, provider: c.detail ? `${c.detail} (ordered outside CONVEYi)` : 'Ordered outside CONVEYi', reference: null, outside: true });
+      return;
+    }
+    if (c.act === 'enquiries_raised') {
+      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor, subject: `${c.detail?.trim() || 'Enquiries raised by email'}. ${said}` });
+      return;
+    }
+    if (c.act === 'contract_pack_sent' || c.act === 'report_on_title_sent') {
+      await this.run(tenantId, matterId, { type: 'record_done_outside', actor, step: c.act === 'contract_pack_sent' ? 'contract_pack' : 'report_on_title', note: said, documentIds: documentId ? [documentId] : [] });
+      return;
+    }
+    if (c.act === 'sdlt_submitted') {
+      await this.run(tenantId, matterId, { type: 'sdlt_submitted', actor, reference: c.reference ?? null });
+      return;
+    }
+    await this.run(tenantId, matterId, { type: 'ap1_submitted', actor, reference: c.reference ?? null });
   }
 
   /** Whether a wait is the client's to meet (their forms, money, signatures), not a third party's. */
@@ -2142,6 +2196,8 @@ export class EngineService {
                 await this.run(tenantId, matterId, { type: 'contracts_exchanged', actor: e.actor, completionDate: c.completionDate });
               } else if (c.type === 'record_completion') {
                 await this.run(tenantId, matterId, { type: 'completion_confirmed', actor: e.actor });
+              } else if (c.type === 'record_firm_act') {
+                await this.applyFirmAct(tenantId, matterId, c, e.actor, note.documentId ?? null, action.quote);
               } else if (c.type === 'record_mortgage_withdrawn') {
                 await this.run(tenantId, matterId, { type: 'mortgage_offer_withdrawn', actor: e.actor, reason: c.reason });
               } else if (c.type === 'resend_to_client') {

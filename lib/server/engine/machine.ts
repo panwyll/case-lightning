@@ -133,6 +133,9 @@ export interface SummaryOverride {
   by: string;
 }
 
+/** The firm's own steps its sent email can show were done in its case system (record_done_outside). */
+export const OUTSIDE_STEPS = ['contract_pack', 'report_on_title'] as const;
+
 export type Command = CommandBody & { completion?: Completion | null };
 
 type CommandBody =
@@ -143,7 +146,9 @@ type CommandBody =
   | { type: 'resume_automation'; actor: Actor; reason: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null; party?: string | null; link?: string | null }
   | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null; party?: string | null }
-  | { type: 'record_search_ordered'; actor: Actor; searchType: SearchType; provider: string; reference?: string | null }
+  | { type: 'record_search_ordered'; actor: Actor; searchType: SearchType; provider: string; reference?: string | null; /** Ordered outside CONVEYi (the firm's own email says so): a record of what happened, whatever stage the case is at. */ outside?: boolean }
+  /** One of the firm's own steps done outside CONVEYi, shown by the firm's own email and approved by a person: recorded as Mark Complete records it. */
+  | { type: 'record_done_outside'; actor: Actor; step: (typeof OUTSIDE_STEPS)[number]; note: string; documentIds?: string[] }
   | { type: 'search_returned'; actor: Actor; searchType: SearchType; documentId: string; provider?: string | null }
   | { type: 'search_extracted'; actor: Actor; searchType: SearchType; facts: SearchFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'raise_enquiry'; actor: Actor; enquiryId?: string | null; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; alsoIssueIds?: string[]; formsQuestion?: string; purpose?: string; about?: string } | null }
@@ -1207,7 +1212,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     // ── Searches ──
     case 'record_search_ordered': {
       requireEnrolled(s);
-      requireStageAtLeast(s, 'pre_contract', 'Ordering a search');
+      if (cmd.outside && !isUserActor(cmd.actor)) reject('A search ordered outside CONVEYi is recorded by a person.', 403);
+      if (!cmd.outside) requireStageAtLeast(s, 'pre_contract', 'Ordering a search');
       const existing = s.searches[cmd.searchType];
       // A resolved search may be ordered again (re-issued result, lender freshness rule, provider error); an open one may not.
       if (existing && !isResolved(existing.status)) reject(`${cmd.searchType} search already ${existing.status}.`);
@@ -2580,6 +2586,24 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.step === 'mortgage' && (f.minUnexpiredYears != null || f.maxSearchAgeMonths != null || f.acceptsNonFamilyGift != null || f.acceptsLoanDeposit != null || f.acceptsDonorAbroad != null || f.requiresEws1 != null))
         out.push({ type: 'lender_requirements_recorded', actor: cmd.actor, payload: { minUnexpiredYears: f.minUnexpiredYears ?? null, maxSearchAgeMonths: f.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: f.acceptsNonFamilyGift ?? null, acceptsLoanDeposit: f.acceptsLoanDeposit ?? null, acceptsDonorAbroad: f.acceptsDonorAbroad ?? null, requiresEws1: f.requiresEws1 ?? null, note: f.lender ? `${f.lender} (entered by hand)` : 'entered by hand' } });
       return out;
+    }
+    case 'record_done_outside': {
+      // The firm's own act (the pack went, the report went), done in its case system: a record of what happened, not a check
+      // passed, so it needs neither manual handling nor the stage. Only these steps: a check (ID, title, a search) is never
+      // cleared on anyone's word, the firm's included.
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A step done outside CONVEYi is recorded by a person.', 403);
+      if (!(OUTSIDE_STEPS as readonly string[]).includes(cmd.step)) reject(`"${cmd.step}" is not a step recorded from the firm's own email.`, 400);
+      if (!cmd.note?.trim()) reject('Say what was done.', 400);
+      if (cmd.step === 'contract_pack') {
+        requireSide(s, ['seller'], 'The contract pack');
+        if (s.contractPack.sentAt) reject('The contract pack has already been sent.');
+      }
+      if (cmd.step === 'report_on_title') {
+        requireSide(s, ['buyer', 'owner'], 'A report on title');
+        if (s.reportOnTitle.status === 'sent') reject('The report on title has already been sent.');
+      }
+      return [{ type: 'step_completed_manually', actor: cmd.actor, payload: { step: cmd.step, note: cmd.note.trim(), documentIds: cmd.documentIds ?? [], facts: null, skipReason: null } }];
     }
     case 'undo_manual_step': {
       // A step marked done by hand in error: taken back as if it never happened (the case is rebuilt without it).

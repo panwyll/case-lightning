@@ -47,6 +47,15 @@ export async function caseSystemFor(tenantId: string): Promise<CaseSystem | null
   return null;
 }
 
+/**
+ * Whether the firm's case system is connected at all (whether or not it is set up to create cases). When it is, what the
+ * fee earner does there reaches CONVEYi from it; when it is not, their sent email is read for it (files.ts fileSentEmail).
+ */
+export async function caseSystemConnected(tenantId: string): Promise<boolean> {
+  const r = await runAsSystem(() => queryOne<{ ok: boolean }>(`select status = 'CONNECTED' as ok from intouch_connection where tenant_id = $1`, [tenantId])).catch(() => null);
+  return !!r?.ok;
+}
+
 async function newCaseOf(tenantId: string, matterId: string): Promise<NewCase | null> {
   const m = await runAsSystem(() => queryOne<{ matter_ref: string; property_address: string | null; address_parts: { postcode?: string } | null; track: string | null; buyer_names: string[] | null; seller_names: string[] | null; fe_name: string | null; fe_email: string | null; sandbox: boolean | null }>(
     `select m.matter_ref, m.property_address, m.address_parts, m.track, m.buyer_names, m.seller_names, m.sandbox, u.display_name as fe_name, u.email as fe_email

@@ -589,7 +589,7 @@ export const NOTE_KINDS = ['typed', 'dictated', 'call', 'meeting', 'email'] as c
  */
 export const SENDER_RELATIONS = ['client', 'agent', 'other_side', 'lender', 'colleague', 'unknown'] as const;
 export type SenderRelation = (typeof SENDER_RELATIONS)[number];
-export interface NoteSender { address: string; name: string | null; relation: SenderRelation }
+export interface NoteSender { address: string; name: string | null; relation: SenderRelation; /** The firm sent it (the fee earner's Sent Items), not received it. */ sent?: boolean }
 export type NoteKind = (typeof NOTE_KINDS)[number];
 
 /** What an extractor may propose from a note. Anything else is information only. */
@@ -628,7 +628,21 @@ export type NoteCommand =
   | { type: 'record_exchange'; completionDate: string | null }
   /** The other side's solicitor says completion has taken place: approving records it, as the Confirm Completion step does. */
   | { type: 'record_completion' }
-  | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; /** Overrides the kind's usual severity (a withdrawn offer is High, not the usual Medium). */ severity?: 'info' | 'warning' | 'critical' };
+  | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; /** Overrides the kind's usual severity (a withdrawn offer is High, not the usual Medium). */ severity?: 'info' | 'warning' | 'critical' }
+  /** The firm says it has done one of its own steps (in its case system, or by email): "I have ordered the searches", "please find our report on title". Only from the firm's own mail. */
+  | { type: 'record_firm_act'; act: FirmAct; /** Who it went through, or what was raised ("via InfoTrack", "pre-contract enquiries"). */ detail: string | null; /** A reference the email gives (the SDLT UTRN). */ reference?: string | null };
+
+/** Steps the firm does itself that its own email can show were done outside CONVEYi. */
+export const FIRM_ACTS = ['searches_ordered', 'enquiries_raised', 'contract_pack_sent', 'report_on_title_sent', 'sdlt_submitted', 'ap1_submitted'] as const;
+export type FirmAct = (typeof FIRM_ACTS)[number];
+export const FIRM_ACT_LABEL: Record<FirmAct, string> = {
+  searches_ordered: 'Searches ordered',
+  enquiries_raised: 'Enquiries raised',
+  contract_pack_sent: 'Contract pack sent',
+  report_on_title_sent: 'Report on title sent',
+  sdlt_submitted: 'SDLT return submitted',
+  ap1_submitted: 'Registration applied for (AP1)',
+};
 
 export const SIGNED_DOCUMENTS = ['contract', 'transfer', 'mortgage_deed', 'deed_of_trust'] as const;
 export type SignedDocument = (typeof SIGNED_DOCUMENTS)[number];

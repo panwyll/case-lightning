@@ -8,7 +8,8 @@ import { getMessage, senderOfMessageId } from '../graph';
 import { runTriage, applyTriageTags } from '../triage';
 import { runAutoAutomations } from '../automations';
 import { hasTrustedLink, hasDefinitiveSignal, linkedFilingHeld } from '../matching';
-import { indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '../files';
+import { fileSentEmail, indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '../files';
+import { caseSystemConnected } from '../integrations/case-system';
 import { markMatterDraftsStale } from '../worklist';
 import { learnFirmRef } from '../contacts';
 import { assistOnMessage } from '../assist';
@@ -57,6 +58,12 @@ export async function processIncomingMessage(user: SessionUser, messageId: strin
       }
       await indexEmailBodyToMatter(user, mId, message).catch(() => {});
       await learnFirmRef(user, mId, message, { outbound: true }).catch(() => {});
+      // No case system connected: what the fee earner did there (searches ordered, enquiries raised, the pack or the
+      // report sent) is only in what they wrote. The email is filed on the case and read for it; each is a line to tick.
+      // With one connected, the work reaches the case from it, and only the attachments are taken from here.
+      if (!(await caseSystemConnected(user.tenantId))) {
+        await fileSentEmail(user, mId, message).catch((e) => console.error('[graph notification] sent email not read', (e as Error).message));
+      }
       await markMatterDraftsStale(
         user.tenantId,
         mId,

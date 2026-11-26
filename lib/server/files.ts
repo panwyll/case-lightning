@@ -900,6 +900,53 @@ export async function fileEmailBodyAsDocument(
   return { outcome: 'filed', as: role && role !== 'other' ? role : null, reason: report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled', missing };
 }
 
+/**
+ * An email the fee earner SENT on a case, when the firm's case system is not connected: the only record of work done
+ * there (searches ordered, enquiries raised, the pack or the report sent). It is filed on the case as the email it is,
+ * and read for what it says the firm has done (engine service.ts readSentNote): each is a line a person ticks. It is
+ * never read as a document (our own enquiries are not replies) and nobody is written to from it.
+ */
+export async function fileSentEmail(
+  user: { userId: string; tenantId: string; email?: string | null; displayName?: string | null },
+  matterId: string,
+  message: any
+): Promise<{ outcome: 'noted' | 'duplicate' | 'skipped'; proposals: number }> {
+  const fresh = newWordsOf(message ?? {});
+  const body = htmlToText(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
+  const words = (fresh.length >= 2 ? fresh : body).trim();
+  if (!words) return { outcome: 'skipped', proposals: 0 };
+  const { engine, productionPorts } = await import('./engine/adapters');
+  const state = await engine().getState(user.tenantId, matterId).catch(() => null);
+  if (!state?.enrolled) return { outcome: 'skipped', proposals: 0 };
+  const from = message?.from?.emailAddress?.address ?? user.email ?? 'us';
+  const fromName = message?.from?.emailAddress?.name ?? user.displayName ?? '';
+  const recipients: string[] = [...(message?.toRecipients ?? []), ...(message?.ccRecipients ?? [])].map((r: any) => String(r?.emailAddress?.address ?? '').toLowerCase()).filter(Boolean);
+  const to = (message?.toRecipients ?? []).map((r: any) => r?.emailAddress?.address).filter(Boolean).join(', ');
+  const when = message?.sentDateTime ?? message?.receivedDateTime ?? new Date().toISOString();
+  const subject = String(message?.subject ?? '(no subject)');
+  // As fileEmailBodyAsDocument writes it, so the same email filed both ways is one document.
+  const text = `From: ${fromName ? `${fromName} <${from}>` : from}\nTo: ${to}\nDate: ${when}\nSubject: ${subject}\n\n${body}`.slice(0, 60_000);
+  const hash = crypto.createHash('sha256').update(text).digest('hex');
+  const exists = await queryOne<{ id: string }>(`select id from document where matter_id = $1 and tenant_id = $2 and hash_sha256 = $3`, [matterId, user.tenantId, hash]).catch(() => null);
+  if (exists) return { outcome: 'duplicate', proposals: 0 };
+  const slug = subject.toLowerCase().replace(/^(re|fw|fwd):\s*/i, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'email';
+  const doc = await productionPorts().documents.createGenerated({ tenantId: user.tenantId, matterId, docType: 'EMAIL', fileName: `email-${String(when).slice(0, 10)}-${slug}.txt`, content: text, createdBy: user.userId });
+  await query(`update document set hash_sha256 = $3, sender_domain = $4 where id = $1 and tenant_id = $2`, [doc.id, user.tenantId, hash, from.split('@')[1] ?? null]).catch(() => {});
+  const addr = (r: any) => ({ name: r?.emailAddress?.name ?? null, address: r?.emailAddress?.address ?? null });
+  const meta = {
+    from: { name: fromName || null, address: from }, to: (message?.toRecipients ?? []).map(addr), cc: (message?.ccRecipients ?? []).map(addr),
+    date: when, subject, messageId: message?.id ?? null, internetMessageId: message?.internetMessageId ?? null, conversationId: message?.conversationId ?? null,
+    direction: 'out', fresh: words.slice(0, 20_000), attachments: [],
+  };
+  await query(`update document set extracted_facts = coalesce(extracted_facts, '{}'::jsonb) || jsonb_build_object('email', $3::jsonb) where id = $1 and tenant_id = $2`, [doc.id, user.tenantId, JSON.stringify(meta)]).catch(() => {});
+  // Who it went to, as the case knows them: enquiries count only to the other side, the report only to the client.
+  const relations = [...new Set(await Promise.all([...new Set(recipients)].map((a) => senderRelation(user.tenantId, matterId, a).catch(() => 'unknown' as SenderRelation))))];
+  const sender: NoteSender = { address: from, name: fromName || null, relation: 'colleague', sent: true };
+  const res = await engine().recordNote(user.tenantId, matterId, { text: words.slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender, subject, sent: { to: relations } });
+  const note = Object.values(res.state.notes).find((n) => n.documentId === doc.id);
+  return { outcome: 'noted', proposals: note?.actions.filter((a) => a.command).length ?? 0 };
+}
+
 /** How the case knows an email address: its contacts' roles, or the firm's own people. Unknown otherwise. */
 export async function senderRelation(tenantId: string, matterId: string, address: string): Promise<SenderRelation> {
   const email = address.toLowerCase();

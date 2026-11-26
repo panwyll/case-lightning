@@ -41,7 +41,7 @@ test('spec: every user command has a spec entry with the right actor; every emit
   for (const c of COMMAND_SPECS) {
     for (const e of c.emits) assert.ok(EVENT_TYPES.includes(e), `${c.type} emits ${e}`);
     if (Array.isArray(c.stages)) for (const st of c.stages) assert.ok(STAGES.includes(st), `${c.type} stage ${st}`);
-    if (!USER_COMMANDS.includes(c.type)) assert.ok(c.actor === 'automation' || c.type === 'set_shadow_mode' || c.type === 'record_report_on_title_sent' || c.type === 'open_decision_source' || c.type === 'resolve_decision', `${c.type} is automation or a service-level human step`);
+    if (!USER_COMMANDS.includes(c.type)) assert.ok(c.actor === 'automation' || c.type === 'set_shadow_mode' || c.type === 'record_report_on_title_sent' || c.type === 'record_done_outside' || c.type === 'open_decision_source' || c.type === 'resolve_decision', `${c.type} is automation or a service-level human step`);
   }
   // Human-gated events are the three the database trigger guards.
   assert.deepEqual(spec.events.filter((e) => e.humanGated).map((e) => e.type).sort(), ['funds_requested', 'payment_authorised', 'report_on_title_sent']);
