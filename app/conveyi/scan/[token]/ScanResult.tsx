@@ -48,7 +48,7 @@ export function ScanResult({ token, initial, demoHref }: { token: string; initia
     return (
       <section className="px-6 py-24 text-center">
         <h1 className="font-serif text-4xl font-bold tracking-tight">This link has expired</h1>
-        <p className="mt-4 text-lg text-ink-soft">Start a new scan to see your week.</p>
+        <p className="mt-4 text-lg text-ink-soft">Start a new scan to see your results.</p>
         <a href={START} className="mt-8 inline-flex rounded-full bg-violet px-8 py-4 text-lg font-semibold text-white shadow-violet">Scan My Inbox Free</a>
       </section>
     );
@@ -62,13 +62,13 @@ export function ScanResult({ token, initial, demoHref }: { token: string; initia
       <section className="px-6 py-20 md:py-28">
         <div className="mx-auto max-w-2xl">
           <h1 className="font-serif text-4xl font-bold tracking-tight [text-wrap:balance] md:text-5xl">{failed ? 'The scan stopped' : `Reading your inbox${first ? `, ${first}` : ''}`}</h1>
-          <p className="mt-4 text-lg text-ink-soft">{failed ? (err ?? v.error ?? 'Start it again.') : 'Keep this page open. It takes about five minutes, and the link is emailed to you when it is done.'}</p>
+          <p className="mt-4 text-lg text-ink-soft">{failed ? (err ?? v.error ?? 'Start it again.') : 'Keep this page open. It takes about five minutes, and we’ll email you the link when it’s done.'}</p>
           {failed ? (
             <a href={START} className="mt-8 inline-flex rounded-full bg-violet px-8 py-4 text-lg font-semibold text-white shadow-violet">Start Again</a>
           ) : (
             <ol className="mt-10 grid gap-3" aria-live="polite">
               <Step on={!sentDone} done={sentDone} title="Sent Items" line={`${n(v.read.sent)} emails read`} />
-              <Step on={sentDone} done={false} title="Inbox" line={sentDone ? `${n(v.read.received)} emails read, ${n(v.read.setAside)} newsletters and automated set aside` : 'Next'} />
+              <Step on={sentDone} done={false} title="Inbox" line={sentDone ? `${n(v.read.received)} emails read, ${n(v.read.setAside)} newsletters and automated emails skipped` : 'Next'} />
               <Step on={false} done={false} title="Your week" line="Last" />
             </ol>
           )}
@@ -85,13 +85,13 @@ export function ScanResult({ token, initial, demoHref }: { token: string; initia
       <style>{TIME_CSS}</style>
       <section className="bg-ink px-6 py-16 text-paper md:py-20">
         <div className="mx-auto max-w-4xl text-center">
-          <h1 className="font-serif text-4xl font-bold tracking-tight [text-wrap:balance] md:text-6xl">{first ? `${first}, here is your week` : 'Here is your week'}</h1>
+          <h1 className="font-serif text-4xl font-bold tracking-tight [text-wrap:balance] md:text-6xl">{first ? `${first}, here’s your week` : 'Here’s your week'}</h1>
           {m ? (
             <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-paper/75 [text-wrap:balance] md:text-xl">
-              {pct(m.share.red + m.share.amber)} of it is red or amber: work that does not need a conveyancer, or does not move a case on. That is about {Math.round(m.hours.red + m.hours.amber)} hours a week, worth {worth(m.hours.red + m.hours.amber)} a year at your figures.
+              {pct(m.share.red + m.share.amber)} of it is red or amber. That’s about {Math.round(m.hours.red + m.hours.amber)} hours a week, worth {worth(m.hours.red + m.hours.amber)} a year on your numbers.
             </p>
           ) : (
-            <p className="mx-auto mt-5 max-w-2xl text-lg text-paper/75">There was not enough email in the last four weeks to draw your week.</p>
+            <p className="mx-auto mt-5 max-w-2xl text-lg text-paper/75">There wasn’t enough email in the last four weeks to show your week.</p>
           )}
         </div>
       </section>
@@ -103,15 +103,15 @@ export function ScanResult({ token, initial, demoHref }: { token: string; initia
               foot={<>Red And Amber<b style={{ display: 'block', color: '#0f172a', fontSize: 18, fontWeight: 800, margin: '2px 0 10px' }}>{worth(m.hours.red + m.hours.amber)}/Year</b>{m.contractedHours}h Week</>} />
             <ParetoCard lines={m.lines} right="Hours A Week · £/Year" value={worth} />
           </div>
-          {v.thin && <p className="mx-auto mt-6 max-w-6xl text-ink-soft">Not much email was found ({n(v.read.sent)} sent in four weeks), so treat these as rough.</p>}
-          <p className="mx-auto mt-6 max-w-6xl text-sm text-ink-soft">Read {n(v.read.sent)} sent and {n(v.read.received)} received emails from {new Date(v.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} to {new Date(v.until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}. Green is work only a conveyancer can do and moves the case on. Red does neither. Amber is one or the other.</p>
+          {v.thin && <p className="mx-auto mt-6 max-w-6xl text-ink-soft">We only found {n(v.read.sent)} sent emails in four weeks, so treat these as rough.</p>}
+          <p className="mx-auto mt-6 max-w-6xl text-sm text-ink-soft">We read {n(v.read.sent)} sent and {n(v.read.received)} received emails from {new Date(v.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} to {new Date(v.until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}. Green is work that needs a conveyancer and moves a case on. Amber does one of those. Red does neither.</p>
         </section>
       )}
 
       <section className="bg-violet px-6 py-20 text-white md:py-24">
         <div className="mx-auto max-w-3xl text-center">
-          <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Win that time back</h2>
-          <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-white/80 md:text-xl">CONVEYi takes the red and amber off your fee earners. It is free until we have doubled your capacity.</p>
+          <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Want that time back?</h2>
+          <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-white/80 md:text-xl">CONVEYi takes the red and amber off your fee earners. It’s free until we’ve doubled your capacity.</p>
           <a href={demoHref} data-cta="scan_result_demo" className="mt-10 inline-flex rounded-full bg-white px-8 py-4 text-lg font-semibold text-violet shadow-card">Book A 15 Min Demo</a>
         </div>
       </section>
@@ -119,8 +119,8 @@ export function ScanResult({ token, initial, demoHref }: { token: string; initia
       <section className="px-6 py-20 md:py-24">
         <div className="mx-auto max-w-5xl">
           <div className="mx-auto max-w-3xl text-center">
-            <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Change the figures</h2>
-            <p className="mt-4 text-lg leading-relaxed text-ink-soft md:text-xl">Your results above are valued with these.</p>
+            <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Change the numbers</h2>
+            <p className="mt-4 text-lg leading-relaxed text-ink-soft md:text-xl">Your results are worked out with these.</p>
           </div>
           <div className="mt-14"><Calculator value={inputs} onChange={setInputs} /></div>
         </div>

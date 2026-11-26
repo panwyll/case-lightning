@@ -4,8 +4,8 @@ import { Calculator } from './Calculator';
 import { LEAD_SCAN_WEEKS } from '@/lib/server/lead-scan';
 
 export const metadata: Metadata = {
-  title: 'Free Inbox Scan: See Where Your Week Goes | CONVEYi',
-  description: 'Connect Outlook, read-only. In about five minutes, see how much of your week only a conveyancer can do, how much could go, and what each minute is worth.',
+  title: 'Free Inbox Scan | CONVEYi',
+  description: 'Connect Outlook and find out how much of your week doesn’t need a conveyancer, and what it’s costing you.',
 };
 
 /**
@@ -17,12 +17,12 @@ const START = '/api/v1/scan/start';
 const SOURCE = 'scan';
 
 const ERRORS: Record<string, string> = {
-  admin: 'Your firm only lets IT approve apps. Ask them to approve ours in Microsoft 365, or use the calculator below and book a demo: we will run the scan with you.',
-  cancelled: 'The scan did not start because Microsoft was not given permission. Nothing was read.',
-  expired: 'That sign-in took too long. Start again.',
-  mailbox: 'This mailbox has already been scanned three times today. Your results link is in your email.',
-  busy: 'The scan is very busy today. Try again tomorrow, or book a demo and we will run it with you.',
-  failed: 'The scan could not start. Try again, or book a demo and we will run it with you.',
+  admin: 'Your firm only lets IT approve apps. Ask them to approve CONVEYi in Microsoft 365, or book a demo and we’ll run the scan with you.',
+  cancelled: 'Microsoft wasn’t given permission, so nothing was read.',
+  expired: 'The sign-in timed out. Try again.',
+  mailbox: 'This mailbox has been scanned three times today. Your results link is in your email.',
+  busy: 'We’re at capacity today. Try again tomorrow, or book a demo and we’ll run it with you.',
+  failed: 'The scan couldn’t start. Try again, or book a demo and we’ll run it with you.',
 };
 
 function ScanButton({ className = '' }: { className?: string }) {
@@ -35,28 +35,28 @@ const Tick = () => (
 
 const gets: Array<{ title: string; line: string; img: { src: string; width: number; height: number; alt: string; wide?: { src: string; width: number; height: number } } }> = [
   {
-    title: 'Your typical week',
-    line: 'Every hour split three ways: work only a conveyancer can do, work someone else could do, and work that does not need doing at all.',
+    title: 'Your week',
+    line: 'Green is the work only a conveyancer can do. Red and amber is the rest.',
     img: { src: '/product/app-measure-week.webp', width: 696, height: 754, alt: 'Example: a typical week, 56% red, 18% amber, 26% green.' },
   },
   {
     title: 'Where the hours go',
-    line: 'The tasks eating your week, biggest first, in hours a week and pounds a year.',
+    line: 'Your biggest time drains, in hours a week and pounds a year.',
     img: { src: '/product/app-measure-issues-narrow.webp', width: 1008, height: 742, alt: 'Example: the key issues, from answering client status requests down, in hours a week and pounds a year.', wide: { src: '/product/app-measure-issues-card.webp', width: 1392, height: 754 } },
   },
 ];
 
 const steps = [
-  { title: 'Sign in with Microsoft', line: 'Your work Outlook, read-only. Thirty seconds.' },
-  { title: 'We read four weeks of email', line: `Your Sent Items and Inbox from the last ${LEAD_SCAN_WEEKS} weeks, each email labelled by what it was for.` },
-  { title: 'See your week', line: 'Your charts on screen in about five minutes, and a private link in your inbox.' },
+  { title: 'Sign in with Microsoft', line: 'Use your work Outlook. It’s read-only.' },
+  { title: `We read ${LEAD_SCAN_WEEKS} weeks of email`, line: 'What you sent and what you received, so we can see what each email was for.' },
+  { title: 'See your results', line: 'On screen in about five minutes. We’ll email you the link too.' },
 ];
 
 const safe: Array<{ q: string; a: string }> = [
-  { q: 'Can it send, move or delete anything?', a: 'No. Microsoft only gives it permission to read mail. Nothing is sent, moved, changed or deleted.' },
-  { q: 'What do you keep?', a: 'For each email, its label, when it was sent and the kind of person it was with (client, agent, lender). Never the text, the subject or anyone’s address.' },
-  { q: 'Who reads my emails?', a: 'No person. Each email is read once by our software, with a short extract sent to our AI provider to label it. The extract is not kept.' },
-  { q: 'How long can you get in?', a: 'Until the scan ends, an hour at most. We ask for no lasting access, so once your sign-in expires we cannot read anything.' },
+  { q: 'Can it send or delete anything?', a: 'No. Microsoft only lets it read.' },
+  { q: 'What do you keep?', a: 'What each email was for, when it was sent and whether it was with a client, an agent or a lender. We don’t keep the email itself or anyone’s address.' },
+  { q: 'Does anyone read my emails?', a: 'No. Our software reads each one once and sends a short extract to our AI provider to label it. The extract isn’t kept.' },
+  { q: 'How long do you have access?', a: 'An hour at most. Once the scan’s done, we can’t read anything.' },
 ];
 
 export default async function ScanPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
@@ -70,18 +70,18 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
       <section id="start" className="bg-ink px-6 py-20 text-paper md:py-28">
         <div className="mx-auto max-w-4xl text-center">
           <h1 className="font-serif text-[2.35rem] font-bold uppercase leading-[1.04] tracking-tight [text-wrap:balance] sm:text-6xl lg:text-[4.25rem]">
-            See where your week goes
+            How much of your week doesn’t need you?
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-paper/75 [text-wrap:balance] md:text-xl">
-            Connect Outlook and in about five minutes see how much of your week only a conveyancer can do, how much could go, and what it is worth.
+            Connect Outlook and in five minutes you’ll know where your hours go and what they’re worth.
           </p>
           {problem && <p role="alert" className="mx-auto mt-8 max-w-2xl rounded-2xl bg-white/10 px-5 py-4 text-left text-base leading-relaxed text-paper ring-1 ring-white/15">{problem}</p>}
           <div className="mt-10"><ScanButton className="w-full sm:w-auto" /></div>
           <ul className="mx-auto mt-8 grid max-w-xl gap-2.5 text-left text-base text-paper/80 sm:grid-cols-2">
-            <li className="flex gap-2.5"><Tick />Free, no card</li>
-            <li className="flex gap-2.5"><Tick />Read-only: sends nothing</li>
-            <li className="flex gap-2.5"><Tick />Keeps no email content</li>
-            <li className="flex gap-2.5"><Tick />Access ends within the hour</li>
+            <li className="flex gap-2.5"><Tick />Free</li>
+            <li className="flex gap-2.5"><Tick />Read-only</li>
+            <li className="flex gap-2.5"><Tick />We don’t keep your emails</li>
+            <li className="flex gap-2.5"><Tick />Access ends after an hour</li>
           </ul>
         </div>
       </section>
@@ -89,7 +89,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
       {/* ── WHAT YOU GET ── the charts themselves, labelled as examples. */}
       <section className="px-6 py-24 md:py-32">
         <div className="mx-auto max-w-6xl">
-          <h2 className="mx-auto max-w-3xl text-center font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">What you get</h2>
+          <h2 className="mx-auto max-w-3xl text-center font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">What you’ll see</h2>
           {/* The two cards as the app draws them, the same height side by side on a laptop (as on the landing page). */}
           <div className="mx-auto mt-16 grid max-w-md gap-12 md:max-w-none md:grid-cols-[1fr_2fr] md:gap-6">
             {gets.map((g) => (
@@ -114,7 +114,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
       {/* ── HOW IT WORKS ── three steps, in order. */}
       <section className="bg-paper-soft px-6 py-24 md:py-32">
         <div className="mx-auto max-w-5xl">
-          <h2 className="mx-auto max-w-3xl text-center font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Five minutes, start to finish</h2>
+          <h2 className="mx-auto max-w-3xl text-center font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">How it works</h2>
           <ol className="mt-16 grid gap-10 md:grid-cols-3">
             {steps.map((s, i) => (
               <li key={s.title}>
@@ -132,8 +132,8 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
       <section id="calculator" className="px-6 py-24 md:py-32">
         <div className="mx-auto max-w-5xl">
           <div className="mx-auto max-w-3xl text-center">
-            <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">What is a minute worth to you?</h2>
-            <p className="mt-4 text-lg leading-relaxed text-ink-soft md:text-xl">Put in your own figures.</p>
+            <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">What’s a minute worth to you?</h2>
+            <p className="mt-4 text-lg leading-relaxed text-ink-soft md:text-xl">Put in your own numbers.</p>
           </div>
           <div className="mt-14"><Calculator /></div>
         </div>
@@ -142,7 +142,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
       {/* ── SAFE ── the objections to letting software read a mailbox, answered plainly. */}
       <section className="bg-ink px-6 py-24 text-paper md:py-32">
         <div className="mx-auto max-w-6xl">
-          <h2 className="mx-auto max-w-3xl text-center font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Your inbox stays yours</h2>
+          <h2 className="mx-auto max-w-3xl text-center font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Is it safe?</h2>
           <dl className="mx-auto mt-16 grid max-w-5xl gap-x-12 gap-y-10 md:grid-cols-2">
             {safe.map((x) => (
               <div key={x.q}>
@@ -157,7 +157,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
       {/* ── FINAL CTA ── */}
       <section className="bg-violet px-6 py-24 text-white md:py-32">
         <div className="mx-auto max-w-3xl text-center">
-          <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">Five minutes to see your week</h2>
+          <h2 className="font-serif text-4xl font-bold leading-[1.1] tracking-tight [text-wrap:balance] md:text-5xl">How much of your week could you get back?</h2>
           <div className="mt-10">
             <Cta label="Scan My Inbox Free" href={START} dataCta="scan_start_footer" variant="onColour" size="xl" />
           </div>

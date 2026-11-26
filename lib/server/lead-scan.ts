@@ -237,7 +237,7 @@ export async function notifyLeadScan(token: string): Promise<void> {
   await Promise.all([
     send('result', {
       from: config.resendFromEmail, to: s.email, replyTo: DEMO_HOST.email, subject: 'Your CONVEYi inbox scan',
-      text: `Hi ${first},\n\nYour inbox scan is ready: ${link}\n\n${split}.\n\nKeep this link to yourself: it opens your results.\n\nWant to see how to win that time back? Book a 15-minute demo: ${config.appUrl.replace(/\/$/, '')}/conveyi/demo\n\n${DEMO_HOST.name}\nCase Lightning`,
+      text: `Hi ${first},\n\nYour inbox scan is ready: ${link}\n\n${split}.\n\nDon’t share the link: anyone with it can see your results.\n\nWant that time back? Book a 15 minute demo: ${config.appUrl.replace(/\/$/, '')}/conveyi/demo\n\n${DEMO_HOST.name}\nCase Lightning`,
     }),
     send('host', {
       from: config.resendFromEmail, to: DEMO_HOST.email, replyTo: s.email, subject: `Inbox scan: ${s.name ?? s.email} (${domainOf(s.email)})`,

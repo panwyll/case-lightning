@@ -60,7 +60,7 @@ export function Calculator({ value, onChange }: { value?: CalcInputs; onChange?:
         <div>
           <p className="text-sm font-semibold text-paper/60">Time per case</p>
           <p className="mt-1 font-serif text-4xl font-bold tracking-tight tabular-nums">{ok ? hoursAndMinutes(perCase) : '-'}</p>
-          <p className="mt-1 text-sm text-paper/60">{ok ? `${Math.round(perCase)} minutes of a fee earner's time, on average` : 'Fill in all four figures'}</p>
+          <p className="mt-1 text-sm text-paper/60">{ok ? `${Math.round(perCase)} minutes of a fee earner's time, on average` : 'Fill in the numbers'}</p>
         </div>
         <div className="border-t border-white/10 pt-6">
           <p className="text-sm font-semibold text-paper/60">Each minute saved per case is worth</p>
@@ -68,7 +68,7 @@ export function Calculator({ value, onChange }: { value?: CalcInputs; onChange?:
           <p className="mt-1 text-sm text-paper/60">per fee earner, per year{ok && people > 1 ? `, so £${Math.round(minute * people).toLocaleString('en-GB')} across ${people} fee earners` : ''}</p>
         </div>
         <p className="border-t border-white/10 pt-6 text-sm leading-relaxed text-paper/60">
-          {ok ? `Each fee earner bills ${pounds(yearFeesOf(v))} a year. A minute off every case lets the same year hold more cases, at your average fee.` : ''}
+          {ok ? `Each fee earner bills ${pounds(yearFeesOf(v))} a year. Save a minute on every case and they fit more cases into the same year.` : ''}
         </p>
       </div>
     </div>
