@@ -12,6 +12,8 @@ import { fileSentEmail, indexEmailBodyToMatter, saveEmailAttachmentsToMatter } f
 import { conveyiWrote } from './origin';
 import { claimFiling, finishFiling } from './auto-file';
 import { emitMatterEvent } from '../events';
+import { fileThreadOfSentEmail } from './sent-thread';
+import { getPolicy } from '../policy';
 import { markMatterDraftsStale } from '../worklist';
 import { learnFirmRef } from '../contacts';
 import { assistOnMessage } from '../assist';
@@ -57,16 +59,25 @@ export async function processIncomingMessage(user: SessionUser, messageId: strin
     const wrote = await conveyiWrote(user.tenantId, message).catch(() => null);
     if (wrote !== 'sent' && triage.top && hasDefinitiveSignal(triage.top)) {
       const mId = triage.top.matterId;
-      if (await claimFiling(user.tenantId, messageId, mId)) {
-        if (message.hasAttachments) {
-          await saveEmailAttachmentsToMatter(user, mId, messageId, message.subject).catch(() => {});
-        }
+      // Filed (and its conversation put on the case) only when it is plainly this case: another case matched as surely
+      // (a contact on both) leaves it to a person, and the firm can turn it off (Rules: File Sent Email on Cases).
+      const other = (triage.candidates ?? []).some((c) => c.matterId !== mId && hasDefinitiveSignal(c));
+      const file = !other && (await getPolicy(user.tenantId, 'fileSentEmail').catch(() => true));
+      // One filing per message, whichever path reaches it first (a repeated notification, a person filing it by hand).
+      const claimed = file && (await claimFiling(user.tenantId, messageId, mId));
+      if ((!file || claimed) && message.hasAttachments) {
+        await saveEmailAttachmentsToMatter(user, mId, messageId, message.subject).catch(() => {});
+      }
+      if (claimed) {
         // Into the case's email pane as the email we sent, as incoming mail is filed. With no case system connected it is
         // also read for what the fee earner did there (searches ordered, enquiries raised, the pack or the report sent):
         // each a line to tick. With one connected, that work reaches the case from it.
         const filed = await fileSentEmail(user, mId, message).catch((e) => { console.error('[graph notification] sent email not filed', (e as Error).message); return null; });
+        // Its conversation goes on the case: the replies file themselves, and what was waiting from it is filed now.
+        const thread = await fileThreadOfSentEmail(user, mId, message).catch((e) => { console.error('[graph notification] sent thread not filed', (e as Error).message); return null; });
         if (filed && (filed.outcome === 'filed' || filed.outcome === 'noted')) {
-          await emitMatterEvent({ tenantId: user.tenantId, matterId: mId, eventType: 'EMAIL_FILED', title: `Email sent: ${String(message.subject ?? '').trim() || '(no subject)'}`, details: filed.proposals ? `Read for what was done: ${filed.proposals} line${filed.proposals === 1 ? '' : 's'} to confirm on the Sent Email task.` : 'Filed on the case.' }).catch(() => {});
+          const said = [filed.proposals ? `Read for what was done: ${filed.proposals} line${filed.proposals === 1 ? '' : 's'} to confirm on the Sent Email task.` : 'Filed on the case.', thread?.linked ? `Its conversation is on the case now, so replies file themselves${thread.filed ? `; ${thread.filed} email${thread.filed === 1 ? '' : 's'} waiting in it filed too` : ''}.` : null].filter(Boolean).join(' ');
+          await emitMatterEvent({ tenantId: user.tenantId, matterId: mId, eventType: 'EMAIL_FILED', title: `Email sent: ${String(message.subject ?? '').trim() || '(no subject)'}`, details: said }).catch(() => {});
         }
         await finishFiling(user.tenantId, messageId);
       }

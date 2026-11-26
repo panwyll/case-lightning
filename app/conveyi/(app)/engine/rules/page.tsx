@@ -16,7 +16,7 @@ interface Timer { waitKey: string; label: string; to: string; chaseAfter: number
 interface Message { id: string; kind: 'acknowledgement' | 'update' | 'chase' | 'request'; when: string; to: string; subject: string; template: string; levelKey: string; level: TrustLevel }
 interface DocRule { id: string; document: string; rule: string; value: string }
 interface CaseRule { id: string; group: string; when: string; then: string; holds?: string; tells?: string; source: string }
-interface Rules { policies?: { protectOutgoingFiles: boolean; archiveHandledEmail?: boolean; clientReminderHours?: number }; timers: Timer[]; messages: Message[]; documentRules: DocRule[]; caseRules: CaseRule[]; signoffs: Record<string, { at: string; by: string | null }> }
+interface Rules { policies?: { protectOutgoingFiles: boolean; archiveHandledEmail?: boolean; fileSentEmail?: boolean; clientReminderHours?: number }; timers: Timer[]; messages: Message[]; documentRules: DocRule[]; caseRules: CaseRule[]; signoffs: Record<string, { at: string; by: string | null }> }
 
 const SECTIONS = [['signoffs', 'Sign-Offs'], ['timers', 'Timers'], ['messages', 'Messages'], ['documents', 'Document Rules']] as const;
 const KIND_LABEL: Record<Message['kind'], string> = { acknowledgement: 'Acknowledgement', update: 'Client update', chase: 'Chase', request: 'Request' };
@@ -76,6 +76,11 @@ export default function RulesPage() {
   const setArchive = async (value: boolean) => {
     setBusy('archive');
     try { await api('/admin/engine-rules', { method: 'PATCH', body: JSON.stringify({ key: 'archiveHandledEmail', value }) }); await load(); }
+    finally { setBusy(null); }
+  };
+  const setSentFiling = async (value: boolean) => {
+    setBusy('sent');
+    try { await api('/admin/engine-rules', { method: 'PATCH', body: JSON.stringify({ key: 'fileSentEmail', value }) }); await load(); }
     finally { setBusy(null); }
   };
   const load = useCallback(async () => {
@@ -219,6 +224,11 @@ export default function RulesPage() {
         <div className="eg-card" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <b style={{ fontSize: 13.5, flex: 1 }}>File Email into Case Folders in Outlook</b>
           <button className="eg-btn" disabled={busy === 'archive'} onClick={() => void setArchive(!(r?.policies?.archiveHandledEmail ?? true))} style={(r?.policies?.archiveHandledEmail ?? true) ? { background: '#5A27E0', color: '#fff', borderColor: '#5A27E0' } : undefined}>{(r?.policies?.archiveHandledEmail ?? true) ? 'On' : 'Off'}</button>
+        </div>
+        <div className="eg-card" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <b style={{ fontSize: 13.5 }}>File Sent Email on Cases</b>
+          <span className="ru-sub" style={{ flex: 1, minWidth: 240 }}>What you send on a case is filed in its email pane, and the conversation goes on the case so replies file themselves. With no case system connected, it is also read for what you did (searches ordered, enquiries raised) for you to confirm. Off: only attachments are taken.</span>
+          <button className="eg-btn" disabled={busy === 'sent'} onClick={() => void setSentFiling(!(r?.policies?.fileSentEmail ?? true))} style={(r?.policies?.fileSentEmail ?? true) ? { background: '#5A27E0', color: '#fff', borderColor: '#5A27E0' } : undefined}>{(r?.policies?.fileSentEmail ?? true) ? 'On' : 'Off'}</button>
         </div>
       </section>
 

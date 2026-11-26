@@ -79,7 +79,7 @@ export async function PATCH(req: NextRequest) {
   try {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
-    const input = z.union([z.object({ key: z.enum(['protectOutgoingFiles', 'archiveHandledEmail']), value: z.boolean() }), z.object({ key: z.literal('clientReminderHours'), value: z.number().int().min(1).max(24 * 14) })]).parse(await req.json());
+    const input = z.union([z.object({ key: z.enum(['protectOutgoingFiles', 'archiveHandledEmail', 'fileSentEmail']), value: z.boolean() }), z.object({ key: z.literal('clientReminderHours'), value: z.number().int().min(1).max(24 * 14) })]).parse(await req.json());
     await setPolicy(user.tenantId, input.key, input.value as never, user.userId);
     return ok({ saved: true, policies: await allPolicies(user.tenantId) });
   } catch (error) {

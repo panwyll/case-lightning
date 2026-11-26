@@ -14,11 +14,13 @@ export interface FeeBand { upTo: number | null; fee: number }
 export interface FeeExtra { id: string; label: string; fee: number; when: string; sides: string[] }
 export interface FeeScale { purchase: FeeBand[]; sale: FeeBand[]; remortgage: FeeBand[]; transfer: FeeBand[]; extras: FeeExtra[] }
 export interface AnalyticsTargets { monthlyCompletions: number | null; perPerson: Record<string, number> }
-export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEmail: boolean; signingProvider: SigningProvider; clientReminderHours: number; systemMode: SystemModePolicy; features: Record<string, boolean>; analyticsTargets: AnalyticsTargets; reviewUrl: string | null; feeScale: FeeScale | null } = {
+export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEmail: boolean; fileSentEmail: boolean; signingProvider: SigningProvider; clientReminderHours: number; systemMode: SystemModePolicy; features: Record<string, boolean>; analyticsTargets: AnalyticsTargets; reviewUrl: string | null; feeScale: FeeScale | null } = {
   /** Outgoing files go as a password-protected zip, with the password sent separately (WhatsApp where the client has opted in, otherwise its own message). */
   protectOutgoingFiles: false,
   /** Email filed to a case or set aside here is archived in the mailbox, so the Outlook inbox matches the Email tab. */
   archiveHandledEmail: true,
+  /** The fee earner's sent email on a case is filed in its email pane and its conversation put on the case, so the replies file themselves; with no case system connected it is also read for what they did. Off: only its attachments are taken. */
+  fileSentEmail: true,
   /** Who the firm signs deeds electronically with ('none': wet ink only). A lender that does not take an e-signed mortgage deed is wet ink regardless. */
   signingProvider: 'none',
   /** A client update mentions what the client still owes us only if nobody has asked them about it (an update, a chase, the request itself) in this many hours. */
