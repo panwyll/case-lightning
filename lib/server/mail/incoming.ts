@@ -9,7 +9,9 @@ import { runTriage, applyTriageTags } from '../triage';
 import { runAutoAutomations } from '../automations';
 import { hasTrustedLink, hasDefinitiveSignal, linkedFilingHeld } from '../matching';
 import { fileSentEmail, indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '../files';
-import { caseSystemConnected } from '../integrations/case-system';
+import { conveyiWrote } from './origin';
+import { claimFiling, finishFiling } from './auto-file';
+import { emitMatterEvent } from '../events';
 import { markMatterDraftsStale } from '../worklist';
 import { learnFirmRef } from '../contacts';
 import { assistOnMessage } from '../assist';
@@ -51,23 +53,29 @@ export async function processIncomingMessage(user: SessionUser, messageId: strin
     // is trustworthy. This is what stops the fee earner's own outbound reply —
     // often quoting the ref on a thread nobody manually linked — vanishing.
     // Still definitive-only: a fuzzy address match is not adopted for a write.
-    if (triage.top && hasDefinitiveSignal(triage.top)) {
+    // Email CONVEYi sent itself is already on the case (and is not the person's work): nothing is filed or read from it.
+    const wrote = await conveyiWrote(user.tenantId, message).catch(() => null);
+    if (wrote !== 'sent' && triage.top && hasDefinitiveSignal(triage.top)) {
       const mId = triage.top.matterId;
-      if (message.hasAttachments) {
-        await saveEmailAttachmentsToMatter(user, mId, messageId, message.subject).catch(() => {});
+      if (await claimFiling(user.tenantId, messageId, mId)) {
+        if (message.hasAttachments) {
+          await saveEmailAttachmentsToMatter(user, mId, messageId, message.subject).catch(() => {});
+        }
+        // Into the case's email pane as the email we sent, as incoming mail is filed. With no case system connected it is
+        // also read for what the fee earner did there (searches ordered, enquiries raised, the pack or the report sent):
+        // each a line to tick. With one connected, that work reaches the case from it.
+        const filed = await fileSentEmail(user, mId, message).catch((e) => { console.error('[graph notification] sent email not filed', (e as Error).message); return null; });
+        if (filed && (filed.outcome === 'filed' || filed.outcome === 'noted')) {
+          await emitMatterEvent({ tenantId: user.tenantId, matterId: mId, eventType: 'EMAIL_FILED', title: `Email sent: ${String(message.subject ?? '').trim() || '(no subject)'}`, details: filed.proposals ? `Read for what was done: ${filed.proposals} line${filed.proposals === 1 ? '' : 's'} to confirm on the Sent Email task.` : 'Filed on the case.' }).catch(() => {});
+        }
+        await finishFiling(user.tenantId, messageId);
       }
       await indexEmailBodyToMatter(user, mId, message).catch(() => {});
       await learnFirmRef(user, mId, message, { outbound: true }).catch(() => {});
-      // No case system connected: what the fee earner did there (searches ordered, enquiries raised, the pack or the
-      // report sent) is only in what they wrote. The email is filed on the case and read for it; each is a line to tick.
-      // With one connected, the work reaches the case from it, and only the attachments are taken from here.
-      if (!(await caseSystemConnected(user.tenantId))) {
-        await fileSentEmail(user, mId, message).catch((e) => console.error('[graph notification] sent email not read', (e as Error).message));
-      }
       await markMatterDraftsStale(
         user.tenantId,
         mId,
-        `You sent an email${message.subject ? ` — “${String(message.subject).slice(0, 60)}”` : ''}`,
+        `You sent an email${message.subject ? `: “${String(message.subject).slice(0, 60)}”` : ''}`,
         `thread:${message.conversationId ?? ''}`
       ).catch(() => 0);
     }
@@ -133,7 +141,7 @@ export async function processIncomingMessage(user: SessionUser, messageId: strin
     const fromName = message.from?.emailAddress?.name || message.from?.emailAddress?.address || 'someone';
     await notifyMatter(user.tenantId, triage.top.matterId, {
       kind: 'EMAIL_TRIAGED',
-      headline: `New email from ${fromName}${message.subject ? ` — “${String(message.subject).slice(0, 80)}”` : ''}`,
+      headline: `New email from ${fromName}${message.subject ? `: “${String(message.subject).slice(0, 80)}”` : ''}`,
       did: worthPrecomputing ? 'Read it and drafted a suggested reply for you to review' : 'Triaged it and matched it to this case',
       action: 'Open the case to review and reply',
       dedupKey: `email:${triage.top.matterId}`,

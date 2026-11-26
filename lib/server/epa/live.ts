@@ -10,10 +10,10 @@
  *
  * Each is best-effort: a failure here never stops mail processing, the sync or the webhook.
  */
+import { conveyiWrote } from '../mail/origin';
 import { query, queryOne, runAsSystem } from '../db';
 import { classifyTaskKinds, classifyWorkload } from '../ai';
 import { tenantSelfAddresses } from '../matching';
-import { conveyiOrigin } from '../graph';
 import type { SessionUser } from '../types';
 import type { InTouchApi, InTouchHttpClient } from '../integrations/intouch/client';
 import { stage } from '../workload/scan';
@@ -41,11 +41,8 @@ export async function recordEmail(user: SessionUser, message: any, direction: 'o
   if (!s || s.filtered || s.internal) return false;
   let origin: 'conveyi' | 'checking_drafts' | null = null;
   if (direction === 'out') {
-    const stamped = conveyiOrigin(message);
-    const logged = !stamped && message.internetMessageId
-      ? await queryOne<{ id: string }>(`select id from client_message where tenant_id = $1 and provider_ref = $2 limit 1`, [user.tenantId, message.internetMessageId]).catch(() => null)
-      : null;
-    origin = stamped === 'sent' || logged ? 'conveyi' : stamped === 'draft' ? 'checking_drafts' : null;
+    const wrote = await conveyiWrote(user.tenantId, message);
+    origin = wrote === 'sent' ? 'conveyi' : wrote === 'draft' ? 'checking_drafts' : null;
   }
   const outDefs = OUT_CATEGORIES.filter((c) => c !== 'internal').map((key) => ({ key, what: OUT_SPEC[key].what }));
   const inDefs = IN_CATEGORIES.map((key) => ({ key, what: IN_SPEC[key].what }));
