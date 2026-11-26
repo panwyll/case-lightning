@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
       phone: z.string().trim().max(40).regex(/^[0-9 +()-]*$/, 'A phone number, digits only').optional().default(''),
       feeEarners: z.string().trim().max(40).optional().default(''),
       note: z.string().trim().max(2000).optional().default(''),
+      caseSystem: z.string().trim().max(80).optional().default(''),
       website: z.string().optional().default(''),
       source: z.record(z.string(), z.string().max(200)).optional().default({}),
     }).parse(await req.json());

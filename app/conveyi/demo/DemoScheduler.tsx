@@ -6,7 +6,8 @@ interface SlotDay { date: string; times: string[] }
 
 const TZ = 'Europe/London';
 const input = 'w-full rounded-xl border border-line bg-paper px-4 py-2.5 text-ink placeholder-ink-soft/50 transition focus:border-violet focus:outline-none focus:ring-1 focus:ring-violet';
-const SIZES = ['1–2', '3–5', '6–10', '11–25', 'More than 25'];
+/** The case management systems conveyancing firms run, most common first; the answer says which integration a demo needs. */
+const SYSTEMS = ['InTouch', 'LEAP', 'Osprey', 'Proclaim', 'Quill', 'Insight Legal', 'Clio', 'Actionstep', 'Other', 'None'];
 
 const fmt = (iso: string, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-GB', { timeZone: TZ, ...o }).format(new Date(iso));
 const clock = (iso: string) => fmt(iso, { hour: 'numeric', minute: '2-digit', hour12: true }).replace(' ', '');
@@ -38,7 +39,7 @@ export function DemoScheduler({ initial, phoneCall, host }: { initial: SlotDay[]
   const [days, setDays] = useState(initial);
   const [date, setDate] = useState<string | null>(initial[0]?.date ?? null);
   const [start, setStart] = useState<string | null>(null);
-  const [f, setF] = useState({ name: '', email: '', firm: '', phone: '', feeEarners: '', note: '', website: '' });
+  const [f, setF] = useState({ name: '', email: '', firm: '', phone: '', caseSystem: '', otherSystem: '', website: '' });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [booked, setBooked] = useState<string | null>(null);
@@ -59,7 +60,7 @@ export function DemoScheduler({ initial, phoneCall, host }: { initial: SlotDay[]
     const params = new URLSearchParams(window.location.search);
     const source = Object.fromEntries([...params.entries()].filter(([k]) => /^(utm_|gclid|fbclid|li_fat_id)/.test(k)).map(([k, v]) => [k, v.slice(0, 200)]));
     try {
-      const r = await fetch('/api/v1/demo/book', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...f, start, source }) });
+      const r = await fetch('/api/v1/demo/book', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: f.name, email: f.email, firm: f.firm, phone: f.phone, website: f.website, caseSystem: f.caseSystem === 'Other' && f.otherSystem.trim() ? `Other: ${f.otherSystem.trim()}` : f.caseSystem, start, source }) });
       const j = await r.json().catch(() => ({}));
       if (r.status === 409) { setStart(null); await refresh(); throw new Error(j.error); }
       if (!r.ok) throw new Error(j?.error ?? 'It did not book. Please try again.');
@@ -113,13 +114,17 @@ export function DemoScheduler({ initial, phoneCall, host }: { initial: SlotDay[]
               <input id="demo-phone" className={input} type="tel" required={phoneCall} value={f.phone} onChange={set('phone')} autoComplete="tel" />
             </label>
           </div>
-          <label className="grid gap-1.5 text-sm font-semibold"><span>Fee Earners <span className="font-normal text-ink-soft">(optional)</span></span>
-            <select id="demo-size" className={`${input} h-[46px]`} value={f.feeEarners} onChange={set('feeEarners')}>
-              <option value="" />
-              {SIZES.map((x) => <option key={x} value={x}>{x}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-semibold"><span>Anything We Should Know <span className="font-normal text-ink-soft">(optional)</span></span><textarea id="demo-note" className={input} rows={2} value={f.note} onChange={set('note')} placeholder="Case management system, the kind of cases you run…" /></label>
+          <div className="grid gap-3.5 sm:grid-cols-2">
+            <label className="grid gap-1.5 text-sm font-semibold">Case Management System
+              <select id="demo-system" className={`${input} h-[46px]`} required value={f.caseSystem} onChange={set('caseSystem')}>
+                <option value="" disabled>Choose one</option>
+                {SYSTEMS.map((x) => <option key={x} value={x}>{x}</option>)}
+              </select>
+            </label>
+            {f.caseSystem === 'Other' && (
+              <label className="grid gap-1.5 text-sm font-semibold">Which One?<input id="demo-system-other" className={input} required value={f.otherSystem} onChange={set('otherSystem')} /></label>
+            )}
+          </div>
           {/* A field people never see: a bot fills it in. */}
           <input id="demo-website" tabIndex={-1} autoComplete="off" aria-hidden="true" className="hidden" value={f.website} onChange={set('website')} />
           {err && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</p>}

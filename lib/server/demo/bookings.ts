@@ -84,7 +84,7 @@ function sender() {
 }
 
 interface Row {
-  id: string; name: string; email: string; firm: string; phone: string | null; fee_earners: string | null; note: string | null;
+  id: string; name: string; email: string; firm: string; phone: string | null; fee_earners: string | null; note: string | null; case_system: string | null;
   starts_at: Date; ends_at: Date; status: 'booked' | 'cancelled'; sequence: number; source: Record<string, string>;
   created_at: Date; reminded_day_at: Date | null; reminded_hour_at: Date | null;
 }
@@ -131,7 +131,7 @@ async function send(b: Row, method: 'REQUEST' | 'CANCEL', cancelUrl: string | nu
     : { subject: `Cancelled: CONVEYi demo, ${at}`, text: `Hi ${first},\n\nYour CONVEYi demo on ${at} is cancelled. Book another time whenever suits: ${config.appUrl}/conveyi/demo\n\n${DEMO_HOST.name}\nCase Lightning` };
   const source = Object.entries(b.source ?? {}).map(([k, v]) => `${k}=${v}`).join(' ');
   const host = method === 'REQUEST'
-    ? { subject: `Demo booked: ${b.firm}, ${at}`, text: [`${b.name} <${b.email}>`, b.firm, b.phone && `Phone: ${b.phone}`, b.fee_earners && `Fee earners: ${b.fee_earners}`, b.note && `\n${b.note}`, source && `\nCame from: ${source}`, `\nCancel it: ${cancelUrl}`].filter(Boolean).join('\n') }
+    ? { subject: `Demo booked: ${b.firm}, ${at}`, text: [`${b.name} <${b.email}>`, b.firm, b.phone && `Phone: ${b.phone}`, b.case_system && `Case system: ${b.case_system}`, b.fee_earners && `Fee earners: ${b.fee_earners}`, b.note && `\n${b.note}`, source && `\nCame from: ${source}`, `\nCancel it: ${cancelUrl}`].filter(Boolean).join('\n') }
     : { subject: `Demo cancelled: ${b.firm}, ${at}`, text: `${b.name} <${b.email}>, ${b.firm}, cancelled the demo on ${at}.` };
   await Promise.all([
     mail(s, `demo email to booker (${b.id})`, { from: s.from, to: b.email, replyTo: DEMO_HOST.email, subject: theirs.subject, text: theirs.text, attachments: attachment }),
@@ -139,7 +139,7 @@ async function send(b: Row, method: 'REQUEST' | 'CANCEL', cancelUrl: string | nu
   ]);
 }
 
-export interface BookingInput { start: string; name: string; email: string; firm: string; phone: string; feeEarners: string; note: string; source: Record<string, string> }
+export interface BookingInput { start: string; name: string; email: string; firm: string; phone: string; feeEarners: string; note: string; caseSystem?: string; source: Record<string, string> }
 
 /** Book a start that is still free. Two people picking the same one at once: the second is told it has gone. */
 export async function bookDemo(input: BookingInput, now = new Date()): Promise<{ start: string; end: string }> {
@@ -156,9 +156,9 @@ export async function bookDemo(input: BookingInput, now = new Date()): Promise<{
   let row: Row | null;
   try {
     row = await runAsSystem(() => queryOne<Row>(
-      `insert into demo_booking (name, email, firm, phone, fee_earners, note, starts_at, ends_at, cancel_token_hash, source)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb) returning *`,
-      [input.name, email, input.firm, input.phone || null, input.feeEarners || null, input.note || null, start, end, hash(token), JSON.stringify(input.source)]));
+      `insert into demo_booking (name, email, firm, phone, fee_earners, note, case_system, starts_at, ends_at, cancel_token_hash, source)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb) returning *`,
+      [input.name, email, input.firm, input.phone || null, input.feeEarners || null, input.note || null, input.caseSystem || null, start, end, hash(token), JSON.stringify(input.source)]));
   } catch (e) {
     if ((e as { code?: string })?.code === '23505') throw new DemoBookingError('That time has just gone. Please pick another.', 409);
     throw e;

@@ -36,6 +36,10 @@ const CSS = `
 .ia-list span{color:#334155}
 .ia-note{font-size:13px;color:#475569;line-height:1.5;margin:14px 0 0}
 .ia-btn{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:16px;padding:12px 16px;border-radius:10px;background:#5A27E0;color:#fff;font-size:14.5px;font-weight:700;text-decoration:none}
+.ia-facts{list-style:none;margin:0;padding:0;display:grid;gap:9px;font-size:13.5px;line-height:1.5;color:#334155}
+.ia-facts b{color:#0f172a}
+.ia-box + .ia-box{margin-top:14px}
+.ia-facts a{color:#5A27E0;font-weight:700}
 .ia-foot{margin-top:18px;font-size:12.5px;color:#94a3b8;text-align:center}
 .ia-foot a{color:#64748b}
 @media (max-width:520px){.ia-list li{flex-direction:column;gap:2px}.ia-list code{width:auto}}
@@ -64,6 +68,16 @@ export default function ItAdminPage() {
             <svg width="17" height="17" viewBox="0 0 23 23" aria-hidden="true"><path fill="#f35325" d="M1 1h10v10H1z"/><path fill="#81bc06" d="M12 1h10v10H12z"/><path fill="#05a6f0" d="M1 12h10v10H1z"/><path fill="#ffba08" d="M12 12h10v10H12z"/></svg>
             Approve With Microsoft
           </a>
+        </div>
+        {/* What an IT reviewer asks before approving, and how to undo it: the full answers are on the security page. */}
+        <div className="ia-box">
+          <h2 className="ia-h2">Before You Approve</h2>
+          <ul className="ia-facts">
+            <li><b>Your email and documents stay in your Microsoft 365.</b> We keep the case record that makes matching work (reference, address, parties, stage, key dates) and an audit log.</li>
+            <li><b>AI.</b> The content of the message being worked on is sent to Anthropic (Claude) to draft or label it. All sub-processors and where they are: <a href="/conveyi/security#subprocessors">Security</a>.</li>
+            <li><b>Paperwork.</b> A data processing agreement on request (yours or ours), and we complete security questionnaires.</li>
+            <li><b>To remove it later.</b> Microsoft Entra admin centre, Enterprise applications, open the app, Properties, Delete. Our access ends within the hour.</li>
+          </ul>
         </div>
         <p className="ia-foot">
           Questions? <a href={paths.support}>Support</a> · <a href={paths.signIn}>Sign In</a>
