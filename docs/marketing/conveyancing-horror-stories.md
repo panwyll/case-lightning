@@ -468,6 +468,262 @@ That's Search Acumen, from Land Registry data.
 
 Fewer firms doing more cases with the same people. Something has to give, and right now it's the client updates.
 
+### 47. Spelt our names wrong
+
+"Spelt our names wrong on multiple important documents which we had to chase in our house sale."
+
+The client had to spot it, then chase it.
+
+Names are the first thing on every document and the easiest thing to check.
+
+### 48. Four years
+
+"Almost 4 years after completion and the title is still not in our name."
+
+Four years. Nobody noticed, or nobody said.
+
+A completed file still has one job left until the register's right.
+
+### 49. Only the leasehold
+
+"only transferred the leasehold to our name, not even acknowledging the freehold title."
+
+There was a freehold title as well. It never reached their name.
+
+Read the contract. Then check the register says the same.
+
+### 50. July 2024
+
+"However this was in July 2024 and we still don't have our title documentation."
+
+The client is still waiting, and counting the months.
+
+If registration is slow, say so. A one-line email every few weeks would save a one-star review.
+
+### 51. The railway covenant
+
+"Our main gripe is that the conveyencer neglected to say that any extensions to the property were subject to approval of the "railway" covenant."
+
+They found out when they wanted to extend.
+
+The covenant was on the title the whole time. Telling the client about it was one paragraph.
+
+### 52. Nowhere to park
+
+"The firm failed to advise Mr and Ms that there was no legal right to park outside of their property."
+
+That's a 2025 Legal Ombudsman decision. The firm was told to pay £25,000 for the drop in the property's value.
+
+Ask what the client thinks they're buying. Then check the title gives it to them.
+
+### 53. £50,000 to fix the title
+
+"failed to advise him that there was a pernicious clause/charge in the lease which meant that there was no clear title."
+
+The buyer paid £50,000 to put the title right. That's from a Legal Ombudsman decision, July 2025.
+
+One clause in a lease nobody read closely enough.
+
+### 54. Only her own property
+
+"their searches only related to her immediate property and not the surrounding area"
+
+From a Legal Ombudsman case.
+
+The searches covered her house. They didn't cover the area around it.
+
+Ask what matters to the client before you order anything.
+
+### 55. The wrong account
+
+"It was explained to me by my solicitor that the money had been paid into the wrong account."
+
+The same poster, later in the thread: "Me and my family are currently homeless and need help getting the resolved."
+
+Completion money goes to one account, checked twice, by a person. Every time.
+
+### 56. Packed into a removal van
+
+"...with our entire life packed into a removal van, they actually "recommended" that we delay completion until the following week."
+
+The van was loaded. The keys were due.
+
+If completion is in doubt, tell the client days before.
+
+### 57. The money box funds
+
+"the solicitor confirmed an hour earlier that they still haven't got the money box funds (LISA)"
+
+Three days before completion, the client had been told the funds were in. They weren't.
+
+A Lifetime ISA takes time to release. It's a date you can see coming from the day of instruction.
+
+### 58. Three times
+
+"forgot that they are using help to buy ISA and did not request for the funds"
+
+The same review: "the exchange and completion has now fallen through three times."
+
+Forgetting to request funds is a missing task. Three failed completions is what a missing task costs.
+
+### 59. Expired
+
+"As a result of their delay my mortgage offer has expired and the new one was on higher rate."
+
+The same review: "Took more than 6 months to complete conveyancing, it would take longer if all people on the chain didn't put pressure on them."
+
+The client now pays more every month, for years, because of a delay.
+
+### 60. They could never have completed
+
+"It turned out that the completion date was after the mortgage offer expired, so they could never have completed."
+
+The date was agreed. The offer ran out before it.
+
+Two dates on the same file. Someone just had to put them side by side.
+
+### 61. Calls never returned
+
+"I called multiple times (calls never returned), I emailed and no responses."
+
+The same review: "The search pack was ordered four weeks post assignment despite them saying this would be done quickly."
+
+Four weeks to order searches. Ordering them is a click.
+
+### 62. Only after being pressured
+
+"repeatedly ignores my calls, fails to return messages, and only responds to emails after being pressured multiple times."
+
+The client learns that the only way to get a reply is to push.
+
+So they push, every day, and every push takes your time too.
+
+### 63. Do not expect a reply
+
+"Do not expect a reply to emails."
+
+That's the whole review. Six words of advice to the next client.
+
+The bar really is this low.
+
+### 64. Not responding
+
+"when you send them an email and request an update or anything else they are not responding to it."
+
+A buyer on a forum, asking what to do.
+
+Every one of these posts exists because somebody didn't send a two-line email.
+
+### 65. Six minutes a letter
+
+"a minimum of 6 mins to each letter/email/call made, and 3 mins for each letter/email/call received"
+
+That's a firm's terms, quoted on a forum.
+
+So every time the client asks where things are, they pay for the answer.
+
+If a client is asking where things are, they haven't been told. Charging for that seems backwards.
+
+### 66. The bill kept growing
+
+"the lawyer failed to keep them informed of any increases throughout the transaction."
+
+From a Legal Ombudsman report on a final bill far above the agreed fee.
+
+Clients can handle a higher bill when they hear about it as it grows.
+
+### 67. Passed around
+
+"resulted in your matter being passed between individuals more than we would ever want"
+
+That's a firm's own reply to a bad review.
+
+Every handover is a chance for something to drop. Unless the case itself says where it stands.
+
+### 68. Four weeks with nobody
+
+"4 weeks had passed with no one on our case"
+
+Their solicitor had left. Nobody told the client, and nobody picked the file up.
+
+Four weeks of a live purchase with no one on it.
+
+### 69. Lost three times
+
+"lost personal identification required for house conveyance - on 3x separate occasions in person visits to their office."
+
+The client took their ID into the office three times.
+
+Once it's in, it should be on the file. Once.
+
+### 70. Destroyed, lost, delayed
+
+"destroyed documents, lost documents, endless delays, confusion"
+
+That's a one-star review in five words.
+
+### 71. The wrong figure
+
+"They got the completion statement figure wrong right up to the exchange date."
+
+The completion statement is the number the client has to find. In cash.
+
+It should be right the first time, and it should match the file.
+
+### 72. The estate agent did more
+
+"In terms of man hours, they seemed to do a lot more than the solicitor."
+
+A buyer on Mumsnet, about their estate agent.
+
+When the agent is progressing your file for you, the agent decides who they recommend next time.
+
+### 73. Would use them again
+
+74% of recent buyers said they'd use the same lawyer again. 78% said the experience could have been better.
+
+That's the HomeOwners Alliance.
+
+So most people would come back, and most of them think it could be better. That's a lot of goodwill being left on the table.
+
+### 74. Where the work comes from
+
+55% of people chose their conveyancing solicitor on a recommendation. Estate agents were the biggest source at 27%, then friends and family at 25%.
+
+That's SRA research from 2018.
+
+Over half your next clients come from someone vouching for you. Agents vouch for the firms that make their sales complete.
+
+### 75. No quote at all
+
+A mystery shop of 100 conveyancing firms. 31% gave no quote at all. Another 24% quoted by phone and never followed up.
+
+That's TM Group, 2015.
+
+More than half of firms lost the client before the client even became one.
+
+### 76. Very slow
+
+32% of recent mortgage customers called their conveyancer "very slow". 14% said "very fast".
+
+44% thought their conveyancer was good value. For their broker it was 83%.
+
+That's a 2017 poll of about 1,500 mortgage customers, commissioned by a vendor.
+
+### 77. The slowest part
+
+65% of recent buyers said the legal process was the slowest stage of buying. 27% blamed the chain.
+
+That's a 2025 or 2026 survey of 1,000 buyers for a law firm.
+
+Buyers already think we're the slow bit. Every update you send chips away at that.
+
+### 78. Would pay more
+
+35% of home movers said they'd pay more for a premium service from their conveyancer. Only 5% of firms offered one.
+
+A third of the market will pay for better service, and almost nobody is selling it.
+
 ---
 
 ## Never hear back
@@ -540,6 +796,54 @@ Also worth reading in full: "flat wasn't registered with land registry when I bo
 - "...the firm failed to tell her about the clause." (Law Gazette, 2021, a ground rent that doubles) [link](https://www.lawgazette.co.uk/news/ex-client-sues-firm-over-ridiculous-ground-rent-clause/5108413.article)
 - "In another 20 years, the ground rent will be £16,800 and over £1m in 50." (Legal Futures, 2021, same case) [link](https://legalfutures.co.uk/latest-news/firm-sued-over-ground-rent-that-doubles-every-five-years)
 
+## More stories (third search)
+
+These are search results, not checked on the page. Some Trustpilot text may be Trustpilot's own AI summary rather than the reviewer's words: check each one.
+
+**Names and titles**
+- "Spelt our names wrong on multiple important documents which we had to chase in our house sale." (Trustpilot review) [link](https://www.trustpilot.com/review/xyz.law)
+- "not reading the full names of clients on a property deed and thus typing a contract incorrectly" (Legal Ombudsman list of common mistakes, 2014) [link](https://legalombudsman.org.uk/media/wcsgxd15/conveyancing-report.pdf)
+- "Almost 4 years after completion and the title is still not in our name." (Trustpilot review) [link](https://ie.trustpilot.com/review/hutchinslaw.co.uk?page=8)
+- "only transferred the leasehold to our name, not even acknowledging the freehold title." (Trustpilot review, same page) [link](https://ie.trustpilot.com/review/hutchinslaw.co.uk?page=8)
+- "However this was in July 2024 and we still don't have our title documentation." (Trustpilot review) [link](https://nz.trustpilot.com/review/www.lawcomm.co.uk?page=4)
+
+**Covenants, parking, leases, searches**
+- "Our main gripe is that the conveyencer neglected to say that any extensions to the property were subject to approval of the "railway" covenant." (MSE forum) [link](https://forums.moneysavingexpert.com/discussion/1967935/negligent-conveyancer)
+- "The firm failed to advise Mr and Ms that there was no legal right to park outside of their property." (Legal Ombudsman decision, 2025; the firm was told to pay £25,000) [link](https://www.legalombudsman.org.uk/media/3ybhuqoq/charles-fraser-pid.pdf)
+- "failed to advise him that there was a pernicious clause/charge in the lease which meant that there was no clear title." (Legal Ombudsman decision, July 2025; the buyer "paid £50,000 to rectify the Title") [link](https://www.legalombudsman.org.uk/media/2vhmvl3y/law-direct-pid.pdf)
+- "their searches only related to her immediate property and not the surrounding area" (Legal Ombudsman case) [link](https://www.legalombudsman.org.uk/media/rdxon5d4/conveyancing-report-220124.pdf)
+
+**Money and completion day**
+- "It was explained to me by my solicitor that the money had been paid into the wrong account." and "Me and my family are currently homeless and need help getting the resolved." (MSE forum) [link](https://forums.moneysavingexpert.com/discussion/6242043/made-homeless-during-house-move-due-to-negligence-during-solicitor-payment)
+- "...with our entire life packed into a removal van, they actually "recommended" that we delay completion until the following week." (Trustpilot review, about October 2026) [link](https://uk.trustpilot.com/review/www.simplyconveyancing.co.uk)
+- "the solicitor confirmed an hour earlier that they still haven't got the money box funds (LISA)" (Trustpilot review, three days before completion) [link](https://nz.trustpilot.com/review/conveyancinghome.co.uk)
+- "forgot that they are using help to buy ISA and did not request for the funds" and "the exchange and completion has now fallen through three times." (Trustpilot review) [link](https://www.trustpilot.com/review/www.conveyancingdirect.net?page=8)
+- "This is known as 'failed completion' and by all accounts is pretty rare." (PistonHeads forum; the wrong amount was sent on completion day and the vans went back. The quote is weak but the story is strong) [link](https://www.pistonheads.com/gassing/topic.asp?h=0&f=207&t=1924750)
+
+**Mortgage offers expiring**
+- "As a result of their delay my mortgage offer has expired and the new one was on higher rate." and "Took more than 6 months to complete conveyancing, it would take longer if all people on the chain didn't put pressure on them." (Trustpilot review) [link](https://www.trustpilot.com/review/www.alexandergrace-law.co.uk?page=10)
+- "It turned out that the completion date was after the mortgage offer expired, so they could never have completed." (MSE forum; may be the search summary's wording) [link](https://forums.moneysavingexpert.com/discussion/6275797/delayed-completion-mortgage-offer-expires)
+
+**Ignored**
+- "I called multiple times (calls never returned), I emailed and no responses." and "The search pack was ordered four weeks post assignment despite them saying this would be done quickly." (Trustpilot review) [link](https://au.trustpilot.com/review/aconveyancing.com?page=4)
+- "repeatedly ignores my calls, fails to return messages, and only responds to emails after being pressured multiple times." (Trustpilot review) [link](https://se.trustpilot.com/review/simplypropertylawyers.co.uk)
+- "Do not expect a reply to emails." (Trustpilot review) [link](https://au.trustpilot.com/review/conveyancingexpert.co.uk?page=4)
+- "when you send them an email and request an update or anything else they are not responding to it." (MSE forum) [link](https://forums.moneysavingexpert.com/discussion/6558538/solicitors-do-not-reply-seem-to-be-having-internal-issues-what-to-do)
+- "constantly chasing unanswered emails and phone calls, sometimes waiting weeks for a response." (Trustpilot; possibly Trustpilot's AI summary, so don't use it until checked) [link](https://uk.trustpilot.com/review/www.conveylaw.com?page=2)
+
+**Charged for chasing**
+- "a minimum of 6 mins to each letter/email/call made, and 3 mins for each letter/email/call received" (MSE forum, quoting a firm's terms) [link](https://forums.moneysavingexpert.com/discussion/5522528/conveyancing-charges-for-queries-email-telephone-etc)
+- "The solicitor, basically, would do nothing to progress anything until they were chased. Then they charged for picking the phone up when you chased them." (PistonHeads forum; may not be about conveyancing, so check first) [link](https://www.pistonheads.com/gassing/topic.asp?h=0&f=210&t=2043382)
+- "the lawyer failed to keep them informed of any increases throughout the transaction." (Legal Ombudsman report, 2014) [link](https://www.legalombudsman.org.uk/media/wcsgxd15/conveyancing-report.pdf)
+
+**Passed around, lost**
+- "resulted in your matter being passed between individuals more than we would ever want" (a firm's own reply to a review) [link](https://uk.trustpilot.com/review/bespokelawservices.co.uk?page=2)
+- "4 weeks had passed with no one on our case" (Trustpilot review; the solicitor had left without the client being told) [link](https://www.trustpilot.com/review/www.lawcomm.co.uk)
+- "lost personal identification required for house conveyance - on 3x separate occasions in person visits to their office." (Trustpilot review) [link](https://www.trustpilot.com/review/hewitts.co.uk)
+- "destroyed documents, lost documents, endless delays, confusion" (Trustpilot review) [link](https://uk.trustpilot.com/review/conveyancingexpert.co.uk?page=2)
+- "They got the completion statement figure wrong right up to the exchange date." (Trustpilot review) [link](https://www.trustpilot.com/review/pcslegal.co.uk?page=15)
+- "In terms of man hours, they seemed to do a lot more than the solicitor." (Mumsnet, about the estate agent) [link](https://www.mumsnet.com/talk/legal_matters/5339660-estate-agent-trying-to-push-along-our-conveyancer)
+
 ---
 
 ## Numbers to go with them
@@ -606,6 +910,26 @@ All from search results, not checked on the page, and most from vendors or indus
 - The "56% cite chasing solicitors" broker poll. Its sample may have been seven people.
 - Propelr's caseload ranges, which have no method.
 - Any "one in four sales fail because of poor communication" claim. No source for it was found.
+
+
+### Satisfaction, referrals and responsiveness (third search)
+
+Search results only, so check each before use.
+
+- **74% of recent buyers would use the same lawyer again, 71% were satisfied, and 78% felt it could have been better.** HomeOwners Alliance (8th annual survey, date not given), 2,000 polled. [link](https://www.legalfutures.co.uk/latest-news/seven-in-10-homeowners-satisfied-with-their-conveyancers)
+- **76% of conveyancing clients were satisfied (46% very satisfied), so about a quarter weren't.** SRA and IFF, 2018, 1,501 consumers. [link](https://www.sra.org.uk/sra/research-publications/conveyancing-legal-services/)
+- **55% chose their solicitor on a recommendation: estate agents 27%, friends and family 25%.** SRA and IFF, 2018. [link](https://www.sra.org.uk/sra/research-publications/conveyancing-legal-services/)
+- **32% used an estate agent's referral, 25% friends or family and 19% an online search.** Where people compared firms, a referral or recommendation decided it for 38%, against 20% for price. 77% trusted their conveyancer wholly or mostly. Lyons Bowe, May 2026, 1,208 buyers; commissioned by a firm. [link](https://propertyindustryeye.com/estate-agents-remain-biggest-source-of-conveyancing-referrals/)
+- **A mystery shop of 100 conveyancing firms: 31% gave no quote at all, and another 24% quoted by phone but never followed up.** TM Group, August 2015. [link](https://www.legalfutures.co.uk/latest-news/quotes-what-quotes-most-conveyancing-firms-refuse-to-give-them-over-the-phone)
+- **12% of staff at 85 law firms never answered a web enquiry.** Shopper Anonymous, 2017. Law firms in general, not only conveyancing. [link](https://todaysconveyancer.co.uk/review-standards-legal-sector/)
+- **The legal sector scored a net promoter score of -54 in mystery shopping (property scored -30).** insight6, date not confirmed, not specific to conveyancing. [link](https://www.legalfutures.co.uk/latest-news/basic-errors-keep-law-firms-scoring-low-for-customer-experience)
+- **32% of mortgage customers called their conveyancer "very slow"; 44% said good value, against 83% for their broker; only 29% found dealing with their conveyancer entirely stress free.** Legal Marketing Services, 2017, about 1,500 customers; commissioned by a vendor. [link](https://www.legalfutures.co.uk/latest-news/consumers-conveyancing-slow-stressful-poor-value)
+- **65% of recent buyers named the legal process as the slowest stage, against 27% for chains; 72% took more than 12 weeks from offer to completion.** Lyons Bowe, 2025 or 2026, 1,000 buyers; commissioned by a firm. [link](https://propertyindustryeye.com/housebuying-delays-are-conveyancers-the-main-culprit/)
+- **35% of home movers would pay more for a premium service from their conveyancer; 5% of firms offered tiers.** Date unknown. [link](https://www.legalfutures.co.uk/latest-news/conveyancing-clients-would-pay-more-for-premium-service-research-finds)
+- **Almost a quarter believe a purchase or sale fell through because of poor communication.** Conveyancing Association and OnePoll, date unknown. [link](https://www.lawgazette.co.uk/practice/poor-communications-blamed-for-conveyancing-delays-finds-poll/5039081.article)
+- **Residential conveyancing complaints to the Legal Ombudsman were 73% of the whole rise in accepted complaints (886 of 1,209 more), 2025/26.** In Q3 2025/26 there were 647, up 18% on a year earlier. [link](https://www.legalombudsman.org.uk/information-centre/data-centre/complaints-data/legal-ombudsman-202526-annual-complaints-data-and-insight/) · [Q3](https://www.lawgazette.co.uk/news/conveyancers-should-contact-clients-even-if-there-are-no-updates/5126386.article)
+- **A counterpoint, so you aren't caught out:** across all legal services, 90% of people say they're satisfied. Legal Services Consumer Panel tracker, 2026, 3,802 respondents; no conveyancing breakdown. [link](https://www.legalservicesconsumerpanel.org.uk/wp-content/uploads/2026/07/26.07.06-How-consumers-are-choosing-legal-services-report-2026-FINAL.pdf)
+- **Not found anywhere:** an average Trustpilot or ReviewSolicitors rating for conveyancers, a net promoter score for conveyancing, or the cost of losing a client.
 
 ---
 
