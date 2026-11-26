@@ -408,6 +408,66 @@ It is so not hard to be a world-class conveyancer. You need the time to do the s
 
 That's what we built CONVEYi for. Free case study in the comments.
 
+### 41. 41% of the day
+
+Conveyancers spend 41% of their day chasing updates.
+
+That's Landmark's 2026 survey of 100 conveyancers. Last year it was 43%.
+
+Two days a week, every week, spent asking where things are and telling people where things are.
+
+None of that needs a lawyer.
+
+### 42. Within 24 hours
+
+75% of home buyers expect a reply from their conveyancer within 24 hours. Just 6% will wait more than two working days.
+
+That's a survey of 994 buyers for Lyons Bowe.
+
+Now do that on 100 live files, by hand, while also doing the law.
+
+You can't. Which is why the firms that manage it win the referrals.
+
+### 43. They think they're doing fine
+
+Two-thirds of conveyancers believe they keep their clients fully informed.
+
+In the same survey, 44% of clients said they didn't get enough communication. Only 22% were told about delays quickly.
+
+That's InfoTrack's research from 2017. The gap hasn't gone anywhere.
+
+Ask your last ten clients. You might not like the answer.
+
+### 44. Would switch for updates
+
+1 in 5 homeowners would actively look for a conveyancer offering real-time updates next time they buy.
+
+24% had to chase their solicitor for updates and found it took far longer than they'd been told.
+
+That's YouGov for LawtechUK, May 2026, 1,251 homeowners.
+
+A fifth of the market picks a firm on updates. That's a marketing plan.
+
+### 45. The worst part of moving
+
+49% of buyers said conveyancing was the most stressful part of buying a home. Communication was the main reason.
+
+Less than a third felt fully informed the whole way through.
+
+That's Smoove, 2025, 1,001 buyers.
+
+Moving house is stressful. Not knowing where it stands is the part we can fix.
+
+### 46. More cases, fewer firms
+
+Between 2012 and 2022, the number of active conveyancing firms fell by 10%.
+
+Over the same period transactions went from 714,000 to more than 1.3 million a year. Caseloads per firm went up 79%.
+
+That's Search Acumen, from Land Registry data.
+
+Fewer firms doing more cases with the same people. Something has to give, and right now it's the client updates.
+
 ---
 
 ## Never hear back
@@ -502,6 +562,50 @@ Check each figure on its page before using it.
 
    [SRA](https://www.sra.org.uk/sra/research-publications/conveyancing-legal-services/)
 8. **One in 12 home buyers had problems with their conveyancer** (Which? survey, date not found). [Which?](https://www.which.co.uk/news/article/revealed-the-10-worst-problems-when-buying-a-house-a0kTw2S0VzVb)
+
+
+### More numbers (second search)
+
+All from search results, not checked on the page, and most from vendors or industry bodies. Name the source whenever you use one, and check it first.
+
+**The best six for firm owners**
+
+1. **Conveyancers spend 41% of their day chasing updates.** It was 43% the year before. Landmark, 2026, surveyed 100 conveyancers. Vendor. [link](https://www.legalfutures.co.uk/associate-news/how-healthy-is-your-residential-conveyancing-transaction-process-in-2026)
+2. **Almost two-thirds of licensed conveyancers struggle at least sometimes with their workload, and 17% frequently.** Over half of CLC lawyers and managers frequently work beyond their hours. CLC Workplace Survey, 2025, 733 respondents. [link](https://todaysconveyancer.co.uk/two-thirds-clc-members-cant-cope-workload/)
+3. **Active conveyancing firms fell 10% between 2012 and 2022 (4,464 to 4,035).** Transactions went from 714,000 to more than 1.3 million a year, and caseloads per firm rose 79%. Search Acumen, from Land Registry data. [link](https://www.legalfutures.co.uk/associate-news/the-great-conveyancing-crunch-property-transactions-double-in-a-decade-while-conveyancing-firms-fall-by-10)
+4. **75% of buyers expect a reply from their conveyancer within 24 hours. Just 6% will wait more than two working days.** 81% expect to hear about any delay the same day. Lyons Bowe, about 2026, 994 buyers; commissioned by a firm. [link](https://todaysconveyancer.co.uk/majority-home-buyers-expect-response-conveyancer-within-24-hours/)
+5. **24% had to chase for updates and found it took far longer than they'd been told.** 1 in 5 would actively look for a conveyancer offering real-time updates. YouGov for LawtechUK, May 2026, 1,251 homeowners. [link](https://todaysconveyancer.co.uk/10-of-homebuyers-feel-they-are-never-getting-the-whole-truth-from-their-conveyancer/)
+6. **49% of buyers said conveyancing was the most stressful part of buying, mainly because of communication.** Less than a third felt fully informed throughout. Smoove, July 2025, 1,001 buyers. Vendor. [link](https://todaysconveyancer.co.uk/half-homebuyers-say-conveyancing-stressful-part-moving/)
+
+**Clients and communication**
+
+- **45% gave slow responses from their lawyer as their main bugbear.** YouGov for Thirdfort, November 2023, 2,054 adults. [link](https://legalfutures.co.uk/latest-news/nearly-half-of-homebuyers-say-lawyers-are-too-slow-in-responding)
+- **44.2% said poor communication was the most stressful part of buying.** Two-thirds were asked for the same information two or three times. OPDA, 2025, about 5,300 movers. An industry body that lobbies for reform. [link](https://todaysconveyancer.co.uk/homebuyers-believe-conveyancers-primary-culprits-frustrating-process-opda/)
+- **Of people who said their conveyancing could have been better, 31% wanted more frequent communication.** HomeOwners Alliance, March 2024, 2,000 adults. [link](https://hoa.org.uk/2024/03/only-40-of-uk-adults-know-what-conveyancing-is/)
+- **Two-thirds of conveyancers believe they keep consumers fully informed, while 44% of consumers say they don't get enough communication.** Only 22% were told about delays quickly. InfoTrack, 2017, 1,000 consumers. Old, and from a vendor, but a strong angle. [link](https://www.legalfutures.co.uk/latest-news/survey-highlights-communication-gap-conveyancers-clients)
+- **70% of movers want an update at least once a week.** tmgroup, about 2015 or 2016, 5,400 movers. Old, and from a vendor. [link](https://www.legalfutures.co.uk/associate-news/70-home-movers-want-updates-conveyancer-least-week-tmgroup-report-finds)
+
+**Workload and people**
+
+- **Landmark: conveyancers spend 43% of their time chasing, and estate agents 55%.** Name the report: another Landmark report gives 34%. [link](https://www.legalfutures.co.uk/latest-news/conveyancers-spend-nearly-half-their-time-chasing-people)
+- **68% of conveyancers report workplace stress, and 14% constant stress.** Asked what would help, 62% said more staff and 38% said less work. Conveyancing Foundation, 2024, 650 respondents. [link](https://todaysconveyancer.co.uk/workplace-stress-affects-68-conveyancers-2024-survey-reveals/)
+- **84% of conveyancers wouldn't enter the profession if they were starting out today.** Today's Conveyancer readers, 2023, 200 or more respondents; a self-selected sample. [link](https://todaysconveyancer.co.uk/4-5-conveyancers-not-enter-profession-today-survey-reveals/)
+- **Conveyancers on UK cases fell 15.67% since 2021, to 10,724 in January 2026.** Access Legal, a vendor. Other coverage counts 5,904 *firms*, down 12.7% in five years. Cite carefully. [link](https://www.mortgagesolutions.co.uk/mortgage-news/2026/09/18/conveyancer-numbers-decline-by-almost-16-in-five-years/) · [firms](https://www.newsontheblock.com/news-opinion/homebuyers-face-longer-buying-timelines-as-conveyancer-numbers-fall-by-almost-13)
+- **Around 200 emails a day.** These are individual accounts from 2021, not a survey: one head of conveyancing reported 240 emails and 40 to 50 calls a day. [link](https://www.lawgazette.co.uk/news/200-emails-a-day-conveyancers-reveal-relentless-deadline-pressure/5109077.article)
+- **A caseload of 100 can mean 600 inbound calls a week.** A consultant's estimate in a 2021 vendor press release. Vivid, but don't present it as research. [link](https://www.legalfutures.co.uk/associate-news/conveyancers-under-increased-communications-pressure-research-reveals)
+
+**What a collapsed sale costs**
+
+- **An average fall-through costs buyers and sellers £2,830 and wastes about three months, up to £1.97bn a year in total.** OPDA, May 2026, 5,000 movers. [link](https://www.mortgagesolutions.co.uk/mortgage-news/2026/05/21/collapsed-house-sales-cost-economy-2bn-a-year-opda-finds/)
+- **Santander puts the average direct cost at £1,240, and £1.5bn a year across England and Wales.** September 2025. [link](https://www.mortgagesolutions.co.uk/news/2025/09/17/failed-property-transactions-cost-economy-1-5bn-every-year-santander-says/)
+- **More than £900m a year is lost in agency fees and stamp duty to sales that fall through and don't come back.** About 23% fall through before eventually completing. Rightmove, February 2026. [link](https://www.mortgagesolutions.co.uk/news/2026/02/27/over-900m-in-estate-agency-commission-and-stamp-duty-lost-in-property-transaction-fall-throughs/)
+- **Residential conveyancing was worth £2.5bn in 2025.** IRN. [link](https://todaysconveyancer.co.uk/uk-legal-services-sector-grew-6-1-last-year-residential-conveyancing-worth-2-5bn/)
+
+**Avoid**
+
+- The "56% cite chasing solicitors" broker poll. Its sample may have been seven people.
+- Propelr's caseload ranges, which have no method.
+- Any "one in four sales fail because of poor communication" claim. No source for it was found.
 
 ---
 
