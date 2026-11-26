@@ -22,7 +22,13 @@ const Stars = () => (
   </div>
 );
 
-export default function CaseStudyPage() {
+const ERRORS: Record<string, string> = {
+  form: 'Check your name, email and phone number, then try again.',
+  busy: 'Too many requests from here today. Try again tomorrow.',
+};
+
+export default async function CaseStudyPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams;
   return (
     <main className="bg-paper text-ink antialiased">
       <NavHeader signupHref={ctaHref(ROUTES.demo, SOURCE, 'nav_demo')} signupLabel="Book A Demo" />
@@ -33,7 +39,7 @@ export default function CaseStudyPage() {
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-paper/75 [text-wrap:balance] md:text-xl">
             A free video case study. What we set up on one call, and where their caseload was by the end of that week.
           </p>
-          <div className="mt-12"><CaseStudyForm /></div>
+          <div className="mt-12"><CaseStudyForm problem={error ? ERRORS[error] ?? ERRORS.form : null} /></div>
         </div>
       </section>
 
