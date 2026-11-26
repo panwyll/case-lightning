@@ -2,7 +2,7 @@
 import { useRef, useState } from 'react';
 
 /** The video on the landing page: a still with a play button until pressed, so nothing loads before then. */
-export function Vsl({ sources, poster, label }: { sources: Array<{ src: string; type: string }>; poster: string; label: string }) {
+export function Vsl({ sources, poster, label, duration = '0:43' }: { sources: Array<{ src: string; type: string }>; poster?: string; label: string; /** Shown on the still; null for none. */ duration?: string | null }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
   const play = () => {
@@ -22,7 +22,7 @@ export function Vsl({ sources, poster, label }: { sources: Array<{ src: string; 
             <span className="flex h-20 w-20 items-center justify-center rounded-full bg-violet text-white shadow-violet transition group-hover:scale-105 md:h-24 md:w-24">
               <svg viewBox="0 0 24 24" width="34" height="34" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z" /></svg>
             </span>
-            <span className="absolute bottom-4 right-4 rounded-full bg-ink/80 px-3 py-1 text-sm font-semibold text-paper">0:43</span>
+            {duration && <span className="absolute bottom-4 right-4 rounded-full bg-ink/80 px-3 py-1 text-sm font-semibold text-paper">{duration}</span>}
           </button>
         )}
       </div>
