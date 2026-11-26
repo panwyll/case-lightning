@@ -197,6 +197,22 @@ export function hasDefinitiveSignal(c: { signals?: MatchSignal[] } | null | unde
 }
 
 /**
+ * Whether the firm's own sent email is certainly this case, so it may be filed (and its conversation put on the case)
+ * with nobody looking. Sent mail cannot be spoofed, but filing it on the wrong case puts one client's correspondence on
+ * another's file, so the bar is high: the conversation is already on this case (and no other), or the email carries this
+ * case's reference (our token or the firm's own ref) AND goes to someone already on this case's email. Any other case
+ * carrying a reference or a link in the same email, or a forward, and it is not certain: a person files it.
+ */
+export function sentEmailCertain(top: Candidate | null | undefined, candidates: Candidate[] = []): boolean {
+  if (!top) return false;
+  const kinds = new Set(top.signals.map((x) => x.kind));
+  const strong = (c: Candidate) => c.signals.some((x) => x.kind === 'LINKED_THREAD' || x.kind === 'CASE_REF_TOKEN' || x.kind === 'FIRM_REF');
+  if (candidates.some((c) => c.matterId !== top.matterId && strong(c))) return false;
+  if (kinds.has('LINKED_THREAD')) return true;
+  return (kinds.has('CASE_REF_TOKEN') || kinds.has('FIRM_REF')) && (kinds.has('PARTICIPANT_EMAIL') || kinds.has('KNOWN_CONTACT'));
+}
+
+/**
  * The ONLY match signal safe to authorise a persisted matter WRITE (filing docs to
  * a case's knowledge base, harvesting contacts, auto-rules). It means the firm
  * itself linked this conversation to the matter (email_thread) — server-side state

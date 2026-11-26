@@ -7,7 +7,7 @@ import { after } from 'next/server';
 import { getMessage, senderOfMessageId } from '../graph';
 import { runTriage, applyTriageTags } from '../triage';
 import { runAutoAutomations } from '../automations';
-import { hasTrustedLink, hasDefinitiveSignal, linkedFilingHeld } from '../matching';
+import { hasTrustedLink, hasDefinitiveSignal, linkedFilingHeld, sentEmailCertain } from '../matching';
 import { fileSentEmail, indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '../files';
 import { conveyiWrote } from './origin';
 import { claimFiling, finishFiling } from './auto-file';
@@ -47,25 +47,20 @@ export async function processIncomingMessage(user: SessionUser, messageId: strin
     // Mirror the inbound learning: file attachments, index the body, learn our
     // own reference (direction known for certain), flag drafts the send overtook.
     //
-    // Gate is DEFINITIVE, not trusted-link. Inbound requires a trusted link
-    // because its content is attacker-controllable — a stranger quoting a case
-    // ref could inject into a victim's file. A SENT email is authored by the
-    // firm from its own account, so that threat is absent: a definitive
-    // reference the firm itself wrote (our token / the firm's own "Our ref:")
-    // is trustworthy. This is what stops the fee earner's own outbound reply —
-    // often quoting the ref on a thread nobody manually linked — vanishing.
-    // Still definitive-only: a fuzzy address match is not adopted for a write.
+    // A SENT email is written by the firm from its own account, so it cannot be spoofed; the risk is filing it on the
+    // wrong case. Writes need certainty (sentEmailCertain below); a fuzzy address match is never adopted for a write.
     // Email CONVEYi sent itself is already on the case (and is not the person's work): nothing is filed or read from it.
     const wrote = await conveyiWrote(user.tenantId, message).catch(() => null);
     if (wrote !== 'sent' && triage.top && hasDefinitiveSignal(triage.top)) {
       const mId = triage.top.matterId;
-      // Filed (and its conversation put on the case) only when it is plainly this case: another case matched as surely
-      // (a contact on both) leaves it to a person, and the firm can turn it off (Rules: File Sent Email on Cases).
-      const other = (triage.candidates ?? []).some((c) => c.matterId !== mId && hasDefinitiveSignal(c));
-      const file = !other && (await getPolicy(user.tenantId, 'fileSentEmail').catch(() => true));
+      // Filed (attachments, the email, its conversation) only when it is certainly this case (matching.ts sentEmailCertain:
+      // a thread already on it, or its reference AND someone on its email); short of that a person files it, so one
+      // client's correspondence never lands on another's file. The firm can turn filing off (Rules: File Sent Email on Cases).
+      const certain = sentEmailCertain(triage.top, triage.candidates ?? []);
+      const file = certain && (await getPolicy(user.tenantId, 'fileSentEmail').catch(() => true));
       // One filing per message, whichever path reaches it first (a repeated notification, a person filing it by hand).
       const claimed = file && (await claimFiling(user.tenantId, messageId, mId));
-      if ((!file || claimed) && message.hasAttachments) {
+      if (certain && (!file || claimed) && message.hasAttachments) {
         await saveEmailAttachmentsToMatter(user, mId, messageId, message.subject).catch(() => {});
       }
       if (claimed) {
