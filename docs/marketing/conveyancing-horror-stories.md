@@ -1,6 +1,6 @@
-# Conveyancing horror stories: quotes for content
+# Conveyancing horror stories: emails, quotes and figures
 
-Short quotes from people (and the Legal Ombudsman, and the press) about conveyancing going wrong in England and Wales, for posts, ads and scripts. Collected November 2026.
+Seinfeld-style emails built from the stories, then the short quotes from people (and the Legal Ombudsman, and the press) about conveyancing going wrong in England and Wales, for posts, ads and scripts. Collected November 2026.
 
 **Before you use any of these:**
 
@@ -8,6 +8,151 @@ Short quotes from people (and the Legal Ombudsman, and the press) about conveyan
 - **Keep it anonymous.** No reviewer names and no firm names in anything we publish. Several links below contain the firm's name or web address: use them to check, never print them.
 - **Present them as real experiences shared online, not testimonials.** Something like "From a review posted online" or "Shared on a property forum". They are other people's words about other firms, not about us.
 - **Reddit is missing.** Reddit could not be reached at all from here. See "Still to collect" at the bottom.
+
+---
+
+## Emails in the Seinfeld style
+
+Brunson's Seinfeld emails (DotCom Secrets): one small story a day, a subject line that makes you open it, a point drawn from the story, and one link. Readers come for the story and get used to opening your emails.
+
+Each one below starts from a real quote in the bank further down. Check the quote on its page before you send. Each email says what the story shows and then points to one thing: the free inbox scan, the case study or a demo. They're written to conveyancing firm owners, from Pete.
+
+Links:
+- Scan: https://www.caselightning.co.uk/conveyi/scan
+- Case study: https://www.caselightning.co.uk/conveyi/case-study
+- Demo: https://www.caselightning.co.uk/conveyi/demo
+
+### 1. Subject: "I don't blame them"
+
+> "So slow we lost our buyer. After over 180 days of waiting ... our buyer finally pulled out and I don't blame them."
+
+A seller wrote that about their own conveyancer.
+
+Read the end again. I don't blame them. The seller has taken the side of the buyer who walked away from their house.
+
+I doubt anyone on that file sat idle for 180 days. My guess is they were answering "any update?" on every other file they had, and this one slipped a week at a time.
+
+That's how most sales die. Slowly, while everyone's busy.
+
+If you want to see how much of your week goes on updating and chasing, the inbox scan shows you in five minutes. Read-only.
+
+[Scan My Inbox Free]
+
+Pete
+
+### 2. Subject: On hold for over an hour
+
+> "...despite being on hold for over an hour, they were unable to reach anyone."
+
+Three days before completion, according to the review.
+
+Three days out is when every client rings. They all ask the same thing: are we still on?
+
+They ring because nobody has told them where things stand. Tell them first and most of them never pick up the phone.
+
+That's the first thing CONVEYi does. When something moves on a case, the client hears about it, so the call never happens.
+
+[Book A 15 Min Demo]
+
+Pete
+
+### 3. Subject: "We owe £5000"
+
+> "I got home today to a letter from HMRC saying we claimed £0 tax on our property, but we owe £5000."
+
+One box ticked No on the SDLT return. That's all it took.
+
+Nobody makes that mistake on a quiet morning. It's the fortieth form of the day, done between calls.
+
+CONVEYi works out the SDLT from the file. If the return that's filed doesn't match it, the case gets flagged and the fee earner sees it straight away. The client doesn't find out from HMRC.
+
+[Book A 15 Min Demo]
+
+Pete
+
+### 4. Subject: They weren't the legal owners
+
+> "...his solicitor says they can't sell the house as they are not the legal owners so they may lose the buyer."
+
+They bought the house, moved in and lived there. Then, when they came to sell, it turned out the purchase had never been registered.
+
+In one Legal Ombudsman case the Land Registry raised requisitions and the firm didn't act on them. The client found out a year later when she tried to remortgage. The firm was told to pay £49,000.
+
+Registration is the dull bit after completion, when everyone has moved on to the next file. That's exactly when it gets missed.
+
+CONVEYi keeps the application and any requisitions on the list until the title is registered.
+
+[Book A 15 Min Demo]
+
+Pete
+
+### 5. Subject: "Left the company without telling us"
+
+> "As we were approaching our completion date ... left the company without telling us"
+
+The client wrote that about their conveyancer.
+
+People leave. That's normal. The trouble starts when the file only exists in that person's head and their inbox.
+
+In CONVEYi every case shows where it stands, what it's waiting for and when the next chase goes. Whoever picks it up on Monday knows by 9.05.
+
+[Watch The Case Study]
+
+Pete
+
+### 6. Subject: In chunks
+
+> "We were asked to transfer our house deposit in 'chunks'. I made two £1,000 payments and my husband made a £3,000 payment"
+
+That was a scammer pretending to be their conveyancer. It was a Which? reader's story.
+
+In the year to March 2025, residential victims of conveyancing fraud lost about £78,000 each on average.
+
+In CONVEYi no money moves without a person signing it off. New bank details get a phone check before anything is paid, and emails from spoofed senders get caught.
+
+[Book A 15 Min Demo]
+
+Pete
+
+### 7. Subject: Peppercorn
+
+> "He was surprised because he thought the firm had told him that the ground rent was peppercorn (a very small amount)."
+
+It was £300 a year, with a deed of variation he never saw. The fix came to about £18,000. That's from a Legal Ombudsman case study.
+
+CONVEYi reads the lease when it arrives: unexpired term, ground rent, the review clause. If it can't read the lease it says so before the report on title goes out.
+
+[Book A 15 Min Demo]
+
+Pete
+
+### 8. Subject: 14.5 weeks, no chain
+
+> "...14.5 wks into a quick sale and purchase with no chain..."
+
+No chain. Quick sale. Fourteen and a half weeks.
+
+When a file like that drags, it's rarely because it's hard. It drags because it's waiting in a queue behind 150 others for someone to send the next email.
+
+The case study shows what happened when one firm stopped doing that by hand. By the end of the week their fee earners were handling 150 cases at a time.
+
+[Watch The Case Study]
+
+Pete
+
+### 9. Subject: Half of all complaints
+
+Residential conveyancing is the biggest source of complaints to the Legal Ombudsman, at 36% of them.
+
+Half of those complaints come down to two things. The client didn't hear back, or the case didn't move.
+
+Neither of those needs a lawyer to fix. They need someone with the time to send the update and chase the other side. Almost nobody has that time.
+
+That's the part CONVEYi does.
+
+[Scan My Inbox Free]
+
+Pete
 
 ---
 
