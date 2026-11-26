@@ -55,7 +55,7 @@ const steps = [
 
 const safe: Array<{ q: string; a: string }> = [
   { q: 'Can it send or delete anything?', a: 'No. Microsoft only lets it read.' },
-  { q: 'What do you keep?', a: 'What each email was for, when it was sent and whether it was with a client, an agent or a lender. We don’t keep the email itself or anyone’s address.' },
+  { q: 'What do you keep?', a: 'What each email was for, when it was sent and whether it was with a client, an agent or a lender. We don’t keep the email itself or anyone’s address in it. We do keep your name and email so we can send your results and get in touch.' },
   { q: 'Does anyone read my emails?', a: 'No. Our software reads each one once and sends a short extract to our AI provider to label it. The extract isn’t kept.' },
   { q: 'How long do you have access?', a: 'An hour at most. Once the scan’s done, we can’t read anything.' },
 ];

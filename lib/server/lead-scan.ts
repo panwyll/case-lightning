@@ -1,7 +1,8 @@
 /**
  * The free inbox scan, CONVEYi's lead magnet (app/conveyi/scan). A prospect signs in with their work Microsoft
- * account, read-only: the only mailbox permission asked for is Mail.Read, and no refresh token is asked for, so the
- * access ends when the sign-in's token expires (about an hour). Their last four weeks of Sent Items and Inbox are
+ * account, read-only: the only mailbox permission asked for is Mail.Read, and no refresh token is asked for. The token
+ * is used for 55 minutes at most and wiped when the scan ends or that time is up (sweepLeadScans), so access ends
+ * within the hour the page promises. We are emailed the lead the moment they sign in, as with a demo booking. Their last four weeks of Sent Items and Inbox are
  * labelled by the same rules and model as a firm's measurement (lib/server/workload/scan.ts), and the same charts are
  * built (lib/server/epa/measure.ts). No firm or user account is made.
  *
@@ -25,6 +26,8 @@ import { DEMO_HOST } from './demo/bookings';
 export const LEAD_SCAN_WEEKS = 4;
 const MAX_MESSAGES = 6000;
 const SLICE_MS = 12_000;
+/** The page promises access ends within the hour: the token is used for at most this long after sign-in, then wiped (sweepLeadScans). */
+const ACCESS_MS = 55 * 60_000;
 /** Read-only, and no offline_access: no way back in once the token expires. */
 const SCOPE = 'openid profile email https://graph.microsoft.com/Mail.Read';
 /** Work and school accounts of any firm; never personal Outlook.com accounts. */
@@ -91,8 +94,38 @@ export async function startLeadScan(input: { code: string; ip: string | null; so
     `insert into lead_scan (token_hash, email, name, ms_tenant_id, since, until, access_token_enc, token_expires_at, source, ip)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)`,
     [hash(token), email, claims.name ? String(claims.name).slice(0, 120) : null, claims.tid ?? null, since, until,
-      encryptSecret(accessToken), new Date(Date.now() + (t.expires_in ?? 3600) * 1000), JSON.stringify(input.source), input.ip]));
+      encryptSecret(accessToken), new Date(Date.now() + Math.min((t.expires_in ?? 3600) * 1000, ACCESS_MS)), JSON.stringify(input.source), input.ip]));
+  // A lead the moment they sign in, as a demo booking is: whether or not the scan finishes, we know who they are.
+  await announceLeadScan({ email, name: claims.name ? String(claims.name).slice(0, 120) : null, source: input.source }).catch((e) => console.error('lead scan lead email failed', e));
   return token;
+}
+
+/** Tell us someone has started a scan: their name, mailbox and firm, and where they came from. Reply goes to them. */
+async function announceLeadScan(lead: { email: string; name: string | null; source: Record<string, string> }): Promise<void> {
+  if (!config.resendApiKey || !config.resendFromEmail) { console.error(`lead scan by ${lead.email} not announced: RESEND_API_KEY / RESEND_FROM_EMAIL not set`); return; }
+  const from = Object.entries(lead.source ?? {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n');
+  const r = await new Resend(config.resendApiKey).emails.send({
+    from: config.resendFromEmail, to: DEMO_HOST.email, replyTo: lead.email,
+    subject: `New lead: inbox scan by ${lead.name ?? lead.email} (${domainOf(lead.email)})`,
+    text: [`${lead.name ?? ''} <${lead.email}>`.trim(), `Firm: ${domainOf(lead.email)}`, from && `\n${from}`, '\nThey have just signed in to the free inbox scan. Their results follow in another email when it finishes. Reply to this email to write to them.'].filter(Boolean).join('\n'),
+  }).catch((e) => ({ error: e }));
+  if ((r as { error?: unknown }).error) console.error('lead scan lead email failed', lead.email, (r as { error?: unknown }).error);
+}
+
+/**
+ * Every minute (Vercel Cron): a token older than the access window, or past its expiry, is wiped, and a scan left
+ * unfinished with it (the page was closed) is marked stopped. So nothing can be read from a mailbox after the hour
+ * the page promises, whatever the prospect did.
+ */
+export async function sweepLeadScans(): Promise<{ wiped: number }> {
+  const rows = await sys(() => query<{ id: string }>(
+    `update lead_scan set access_token_enc = null,
+            status = case when status in ('SCANNING_SENT', 'SCANNING_INBOX') then 'FAILED' else status end,
+            error = case when status in ('SCANNING_SENT', 'SCANNING_INBOX') then 'The scan ran out of time. Start it again.' else error end,
+            updated_at = now()
+      where access_token_enc is not null and (token_expires_at < now() or created_at < now() - ($1::int * interval '1 millisecond'))
+      returning id`, [ACCESS_MS]));
+  return { wiped: rows.length };
 }
 
 const byToken = (token: string) => (/^[\w-]{20,64}$/.test(token)
